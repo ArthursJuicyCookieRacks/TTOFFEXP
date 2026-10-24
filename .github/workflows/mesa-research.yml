@@ -2,6 +2,8 @@ name: Mesa research
 on:
   push:
     branches: ['research/mesa-android']
+permissions:
+  contents: write
 defaults:
   run:
     shell: bash
@@ -17,11 +19,20 @@ jobs:
         tar xf mesa.tar.xz && mv mesa-* mesa
         git clone -q --depth 1 https://github.com/bylaws/libadrenotools.git adrenotools
         git -C adrenotools submodule update --init --depth 1 || true
-    - name: Pack
+    - name: Push the sources to a branch
       run: |
-        mkdir out
-        tar czf out/src.tgz mesa/src/egl mesa/src/gallium/drivers/zink mesa/src/gallium/frontends/dri mesa/src/android_stub mesa/meson.options mesa/meson.build mesa/src/gallium/meson.build mesa/src/meson.build mesa/src/gallium/targets/dri mesa/src/loader adrenotools mesa/src/mapi/meson.build mesa/src/glx/meson.build mesa/src/util/u_dl.c mesa/src/util/u_dl.h mesa/docs/android.rst
-    - uses: actions/upload-artifact@v4
-      with:
-        name: src
-        path: out/src.tgz
+        mkdir src && cd src && git init -q -b research/mesa-src
+        mkdir -p mesa/src/gallium/frontends mesa/src/gallium/drivers mesa/src/util mesa/docs
+        cp -r ../mesa/src/egl mesa/src/
+        cp -r ../mesa/src/gallium/drivers/zink mesa/src/gallium/drivers/
+        cp -r ../mesa/src/gallium/frontends/dri mesa/src/gallium/frontends/
+        cp -r ../mesa/src/android_stub ../mesa/src/loader mesa/src/
+        cp -r ../mesa/src/gallium/targets mesa/src/gallium/
+        cp ../mesa/meson.options ../mesa/meson.build mesa/
+        cp ../mesa/src/gallium/meson.build mesa/src/gallium/
+        cp ../mesa/src/meson.build mesa/src/
+        cp ../mesa/src/util/u_dl.c ../mesa/src/util/u_dl.h mesa/src/util/
+        cp ../mesa/docs/android.rst mesa/docs/ || true
+        cp -r ../adrenotools adrenotools && rm -rf adrenotools/.git adrenotools/lib/linkernsbypass/.git
+        git add -A && git -c user.name=ci -c user.email=ci@example.com commit -qm "Mesa 25.2.6 sources (research)"
+        git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" research/mesa-src
