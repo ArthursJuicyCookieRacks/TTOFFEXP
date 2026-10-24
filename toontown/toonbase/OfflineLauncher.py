@@ -31,7 +31,7 @@ EXTRA_WIDTH = 500 / 2250.0
 # The sky at the picture's edges, for the sides of a still wider screen.
 SIDE_COLOR = (0.43, 0.67, 0.86, 1)
 # The navy border around the art, and its shadow.
-NAVY = (0.07, 0.11, 0.33, 1)
+NAVY = (0.13, 0.2, 0.5, 1)
 BORDER_WIDTH = 0.022
 SHADOW_WIDTH = 0.09
 SHADOW_ALPHA = 0.35
