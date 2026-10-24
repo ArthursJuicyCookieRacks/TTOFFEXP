@@ -40,6 +40,11 @@ def wantTouchControls():
     return ConfigVariableBool('want-touch-controls', False).getValue()
 
 
+def gamepadActive():
+    from toontown.toonbase import Gamepad
+    return Gamepad.isActive()
+
+
 def makeDisc(radius, color, segments=32):
     data = GeomVertexData('disc', GeomVertexFormat.getV3c4(), Geom.UHStatic)
     vertices = GeomVertexWriter(data, 'vertex')
@@ -106,8 +111,20 @@ class TouchControls(DirectObject):
 
     def request(self, name):
         self.requesters.add(name)
-        self.joystick.show()
-        self.jumpButton.show()
+        if not gamepadActive():
+            self.joystick.show()
+            self.jumpButton.show()
+
+    def hideForGamepad(self):
+        # A controller is being used; it does what these would.
+        self.__release()
+        self.joystick.hide()
+        self.jumpButton.hide()
+
+    def showAfterGamepad(self):
+        if self.requesters and wantTouchControls():
+            self.joystick.show()
+            self.jumpButton.show()
 
     def release(self, name):
         self.requesters.discard(name)

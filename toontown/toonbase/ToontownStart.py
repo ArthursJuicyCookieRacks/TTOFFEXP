@@ -94,6 +94,10 @@ if base.win == None:
     sys.exit()
 from direct.gui.DirectGui import *
 
+# A game controller works from the start, in the launcher too.
+from .Gamepad import Gamepad
+base.gamepad = Gamepad()
+
 # The packaged game opens on its launcher, and goes on from here once the
 # player presses PLAY!.
 from . import OfflineLauncher

@@ -1,0 +1,172 @@
+diff --git a/panda/src/androiddisplay/androidGraphicsWindow.cxx b/panda/src/androiddisplay/androidGraphicsWindow.cxx
+index 3d66886..54d7a2f 100644
+--- a/panda/src/androiddisplay/androidGraphicsWindow.cxx
++++ b/panda/src/androiddisplay/androidGraphicsWindow.cxx
+@@ -25,6 +25,11 @@
+ #include "textEncoder.h"
+ #include "throw_event.h"
+ #include "nativeWindowHandle.h"
++#include "inputDevice.h"
++#include "inputDeviceManager.h"
++#include "gamepadButton.h"
++#include "lightMutexHolder.h"
++#include "pmap.h"
+ 
+ #include "android_native_app_glue.h"
+ #include <android/window.h>
+@@ -484,6 +489,130 @@ handle_input_event(struct android_app* app, AInputEvent *event) {
+   return 0;
+ }
+ 
++/**
++ * A game controller plugged into or paired with the device.  Android hands
++ * its buttons and sticks to the window as key and motion events; they are
++ * passed on here, so that the game sees an ordinary gamepad InputDevice.
++ */
++class AndroidGamepad : public InputDevice {
++public:
++  AndroidGamepad() : InputDevice("Android gamepad", DeviceClass::GAMEPAD) {
++    _a = add_button(GamepadButton::face_a());
++    _b = add_button(GamepadButton::face_b());
++    _x = add_button(GamepadButton::face_x());
++    _y = add_button(GamepadButton::face_y());
++    _l1 = add_button(GamepadButton::lshoulder());
++    _r1 = add_button(GamepadButton::rshoulder());
++    _l2 = add_button(GamepadButton::ltrigger());
++    _r2 = add_button(GamepadButton::rtrigger());
++    _l3 = add_button(GamepadButton::lstick());
++    _r3 = add_button(GamepadButton::rstick());
++    _start = add_button(GamepadButton::start());
++    _select = add_button(GamepadButton::back());
++    _guide = add_button(GamepadButton::guide());
++    _up = add_button(GamepadButton::dpad_up());
++    _down = add_button(GamepadButton::dpad_down());
++    _left = add_button(GamepadButton::dpad_left());
++    _right = add_button(GamepadButton::dpad_right());
++    _lx = add_axis(Axis::LEFT_X, -1, 1, true);
++    _ly = add_axis(Axis::LEFT_Y, -1, 1, true);
++    _rx = add_axis(Axis::RIGHT_X, -1, 1, true);
++    _ry = add_axis(Axis::RIGHT_Y, -1, 1, true);
++    _lt = add_axis(Axis::LEFT_TRIGGER, 0, 1, false);
++    _rt = add_axis(Axis::RIGHT_TRIGGER, 0, 1, false);
++    set_connected(true);
++  }
++
++  // Returns false for a key that is not a controller's.
++  bool key(int32_t keycode, bool down) {
++    int index;
++    switch (keycode) {
++    case AKEYCODE_BUTTON_A: index = _a; break;
++    case AKEYCODE_BUTTON_B: index = _b; break;
++    case AKEYCODE_BUTTON_X: index = _x; break;
++    case AKEYCODE_BUTTON_Y: index = _y; break;
++    case AKEYCODE_BUTTON_L1: index = _l1; break;
++    case AKEYCODE_BUTTON_R1: index = _r1; break;
++    case AKEYCODE_BUTTON_L2: index = _l2; break;
++    case AKEYCODE_BUTTON_R2: index = _r2; break;
++    case AKEYCODE_BUTTON_THUMBL: index = _l3; break;
++    case AKEYCODE_BUTTON_THUMBR: index = _r3; break;
++    case AKEYCODE_BUTTON_START: index = _start; break;
++    case AKEYCODE_BUTTON_SELECT: index = _select; break;
++    case AKEYCODE_BUTTON_MODE: index = _guide; break;
++    case AKEYCODE_DPAD_UP: index = _up; break;
++    case AKEYCODE_DPAD_DOWN: index = _down; break;
++    case AKEYCODE_DPAD_LEFT: index = _left; break;
++    case AKEYCODE_DPAD_RIGHT: index = _right; break;
++    // Some controllers say BACK for B or for Select.
++    case AKEYCODE_BACK: index = _b; break;
++    default: return false;
++    }
++    LightMutexHolder holder(_lock);
++    button_changed(index, down);
++    return true;
++  }
++
++  void motion(const AInputEvent *event) {
++    // Android's sticks point down for positive Y; a gamepad's point up.
++    set_axis_value(_lx, AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_X, 0));
++    set_axis_value(_ly, -AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_Y, 0));
++    set_axis_value(_rx, AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_Z, 0));
++    set_axis_value(_ry, -AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_RZ, 0));
++    float lt = std::max(AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_LTRIGGER, 0),
++                        AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_BRAKE, 0));
++    float rt = std::max(AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_RTRIGGER, 0),
++                        AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_GAS, 0));
++    set_axis_value(_lt, lt);
++    set_axis_value(_rt, rt);
++
++    // Many controllers give the d-pad as a hat rather than as keys.
++    float hat_x = AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_HAT_X, 0);
++    float hat_y = AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_HAT_Y, 0);
++    LightMutexHolder holder(_lock);
++    set_hat(_left, _hat_left, hat_x < -0.5f);
++    set_hat(_right, _hat_right, hat_x > 0.5f);
++    set_hat(_up, _hat_up, hat_y < -0.5f);
++    set_hat(_down, _hat_down, hat_y > 0.5f);
++  }
++
++private:
++  void set_hat(int index, bool &state, bool down) {
++    if (state != down) {
++      state = down;
++      button_changed(index, down);
++    }
++  }
++
++  int _a, _b, _x, _y, _l1, _r1, _l2, _r2, _l3, _r3, _start, _select, _guide;
++  int _up, _down, _left, _right;
++  int _lx, _ly, _rx, _ry, _lt, _rt;
++  bool _hat_left = false, _hat_right = false, _hat_up = false, _hat_down = false;
++};
++
++static pmap<int32_t, PT(AndroidGamepad)> android_gamepads;
++
++/**
++ * Returns the gamepad that sent this event, making it the first time.
++ */
++static AndroidGamepad *
++get_android_gamepad(const AInputEvent *event) {
++  int32_t id = AInputEvent_getDeviceId(event);
++  PT(AndroidGamepad) &gamepad = android_gamepads[id];
++  if (gamepad == nullptr) {
++    gamepad = new AndroidGamepad;
++    InputDeviceManager::get_global_ptr()->add_device(gamepad);
++  }
++  return gamepad;
++}
++
++static bool
++is_gamepad_event(const AInputEvent *event) {
++  int32_t source = AInputEvent_getSource(event);
++  return (source & AINPUT_SOURCE_GAMEPAD) == AINPUT_SOURCE_GAMEPAD
++      || (source & AINPUT_SOURCE_JOYSTICK) == AINPUT_SOURCE_JOYSTICK;
++}
++
+ /**
+  * Processes a key event.
+  */
+@@ -511,6 +640,13 @@ handle_key_event(const AInputEvent *event) {
+   }*/
+ 
+   int32_t keycode = AKeyEvent_getKeyCode(event);
++  if (is_gamepad_event(event)) {
++    int32_t action = AKeyEvent_getAction(event);
++    if ((action == AKEY_EVENT_ACTION_DOWN || action == AKEY_EVENT_ACTION_UP) &&
++        get_android_gamepad(event)->key(keycode, action == AKEY_EVENT_ACTION_DOWN)) {
++      return 1;
++    }
++  }
+   ButtonHandle button = map_button(keycode);
+ 
+   if (button == ButtonHandle::none()) {
+@@ -537,6 +673,10 @@ handle_key_event(const AInputEvent *event) {
+  */
+ int32_t AndroidGraphicsWindow::
+ handle_motion_event(const AInputEvent *event) {
++  if ((AInputEvent_getSource(event) & AINPUT_SOURCE_JOYSTICK) == AINPUT_SOURCE_JOYSTICK) {
++    get_android_gamepad(event)->motion(event);
++    return 1;
++  }
+   int32_t action = AMotionEvent_getAction(event);
+   int32_t pointer_index = (action >> AMOTION_EVENT_ACTION_POINTER_INDEX_SHIFT);
+   action &= AMOTION_EVENT_ACTION_MASK;

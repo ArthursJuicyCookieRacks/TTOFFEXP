@@ -2,7 +2,8 @@
 #
 # 1. Compiles Panda3D 1.11 (upstream master at PANDA3D_COMMIT; the audio
 #    loop-start change our 1.10 fork carried is part of it) into wheels for
-#    Windows and for each Android ABI.
+#    Windows and for each Android ABI. Android also gets the patches in
+#    tools/offline/panda3d-patches.
 # 2. Packs RegDogg/TTR-Offline-resources into the phase multifiles.
 # 3. Freezes the game with build_apps and packages it: a zip for Windows and,
 #    for Android, an .aab plus a universal .apk to install directly.
@@ -130,12 +131,20 @@ jobs:
           triple: x86_64-linux-android
           libs: android-libs-x86_64
     steps:
+    # Our changes to Panda3D (game controllers on Android) are applied on
+    # top of PANDA3D_COMMIT; the wheel is rebuilt whenever they change.
+    - name: Check out the Panda3D patches
+      uses: actions/checkout@v7
+      with:
+        sparse-checkout: tools/offline/panda3d-patches
+        path: game
+
     - name: Restore the wheel
       id: cache
       uses: actions/cache@v5
       with:
         path: wheels
-        key: panda3d-android-${{ matrix.abi }}-${{ env.PANDA3D_COMMIT }}-py${{ env.ANDROID_PYTHON }}-v2
+        key: panda3d-android-${{ matrix.abi }}-${{ env.PANDA3D_COMMIT }}-py${{ env.ANDROID_PYTHON }}-${{ hashFiles('game/tools/offline/panda3d-patches/*.patch') }}-v3
 
     - name: Check out Panda3D
       if: steps.cache.outputs.cache-hit != 'true'
@@ -144,6 +153,15 @@ jobs:
         repository: panda3d/panda3d
         ref: ${{ env.PANDA3D_COMMIT }}
         path: panda3d
+
+    - name: Apply the Panda3D patches
+      if: steps.cache.outputs.cache-hit != 'true'
+      working-directory: panda3d
+      run: |
+        for patch in ../game/tools/offline/panda3d-patches/*.patch; do
+          echo "Applying $patch"
+          git apply --verbose "$patch"
+        done
 
     - name: Set up the Android SDK
       if: steps.cache.outputs.cache-hit != 'true'
