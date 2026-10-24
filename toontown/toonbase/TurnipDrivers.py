@@ -91,6 +91,9 @@ class DriversPanel:
         self.resetButton = launcher.redButton("PHONE'S DRIVER", (0, 0, -0.042), self.reset, textScale=0.04,
                                               imageScale=(1.9, 1, 1.25))
         self.resetButton.reparentTo(panel)
+        # Small text sits in the middle of these thinner buttons.
+        for button in (self.pickButton, self.resetButton):
+            button['text_pos'] = (0, -0.013)
         self.message = DirectLabel(parent=panel, relief=None, pos=(0, 0, -0.205), text_font=launcher.interfaceFont,
                                    text_scale=0.05, text_fg=TEXT_DARK, text_wordwrap=28,
                                    text='Pick a Turnip driver .zip (Snapdragon phones only). '
