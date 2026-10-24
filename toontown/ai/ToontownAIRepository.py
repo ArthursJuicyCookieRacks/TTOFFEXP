@@ -299,6 +299,9 @@ class ToontownAIRepository(ToontownInternalRepository):
         from otp.local.ExecutionContext import getClientBuiltin
         if getattr(self, 'districtReady', False):
             return
+        # The launcher's loading bar counts the zones built.
+        from toontown.toonbase import OfflineLauncher
+        OfflineLauncher.townStep()
         now = time.monotonic()
         if now - getattr(self, 'lastGameFrame', 0) < 0.5:
             return

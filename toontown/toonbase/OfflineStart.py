@@ -79,6 +79,8 @@ def main():
         'local-db-directory %s' % Filename(dataDir, 'database'),
         'account-bridge-filename %s' % Filename(dataDir, 'database/account-bridge'),
         'local-event-log-directory %s' % Filename(dataDir, 'logs/events'),
+        'want-offline-launcher 1',
+        'offline-game-dir %s' % gameDir,
     ]))
     if sys.platform == 'android':
         # Phones and tablets have OpenGL ES rather than desktop OpenGL, and

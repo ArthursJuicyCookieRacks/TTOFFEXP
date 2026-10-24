@@ -95,6 +95,7 @@ setup(
             'include_patterns': [
                 'config/release.prc',
                 'config/ttroff.dc',
+                'assets/*',
                 'phase_*.mf',
             ],
             'plugins': [

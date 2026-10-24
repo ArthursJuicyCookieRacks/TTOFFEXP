@@ -94,6 +94,12 @@ if base.win == None:
     sys.exit()
 from direct.gui.DirectGui import *
 
+# The packaged game opens on its launcher, and goes on from here once the
+# player presses PLAY!.
+from . import OfflineLauncher
+if OfflineLauncher.wanted():
+    OfflineLauncher.run()
+
 if not ConfigVariableBool('want-retro-rewritten', False):
     # Prepare new startup screen
     launcher.setPandaErrorCode(0)
@@ -127,6 +133,8 @@ if ConfigVariableBool('tt-framerate', False):
     TTFrameRateMeter()
 
 base.graphicsEngine.renderFrame()
+
+OfflineLauncher.progress(8, 'Loading the game...')
 
 # Prepare GUI
 DirectGuiGlobals.setDefaultDialogGeom(loader.loadModel('phase_3/models/gui/dialog_box_gui'))
@@ -185,6 +193,8 @@ else:
     base.cr = cr
     loader.endBulkLoad('init')
 
+OfflineLauncher.progress(20)
+
 # Prepare Friends Manager
 from otp.friends import FriendManager
 from otp.distributed.OtpDoGlobals import *
@@ -225,10 +235,12 @@ if config.ConfigVariableBool('auto-start-server', False).getValue():
 
     def startLocalServer(task):
         # Wait a frame so the dialog is drawn before the districts load.
+        OfflineLauncher.progress(OfflineLauncher.TOWN_START, 'Building Toontown...')
         builtins.clientServer.start()
         return task.done
 
     def localServerReady():
+        OfflineLauncher.finish()
         builtins.gameServicesDialog.cleanup()
         del builtins.gameServicesDialog
         if not ConfigVariableBool('want-retro-rewritten', False):
