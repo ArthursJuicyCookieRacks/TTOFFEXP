@@ -1237,6 +1237,28 @@ def defeatCogsFor(questId, quest):
         log('ToonTask progress:', quest.getProgressString(localAvatar, next(q for q in localAvatar.quests if q[0] == questId)))
 
 
+def scenarioToonHall():
+    # Walks into Toon Hall, where Flippy and the Loony Labs scientists work.
+    # The scientists stay hidden unless the Silly Meter holiday is on.
+    from toontown.toon import NPCToons
+    npc = yield from goToNPC(2001)
+    log('in Toon Hall with', npc.getName())
+    aiObjects = lambda air, zoneId: sorted(do.__class__.__name__ for do in list(air.doId2do.values())
+                                          if getattr(do, 'zoneId', None) == zoneId)
+    expected = onDistrict(aiObjects, localAvatar.zoneId).count('DistributedNPCScientistAI')
+    scientists = lambda: [do for do in list(base.cr.doId2do.values())
+                          if do.__class__.__name__ == 'DistributedNPCScientist']
+    yield until(lambda: expected and len(scientists()) == expected, 60, 'the %d scientists' % expected)
+    for scientist in scientists():
+        log('scientist %s, %s' % (scientist.getName(), 'shown' if not scientist.isHidden() else 'hidden until the Silly Meter'))
+        scientist.handleCollisionSphereEnter(None)
+    yield sleep(5)
+    door = lambda: findObject('DistributedDoor', lambda do: do.doorType == DoorTypes.INT_STANDARD)
+    yield until(door, 30, 'the Toon Hall door')
+    messenger.send(door().getEnterTriggerEvent(), [None])
+    yield until(lambda: walking() and localAvatar.zoneId == ToontownGlobals.ToontownCentral, 120, 'back outside')
+
+
 def scenarioQuest(steps=12):
     # Takes a ToonTask from Toon HQ and plays it through every step to the
     # reward, the way a new toon would.
@@ -1342,6 +1364,7 @@ SCENARIOS = [
     ('racing', scenarioRacing),
     ('golf', scenarioGolf),
     ('pets', scenarioPets),
+    ('toonhall', scenarioToonHall),
     ('quest', scenarioQuest),
 ]
 
