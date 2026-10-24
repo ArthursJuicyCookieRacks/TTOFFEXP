@@ -507,8 +507,9 @@ jobs:
         # that died before its id was noted is found from the crash report.
         pid=$(cat startpid.txt)
         [ -n "$pid" ] || pid=$(grep -o 'pid: [0-9]*' crash.txt | head -1 | cut -d' ' -f2)
-        if [ -n "$pid" ]; then grep -E "^\S+ \S+ +$pid " logcat.txt > game.txt || true; fi
-        { tail -c 9000 crash.txt; echo; tail -c 18000 game.txt; } > shown.txt
+        # Leave out the runtime's thread dump, which follows any crash.
+        if [ -n "$pid" ]; then grep -E "^\S+ \S+ +$pid " logcat.txt | grep -v 'runtime.cc:' > game.txt || true; fi
+        { head -c 3000 crash.txt; echo; tail -c 24000 game.txt; } > shown.txt
         python3 -c "
         text = open('shown.txt', errors='replace').read()
         for start in range(0, len(text), 3000):
