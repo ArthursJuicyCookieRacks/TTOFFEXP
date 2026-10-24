@@ -3,4 +3,3 @@ from toontown.ai.DistributedScavengerHuntTargetAI import DistributedScavengerHun
 
 class DistributedTrickOrTreatTargetAI(DistributedScavengerHuntTargetAI):
     notify = DirectNotifyGlobal.directNotify.newCategory("DistributedTrickOrTreatTargetAI")
-

@@ -176,6 +176,9 @@ class ToontownAIRepository(ToontownInternalRepository):
         self.newsManager = NewsManagerAI(self)
         self.newsManager.generateWithRequired(2)
 
+        from toontown.ai.ScavengerHuntMgrAI import ScavengerHuntMgrAI
+        self.scavengerHuntMgr = ScavengerHuntMgrAI(self)
+
         self.magicWordManager = MagicWordManagerAI(self)
         self.magicWordManager.generateWithRequired(2)
 

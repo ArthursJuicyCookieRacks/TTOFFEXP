@@ -1150,6 +1150,7 @@ dclass DistributedToon : DistributedPlayer {
   magicTeleportInitiate(uint32 hoodId, uint32 zoneId) ownrecv;
   keepAlive() ownsend airecv;
   setLastSeen(uint32 timestamp = 0) required db;
+  setScavengerHuntGoals(uint32 goals[] = []) required db;
 };
 
 dclass DistributedCCharBase : DistributedObject {

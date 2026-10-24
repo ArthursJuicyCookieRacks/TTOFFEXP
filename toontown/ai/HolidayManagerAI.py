@@ -118,6 +118,20 @@ class HolidayManagerAI:
         if newsManager is not None:
             newsManager.b_setHolidayIdList(self.currentHolidays)
 
+    def getHolidayEndTime(self, holidayId):
+        # When the current run of a yearly holiday ends, in seconds since the
+        # epoch. Holidays started by hand last a day.
+        now = time.localtime()
+        for yearlyId, start, end in self.YearlyHolidays:
+            if yearlyId != holidayId or holidayId in self.forcedHolidays:
+                continue
+            year = now.tm_year
+            if end < start and (now.tm_mon, now.tm_mday) >= start[:2]:
+                year += 1
+            month, day, hour, minute = end
+            return int(time.mktime((year, month, day, hour, minute, 59, 0, 0, -1)))
+        return int(time.time()) + 86400
+
     def startHoliday(self, holidayId):
         # Starts a holiday until endHoliday, whatever the calendar says.
         if holidayId in self.stoppedHolidays:

@@ -165,6 +165,9 @@ class NewsManager(DistributedObject.DistributedObject):
                 if hasattr(base, 'localAvatar') and base.localAvatar and hasattr(base.localAvatar, 'chatMgr') and base.localAvatar.chatMgr:
                     base.localAvatar.chatMgr.chatInputSpeedChat.addCarolMenu()
                     self.setWinterCarolingStart()
+            elif holidayId == ToontownGlobals.TRICK_OR_TREAT:
+                if hasattr(base, 'localAvatar') and base.localAvatar and hasattr(base.localAvatar, 'chatMgr') and base.localAvatar.chatMgr:
+                    self.setTrickOrTreatStart()
             elif holidayId == ToontownGlobals.WACKY_WINTER_CAROLING:
                 if hasattr(base, 'localAvatar') and base.localAvatar and hasattr(base.localAvatar, 'chatMgr') and base.localAvatar.chatMgr:
                     base.localAvatar.chatMgr.chatInputSpeedChat.addCarolMenu()
@@ -503,7 +506,22 @@ class NewsManager(DistributedObject.DistributedObject):
         base.localAvatar.setSystemMessage(0, TTLocalizer.WackyWinterDecorationsStart)
 
     def setWinterCarolingStart(self):
-        base.localAvatar.setSystemMessage(0, TTLocalizer.WinterCarolingStart)
+        base.localAvatar.setSystemMessage(0, TTLocalizer.WinterCarolingStart % self.getHuntShopNames(ToontownGlobals.WINTER_CAROLING))
+
+    def setTrickOrTreatStart(self):
+        base.localAvatar.setSystemMessage(0, TTLocalizer.TrickOrTreatStart % self.getHuntShopNames(ToontownGlobals.TRICK_OR_TREAT))
+
+    def getHuntShopNames(self, holidayId):
+        from toontown.ai import ScavengerHuntGlobals
+        from toontown.hood import ZoneUtil
+        goals, _ = ScavengerHuntGlobals.Hunts[holidayId]
+        names = []
+        for goal, zoneId in sorted(goals.items()):
+            shop = TTLocalizer.zone2TitleDict.get(zoneId, ('', ''))[0]
+            street = TTLocalizer.GlobalStreetNames.get(ZoneUtil.getCanonicalBranchZone(zoneId), ('', '', ''))[-1]
+            hood = ToontownGlobals.hoodNameMap.get(ZoneUtil.getCanonicalHoodId(zoneId), '')
+            names.append('%s (%s, %s)' % (shop, street, hood))
+        return ', '.join(names)
 
     def setExpandedClosetsStart(self):
         base.localAvatar.setSystemMessage(0, TTLocalizer.ExpandedClosetsStart)

@@ -170,6 +170,8 @@ class DistributedToonAI(DistributedPlayerAI.DistributedPlayerAI, DistributedSmoo
         self.houseId = 0
         self.posIndex = 0
         self.savedCheesyEffect = ToontownGlobals.CENormal
+        self.scavengerHuntGoals = []
+        self.cheesyEffectEnded = False
         self.savedCheesyHoodId = 0
         self.savedCheesyExpireTime = 0
         self.ghostMode = 0
@@ -242,6 +244,9 @@ class DistributedToonAI(DistributedPlayerAI.DistributedPlayerAI, DistributedSmoo
     def announceGenerate(self):
         DistributedPlayerAI.DistributedPlayerAI.announceGenerate(self)
         DistributedSmoothNodeAI.DistributedSmoothNodeAI.announceGenerate(self)
+        if self.cheesyEffectEnded:
+            # A holiday head from the database whose holiday is over.
+            self.d_setCheesyEffect(*self.getCheesyEffect())
         if self.isPlayerControlled():
             if self.WantOldGMNameBan:
                 self._checkOldGMName()
@@ -1938,16 +1943,21 @@ class DistributedToonAI(DistributedPlayerAI.DistributedPlayerAI, DistributedSmoo
 
     def b_setCheesyEffect(self, effect, hoodId, expireTime):
         self.setCheesyEffect(effect, hoodId, expireTime)
-        self.d_setCheesyEffect(effect, hoodId, expireTime)
+        # setCheesyEffect may have turned down a holiday-only effect.
+        self.d_setCheesyEffect(*self.getCheesyEffect())
 
     def d_setCheesyEffect(self, effect, hoodId, expireTime):
         self.sendUpdate('setCheesyEffect', [effect, hoodId, expireTime])
 
     def setCheesyEffect(self, effect, hoodId, expireTime):
-        # We don't yet have a working holidayManager, and we want to keep snowman heads.
-        #if simbase.air.holidayManager and ToontownGlobals.WINTER_CAROLING not in simbase.air.holidayManager.currentHolidays and ToontownGlobals.WACKY_WINTER_CAROLING not in simbase.air.holidayManager.currentHolidays and effect == ToontownGlobals.CESnowMan:
-            #self.b_setCheesyEffect(ToontownGlobals.CENormal, hoodId, expireTime)
-            #return
+        # The Snowman and Pumpkin heads from the scavenger hunts last only
+        # while their holiday runs.
+        holidayManager = getattr(simbase.air, 'holidayManager', None)
+        if holidayManager:
+            if (effect == ToontownGlobals.CESnowMan and not holidayManager.isHolidayRunning(ToontownGlobals.WINTER_CAROLING, ToontownGlobals.WACKY_WINTER_CAROLING)) or \
+               (effect == ToontownGlobals.CEPumpkin and not holidayManager.isHolidayRunning(ToontownGlobals.TRICK_OR_TREAT, ToontownGlobals.SPOOKY_TRICK_OR_TREAT)):
+                effect, hoodId, expireTime = ToontownGlobals.CENormal, 0, 0
+                self.cheesyEffectEnded = not self.isGenerated()
         self.savedCheesyEffect = effect
         self.savedCheesyHoodId = hoodId
         self.savedCheesyExpireTime = expireTime
@@ -1961,6 +1971,21 @@ class DistributedToonAI(DistributedPlayerAI.DistributedPlayerAI, DistributedSmoo
                 else:
                     self.__undoCheesyEffect(None)
         return
+
+    def setScavengerHuntGoals(self, goals):
+        # The Trick-or-Treat and Winter Caroling shops this toon has found
+        # (see ScavengerHuntGlobals.encodeGoal).
+        self.scavengerHuntGoals = list(goals)
+
+    def d_setScavengerHuntGoals(self, goals):
+        self.sendUpdate('setScavengerHuntGoals', [goals])
+
+    def b_setScavengerHuntGoals(self, goals):
+        self.setScavengerHuntGoals(goals)
+        self.d_setScavengerHuntGoals(goals)
+
+    def getScavengerHuntGoals(self):
+        return self.scavengerHuntGoals
 
     def getCheesyEffect(self):
         return (self.savedCheesyEffect, self.savedCheesyHoodId, self.savedCheesyExpireTime)

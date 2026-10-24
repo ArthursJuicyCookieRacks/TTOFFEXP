@@ -1174,6 +1174,18 @@ def goToNPC(npcId):
     # Quest NPCs are DistributedNPCToons or subclasses of it (Flippy in
     # Toon Hall, for one).
     findNPC = lambda: next((do for do in list(base.cr.doId2do.values()) if isNPC(do)), None)
+    def reclaim(air, branchId, block):
+        # A cog building in the way stands in for one the toon has already
+        # beaten (the building scenario tests that part).
+        building = air.buildingManagers[branchId].getBuilding(block)
+        if building.isSuitBlock():
+            building.toonTakeOver()
+            return True
+        return False
+
+    if not findNPC() and branchId != hoodId and onDistrict(reclaim, branchId, block):
+        log('building %d of zone %d was a cog building; taking it back' % (block, branchId))
+        yield sleep(15)
     if not findNPC():
         door = lambda: findObject('DistributedDoor', lambda do: do.block == block and do.doorType in (
             DoorTypes.EXT_STANDARD, DoorTypes.EXT_HQ))
@@ -1277,6 +1289,59 @@ def scenarioHolidays():
         yield sleep(5)
     yield from teleport(ToontownGlobals.DonaldsDock)
     yield sleep(5)
+
+
+def scenarioScavengerHunts():
+    # Trick-or-treats and carols through every shop of both scavenger hunts,
+    # checking the jellybeans for each shop and the head for finishing.
+    from toontown.ai import ScavengerHuntGlobals
+    from toontown.toon import NPCToons
+    from otp.speedchat.SpeedChatGlobals import SCCustomMsgEvent
+    from toontown.speedchat.TTSCIndexedTerminal import TTSCIndexedMsgEvent
+
+    def prepare(air, avId):
+        av = air.doId2do[avId]
+        if 10003 not in av.getCustomMessages():
+            av.b_setCustomMessages(av.getCustomMessages() + [10003])
+        av.b_setScavengerHuntGoals([])
+        av.b_setCheesyEffect(ToontownGlobals.CENormal, 0, 0)
+        for holidayId in ScavengerHuntGlobals.Hunts:
+            air.holidayManager.startHoliday(holidayId)
+
+    onDistrict(prepare, localAvatar.doId)
+    hunts = [(ToontownGlobals.TRICK_OR_TREAT, 'trickOrTreatTargetMet', lambda: messenger.send(SCCustomMsgEvent, [10003])),
+             (ToontownGlobals.WINTER_CAROLING, 'winterCarolingTargetMet', lambda: messenger.send(TTSCIndexedMsgEvent, [30220]))]
+    for holidayId, rewardField, sayPhrase in hunts:
+        goals, effect = ScavengerHuntGlobals.Hunts[holidayId]
+        rewards = []
+        original = getattr(localAvatar, rewardField)
+        setattr(localAvatar, rewardField, lambda beans, original=original: (rewards.append(beans), original(beans)))
+        for goal, zoneId in sorted(goals.items()):
+            npc = yield from goToNPC(NPCToons.zone2NpcDict[zoneId][0])
+            yield until(lambda: findObject('DistributedScavengerHuntTarget') or findObject('DistributedTrickOrTreatTarget')
+                        or findObject('DistributedWinterCarolingTarget'), 30, 'the hunt target in %s' % npc.getName())
+            count = len(rewards)
+            sayPhrase()
+            yield until(lambda: len(rewards) > count, 30, 'the reward in zone %d' % zoneId)
+            log('holiday %d goal %d in zone %d: %d jellybeans' % (holidayId, goal, zoneId, rewards[-1]))
+            if rewards[-1] != ScavengerHuntGlobals.BeanReward:
+                raise StepFailed('expected %d jellybeans' % ScavengerHuntGlobals.BeanReward)
+        yield until(lambda: localAvatar.savedCheesyEffect == effect, 30, 'the cheesy effect %d' % effect)
+        log('got cheesy effect', effect)
+        # Coming back to a shop already visited gives nothing.
+        yield sleep(16)
+        count = len(rewards)
+        sayPhrase()
+        yield until(lambda: len(rewards) > count, 30, 'the repeat answer')
+        if rewards[-1] != 0:
+            raise StepFailed('a repeat visit paid %d jellybeans' % rewards[-1])
+        log('a repeat visit pays nothing')
+        setattr(localAvatar, rewardField, original)
+    # The Snowman Head goes once caroling is over.
+    onDistrict(lambda air: air.holidayManager.endHoliday(ToontownGlobals.WINTER_CAROLING))
+    onDistrict(lambda air, avId: air.doId2do[avId].b_setCheesyEffect(*air.doId2do[avId].getCheesyEffect()), localAvatar.doId)
+    yield until(lambda: localAvatar.savedCheesyEffect == ToontownGlobals.CENormal, 30, 'the Snowman Head to go')
+    log('the Snowman Head went with the holiday')
 
 
 def scenarioQuest(steps=12):
@@ -1386,6 +1451,7 @@ SCENARIOS = [
     ('pets', scenarioPets),
     ('toonhall', scenarioToonHall),
     ('holidays', scenarioHolidays),
+    ('hunts', scenarioScavengerHunts),
     ('quest', scenarioQuest),
 ]
 
