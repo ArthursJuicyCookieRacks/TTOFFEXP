@@ -36,6 +36,7 @@ LOBBY_TIERS = {
 }
 LOBBIES = (ToontownGlobals.SellbotLobby, ToontownGlobals.CashbotLobby,
            ToontownGlobals.LawbotLobby, ToontownGlobals.BossbotLobby)
+COG_HQS = (ToontownGlobals.SellbotHQ, ToontownGlobals.CashbotHQ, ToontownGlobals.LawbotHQ, ToontownGlobals.BossbotHQ)
 # Places every kind of toon visits.
 MIXED_TIER = ((25, 137), 6)
 
@@ -105,9 +106,14 @@ def makeProfile(zoneId, player=None):
         nextLevel = Levels[track][level + 1] if level + 1 < len(Levels[track]) else top + 1
         experience[track] = random.randint(top, max(top, nextLevel - 1))
 
-    return {'name': randomName(gender),
+    profile = {'name': randomName(gender),
             'dna': dna,
             'maxHp': maxHp,
             'trackAccess': trackAccess,
             'experience': experience,
             'maxCarry': 20 + 10 * (gagLevel + 1) if gagLevel < 6 else 80}
+    if ZoneUtil.getHoodId(zoneId) in COG_HQS:
+        # Toons at Cog HQ have their cog suits, and those in the lobbies are
+        # ready to see the boss.
+        profile['cogSuits'] = True
+    return profile

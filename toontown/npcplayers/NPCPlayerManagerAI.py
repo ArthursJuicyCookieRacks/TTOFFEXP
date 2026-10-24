@@ -22,6 +22,9 @@ from toontown.hood import ZoneUtil
 from toontown.npcplayers import NPCProfiles
 from toontown.npcplayers.NPCBattleCrew import NPCBattleCrew, isNPC
 from toontown.npcplayers.NPCNav import getNav
+from toontown.npcplayers.NPCParty import NPCParty
+from toontown.npcplayers.NPCBossCrew import NPCBossCrew
+from toontown.suit.DistributedBossCogAI import DistributedBossCogAI
 from toontown.npcplayers.NPCPlayerAI import NPCPlayerAI
 from toontown.toon.DistributedToonAI import DistributedToonAI
 from toontown.toonbase import TTLocalizer, ToontownGlobals
@@ -141,6 +144,9 @@ class NPCPlayerManagerAI:
         self.air = air
         self.areas = {}
         self.crews = {}
+        self.party = NPCParty(self)
+        self.stats = {}
+        self.bossCrews = {}
         self.taskName = 'npcPlayerManager-%d' % id(self)
         taskMgr.doMethodLater(MANAGER_TICK, self.__tick, self.taskName)
         taskMgr.doMethodLater(WALK_TICK, self.__walkTick, self.taskName + '-walk')
@@ -148,11 +154,12 @@ class NPCPlayerManagerAI:
     def delete(self):
         taskMgr.remove(self.taskName)
         taskMgr.remove(self.taskName + '-walk')
-        for crew in list(self.crews.values()):
+        for crew in list(self.crews.values()) + list(self.bossCrews.values()):
             crew.destroy()
         for area in self.areas.values():
             for npc in area.npcs[:]:
                 self.despawn(npc, quietly=True)
+        self.party.destroy()
 
     # --- Who and where the players are ---
 
@@ -201,7 +208,13 @@ class NPCPlayerManagerAI:
                         self.despawn(npc, quietly=True)
                 if not area.npcs:
                     del self.areas[areaId]
+        zoneIndex = {}
+        for obj in list(self.air.doId2do.values()):
+            zoneIndex.setdefault(getattr(obj, 'zoneId', None), []).append(obj)
+        self.party.fillSeats()
+        self.party.answerHandshakes(zoneIndex)
         self.joinBattles()
+        self.joinBosses()
 
     def populate(self, area, player, playerPos):
         for i in range(SPAWNS_PER_TICK):
@@ -236,6 +249,7 @@ class NPCPlayerManagerAI:
         npc.unlimitedGags = 1
         npc.area = area
         npc.crew = None
+        npc.party = None
         npc.walk = None
         npc.idleUntil = globalClock.getFrameTime() + random.uniform(0, 6)
         npc.busy = False
@@ -271,6 +285,10 @@ class NPCPlayerManagerAI:
                 for npc in area.npcs[:]:
                     if npc.crew is None and not npc.busy:
                         self.walkNPC(area, npc, dt)
+            self.party.follow()
+            for npc in self.party.members[:]:
+                if npc.crew is None and not npc.busy and not npc.isDeleted():
+                    self.walkNPC(None, npc, dt)
         except Exception:
             self.notify.warning('walking failed')
             import traceback
@@ -280,7 +298,7 @@ class NPCPlayerManagerAI:
     def walkNPC(self, area, npc, dt):
         now = globalClock.getFrameTime()
         if npc.walk is None:
-            if now < npc.idleUntil:
+            if area is None or now < npc.idleUntil:
                 return
             if not self.startWalk(area, npc):
                 npc.idleUntil = now + random.uniform(2, 6)
@@ -336,23 +354,45 @@ class NPCPlayerManagerAI:
 
     # --- Battles ---
 
-    def getBattles(self):
+    def getBattles(self, streetOnly=False):
         return [obj for obj in list(self.air.doId2do.values())
-                if isinstance(obj, DistributedBattleBaseAI) and obj.__class__.__name__ in STREET_BATTLES]
+                if isinstance(obj, DistributedBattleBaseAI)
+                and (not streetOnly or obj.__class__.__name__ in STREET_BATTLES)]
+
+    def crewFor(self, battle):
+        crew = self.crews.get(battle.doId)
+        if crew is None:
+            crew = self.crews[battle.doId] = NPCBattleCrew(self, battle)
+        return crew
 
     def joinBattles(self):
         for battle in self.getBattles():
-            if battle.fsm is None or battle.fsm.getCurrentState().getName() in ('Off', 'FaceOff', 'Resume'):
+            if battle.fsm is None or battle.isDeleted():
                 continue
-            players = [t for t in battle.toons if not isNPC(self.air.doId2do.get(t))]
-            if not players:
+            members = [self.air.doId2do.get(t) for t in battle.toons]
+            # NPCs a battle started with (inside buildings, they all do).
+            for npc in members:
+                if isNPC(npc) and npc.crew is None:
+                    self.crewFor(battle).add(npc)
+            if battle.fsm.getCurrentState().getName() in ('Off', 'FaceOff', 'Resume'):
                 continue
-            crew = self.crews.get(battle.doId)
-            if crew is None:
-                crew = self.crews[battle.doId] = NPCBattleCrew(self, battle)
+            players = [t for t in members if t is not None and not isNPC(t)]
+            if not players or len(battle.toons) >= 4 or not battle.toonCanJoin():
+                continue
+            crew = self.crewFor(battle)
+            # The player's party comes along wherever the battle is.
+            party = [npc for p in players for npc in self.party.partyOf(p)
+                     if npc.crew is None and not npc.busy and npc.zoneId == p.zoneId]
+            if party:
+                npc = party[0]
+                pos = npc.getPos()
+                crew.join(npc, pos[0], pos[1], pos[2])
+                continue
+            if battle.__class__.__name__ not in STREET_BATTLES:
+                continue
             coming = len([npc for area in self.areas.values() for npc in area.npcs
                           if getattr(npc, 'headingTo', None) is battle])
-            if coming or len(battle.toons) >= 4 or not battle.toonCanJoin():
+            if coming:
                 continue
             npc = self.pickHelper(battle)
             if npc is not None:
@@ -421,11 +461,28 @@ class NPCPlayerManagerAI:
         if npc.isDeleted():
             return
         npc.idleUntil = globalClock.getFrameTime() + random.uniform(2, 5)
+        if npc.party is not None:
+            # Gone sad; off to the playground, out of the player's party.
+            if npc.hp <= 0:
+                self.party.disband(npc)
+            return
         if npc.hp <= 0 or npc.hp < npc.maxHp * 0.3:
             # Off to the playground, as a toon would; a fresh one comes later.
             self.despawn(npc)
             return
         npc.b_setAnimState('Happy', 1.0)
+
+    def joinBosses(self):
+        for obj in list(self.air.doId2do.values()):
+            if isinstance(obj, DistributedBossCogAI) and obj.doId not in self.bossCrews and \
+                    [npc for npc in self.party.members if npc.doId in obj.involvedToons + obj.looseToons]:
+                self.bossCrews[obj.doId] = NPCBossCrew(self, obj)
+
+    def bossCrewDone(self, crew):
+        for doId, other in list(self.bossCrews.items()):
+            if other is crew:
+                del self.bossCrews[doId]
+        crew.destroy()
 
     def crewDone(self, crew):
         for doId, other in list(self.crews.items()):

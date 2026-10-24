@@ -17,6 +17,9 @@ from direct.distributed.ClockDelta import globalClockDelta
 from panda3d.core import Datagram, DatagramIterator
 
 from otp.otpbase import OTPGlobals
+from toontown.battle import SuitBattleGlobals
+from toontown.coghq import CogDisguiseGlobals
+from toontown.suit import SuitDNA
 from toontown.toon import Experience
 from toontown.toon.DistributedToonAI import DistributedToonAI
 from toontown.toonbase import ToontownGlobals
@@ -47,8 +50,26 @@ class NPCPlayerAI(DistributedToonAI):
         experience.experience = list(profile['experience'])
         self.setExperience(experience.makeNetString())
         self.setMaxCarry(profile['maxCarry'])
+        if profile.get('cogSuits'):
+            self.giveCogSuits()
         self.inventory.zeroInv()
         self.inventory.maxOutInv()
+
+    def giveCogSuits(self):
+        # The top cog of each department, with every part and the merits
+        # for the next promotion.
+        types = [SuitDNA.suitsPerDept - 1] * len(SuitDNA.suitDepts)
+        levels = []
+        for dept in range(len(SuitDNA.suitDepts)):
+            head = SuitDNA.suitHeadTypes[types[dept] + SuitDNA.suitsPerDept * dept]
+            levels.append(SuitBattleGlobals.SuitAttributes[head]['level'] + random.randint(0, 3))
+        self.setCogTypes(types)
+        self.setCogLevels(levels)
+        self.setCogParts(list(CogDisguiseGlobals.PartsPerSuitBitmasks))
+        self.setCogMerits([0] * len(SuitDNA.suitDepts))
+        # Just enough: battles add more, and the field holds no more than
+        # 65535.
+        self.setCogMerits([CogDisguiseGlobals.getTotalMerits(self, dept) for dept in range(len(SuitDNA.suitDepts))])
 
     def restock(self):
         # NPC players never run out of gags.

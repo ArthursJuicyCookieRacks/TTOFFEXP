@@ -25,6 +25,7 @@ from direct.task import Task
 
 from toontown.battle.BattleBase import (attackAffectsGroup, HEAL, TRAP, LURE, SOUND, THROW, SQUIRT, DROP,
                                         NO_TRAP, PASS, TOON_ID_COL, TOON_TRACK_COL, TOON_LVL_COL, TOON_TGT_COL)
+from toontown.battle.DistributedBattleAI import DistributedBattleAI
 from toontown.toonbase.ToontownBattleGlobals import getAvPropDamage, MAX_LEVEL_INDEX
 
 TICK = 0.3
@@ -69,6 +70,7 @@ class NPCBattleCrew:
         if npc not in self.members:
             self.members.append(npc)
             npc.crew = self
+            self.notify.info('NPC %s fights in battle %d' % (npc.doId, self.battle.doId))
 
     def release(self, npc):
         if npc in self.members:
@@ -114,12 +116,16 @@ class NPCBattleCrew:
             return Task.again
         self.__answerJoins()
         self.__answerAdjust()
-        if state == 'WaitForInput':
+        if state == 'FaceOff' and not isinstance(battle, DistributedBattleAI):
+            # Inside, every toon faces off; on the street only the one who
+            # walked into the cog does.
+            self.__answer(battle.faceOffDone)
+        elif state == 'WaitForInput':
             self.__chooseAttacks()
         elif state == 'PlayMovie':
-            self.__answer(battle.movieDone)
+            self.__answer(battle.movieDone, afterPlayers=True)
         elif state in REWARD_STATES:
-            self.__answer(battle.rewardDone)
+            self.__answer(battle.rewardDone, afterPlayers=True)
         return Task.again
 
     def recordRound(self):
@@ -131,6 +137,10 @@ class NPCBattleCrew:
                 attacks.append((toonId, isNPC(self.air.doId2do.get(toonId)), attack[TOON_TRACK_COL],
                                 attack[TOON_LVL_COL], attack[TOON_TGT_COL]))
         self.history.append((sorted(self.roundLured), attacks))
+        # How many NPCs fought in each kind of battle, for the tests.
+        kind = battle.__class__.__name__
+        npcs = len([a for a in attacks if a[1]])
+        self.manager.stats[kind] = max(self.manager.stats.get(kind, 0), npcs)
         self.notify.info('round %d in battle %d: cogs %s, lured %s, attacks %s' % (
             len(self.history), battle.doId, [(s.doId, s.getHP()) for s in battle.activeSuits],
             sorted(self.roundLured), attacks))
@@ -150,8 +160,15 @@ class NPCBattleCrew:
             if battle.adjustingResponses.get(npc.doId) == 0:
                 npc.asSender(battle.adjustDone)
 
-    def __answer(self, method):
+    def __answer(self, method, afterPlayers=False):
         battle = self.battle
+        if afterPlayers:
+            # The first toon to say its movie is done starts a short timer
+            # for the rest, so the NPCs wait for the players' clients to
+            # finish theirs.
+            players = [t for t in battle.responses if not isNPC(self.air.doId2do.get(t))]
+            if not all(battle.responses.get(t, 0) > 0 for t in players):
+                return
         for npc in self.members:
             if battle.responses.get(npc.doId) == 0 and not battle.ignoreResponses:
                 npc.asSender(method)
@@ -175,6 +192,7 @@ class NPCBattleCrew:
         if not waiting:
             return
         players = [t for t in battle.activeToons if not isNPC(self.air.doId2do.get(t))]
+        self.notify.debug('waiting %s players %s responses %s' % ([n.doId for n in waiting], players, battle.responses))
         playersDone = all(battle.responses.get(t, 0) > 0 for t in players)
         now = globalClock.getFrameTime()
         if not playersDone:
@@ -193,6 +211,7 @@ class NPCBattleCrew:
 
 
 class RoundPlanner:
+    notify = DirectNotifyGlobal.directNotify.newCategory('RoundPlanner')
     """Works out one NPC's gag from what everyone else has chosen."""
 
     def __init__(self, battle, air):
@@ -261,6 +280,10 @@ class RoundPlanner:
     def choose(self, npc):
         track, level, target = (self.chooseHeal(npc) or self.chooseLure(npc) or self.chooseAttack(npc)
                                 or (PASS, -1, -1))
+        if track == PASS:
+            self.notify.info('NPC %s passes: tracks %s, inventory %s, suits %s, attacks %s' % (
+                npc.doId, npc.trackArray, npc.inventory.inventory, [(s.doId, s.getHP()) for s in self.suits],
+                self.attacks))
         if track != PASS and attackAffectsGroup(track, level):
             target = -1
         return track, level, target

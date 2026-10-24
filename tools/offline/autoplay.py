@@ -661,14 +661,18 @@ def clearFacility(interior, suitClass, levelClass=None, timeout=1800):
             # Cogs only exist for the zones the toon can see, so look through
             # the zones one at a time until the boss shows up.
             level = findObject(levelClass)
-            for zoneNum in [z for z in level.zoneNums if z != 0]:
+            for zoneNum in [z for z in getattr(level, 'zoneNums', []) if z != 0]:
+                if level.isDisabled() or level.getEntity(zoneNum) is None:
+                    # The facility is being cleaned up: it was beaten.
+                    break
                 level.lockVisibility(zoneNum=zoneNum)
                 yield sleep(0.5)
                 boss = findObject(suitClass, lambda do: getattr(do, 'boss', 0) and not do.isEmpty())
                 if boss is not None:
                     log('found the boss cog in zone %d' % zoneNum)
                     break
-            level.unlockVisibility()
+            if level is not None and not level.isDisabled() and hasattr(level, 'lockVizZone'):
+                level.unlockVisibility()
         if boss is not None and walking():
             localAvatar.setPos(render, boss.getPos(render))
         if time.time() > nextReport:
@@ -2909,9 +2913,34 @@ def scenarioNPCs():
     yield until(walking, 120, 'walking after the battle')
 
 
+def npcStats():
+    return onDistrict(lambda air: dict(air.npcPlayerManager.stats))
+
+
+def withNPCs(scenario, battleKinds):
+    # Plays a scenario, then checks NPC players fought in its battles.
+    def run():
+        yield from scenario()
+        stats = npcStats()
+        log('NPC players in battles: %s' % stats)
+        for kind in battleKinds:
+            if not stats.get(kind):
+                raise StepFailed('no NPC player fought in a %s' % kind)
+    return run
+
+
 SCENARIOS = [
     ('login', scenarioLogin),
     ('npcs', scenarioNPCs),
+    ('npcbuilding', withNPCs(scenarioBuilding, ['DistributedBattleBldgAI'])),
+    ('npcfactory', withNPCs(scenarioFactory, ['DistributedBattleFactoryAI'])),
+    ('npcmint', withNPCs(scenarioMint, ['DistributedMintBattleAI'])),
+    ('npcoffice', withNPCs(scenarioOffice, ['DistributedStageBattleAI'])),
+    ('npccountryclub', withNPCs(scenarioCountryClub, ['DistributedCountryClubBattleAI'])),
+    ('npcvp', withNPCs(scenarioVP, ['DistributedBattleFinalAI', 'boss s'])),
+    ('npccfo', withNPCs(scenarioCFO, ['DistributedBattleFinalAI', 'boss m'])),
+    ('npccj', withNPCs(scenarioCJ, ['DistributedBattleFinalAI', 'boss l'])),
+    ('npcceo', withNPCs(scenarioCEO, ['DistributedBattleWaitersAI', 'boss c'])),
     ('tutorial', scenarioTutorial),
     ('touch', scenarioTouchControls),
     ('maxtoon', scenarioMaxToon),
