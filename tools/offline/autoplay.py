@@ -1985,16 +1985,23 @@ def scenarioTrolleyTracks():
         raise StepFailed('the board game did not come every other game: %s' % seen)
     log('the board game comes every other game')
     onDistrict(lambda air: air.holidayManager.endHoliday(ToontownGlobals.TROLLEY_HOLIDAY))
-    # Play out the minigame after the board game, then leave the trolley.
-    yield until(lambda: hoodState() == 'purchase' or minigameState() == 'frameworkRules', 180, 'what comes after the board game')
-    if hoodState() != 'purchase':
-        yield sleep(1)
-        messenger.send(base.curMinigame.rulesDoneEvent)
-        yield until(lambda: hoodState() == 'purchase', 600, 'the gag shop after the last game')
-    yield until(lambda: base.cr.playGame.hood.purchase.fsm.getCurrentState().getName() == 'purchase', 60, 'the gag shop buttons')
-    yield sleep(1)
-    messenger.send('purchaseBackToToontown')
-    yield until(walking, 120, 'walking after Trolley Tracks')
+    # Play out what comes after the board game, then leave the trolley at
+    # the first gag shop that lets the toon go.
+    deadline = time.time() + 900
+    while not walking():
+        if time.time() > deadline:
+            raise StepFailed('still on the trolley 15 minutes after the board game')
+        if minigameState() == 'frameworkRules':
+            yield sleep(1)
+            messenger.send(base.curMinigame.rulesDoneEvent)
+            yield until(lambda: minigameState() != 'frameworkRules', 60, 'the rules to close')
+        elif hoodState() == 'purchase' and base.cr.playGame.hood.purchase.fsm.getCurrentState().getName() == 'purchase':
+            yield sleep(1)
+            messenger.send('purchaseBackToToontown')
+            yield sleep(3)
+        else:
+            yield sleep(0.5)
+    log('walking after Trolley Tracks')
 
 
 def scenarioInvasion(battles=2):
@@ -2967,6 +2974,8 @@ SCENARIOS = [
     ('npcceo', withNPCs(scenarioCEO, ['DistributedBattleWaitersAI', 'boss c'])),
     ('npcgolf', withNPCs(scenarioGolf, ['golf swings'])),
     ('npcminigames', scenarioNPCMinigames),
+    ('npccogdo', withNPCs(scenarioCogdo, ['DistributedCogdoBattleBldgAI'])),
+    ('npccogdolaw', withNPCs(lambda: scenarioCogdo('l'), ['DistributedCogdoBattleBldgAI'])),
     ('tutorial', scenarioTutorial),
     ('touch', scenarioTouchControls),
     ('maxtoon', scenarioMaxToon),

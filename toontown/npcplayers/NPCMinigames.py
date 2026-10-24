@@ -22,6 +22,8 @@ from toontown.minigame import DistributedMinigameAI as MinigameAI
 from toontown.minigame import CannonGameGlobals, CatchGameGlobals, CogThiefGameGlobals
 from toontown.minigame import PatternGameGlobals, PhotoGameGlobals, RaceGameGlobals, TugOfWarGameGlobals
 from toontown.minigame import VineGameGlobals, ToonBlitzGlobals, TravelGameGlobals
+from toontown.cogdominium import CogdoFlyingGameGlobals, CogdoMazeGameGlobals
+from toontown.cogdominium.DistCogdoGameAI import DistCogdoGameAI
 from toontown.minigame.DistributedMinigameAI import DistributedMinigameAI
 from toontown.minigame.CatchGameGlobals import Name2DropObjectType
 from toontown.shtiker import PurchaseManagerConstants as Purchase
@@ -92,6 +94,17 @@ class NPCMinigames:
                     player = self.players.get(key)
                     if player is None:
                         player = self.players[key] = makePlayer(self, npc, obj)
+                    player.tick(globalClock.getFrameTime())
+            elif isinstance(obj, DistCogdoGameAI):
+                for npc in npcs:
+                    if npc.doId not in obj.toons:
+                        continue
+                    key = (obj.doId, npc.doId)
+                    live.add(key)
+                    player = self.players.get(key)
+                    if player is None:
+                        cls = COGDO_PLAYERS.get(type(obj).__name__, CogdoPlayer)
+                        player = self.players[key] = cls(self, npc, obj)
                     player.tick(globalClock.getFrameTime())
             elif isinstance(obj, PurchaseManagerAI):
                 for npc in npcs:
@@ -825,4 +838,104 @@ PLAYERS = {
     'DistributedCogThiefGameAI': CogThiefPlayer,
     'DistributedTwoDGameAI': TwoDPlayer,
     'DistributedDivingGameAI': DivingPlayer,
+}
+
+
+# --- The field office games ---
+
+class CogdoPlayer(GamePlayer):
+    """One NPC in a field office game: ready after the rules, as the
+    player is, then playing its part."""
+
+    def players(self):
+        return [avId for avId in self.game.toons if not isNPC(self.air.doId2do.get(avId))]
+
+    def npcs(self):
+        return [avId for avId in self.game.toons if isNPC(self.air.doId2do.get(avId))]
+
+    def gameTime(self):
+        return globalClock.getRealTime() - (self.game.startTime or 0)
+
+    def tick(self, now):
+        game = self.game
+        if game.finished or self.npc.doId in game.sadToons:
+            return
+        if not game.started:
+            if self.npc.doId not in game.readyToons and all(p in game.readyToons for p in self.players()):
+                npcSend(self, game.setAvatarReady)
+            return
+        self.play(now)
+
+    def follow(self, spread=4.0):
+        pos = self.playerPos()
+        if pos is None:
+            return
+        index = self.npcs().index(self.npc.doId)
+        angle = index * 2.1
+        spot = Point3(pos[0] + spread * math.cos(angle), pos[1] + spread * math.sin(angle), pos[2])
+        if (self.npc.getPos() - spot).length() > 1.5:
+            self.moveTo(spot, flat=False)
+
+
+class CogdoMazePlayer(CogdoPlayer):
+    """The Sellbot maze: pick up memos, soak the big cogs with water
+    coolers, and run for the exit once it opens."""
+
+    def play(self, now):
+        game = self.game
+        client = self.client()
+        self.follow()
+        if game.doorOpen:
+            if self.npc.doId not in game.toonsOut and self.after('exit', (2.0, 6.0), now):
+                self.send('requestAction', CogdoMazeGameGlobals.GameActions.EnterDoor, 0)
+            return
+        if not self.after(('act', self.memo.get('acts', 0)), (3.0, 6.0), now):
+            return
+        self.memo['acts'] = self.memo.get('acts', 0) + 1
+        bosses = [n for n in range(game.numSuits[0]) if n not in game.bossesDefeated]
+        pickups = len(client.game.pickups) if client is not None and getattr(client, 'game', None) else 0
+        free = [n for n in range(pickups) if n not in game.pickups]
+        if bosses and random.random() < 0.55:
+            here = self.npc.getPos()
+            self.send('requestUseGag', here[0], here[1], self.npc.getH(), globalClockDelta.getRealNetworkTime(bits=16))
+            if random.random() < 0.8:
+                self.send('requestSuitHitByGag', CogdoMazeGameGlobals.SuitTypes.Boss, random.choice(bosses))
+        elif free:
+            self.send('requestPickUp', random.choice(free))
+
+
+class CogdoFlyingPlayer(CogdoPlayer):
+    """The Lawbot flight: fly along with the player picking up memos, and
+    land on the far platform once the player is there."""
+
+    def play(self, now):
+        game = self.game
+        client = self.client()
+        Actions = CogdoFlyingGameGlobals.AI.GameActions
+        self.follow(spread=6.0)
+        players = self.players()
+        if self.npc.doId not in game.landed:
+            if players and all(p in game.landed for p in players) and self.after('land', (1.0, 4.0), now):
+                self.send('requestAction', Actions.LandOnWinPlatform, 0)
+            elif self.after(('memo', self.memo.get('memos', 0)), (4.0, 9.0), now):
+                self.memo['memos'] = self.memo.get('memos', 0) + 1
+                memo = self.freeMemo(client)
+                if memo is not None:
+                    self.send('requestPickUp', memo, CogdoFlyingGameGlobals.Level.GatherableTypes.Memo)
+            return
+        if self.npc.doId not in game.winDone and all(p in game.winDone for p in players):
+            self.send('requestAction', Actions.WinStateFinished, 0)
+
+    def freeMemo(self, client):
+        level = getattr(getattr(client, 'game', None), 'level', None)
+        if level is None:
+            return None
+        memos = [g.serialNum for quadrant in level.quadrants for g in quadrant.gatherables
+                 if g.type == CogdoFlyingGameGlobals.Level.GatherableTypes.Memo and g.serialNum not in self.game.memoPickups]
+        return random.choice(memos) if memos else None
+
+
+COGDO_PLAYERS = {
+    'DistCogdoMazeGameAI': CogdoMazePlayer,
+    'DistCogdoFlyingGameAI': CogdoFlyingPlayer,
 }

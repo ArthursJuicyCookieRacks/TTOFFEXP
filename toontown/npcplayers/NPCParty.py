@@ -133,10 +133,16 @@ class NPCParty:
                 continue
             if getattr(elevator, 'npcBoarding', 0) > globalClock.getFrameTime():
                 continue
+            # No more on the way than there are seats left.
+            if len(getattr(elevator, 'npcOnTheWay', ())) >= list(seats).count(None):
+                continue
             player = players[0]
             npc = self.pickBoarder(elevator, player)
             if npc is not None:
                 elevator.npcBoarding = globalClock.getFrameTime() + 1.0
+                if not hasattr(elevator, 'npcOnTheWay'):
+                    elevator.npcOnTheWay = set()
+                elevator.npcOnTheWay.add(npc.doId)
                 self.board(npc, elevator, player)
 
     def pickBoarder(self, elevator, player):
@@ -169,6 +175,7 @@ class NPCParty:
 
     def board(self, npc, elevator, player):
         self.notify.info('NPC %s boards %s %d with %d' % (npc.doId, elevator.__class__.__name__, elevator.doId, player.doId))
+        wasMember = npc in self.members
         self.take(npc, player)
         npc.walk = None
         npc.busy = True
@@ -180,14 +187,18 @@ class NPCParty:
         npc.b_setAnimState('TeleportIn', 1.0)
 
         def getOn(task):
+            getattr(elevator, 'npcOnTheWay', set()).discard(npc.doId)
             if npc.isDeleted() or elevator.isDeleted():
                 return Task.done
             npc.b_setAnimState('Happy', 1.0)
             if isAccepting(elevator) and None in seatsOf(elevator):
                 npc.asSender(elevator.requestBoard)
-            # Seated or not, the boarding is over; a seated toon stays put
-            # (see follow) until the elevator leaves.
+            # The boarding is over; a seated toon stays put (see follow)
+            # until the elevator leaves, and one left standing goes back
+            # to what it was doing.
             npc.busy = False
+            if npc.doId not in seatsOf(elevator) and not wasMember:
+                self.disband(npc)
             return Task.done
 
         taskMgr.doMethodLater(TELEPORT_TIME, getOn, 'npcBoard-%d' % npc.doId)
