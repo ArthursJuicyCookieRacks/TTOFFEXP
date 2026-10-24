@@ -38,7 +38,9 @@ SHADOW_ALPHA = 0.35
 
 RED = (1, 0.18, 0.15, 1)
 RED_ROLLOVER = (1, 0.38, 0.32, 1)
-RED_DOWN = (0.78, 0.12, 0.1, 1)
+# Held down, a red button swaps its colors: yellow, with red writing.
+PRESSED = (1, 1, 0.75, 1)
+PRESSED_TEXT = (0.9, 0.1, 0.08, 1)
 YELLOW = (1, 0.9, 0.1, 1)
 TEXT_DARK = (0.16, 0.16, 0.32, 1)
 
@@ -212,9 +214,10 @@ class OfflineLauncher(DirectObject):
 
     def redButton(self, text, pos, command, scale=1.0, textScale=0.085, imageScale=(1.45, 1, 2.1)):
         return DirectButton(parent=self.canvas, relief=None, pos=pos, scale=scale,
-                            image=self.buttonImages((RED, RED_DOWN, RED_ROLLOVER, (0.82, 0.22, 0.2, 1))),
+                            image=self.buttonImages((RED, PRESSED, RED_ROLLOVER, (0.82, 0.22, 0.2, 1))),
                             image_scale=imageScale, text=text, text_font=self.minnieFont, text_scale=textScale,
                             text_fg=YELLOW, text_shadow=(0.3, 0.05, 0, 1), text_pos=(0, -0.028),
+                            text1_fg=PRESSED_TEXT, text1_shadow=(0.45, 0.3, 0, 1),
                             pressEffect=0, command=command)
 
     def makePlay(self):
@@ -231,7 +234,7 @@ class OfflineLauncher(DirectObject):
     def makeLeftPanel(self):
         self.driversButton = self.redButton('DRIVERS', place(192, 100), self.showDrivers)
         # Greyed out, rather than a darker red, when it can't be pressed.
-        images = self.buttonImages((RED, RED_DOWN, RED_ROLLOVER)) + [self.buttonImages()[3]]
+        images = self.buttonImages((RED, PRESSED, RED_ROLLOVER)) + [self.buttonImages()[3]]
         self.driversButton['image'] = images
         self.driversButton['text3_fg'] = (0.85, 0.85, 0.85, 1)
         self.driversButton['text3_shadow'] = (0.3, 0.3, 0.3, 1)
