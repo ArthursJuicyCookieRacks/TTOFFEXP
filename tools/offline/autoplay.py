@@ -44,6 +44,9 @@ os.environ.setdefault('TTR_PLAYCOOKIE', 'autoplay')
 os.environ.setdefault('TTR_GAMESERVER', '127.0.0.1')
 
 from toontown.toonbase import ToontownStart
+# Extra config for a run, such as want-doomsday 1 for the election. It is
+# loaded after the game's own config so that it wins.
+loadPrcFileData('autoplay-extra', os.environ.get('AUTOPLAY_PRC', '').replace(';', '\n'))
 from toontown.toonbase import ToontownBattleGlobals
 from toontown.toonbase import ToontownGlobals
 from toontown.hood import ZoneUtil
@@ -1448,6 +1451,62 @@ def scenarioToonHall():
     yield until(lambda: walking() and localAvatar.zoneId == ToontownGlobals.ToontownCentral, 120, 'back outside')
 
 
+def scenarioElection():
+    # The Toon Council election and the cog invasion of Toontown Central
+    # that follows it. Needs want-doomsday 1 (AUTOPLAY_PRC).
+    yield from teleport(ToontownGlobals.ToontownCentral)
+    yield until(lambda: findObject('DistributedElectionEvent'), 60, 'the election')
+    election = findObject('DistributedElectionEvent')
+    onDistrict(lambda air: air.doFind('ElectionEvent').b_setState('Event'))
+    states = []
+
+    def stateIs(name):
+        if election.state not in states:
+            states.append(election.state)
+            log('election: %s' % election.state)
+        return election.state == name
+
+    yield until(lambda: stateIs('Invasion'), 420, 'the cogs to invade')
+    yield until(lambda: findObject('DistributedSafezoneInvasion'), 60, 'the invasion')
+    invasion = findObject('DistributedSafezoneInvasion')
+    election.sendUpdate('wheelbarrowAvatarEnter', [])
+    yield until(lambda: localAvatar.numPies > 0, 30, 'pies from Flippy')
+
+    def invasionState(air):
+        return air.doFind('SafezoneInvasion').state, air.doFind('SafezoneInvasion').waveNumber
+
+    def splatSuits():
+        for suit in list(base.cr.doId2do.values()):
+            if suit.__class__.__name__ == 'DistributedInvasionSuit' and suit.zoneId == ToontownGlobals.ToontownCentral:
+                invasion.d_pieHitSuit(suit.doId)
+
+    def fightWave(wave):
+        while onDistrict(invasionState) in (('BeginWave', wave), ('Wave', wave)):
+            splatSuits()
+            yield sleep(0.5)
+        log('wave %d won: invasion now %s' % (wave, onDistrict(invasionState)))
+
+    yield from fightWave(0)
+
+    def lastWave(air):
+        from toontown.election import SafezoneInvasionGlobals
+        invasion = air.doFind('SafezoneInvasion')
+        invasion.lastWave = True
+        invasion.demand('BeginWave', len(SafezoneInvasionGlobals.SuitWaves) - 1)
+        return invasion.waveNumber
+
+    yield until(lambda: onDistrict(invasionState)[0] in ('Intermission', 'BeginWave', 'Wave'), 60, 'the next wave')
+    wave = onDistrict(lastWave)
+    yield from fightWave(wave)
+    yield until(lambda: onDistrict(invasionState)[0] == 'Finale', 60, 'the boss')
+    log('the boss is coming')
+    yield until(lambda: stateIs('InvasionEnd'), 400, 'Flippy to face the boss')
+    yield until(lambda: onDistrict(invasionState)[0] == 'Victory', 200, 'the boss to explode')
+    log('Toontown Central is saved')
+    yield until(lambda: stateIs('WrapUp'), 200, 'the wrap-up')
+    log('election states seen: %s' % states)
+
+
 def scenarioToonfest():
     # ToonFest: whack the cog pinata to spin the tower, and bounce on the
     # victory trampoline for ToonFest tokens.
@@ -2396,6 +2455,7 @@ SCENARIOS = [
     ('toonhall', scenarioToonHall),
     ('holidays', scenarioHolidays),
     ('toonfest', scenarioToonfest),
+    ('election', scenarioElection),
     ('holidayeffects', scenarioHolidayEffects),
     ('hunts', scenarioScavengerHunts),
     ('bingo', scenarioBingo),

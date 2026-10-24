@@ -286,8 +286,10 @@ class DistributedSafezoneInvasionAI(DistributedObjectAI, FSM):
             suit.takeDamage(pieDamage)
 
     def __deleteSuits(self):
-        for suit in self.suits:
-            suit.requestDelete()
+        # Deleting a suit takes it off self.suits (suitDied), so go over a copy.
+        for suit in list(self.suits):
+            if not suit.isDeleted():
+                suit.requestDelete()
 
     def suitDied(self, suit):
         if self.state == 'Finale':
