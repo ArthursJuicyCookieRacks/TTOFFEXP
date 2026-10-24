@@ -21,6 +21,9 @@ class PetNameGenerator:
         self.neutralFirsts = []
         self.nameDictionary = {}
         searchPath = DSearchPath()
+        # The resources are mounted at the root of the virtual file system,
+        # as NameGenerator expects too.
+        searchPath.appendDirectory(Filename('/phase_3/etc'))
         if AppRunnerGlobal.appRunner:
             searchPath.appendDirectory(Filename.expandFrom('$TT_3_ROOT/phase_3/etc'))
         else:
@@ -35,13 +38,13 @@ class PetNameGenerator:
         if not found:
             self.notify.error('PetNameGenerator: Error opening name list text file.')
         input = StreamReader(vfs.openReadFile(filename, 1), 1)
-        currentLine = input.readline()
+        currentLine = input.readline().decode('utf-8')
         while currentLine:
             if currentLine.lstrip()[0:1] != '#':
                 a1 = currentLine.find('*')
                 a2 = currentLine.find('*', a1 + 1)
                 self.nameDictionary[int(currentLine[0:a1])] = (int(currentLine[a1 + 1:a2]), currentLine[a2 + 1:len(currentLine) - 1].strip())
-            currentLine = input.readline()
+            currentLine = input.readline().decode('utf-8')
 
         masterList = [self.boyFirsts, self.girlFirsts, self.neutralFirsts]
         for tu in list(self.nameDictionary.values()):

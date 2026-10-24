@@ -30,6 +30,7 @@ class DistributedEstateAI(DistributedObjectAI):
         self.lastEpochTimestamp = 0
         self.rentalTimestamp = 0
         self.houses = [None] * 6
+        self.pets = []
 
         self.pond = None
         self.spots = []
@@ -110,6 +111,12 @@ class DistributedEstateAI(DistributedObjectAI):
 
         if self.treasurePlanner:
             self.treasurePlanner.stop()
+
+        for petId in self.pets:
+            pet = self.air.doId2do.get(petId)
+            if pet:
+                pet.requestDelete()
+        del self.pets[:]
 
         self.requestDelete()
 

@@ -18,6 +18,16 @@ class PetActionFSM(FSM.FSM):
     def destroy(self):
         self.cleanup()
 
+    # The pet moves with PetMoverAI, which walks to a point or an avatar;
+    # these stand in for the impulses the original mover took.
+    def __wander(self):
+        if self.pet.mover.state != 'Wander':
+            self.pet.mover.request('Wander')
+
+    def __stopMoving(self):
+        if self.pet.mover.state not in ('Still', 'Off'):
+            self.pet.mover.request('Still')
+
     def enterNeutral(self):
         PetActionFSM.notify.debug('enterNeutral')
 
@@ -26,47 +36,45 @@ class PetActionFSM(FSM.FSM):
 
     def enterChase(self, target):
         PetActionFSM.notify.debug('enterChase: %s' % target)
-        self.pet.chaseImpulse.setTarget(target)
-        self.pet.mover.addImpulse('chase', self.pet.chaseImpulse)
+        self.pet.mover.walkToAvatar(target)
         self.pet.unstickFSM.request('on')
 
     def exitChase(self):
         self.pet.unstickFSM.request('off')
-        self.pet.mover.removeImpulse('chase')
+        self.__stopMoving()
 
     def enterFlee(self, chaser):
         PetActionFSM.notify.debug('enterFlee: %s' % chaser)
-        self.pet.fleeImpulse.setChaser(chaser)
-        self.pet.mover.addImpulse('flee', self.pet.fleeImpulse)
+        # PetMoverAI has no fleeing; the pet runs off somewhere else.
+        self.__wander()
         self.pet.unstickFSM.request('on')
 
     def exitFlee(self):
         self.pet.unstickFSM.request('off')
-        self.pet.mover.removeImpulse('flee')
+        self.__stopMoving()
 
     def enterWander(self):
         PetActionFSM.notify.debug('enterWander')
-        self.pet.mover.addImpulse('wander', self.pet.wanderImpulse)
+        self.__wander()
 
     def exitWander(self):
-        self.pet.mover.removeImpulse('wander')
+        pass
 
     def enterUnstick(self):
         PetActionFSM.notify.debug('enterUnstick')
-        self.pet.mover.addImpulse('unstick', self.pet.wanderImpulse)
+        self.__wander()
 
     def exitUnstick(self):
-        self.pet.mover.removeImpulse('unstick')
+        pass
 
     def enterInspectSpot(self, spot):
         PetActionFSM.notify.debug('enterInspectSpot')
-        self.pet.chaseImpulse.setTarget(spot)
-        self.pet.mover.addImpulse('inspect', self.pet.chaseImpulse)
+        self.pet.mover.walkToAvatar(spot)
         self.pet.unstickFSM.request('on')
 
     def exitInspectSpot(self):
         self.pet.unstickFSM.request('off')
-        self.pet.mover.removeImpulse('inspect')
+        self.__stopMoving()
 
     def enterStay(self, avatar):
         PetActionFSM.notify.debug('enterStay')
@@ -77,11 +85,10 @@ class PetActionFSM(FSM.FSM):
     def enterHeal(self, avatar):
         PetActionFSM.notify.debug('enterHeal')
         avatar.toonUp(3)
-        self.pet.chaseImpulse.setTarget(avatar)
-        self.pet.mover.addImpulse('chase', self.pet.chaseImpulse)
+        self.pet.mover.walkToAvatar(avatar)
 
     def exitHeal(self):
-        self.pet.mover.removeImpulse('chase')
+        self.__stopMoving()
 
     def enterTrick(self, avatar, trickId):
         PetActionFSM.notify.debug('enterTrick')

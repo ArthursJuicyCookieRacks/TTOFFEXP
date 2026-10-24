@@ -212,7 +212,6 @@ class DistributedBuildingMgrAI:
         return building
 
     def newPetshopBuilding(self, blockNumber):
-        return
         dnaStore = self.air.dnaStoreMap[self.canonicalBranchID]
         exteriorZoneId = dnaStore.getBlock(blockNumber).zone
         exteriorZoneId = ZoneUtil.getTrueZoneId(exteriorZoneId, self.branchID)

@@ -602,6 +602,13 @@ def bossStatus(air, bossId):
     for crane in getattr(boss, 'cranes', None) or []:
         if crane.avId:
             status += ', crane %d holds %s' % (crane.doId, crane.objectId)
+    objects = [do for do in air.doId2do.values() if do.__class__.__name__ in ('DistributedCashbotBossSafeAI', 'DistributedCashbotBossGoonAI')]
+    if objects:
+        states = {}
+        for do in objects:
+            key = '%s %s' % (do.__class__.__name__[20:-2], do.state)
+            states[key] = states.get(key, 0) + 1
+        status += ', objects %s' % sorted(states.items())
     return status
 
 
@@ -672,6 +679,10 @@ def cfoBattleThree(boss):
         if free is not None:
             free.sendUpdate('requestControl', [])
         return
+    if time.time() > getattr(boss, 'autoplayNextNote', 0):
+        boss.autoplayNextNote = time.time() + 15
+        log('cfo: crane %s; my objects %s' % (crane.doId, [(do.__class__.__name__[20:], do.state) for do in base.cr.doId2do.values()
+                                                            if 'CashbotBoss' in do.__class__.__name__ and getattr(do, 'avId', None) == me]))
     held = findObject('DistributedCashbotBossSafe', lambda do: do.avId == me and do.state in ('Grabbed', 'LocalGrabbed')) or \
         findObject('DistributedCashbotBossGoon', lambda do: do.avId == me and do.state in ('Grabbed', 'LocalGrabbed'))
     if held is not None:
@@ -839,6 +850,91 @@ def scenarioEstate():
     furniture = [do for do in base.cr.doId2do.values() if 'Furniture' in do.__class__.__name__]
     log('inside, with %d pieces of furniture' % len(furniture))
     yield sleep(3)
+    yield from teleport(ToontownGlobals.ToontownCentral)
+
+
+def scenarioPets():
+    # Adopts a doodle at the Toontown Central pet shop, then meets it on the
+    # estate and plays with it.
+    from toontown.building.PetshopBuildingAI import PetshopBuildingAI
+    from toontown.pets import PetConstants
+
+    def petshopBlock(air):
+        buildings = air.buildingManagers[ToontownGlobals.ToontownCentral]._DistributedBuildingMgrAI__buildings
+        return next(block for block, building in buildings.items() if isinstance(building, PetshopBuildingAI))
+
+    def giveBeans(air, avId):
+        av = air.doId2do[avId]
+        av.b_setMoney(av.getMaxMoney())
+        av.b_setBankMoney(av.getMaxBankMoney())
+
+    yield from teleport(ToontownGlobals.ToontownCentral)
+    onDistrict(giveBeans, localAvatar.doId)
+    block = onDistrict(petshopBlock)
+    door = lambda doorType: findObject('DistributedDoor', lambda do: do.block == block and do.doorType == doorType)
+    yield until(lambda: door(DoorTypes.EXT_STANDARD), 60, 'the pet shop door')
+    yield sleep(2)
+    log('going into the pet shop (block %d)' % block)
+    messenger.send(door(DoorTypes.EXT_STANDARD).getEnterTriggerEvent(), [None])
+    yield until(lambda: findObject('DistributedNPCPetclerk') and walking(), 120, 'walking in the pet shop')
+    clerk = findObject('DistributedNPCPetclerk')
+    log('talking to', clerk.getName())
+    clerk.handleCollisionSphereEnter(None)
+    yield until(lambda: getattr(clerk, 'petshopGui', None) is not None, 30, 'the pet shop')
+    log('pets for adoption today: %s' % (clerk.petSeeds,))
+    messenger.send(clerk.eventDict['petAdopted'], [0, 1])
+    yield until(localAvatar.hasPet, 30, 'owning a doodle')
+    log('adopted doodle', localAvatar.getPetId())
+    messenger.send(clerk.eventDict['guiDone'])
+    yield until(walking, 60, 'walking after adopting')
+    yield sleep(2)
+    messenger.send(door(DoorTypes.INT_STANDARD).getEnterTriggerEvent(), [None])
+    yield until(lambda: placeName() == 'TTPlayground' and walking(), 120, 'walking out of the pet shop')
+
+    log('going home to meet the doodle')
+    place().goHomeNow(localAvatar.zoneId)
+    yield until(lambda: placeName() == 'Estate' and placeState() in ('walk', 'petTutorial'), 180, 'arriving at the estate')
+    if placeState() == 'petTutorial':
+        log('reading the doodle tutorial')
+        yield sleep(2)
+        place().petTutorial._PetTutorial__handleQuit()
+    yield until(walking, 60, 'walking around the estate')
+    petId = localAvatar.getPetId()
+    yield until(lambda: petId in base.cr.doId2do, 60, 'the doodle on the estate')
+    pet = base.cr.doId2do[petId]
+    log('the doodle %s is here, feeling %s' % (pet.getName(), pet.mood.getDominantMood() if hasattr(pet, 'mood') else '?'))
+    for flag, name in ((PetConstants.PET_MOVIE_CALL, 'calling'), (PetConstants.PET_MOVIE_SCRATCH, 'scratching'),
+                       (PetConstants.PET_MOVIE_FEED, 'feeding')):
+        pet.autoplayMovies = []
+        setMovie = pet.setMovie
+
+        def recordMovie(mode, avId, timestamp, setMovie=setMovie, pet=pet):
+            pet.autoplayMovies.append(mode)
+            setMovie(mode, avId, timestamp)
+
+        pet.setMovie = recordMovie
+        log(name, 'the doodle')
+        localAvatar.sendUpdate('setPetMovie', [petId, flag])
+        yield until(lambda: PetConstants.PET_MOVIE_CLEAR in pet.autoplayMovies or flag in pet.autoplayMovies,
+                    60, 'the doodle to answer %s' % name)
+        yield until(lambda: PetConstants.PET_MOVIE_CLEAR in pet.autoplayMovies, 60, 'the doodle to finish')
+        log('doodle movies:', pet.autoplayMovies)
+        pet.setMovie = setMovie
+        yield sleep(1)
+    # Asking for a trick with SpeedChat: an untrained doodle balks, which is
+    # a trick movie too.
+    from toontown.pets import PetTricks
+    tricks = []
+    doTrick = pet.doTrick
+    pet.doTrick = lambda trickId, timestamp: (tricks.append(trickId), doTrick(trickId, timestamp))
+    jump = PetTricks.TrickId2scIds[PetTricks.Tricks.JUMP][0]
+    log('asking the doodle to jump')
+    localAvatar.b_setSC(jump)
+    yield until(lambda: tricks, 60, 'the doodle to try a trick')
+    log('the doodle did trick %d (%s)' % (tricks[0], 'balked' if tricks[0] == PetTricks.Tricks.BALK else 'jumped'))
+    pet.doTrick = doTrick
+    if not localAvatar.bPetTutorialDone:
+        raise StepFailed('the doodle tutorial was never shown')
     yield from teleport(ToontownGlobals.ToontownCentral)
 
 
@@ -1207,6 +1303,7 @@ SCENARIOS = [
     ('estate', scenarioEstate),
     ('racing', scenarioRacing),
     ('golf', scenarioGolf),
+    ('pets', scenarioPets),
     ('quest', scenarioQuest),
 ]
 

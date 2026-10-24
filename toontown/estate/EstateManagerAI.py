@@ -239,6 +239,13 @@ class LoadEstateFSM(FSM):
             self.demand('Finished')
 
     def enterFinished(self):
+        # The household's pets wander the estate while it is loaded.
+        if simbase.wantPets:
+            for toon in self.toons.values():
+                petId = toon and toon.get('setPetId', [0])[0]
+                if petId:
+                    self.estate.pets.append(petId)
+                    self.mgr.air.sendActivate(petId, self.mgr.air.districtId, self.estate.zoneId)
         self.callback(True)
 
     def enterFailure(self):
@@ -410,3 +417,21 @@ class EstateManagerAI(DistributedObjectAI):
 
     def _lookupEstate(self, toon):
         return self.toon2estate.get(toon)
+
+    def getOwnerFromZone(self, zoneId):
+        # The owner of the estate in zoneId, or 0 when zoneId is no estate.
+        for estate in self.estate2toons:
+            if estate.zoneId == zoneId:
+                return estate.owner.doId
+        for toon in list(self.air.doId2do.values()):
+            estate = getattr(toon, 'estate', None)
+            if estate is not None and estate.zoneId == zoneId and getattr(estate, 'owner', None):
+                return estate.owner.doId
+        return 0
+
+    def getEstateZones(self, ownerId):
+        toon = self.air.doId2do.get(ownerId)
+        estate = getattr(toon, 'estate', None)
+        if estate is None:
+            return []
+        return [estate.zoneId]

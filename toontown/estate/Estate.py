@@ -245,7 +245,10 @@ class Estate(Place.Place):
         taskMgr.remove('estate-check-toon-underwater')
         if base.wantPets:
             if base.localAvatar.hasPet() and not base.localAvatar.bPetTutorialDone:
+                # Place's own zone-complete callback runs after this one and
+                # takes nextState from requestStatus.
                 self.nextState = 'petTutorial'
+                requestStatus['nextState'] = 'petTutorial'
 
     def teleportInDone(self):
         self.notify.debug('teleportInDone')

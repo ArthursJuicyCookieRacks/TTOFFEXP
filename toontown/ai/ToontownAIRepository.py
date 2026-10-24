@@ -192,6 +192,10 @@ class ToontownAIRepository(ToontownInternalRepository):
         self.estateManager = EstateManagerAI(self)
         self.estateManager.generateWithRequired(2)
 
+        if simbase.wantPets:
+            from toontown.pets.PetManagerAI import PetManagerAI
+            self.petMgr = PetManagerAI(self)
+
         self.trophyMgr = DistributedTrophyMgrAI(self)
         self.trophyMgr.generateWithRequired(2)
 
