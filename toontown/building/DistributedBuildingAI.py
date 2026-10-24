@@ -20,10 +20,13 @@ from . import FADoorCodes
 from toontown.hood import ZoneUtil
 import random
 import time
-#from toontown.cogdominium.DistributedCogdoInteriorAI import DistributedCogdoInteriorAI
-#from toontown.cogdominium.SuitPlannerCogdoInteriorAI import SuitPlannerCogdoInteriorAI
-#from toontown.cogdominium.CogdoLayout import CogdoLayout
-#from toontown.cogdominium.DistributedCogdoElevatorExtAI import DistributedCogdoElevatorExtAI
+from toontown.cogdominium.DistributedCogdoInteriorAI import DistributedCogdoInteriorAI
+from toontown.cogdominium.SuitPlannerCogdoInteriorAI import SuitPlannerCogdoInteriorAI
+from toontown.cogdominium.CogdoLayout import CogdoLayout
+from toontown.cogdominium.DistributedCogdoElevatorExtAI import DistributedCogdoElevatorExtAI
+# The game floors of a field office, under the executive suite.
+CogdoGameFloors = 1
+
 
 class DistributedBuildingAI(DistributedObjectAI.DistributedObjectAI):
 
@@ -123,20 +126,16 @@ class DistributedBuildingAI(DistributedObjectAI.DistributedObjectAI):
         self.fsm.request('clearOutToonInterior')
         return
 
-    def cogdoTakeOver(self, difficulty, buildingHeight):
+    def cogdoTakeOver(self, suitTrack, difficulty, buildingHeight):
         if not self.isToonBlock():
             return
         self.updateSavedBy(None)
-        minFloors, maxFloors = self._getMinMaxFloors(difficulty)
-        if buildingHeight == None:
-            numFloors = random.randint(minFloors, maxFloors)
-        else:
-            numFloors = buildingHeight + 1
-            if numFloors < minFloors or numFloors > maxFloors:
-                numFloors = random.randint(minFloors, maxFloors)
-        self.track = 'c'
+        difficulty = min(difficulty, len(SuitBuildingGlobals.SuitBuildingInfo) - 1)
+        # A field office is one game floor for its department, then the
+        # executive suite.
+        self.track = suitTrack
         self.difficulty = difficulty
-        self.numFloors = numFloors
+        self.numFloors = CogdoGameFloors
         self.becameSuitTime = time.time()
         self.fsm.request('clearOutToonInteriorForCogdo')
         return
@@ -333,7 +332,7 @@ class DistributedBuildingAI(DistributedObjectAI.DistributedObjectAI):
                 toon = self.getToon(t)
                 self.air.writeServerEvent('building-defeated', avId=t, track=self.track, numFloors=self.numFloors, zoneId=self.zoneId, victorList='%s' % victorList)
             if toon != None:
-                self.air.questManager.toonKilledCogdo(toon, self.difficulty, self.numFloors, self.zoneId, activeToons)
+                self.air.questManager.toonKilledCogdo(toon, self.track, self.difficulty, self.numFloors, self.zoneId, activeToons)
 
         for i in range(0, 4):
             victor = victorList[i]

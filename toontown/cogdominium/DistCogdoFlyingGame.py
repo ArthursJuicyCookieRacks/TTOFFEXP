@@ -10,8 +10,6 @@ class DistCogdoFlyingGame(DistCogdoGame):
 
     def __init__(self, cr):
         DistCogdoGame.__init__(self, cr)
-        if __debug__ and config.ConfigVariableBool('schellgames-dev', True).getValue():
-            self.accept('onCodeReload', self.__sgOnCodeReload)
         self.game = CogdoFlyingGame(self)
 
     def delete(self):

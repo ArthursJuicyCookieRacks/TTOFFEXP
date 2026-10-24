@@ -117,8 +117,10 @@ class QuestManagerAI:
                                 self.__incrementQuestProgress(toon.quests[index])
         toon.updateQuests()
 
-    def toonKilledCogdo(self, toon, difficulty, floors, zoneId, activeToons):
-        pass
+    def toonKilledCogdo(self, toon, track, difficulty, floors, zoneId, activeToons):
+        # A field office counts as a cog building of its department, with
+        # the executive suite as its top floor.
+        self.toonKilledBuilding(toon, track, difficulty, floors + 1, zoneId, activeToons)
 
     def toonRecoveredCogSuitPart(self, toon, zoneId, toonList):
         pass

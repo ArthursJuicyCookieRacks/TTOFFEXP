@@ -355,8 +355,8 @@ class DistributedSuitAI(DistributedSuitBaseAI.DistributedSuitBaseAI):
         if not self.sp.buildingMgr.isSuitBlock(blockNumber):
             self.notify.debug('Suit %d taking over building %d in %d' % (self.getDoId(), blockNumber, self.zoneId))
             difficulty = self.getActualLevel() - 1
+            dept = SuitDNA.getSuitDept(self.dna.name)
             if self.buildingDestinationIsCogdo:
-                self.sp.cogdoTakeOver(blockNumber, difficulty, self.buildingHeight)
+                self.sp.cogdoTakeOver(blockNumber, dept, difficulty, self.buildingHeight)
             else:
-                dept = SuitDNA.getSuitDept(self.dna.name)
                 self.sp.suitTakeOver(blockNumber, dept, difficulty, self.buildingHeight)

@@ -89,6 +89,7 @@ class ToontownAIRepository(ToontownInternalRepository):
 
         self.useAllMinigames = self.config.ConfigVariableBool('want-all-minigames', False).getValue()
         self.doLiveUpdates = self.config.ConfigVariableBool('want-live-updates', True).getValue()
+        self.wantCogdominiums = self.config.ConfigVariableBool('want-cogdominiums', True).getValue()
 
         self.holidayManager = HolidayManagerAI(self)
 

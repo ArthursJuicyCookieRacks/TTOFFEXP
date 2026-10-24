@@ -6,26 +6,26 @@ from .CogdoUtil import VariableContainer, DevVariableContainer
 #AI = VariableContainer()
 #AI.GameActions = PythonUtil.Enum(('LandOnWinPlatform', 'WinStateFinished', 'GotoWinState', 'HitWhirlwind', 'HitLegalEagle', 'HitMinion', 'DebuffInvul', 'RequestEnterEagleInterest', 'RequestExitEagleInterest', 'RanOutOfTimePenalty', 'Died', 'Spawn', 'SetBlades', 'BladeLost'))
 class AI:
-    VariableContainer().BroadcastPeriod = 0.3
-    VariableContainer().SafezoneId2DeathDamage = {2000: 1,
+    BroadcastPeriod = 0.3
+    SafezoneId2DeathDamage = {2000: 1,
      1000: 2,
      5000: 4,
      4000: 8,
      3000: 12,
      9000: 16}
-    VariableContainer().SafezoneId2WhirlwindDamage = {2000: 1,
+    SafezoneId2WhirlwindDamage = {2000: 1,
      1000: 2,
      5000: 4,
      4000: 8,
      3000: 12,
      9000: 16}
-    VariableContainer().SafezoneId2LegalEagleDamage = {2000: 2,
+    SafezoneId2LegalEagleDamage = {2000: 2,
      1000: 4,
      5000: 8,
      4000: 16,
      3000: 24,
      9000: 32}
-    VariableContainer().SafezoneId2MinionDamage = {2000: 1,
+    SafezoneId2MinionDamage = {2000: 1,
      1000: 2,
      5000: 4,
      4000: 8,

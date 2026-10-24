@@ -381,6 +381,96 @@ def scenarioBuilding():
     yield until(lambda: onDistrict(isToonBlock), 120, 'the building to turn back into a toon building')
 
 
+def cogdoGameState(game):
+    return game.fsm.getCurrentState().getName() if game.fsm else None
+
+
+def playCogdoMaze(dist):
+    # Splashes each big cog twice, as the water coolers' gags would, and
+    # walks out the exit once it opens.
+    from toontown.cogdominium import CogdoMazeGameGlobals as Globals
+    game = dist.game
+    for bossNum in range(dist._numSuits[0]):
+        for hit in range(Globals.SuitData[Globals.SuitTypes.Boss]['hp']):
+            dist.b_suitHitByGag(Globals.SuitTypes.Boss, bossNum)
+            yield sleep(0.5)
+    yield until(lambda: game._exit.isOpen(), 30, 'the maze exit to open')
+    log('the maze exit is open')
+    game.handleLocalToonEntersDoor(game._exit)
+
+
+def playCogdoFlying(dist):
+    # Flies straight to the far platform, as landing on it would.
+    player = dist.game.localPlayer
+    yield sleep(3)
+    player.setCheckpointPlatform(player._level.endPlatform)
+    player.request('WaitingForWin')
+
+
+def scenarioCogdo(track='s'):
+    # A field office: a Sellbot one is a maze, a Lawbot one a flying game,
+    # then the executive suite battle that frees the shopkeeper.
+    street = ToontownGlobals.SillyStreet
+
+    def takeOver(air):
+        manager = air.buildingManagers[street]
+        block = manager.getToonBlocks()[0]
+        building = manager.getBuilding(block)
+        building.cogdoTakeOver(track, 0, 0)
+        return block, building.getExteriorAndInteriorZoneId()[0]
+
+    block, zoneId = onDistrict(takeOver)
+    log('the %s cogs made block %d in zone %d a field office' % (track, block, zoneId))
+    yield from teleport(street - street % 1000, zoneId)
+    def ours(do):
+        return getattr(do, 'bldg', None) and do.bldg.block == block
+
+    yield until(lambda: findObject('DistributedCogdoElevatorExt', ours), 120, 'the field office elevator')
+    elevator = findObject('DistributedCogdoElevatorExt', ours)
+    yield until(lambda: elevator.fsm.getCurrentState().getName() == 'waitEmpty', 60,
+                'the field office elevator to open (it is %s)' % elevator.fsm.getCurrentState().getName())
+    yield from boardElevator('DistributedCogdoElevatorExt', ours)
+    yield until(lambda: placeName() == 'CogdoInterior', 120, 'inside the field office')
+    interior = findObject('DistributedCogdoInterior')
+    played = set()
+    deadline = time.time() + 1500
+    nextReport = 0
+    while placeName() == 'CogdoInterior':
+        if time.time() > deadline:
+            raise StepFailed('still inside the field office after 25 minutes (place state %s)' % placeState())
+        state = interior.fsm.getCurrentState().getName() if interior.fsm else None
+        game = findObject('DistCogdoMazeGame') or findObject('DistCogdoFlyingGame')
+        if time.time() > nextReport:
+            nextReport = time.time() + 15
+            log('field office state %s, floor %d, place %s, game %s' % (
+                state, interior.currentFloor, placeState(), game and cogdoGameState(game)))
+        if game and game.doId not in played and cogdoGameState(game) == 'Game':
+            played.add(game.doId)
+            log('playing', game.__class__.__name__)
+            if game.__class__.__name__ == 'DistCogdoMazeGame':
+                yield from playCogdoMaze(game)
+            else:
+                yield from playCogdoFlying(game)
+        elif state == 'Resting' and walking():
+            yield from boardElevator('DistributedCogdoElevatorInt')
+            yield until(lambda: interior.fsm.getCurrentState().getName() != 'Resting', 120, 'the elevator up')
+        elif placeState() == 'battle':
+            yield from fightBattle()
+        elif state == 'Reward':
+            # Reading the shopkeeper's thank-you.
+            messenger.send('doneChatPage', [0])
+            yield sleep(1)
+        else:
+            yield sleep(0.5)
+    yield until(walking, 180, 'walking after the field office')
+    log('back outside in zone %d with %d SOS cards' % (localAvatar.zoneId, len(localAvatar.NPCFriendsDict)))
+
+    def isToonBlock(air):
+        return air.buildingManagers[street].getBuilding(block).isToonBlock()
+
+    yield until(lambda: onDistrict(isToonBlock), 120, 'the field office to turn back into a toon building')
+
+
 def placeName():
     return place().__class__.__name__ if place() else None
 
@@ -1855,6 +1945,138 @@ def scenarioCatalog():
     yield from teleport(ToontownGlobals.ToontownCentral)
 
 
+def playBoardGames(table, games=(1, 2, 3), seat=1):
+    # Sits at a game table and plays each game through against the
+    # computer, moving with the same rules the computer players use.
+    from toontown.safezone import BoardGameRules
+    rules = {1: BoardGameRules.ChineseCheckersRules(),
+             2: BoardGameRules.CheckersRules(),
+             3: BoardGameRules.FindFourRules()}
+    names = {1: 'Chinese Checkers', 2: 'Checkers', 3: 'Find Four'}
+    winners = []
+    original = table.announceWinner
+
+    def recordingAnnounceWinner(winString, avId):
+        winners.append((winString, avId))
+        original(winString, avId)
+    table.announceWinner = recordingAnnounceWinner
+    for gameNum in games:
+        yield until(walking, 60, 'walking by the table')
+        yield until(lambda: not table.isPlaying, 60, 'a free table')
+        log('sitting down for', names[gameNum])
+        table.handleEnterPicnicTableSphere(seat, None)
+        table.joinButtonPushed()
+        yield until(lambda: table.gameMenu, 30, 'the game menu')
+        table.pickFunction(gameNum)
+        yield until(lambda: table.game and table.game.fsm.getCurrentState().getName() == 'waitingToBegin', 60, 'the %s board' % names[gameNum])
+        game = table.game
+        game.startButtonPushed()
+        yield until(lambda: game.fsm.getCurrentState().getName() == 'playing' and game.playerNum, 60, 'the game to start')
+        count = len(winners)
+        moves = 0
+        rule = rules[gameNum]
+        while len(winners) == count:
+            if game.isMyTurn and game.fsm and game.fsm.getCurrentState().getName() == 'playing':
+                yield sleep(0.5)
+                if gameNum == 3:
+                    if game.moveSequence.isPlaying():
+                        continue
+                    col = rule.pickMove(game.board, game.playerNum)
+                    game.isMyTurn = False
+                    taskMgr.remove('playerTurnTask')
+                    game.d_requestMove(col)
+                else:
+                    move = rule.pickMove(game.board.getStates(), game.playerNum)
+                    game.isMyTurn = False
+                    game.d_requestMove(move)
+                moves += 1
+            yield until(lambda: game.isMyTurn or len(winners) > count, 120, 'our turn in %s' % names[gameNum])
+        log('%s over after %d of our moves: %s' % (names[gameNum], moves, winners[-1]))
+        yield until(lambda: walking() and not table.inGame, 60, 'getting up from the table')
+        yield sleep(3)
+    table.announceWinner = original
+    return winners
+
+
+def scenarioBoardGames():
+    # The game tables in Acorn Acres, and the picnic tables beside them.
+    yield from teleport(ToontownGlobals.OutdoorZone)
+    yield until(lambda: findObject('DistributedPicnicTable'), 60, 'a game table')
+    tables = [do for do in base.cr.doId2do.values() if do.__class__.__name__ == 'DistributedPicnicTable']
+    baskets = [do for do in base.cr.doId2do.values() if do.__class__.__name__ == 'DistributedPicnicBasket']
+    log('%d game tables and %d picnic tables' % (len(tables), len(baskets)))
+    if len(tables) != 3 or len(baskets) != 2:
+        raise StepFailed('expected 3 game tables and 2 picnic tables')
+    winners = yield from playBoardGames(tables[0])
+    log('results: %s' % winners)
+
+    basket = baskets[0]
+    yield until(walking, 60, 'walking by the picnic table')
+    log('sitting at a picnic table')
+    basket.seatNumber = 2
+    place().detectedPicnicTableSphereCollision(basket)
+    yield until(lambda: basket.localToonOnBoard and basket.fullSeat[2], 30, 'a seat at the picnic table')
+    yield sleep(4)
+    basket.handleExitButton()
+    yield until(lambda: walking() and not basket.localToonOnBoard, 60, 'getting up from the picnic table')
+
+
+def scenarioRentals():
+    # Rents the estate cannons and the game table from the catalog.
+    from toontown.catalog.CatalogRentalItem import CatalogRentalItem
+    me = localAvatar.doId
+    yield until(walking, 60, 'walking before going home')
+    place().goHomeNow(localAvatar.zoneId)
+    yield until(lambda: placeName() == 'Estate' and walking(), 180, 'walking around the estate')
+
+    def rent(air, avId, typeIndex):
+        av = air.doId2do[avId]
+        return CatalogRentalItem(typeIndex, 60, 1000).recordPurchase(av, 0)
+
+    log('renting the cannons')
+    onDistrict(rent, me, ToontownGlobals.RentalCannon)
+    yield until(lambda: len([do for do in base.cr.doId2do.values() if do.__class__.__name__ == 'DistributedCannon']) == 6
+                and findObject('DistributedTarget'), 60, 'the cannons and the target')
+    target = findObject('DistributedTarget')
+    yield until(lambda: target.enabled, 30, 'the target game to start')
+    cannon = findObject('DistributedCannon')
+    log('climbing into cannon', cannon.doId)
+    messenger.send(cannon.uniqueName('enterCannonSphere'), [None])
+    yield until(lambda: cannon.localToonShooting and cannon.madeGui, 30, 'sitting in the cannon')
+    yield sleep(1)
+    cannon._DistributedCannon__firePressed()
+    yield until(lambda: not cannon.localToonShooting, 120, 'flying and landing')
+    yield until(walking, 60, 'walking after landing')
+    log('landed at %s' % localAvatar.getPos())
+
+    onDistrict(lambda air, avId: air.doId2do[avId].b_setHp(1), me)
+    yield until(lambda: localAvatar.hp == 1, 30, 'a hurt toon')
+    for hit in range(3):
+        target.handleHitTarget(me)
+        yield until(lambda: target.score == hit + 1, 30, 'target level %d' % (hit + 1))
+    yield until(lambda: localAvatar.hp == 7, 30, 'the target to toon us up')
+    log('three target hits healed the toon to %d' % localAvatar.hp)
+
+    overs = []
+    estate = findObject('DistributedEstate')
+    original = estate.cannonsOver
+    estate.cannonsOver = lambda *args: (overs.append(1), original(*args))
+    onDistrict(lambda air, avId: air.estateManager.toon2estate[air.doId2do[avId]].endRental(), me)
+    yield until(lambda: overs and not findObject('DistributedCannon') and not findObject('DistributedTarget'), 30, 'the cannon rental to end')
+    estate.cannonsOver = original
+
+    log('renting the game table')
+    onDistrict(rent, me, ToontownGlobals.RentalGameTable)
+    yield until(lambda: findObject('DistributedPicnicTable'), 60, 'the game table')
+    table = findObject('DistributedPicnicTable')
+    winners = yield from playBoardGames(table, games=(3,))
+    log('results: %s' % winners)
+    onDistrict(lambda air, avId: air.estateManager.toon2estate[air.doId2do[avId]].endRental(), me)
+    yield until(lambda: not findObject('DistributedPicnicTable'), 30, 'the game table rental to end')
+    yield sleep(2)
+    yield from teleport(ToontownGlobals.ToontownCentral)
+
+
 def scenarioQuest(steps=12):
     # Takes a ToonTask from Toon HQ and plays it through every step to the
     # reward, the way a new toon would.
@@ -1946,6 +2168,8 @@ SCENARIOS = [
     ('streets', scenarioStreets),
     ('battle', scenarioBattle),
     ('building', scenarioBuilding),
+    ('cogdo', scenarioCogdo),
+    ('cogdolaw', lambda: scenarioCogdo('l')),
     ('minigames', scenarioMinigames),
     ('factory', scenarioFactory),
     ('mint', scenarioMint),
@@ -1971,6 +2195,8 @@ SCENARIOS = [
     ('garden', scenarioGarden),
     ('party', scenarioParty),
     ('catalog', scenarioCatalog),
+    ('boardgames', scenarioBoardGames),
+    ('rentals', scenarioRentals),
     ('quest', scenarioQuest),
 ]
 

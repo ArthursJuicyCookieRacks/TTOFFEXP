@@ -2,7 +2,7 @@ from enum import Enum
 from otp.otpbase.PythonEnum import IntEnum
 #from direct.showbase.PythonUtil import Enum
 from direct.gui.DirectGui import DirectFrame, DGG
-from panda3d.core import Vec2, VBase4D
+from panda3d.core import Vec2, VBase4F
 from panda3d.core import CardMaker, NodePath
 from panda3d.core import Texture, PNMImage
 DEFAULT_MASK_RESOLUTION = 32
@@ -54,7 +54,7 @@ class MazeMapGui(DirectFrame):
     def _createMapTextureCard(self):
         mapImage = PNMImage(MAP_RESOLUTION, MAP_RESOLUTION)
         mapImage.fill(*self._bgColor)
-        fgColor = VBase4D(*self._fgColor)
+        fgColor = VBase4F(*self._fgColor)
         for x in range(self._mazeHeight):
             for y in range(self._mazeWidth):
                 if self._mazeCollTable[y][x] == 1:
@@ -134,15 +134,15 @@ class MazeMapGui(DirectFrame):
     def _revealSmoothCircle(self, x, y, center):
         length = (Vec2(x, y) - center).length()
         goalAlpha = max(0.0, length / float(self._radius) - 0.5)
-        self._maskImage.setXelA(x, y, VBase4D(0.0, 0.0, 0.0, min(self._maskImage.getAlpha(x, y), goalAlpha * 2.0)))
+        self._maskImage.setXelA(x, y, VBase4F(0.0, 0.0, 0.0, min(self._maskImage.getAlpha(x, y), goalAlpha * 2.0)))
 
     def _revealHardCircle(self, x, y, center):
         length = (Vec2(x, y) - center).length()
         if length <= self._radius:
-            self._maskImage.setXelA(x, y, VBase4D(0, 0, 0, 0))
+            self._maskImage.setXelA(x, y, VBase4F(0, 0, 0, 0))
 
     def _revealSquare(self, x, y, center):
-        self._maskImage.setXelA(x, y, VBase4D(0, 0, 0, 0))
+        self._maskImage.setXelA(x, y, VBase4F(0, 0, 0, 0))
 
     def _drawHole(self, x, y):
         center = Vec2(x, y)
