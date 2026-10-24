@@ -24,7 +24,10 @@ from toontown.toonbase import ToontownGlobals
 
 # The background picture is 750 by 500; everything is laid out on it.
 IMAGE_WIDTH, IMAGE_HEIGHT = 750.0, 500.0
-# The sky at the picture's edges, for the sides of a wider screen.
+# How much the background picture goes on at each side of the launcher art,
+# as a share of the art's width.
+EXTRA_WIDTH = 500 / 2250.0
+# The sky at the picture's edges, for the sides of a still wider screen.
 SIDE_COLOR = (0.43, 0.67, 0.86, 1)
 
 RED = (1, 0.18, 0.15, 1)
@@ -118,7 +121,9 @@ class OfflineLauncher(DirectObject):
 
     def makeBackground(self):
         card = CardMaker('offlineLauncherBackground')
-        width = IMAGE_WIDTH / IMAGE_HEIGHT
+        # The picture runs on past the art at the sides (EXTRA_WIDTH of the
+        # art's own width at each), so a wide screen has no bars.
+        width = IMAGE_WIDTH / IMAGE_HEIGHT * (1 + 2 * EXTRA_WIDTH)
         card.setFrame(-width, width, -1, 1)
         self.background = self.canvas.attachNewNode(card.generate())
         gameDir = ConfigVariableString('offline-game-dir', '').getValue()
