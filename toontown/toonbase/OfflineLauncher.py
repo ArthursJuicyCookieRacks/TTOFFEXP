@@ -229,13 +229,12 @@ class OfflineLauncher(DirectObject):
                                         text_font=self.interfaceFont, text_scale=0.032, text_fg=TEXT_DARK)
 
     def makeLeftPanel(self):
-        self.driversButton = DirectButton(parent=self.canvas, relief=None, pos=place(192, 100),
-                                          image=self.buttonImages(), image_scale=(1.45, 1, 2.1),
-                                          text=('DRIVERS',) * 3 + ('DRIVERS',), text_font=self.interfaceFont,
-                                          text_scale=0.07, text_pos=(0, -0.022),
-                                          text_fg=(1, 1, 1, 1), text_shadow=(0, 0, 0, 1),
-                                          text3_fg=(0.75, 0.75, 0.75, 1), text3_shadow=(0.3, 0.3, 0.3, 1),
-                                          command=self.showDrivers)
+        self.driversButton = self.redButton('DRIVERS', place(192, 100), self.showDrivers)
+        # Greyed out, rather than a darker red, when it can't be pressed.
+        images = self.buttonImages((RED, RED_DOWN, RED_ROLLOVER)) + [self.buttonImages()[3]]
+        self.driversButton['image'] = images
+        self.driversButton['text3_fg'] = (0.85, 0.85, 0.85, 1)
+        self.driversButton['text3_shadow'] = (0.3, 0.3, 0.3, 1)
         if not isAndroid():
             # Custom graphics drivers are a thing of Android phones.
             self.driversButton['state'] = DGG.DISABLED
