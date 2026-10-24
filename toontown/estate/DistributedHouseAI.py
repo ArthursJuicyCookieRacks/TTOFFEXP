@@ -274,20 +274,19 @@ class DistributedHouseAI(DistributedObjectAI):
     def addAtticItem(self, item):
         self.interior.furnitureManager.saveToHouse()
         if item.replacesExisting() and item.hasExisting():
-            if item.getFlags() & FLCloset:
-                closets = list(ClosetToClothes.keys())
-                for itItem in self.interiorItems:
-                    if itItem.furnitureType in closets:
-                        posHpr = itItem.posHpr
-                        self.interiorItems.remove(itItem)
-                        item.posHpr = posHpr
-                        self.interiorItems.append(item)
-                        break
-                for itItem in self.atticItems:
-                    if itItem.furnitureType in closets:
-                        self.atticItems.remove(itItem)
-                        self.atticItems.append(item)
-                        break
+            # A new closet, bank or trunk takes the place of the old one,
+            # wherever it is; the first trunk has none to replace.
+            kind = item.getFlags() & (FLCloset | FLBank | FLTrunk)
+            for items in (self.interiorItems, self.atticItems):
+                old = [itItem for itItem in items if itItem.getFlags() & kind]
+                if old:
+                    if items is self.interiorItems:
+                        item.posHpr = old[0].posHpr
+                    items.remove(old[0])
+                    items.append(item)
+                    break
+            else:
+                self.atticItems.append(item)
         else:
             self.atticItems.append(item)
         self.d_setAtticItems(self.atticItems.getBlob())

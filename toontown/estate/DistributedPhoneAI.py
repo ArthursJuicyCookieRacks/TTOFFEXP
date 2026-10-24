@@ -130,6 +130,7 @@ class DistributedPhoneAI(DistributedFurnitureItemAI):
                 self.sendUpdateToAvatarId(avId, 'requestPurchaseResponse', [context, ToontownGlobals.P_OnOrderListFull])
                 return
             if not av.takeMoney(price):
+                self.sendUpdateToAvatarId(avId, 'requestPurchaseResponse', [context, ToontownGlobals.P_NotEnoughMoney])
                 return
             item.deliveryDate = int(time.time()/60) + item.getDeliveryTime()
             av.onOrder.append(item)
@@ -137,7 +138,7 @@ class DistributedPhoneAI(DistributedFurnitureItemAI):
             self.sendUpdateToAvatarId(avId, 'requestPurchaseResponse', [context, ToontownGlobals.P_ItemOnOrder])
         else:
             if not av.takeMoney(price):
-                #u wot m8
+                self.sendUpdateToAvatarId(avId, 'requestPurchaseResponse', [context, ToontownGlobals.P_NotEnoughMoney])
                 return
 
             resp = item.recordPurchase(av, optional)

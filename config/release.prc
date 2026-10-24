@@ -41,7 +41,7 @@ want-cheesy-expirations #t
 want-pets #t
 want-news-tab #f
 want-news-page #f
-want-accessories #f
+want-accessories #t
 want-parties #t
 want-gardening #t
 want-gifting #f

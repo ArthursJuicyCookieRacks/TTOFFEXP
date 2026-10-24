@@ -21,6 +21,10 @@ PHASES = ('3', '3.5', '4', '5', '5.5', '6', '7', '8', '9', '10', '11', '12', '13
 def getGameDir():
     if os.environ.get('TTR_GAME_DIR'):
         return Filename.fromOsSpecific(os.environ['TTR_GAME_DIR'])
+    if os.environ.get('TTR_EXTRA_PRC'):
+        # Extra settings for this run, e.g. software rendering on a machine
+        # without a graphics card.
+        loadPrcFileData('TTR_EXTRA_PRC', os.environ['TTR_EXTRA_PRC'].replace(';', '\n'))
     if sys.platform == 'android':
         return Filename('/android_asset')
     if getattr(sys, 'frozen', False):

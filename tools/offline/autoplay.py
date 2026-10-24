@@ -2184,12 +2184,17 @@ def scenarioCatalog():
 
     # One item of each kind the catalog has this week that the toon can buy.
     kinds = {}
+    money = localAvatar.getMoney() + localAvatar.getBankMoney()
     for item in list(localAvatar.monthlyCatalog) + list(localAvatar.weeklyCatalog):
         kind = item.__class__.__name__
         if kind in kinds or item.loyaltyRequirement() or item.reachedPurchaseLimit(localAvatar):
             continue
-        if item.getPrice(0) <= localAvatar.getMoney() + localAvatar.getBankMoney():
+        if kind == 'CatalogAccessoryItem' and not localAvatar.getMaxAccessories():
+            # Accessories need a trunk first (the accessories scenario).
+            continue
+        if item.getPrice(0) <= money:
             kinds[kind] = item
+            money -= item.getPrice(0)
     log('buying %s' % sorted(kinds))
     results = {}
     for kind, item in sorted(kinds.items()):
@@ -2240,6 +2245,110 @@ def scenarioCatalog():
     yield from teleport(ToontownGlobals.ToontownCentral)
 
 
+def scenarioAccessories():
+    # The accessory trunk (run with AUTOPLAY_PRC="want-accessories 1"): the
+    # trunk and one hat, pair of glasses, backpack and pair of shoes arrive,
+    # the toon moves the trunk out of the attic with the furniture arranger
+    # and puts on each accessory from it.
+    me = localAvatar.doId
+
+    def deliver(air, avId):
+        from toontown.catalog import CatalogFurnitureItem
+        from toontown.catalog.CatalogAccessoryItem import CatalogAccessoryItem
+        from toontown.catalog.CatalogAccessoryItemGlobals import AccessoryTypes, ATArticle
+        av = air.doId2do[avId]
+        trunk = CatalogFurnitureItem.CatalogFurnitureItem(CatalogFurnitureItem.MaxTrunkIds[av.dna.gender == 'f'])
+        results = [('trunk', trunk.recordPurchase(av, None))]
+        kinds = {}
+        for accessoryType in sorted(AccessoryTypes):
+            item = CatalogAccessoryItem(accessoryType)
+            kind = AccessoryTypes[accessoryType][ATArticle] % 4
+            if kind not in kinds and not item.notOfferedTo(av):
+                kinds[kind] = item
+                results.append((accessoryType, item.recordPurchase(av, None)))
+        return results
+
+    yield from goInsideHouse()
+    results = onDistrict(deliver, me)
+    log('delivered: %s' % (results,))
+    if any(code < 0 for name, code in results) or len(results) != 5:
+        raise StepFailed('the trunk and accessories were not delivered: %s' % (results,))
+    yield until(lambda: localAvatar.getMaxAccessories() > 0 and all(
+        len(getattr(localAvatar, 'get%sList' % kind)()) == 3 for kind in ('Hat', 'Glasses', 'Backpack', 'Shoes')), 30, 'the accessories in the trunk')
+
+    # Arrange the furniture: the trunk comes out of the attic.
+    manager = base.cr.furnitureManager
+    manager.d_suggestDirector(me)
+    yield until(lambda: manager.director == me, 30, 'furniture arranging')
+    from toontown.catalog.CatalogFurnitureItem import FLTrunk
+    yield until(lambda: [item for item in manager.atticItems if item.getFlags() & FLTrunk], 30, 'the trunk in the attic')
+    index = [i for i, item in enumerate(manager.atticItems) if item.getFlags() & FLTrunk][0]
+    placed = []
+    pos = localAvatar.getPos(render) + Vec3(0, 6, 0)
+    manager.moveItemFromAttic(index, (pos[0], pos[1], pos[2], 180, 0, 0), lambda retcode, dfitem, index: placed.append((retcode, dfitem)))
+    yield until(lambda: placed, 30, 'the trunk to come out of the attic')
+    if placed[0][0] < 0:
+        raise StepFailed('could not move the trunk out of the attic: %s' % placed[0][0])
+    # And another piece of furniture goes up to the attic and back down.
+    other = [do for do in manager.dfitems if do.__class__.__name__ == 'DistributedFurnitureItem']
+    if other:
+        name = other[0].item.getName()
+        pos = other[0].getPos(render)
+        posHpr = (pos[0], pos[1], pos[2], other[0].getH(render), 0, 0)
+        moved = []
+        manager.moveItemToAttic(other[0], lambda retcode, item: moved.append(retcode))
+        yield until(lambda: moved, 30, 'the %s to go up to the attic' % name)
+        if moved[0] < 0:
+            raise StepFailed('could not move the %s to the attic: %s' % (name, moved[0]))
+        yield until(lambda: [i for i, item in enumerate(manager.atticItems) if item.getName() == name], 30, 'the %s in the attic' % name)
+        index = [i for i, item in enumerate(manager.atticItems) if item.getName() == name][-1]
+        back = []
+        manager.moveItemFromAttic(index, posHpr, lambda retcode, dfitem, index: back.append(retcode))
+        yield until(lambda: back, 30, 'the %s to come back down' % name)
+        if back[0] < 0:
+            raise StepFailed('could not bring the %s back down: %s' % (name, back[0]))
+        log('moved the %s up to the attic and back down' % name)
+    manager.releaseDirector()
+    yield until(lambda: findObject('DistributedTrunk'), 30, 'the trunk in the room')
+    trunk = findObject('DistributedTrunk')
+
+    # A bought accessory goes straight on, and what was worn (nothing, for a
+    # new toon) goes in the trunk.
+    kinds = ('Hat', 'Glasses', 'Backpack', 'Shoes')
+    bought = {kind: tuple(getattr(localAvatar, 'get' + kind)()) for kind in kinds}
+    log('wearing %s' % bought)
+    if (0, 0, 0) in bought.values():
+        raise StepFailed('a bought accessory was not put on: %s' % bought)
+    if not localAvatar.hatNodes or not localAvatar.glassesNodes or not localAvatar.backpackNodes or not localAvatar.shoes:
+        raise StepFailed('an accessory is not drawn')
+
+    def useTrunk(kind):
+        trunk.sendUpdate('enterAvatar', [])
+        yield until(lambda: trunk.closetGUI, 30, 'the trunk to open')
+        yield sleep(0.5)
+        getattr(trunk.closetGUI, 'swap' + kind)(1)
+        trunk.closetGUI.button['command']()
+        yield until(lambda: not trunk.closetGUI and walking(), 30, 'the trunk to close')
+        yield sleep(1)
+
+    # Each one comes off into the trunk...
+    for kind in kinds:
+        yield from useTrunk(kind)
+        if tuple(getattr(localAvatar, 'get' + kind)()) != (0, 0, 0) or getattr(localAvatar, 'get%sList' % kind)() != list(bought[kind]):
+            raise StepFailed('the %s did not come off: %s, trunk %s' % (
+                kind, getattr(localAvatar, 'get' + kind)(), getattr(localAvatar, 'get%sList' % kind)()))
+    if localAvatar.hatNodes or localAvatar.backpackNodes:
+        raise StepFailed('a removed accessory is still drawn')
+    log('took everything off')
+    # ...and the hat goes back on.
+    yield from useTrunk('Hat')
+    if tuple(localAvatar.getHat()) != bought['Hat'] or localAvatar.getHatList() != [0, 0, 0] or not localAvatar.hatNodes:
+        raise StepFailed('the hat did not go back on: %s, trunk %s' % (localAvatar.getHat(), localAvatar.getHatList()))
+    stored = onDistrict(lambda air, avId: (air.doId2do[avId].getHat(), air.doId2do[avId].getHatList()), me)
+    log('put the hat back on; the server has hat %s with %s in the trunk' % stored)
+    yield from teleport(ToontownGlobals.ToontownCentral)
+
+
 def goInsideHouse():
     me = localAvatar.doId
     yield until(walking, 60, 'walking before going home')
@@ -2262,7 +2371,11 @@ def scenarioGifts():
 
     def setUp(air, avId):
         av = air.doId2do[avId]
-        av.b_setMoney(av.getMaxMoney())
+        # Enough jellybeans for any gift in the catalog.
+        av.b_setMaxMoney(250)
+        av.b_setMoney(250)
+        av.b_setMaxBankMoney(12000)
+        av.b_setBankMoney(12000)
         av.friendsList = [(avId, 0)]
 
     onDistrict(setUp, me)
@@ -2277,7 +2390,7 @@ def scenarioGifts():
     yield sleep(2)
     gifts = [item for item in list(localAvatar.weeklyCatalog) + list(localAvatar.monthlyCatalog)
              if item.isGift() and not item.loyaltyRequirement() and not item.reachedPurchaseLimit(localAvatar)
-             and not item.notOfferedTo(localAvatar) and item.getPrice(0) <= localAvatar.getMoney()]
+             and not item.notOfferedTo(localAvatar) and item.getPrice(0) <= localAvatar.getMoney() + localAvatar.getBankMoney()]
     if not gifts:
         raise StepFailed('nothing in the catalog can be a gift')
     item = gifts[0]
@@ -2609,6 +2722,7 @@ SCENARIOS = [
     ('catalog', scenarioCatalog),
     ('codes', scenarioCodes),
     ('gifts', scenarioGifts),
+    ('accessories', scenarioAccessories),
     ('boardgames', scenarioBoardGames),
     ('rentals', scenarioRentals),
     ('quest', scenarioQuest),

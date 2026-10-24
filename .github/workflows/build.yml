@@ -425,6 +425,8 @@ jobs:
       run: |
         Expand-Archive -Path (Get-ChildItem *.zip)[0] -DestinationPath game
         $exe = (Get-ChildItem game -Recurse -Filter TTR-Offline.exe)[0]
+        # The runner has no graphics card, only Windows' software OpenGL.
+        $env:TTR_EXTRA_PRC = 'framebuffer-hardware #f;framebuffer-software #t'
         $game = Start-Process -FilePath $exe.FullName -WorkingDirectory $exe.DirectoryName -PassThru
         Start-Sleep -Seconds 120
         Add-Type -AssemblyName System.Windows.Forms, System.Drawing
@@ -477,7 +479,13 @@ jobs:
 
     - name: Check the game
       run: |
-        tail -c 3000 logcat.txt | python3 -c "import sys; print('::notice title=End of the log::' + sys.stdin.read().replace('%', '%25').replace('\n', '%0A'))"
+        # The game's own lines (and any crash), in a few annotations.
+        grep -E 'ttroffline|Panda3D|panda3d|python|Python|OfflineStart|Traceback|AndroidRuntime|DEBUG|libc|F linker' logcat.txt | grep -v 'Bugle\|NetworkScheduler' | tail -c 15000 > game.txt || true
+        python3 -c "
+        text = open('game.txt', errors='replace').read()
+        for start in range(0, len(text), 3000):
+            print('::notice title=Game log %d::' % (start // 3000 + 1) + text[start:start + 3000].replace('%', '%25').replace('\\n', '%0A'))
+        "
         grep -q 'OfflineStart' logcat.txt || { echo '::error::The game did not start'; exit 1; }
         [ -s pid.txt ] || { echo '::error::The game is no longer running'; exit 1; }
         if grep -q 'Traceback' logcat.txt; then echo '::error::The log has a Python error'; exit 1; fi
