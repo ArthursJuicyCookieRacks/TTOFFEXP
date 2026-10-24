@@ -1696,7 +1696,7 @@ dclass DistributedCannon : DistributedObject {
 
 dclass DistributedTarget : DistributedObject {
   setPosition(int16/10 x, int16/10 y, int16/10 z) required broadcast ram;
-  setState(uint8 enabled, uint32/10 score, uint8 time) broadcast;
+  setState(uint8 enabled, uint32/10 score, uint8 time) broadcast ram;
   setReward(uint32 reward) broadcast;
   setResult(uint32 avId) airecv clsend;
   setBonus(int16/10 bonus) airecv clsend;

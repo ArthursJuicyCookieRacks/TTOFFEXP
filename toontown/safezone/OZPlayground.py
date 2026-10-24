@@ -11,6 +11,10 @@ from toontown.safezone import PicnicBasket
 from toontown.safezone import GolfKart
 from direct.task.Task import Task
 
+
+LeavingStates = ('teleportOut', 'tunnelOut', 'doorOut', 'died', 'final')
+
+
 class OZPlayground(Playground.Playground):
     waterLevel = -0.53
 
@@ -66,6 +70,10 @@ class OZPlayground(Playground.Playground):
         return Task.cont
 
     def __checkToonUnderwater(self, task):
+        # Not while the toon is leaving: going back to walking would stop
+        # the teleport (or door, or tunnel) on its way out.
+        if self.fsm.getCurrentState().getName() in LeavingStates:
+            return Task.cont
         if base.localAvatar.getZ() < -4.0:
             self.__submergeToon()
         else:

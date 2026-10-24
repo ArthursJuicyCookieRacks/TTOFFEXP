@@ -8,7 +8,7 @@ from toontown.battle import SuitBattleGlobals
 from direct.task.Task import Task
 from toontown.battle import BattleProps
 from toontown.toonbase import TTLocalizer
-from panda3d.core import VirtualFileMountHTTP, VirtualFileSystem, Filename, DSearchPath
+from panda3d.core import VirtualFileSystem, Filename, DSearchPath
 from direct.showbase import AppRunnerGlobal
 import string
 import os

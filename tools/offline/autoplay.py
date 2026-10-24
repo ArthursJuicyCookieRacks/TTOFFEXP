@@ -146,6 +146,19 @@ def placeState():
     return p.fsm.getCurrentState().getName()
 
 
+def toonAnimState():
+    try:
+        state = localAvatar.animFSM.getCurrentState().getName()
+    except (AttributeError, NameError):
+        return None
+    track = getattr(localAvatar, 'track', None)
+    if track is not None:
+        state += ', track %s %s at %.1f of %.1f, done event %s accepted %s' % (
+            track.getName(), track.getState(), track.getT(), track.getDuration(), track.getDoneEvent(),
+            localAvatar.isAccepting(track.getDoneEvent()))
+    return state
+
+
 def magicWord(word):
     log('magic word', word)
     messenger.send('magicWord', [word])
@@ -167,6 +180,19 @@ def inZone(zoneId):
         return walking() and ZoneUtil.getBranchZone(localAvatar.zoneId) == branchId
     check.__name__ = 'walking in zone %d' % zoneId
     return check
+
+
+if os.environ.get('AUTOPLAY_TRACE_ANIM'):
+    from toontown.toon.DistributedToon import DistributedToon as _TraceToon
+    _traceSetAnimState = _TraceToon.setAnimState
+
+    def _tracedSetAnimState(self, animName, *args, **kwargs):
+        if self.isLocal():
+            import traceback
+            log('anim state %s from %s' % (animName, ' < '.join('%s:%d %s' % (os.path.basename(f.filename), f.lineno, f.name) for f in traceback.extract_stack()[-16:-1])))
+        return _traceSetAnimState(self, animName, *args, **kwargs)
+
+    _TraceToon.setAnimState = _tracedSetAnimState
 
 
 def teleport(hoodId, zoneId=None):
@@ -2578,13 +2604,18 @@ def scenarioRentals():
         av = air.doId2do[avId]
         return CatalogRentalItem(typeIndex, 60, 1000).recordPurchase(av, 0)
 
+    def objects(className):
+        return [do for do in base.cr.doId2do.values() if do.__class__.__name__ == className]
+
+    # A rental still running from before is replaced by the new one.
+    old = {do.doId for do in objects('DistributedCannon') + objects('DistributedTarget')}
     log('renting the cannons')
     onDistrict(rent, me, ToontownGlobals.RentalCannon)
-    yield until(lambda: len([do for do in base.cr.doId2do.values() if do.__class__.__name__ == 'DistributedCannon']) == 6
-                and findObject('DistributedTarget'), 60, 'the cannons and the target')
-    target = findObject('DistributedTarget')
+    new = lambda className: [do for do in objects(className) if do.doId not in old]
+    yield until(lambda: len(new('DistributedCannon')) == 6 and new('DistributedTarget'), 60, 'the cannons and the target')
+    target = new('DistributedTarget')[0]
     yield until(lambda: target.enabled, 30, 'the target game to start')
-    cannon = findObject('DistributedCannon')
+    cannon = new('DistributedCannon')[0]
     log('climbing into cannon', cannon.doId)
     messenger.send(cannon.uniqueName('enterCannonSphere'), [None])
     yield until(lambda: cannon.localToonShooting and cannon.madeGui, 30, 'sitting in the cannon')
@@ -2772,8 +2803,8 @@ def run(names):
                     break
                 continue
             if time.time() > waiting.deadline:
-                raise StepFailed('%s: timed out waiting for %s (login state %s, hood state %s, place %s in state %s)' % (
-                    name, waiting.what, loginState(), hoodState(), place().__class__.__name__, placeState()))
+                raise StepFailed('%s: timed out waiting for %s (login state %s, hood state %s, place %s in state %s, toon anim state %s)' % (
+                    name, waiting.what, loginState(), hoodState(), place().__class__.__name__, placeState(), toonAnimState()))
             taskMgr.step()
             if errors:
                 raise StepFailed('%s: server exception:\n%s' % (name, errors[0]))
