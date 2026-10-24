@@ -2771,8 +2771,18 @@ def minigameState():
     return game.frameworkFSM.getCurrentState().getName()
 
 
-def scenarioMinigames():
-    for name in SOLO_MINIGAMES:
+NPC_MINIGAMES = ['race', 'cannon', 'tag', 'pattern', 'ring', 'maze', 'tug', 'catch', 'diving', 'target',
+                 'pairing', 'vine', 'ice', 'thief', '2d', 'photo']
+
+
+def scenarioNPCMinigames():
+    # Every trolley game with NPC players aboard; the player only watches.
+    names = os.environ.get('AUTOPLAY_MINIGAMES', '').split() or NPC_MINIGAMES
+    yield from scenarioMinigames(names, withNPCs=True)
+
+
+def scenarioMinigames(names=None, withNPCs=False):
+    for name in names or SOLO_MINIGAMES:
         yield from teleport(ToontownGlobals.ToontownCentral)
         magicWord('~requestMinigame %s' % name)
         yield sleep(1)
@@ -2788,6 +2798,12 @@ def scenarioMinigames():
             if placeState() != 'walk':
                 break
         yield until(lambda: minigameState() == 'frameworkRules', 120, 'the %s rules' % name)
+        if withNPCs:
+            others = [avId for avId in base.curMinigame.avIdList if avId != localAvatar.doId]
+            log('%s with %d NPC players' % (name, len(others)))
+            if not others:
+                raise StepFailed('no NPC players got on the trolley for %s' % name)
+            before = dict(npcStats())
         yield sleep(1)
         messenger.send(base.curMinigame.rulesDoneEvent)
         yield until(lambda: minigameState() == 'frameworkGame', 60, 'the %s game to start' % name)
@@ -2795,6 +2811,12 @@ def scenarioMinigames():
         # Nobody plays: the game has to end on its own, through its timer.
         yield until(lambda: minigameState() not in ('frameworkGame', 'frameworkWaitServerFinish'), 420,
                     'the %s game to end' % name)
+        if withNPCs:
+            after = npcStats()
+            played = dict((k, after[k] - before.get(k, 0)) for k in after if k.startswith('minigame ') and after[k] != before.get(k, 0))
+            log('NPC moves in %s: %s' % (name, played))
+            if not played:
+                raise StepFailed('the NPC players did nothing in %s' % name)
         yield until(lambda: hoodState() == 'purchase', 120, 'the gag shop after %s' % name)
         yield until(lambda: base.cr.playGame.hood.purchase.fsm.getCurrentState().getName() == 'purchase', 60,
                     'the gag shop buttons')
@@ -2944,6 +2966,7 @@ SCENARIOS = [
     ('npccj', withNPCs(scenarioCJ, ['DistributedBattleFinalAI', 'boss l'])),
     ('npcceo', withNPCs(scenarioCEO, ['DistributedBattleWaitersAI', 'boss c'])),
     ('npcgolf', withNPCs(scenarioGolf, ['golf swings'])),
+    ('npcminigames', scenarioNPCMinigames),
     ('tutorial', scenarioTutorial),
     ('touch', scenarioTouchControls),
     ('maxtoon', scenarioMaxToon),

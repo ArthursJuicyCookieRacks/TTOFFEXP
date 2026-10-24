@@ -21,7 +21,9 @@ from toontown.golf.DistributedGolfCourseAI import DistributedGolfCourseAI
 from toontown.npcplayers.NPCBattleCrew import isNPC
 from toontown.suit.DistributedBossCogAI import DistributedBossCogAI
 from toontown.npcplayers.NPCNav import getNav
+from toontown.minigame.DistributedMinigameAI import DistributedMinigameAI
 from toontown.safezone.DistributedGolfKartAI import DistributedGolfKartAI
+from toontown.safezone.DistributedTrolleyAI import DistributedTrolleyAI
 from toontown.toonbase import ToontownGlobals
 
 TELEPORT_TIME = 2.6
@@ -44,6 +46,20 @@ HANDSHAKES = {
         'ReservesJoining': 'reserveJoinDone',
     },
 }
+
+
+def seatsOf(elevator):
+    # The trolley calls its seats slots, and is boardable rather than
+    # accepting.
+    if isinstance(elevator, DistributedTrolleyAI):
+        return elevator.slots
+    return elevator.seats
+
+
+def isAccepting(elevator):
+    if isinstance(elevator, DistributedTrolleyAI):
+        return elevator.boardable
+    return elevator.accepting
 
 
 def stateOf(obj):
@@ -97,15 +113,15 @@ class NPCParty:
 
     def getElevators(self):
         return [obj for obj in list(self.air.doId2do.values())
-                if isinstance(obj, (DistributedElevatorAI, DistributedElevatorFSMAI, DistributedGolfKartAI))]
+                if isinstance(obj, (DistributedElevatorAI, DistributedElevatorFSMAI, DistributedGolfKartAI, DistributedTrolleyAI))]
 
     def fillSeats(self):
         for elevator in self.getElevators():
-            seats = elevator.seats
+            seats = seatsOf(elevator)
             seated = [self.air.doId2do.get(s) for s in seats if s]
             players = [t for t in seated if t is not None and not isNPC(t)]
             npcs = [t for t in seated if isNPC(t)]
-            if not elevator.accepting:
+            if not isAccepting(elevator):
                 continue
             if npcs and not players:
                 # The player got off; so do they.
@@ -126,7 +142,7 @@ class NPCParty:
     def pickBoarder(self, elevator, player):
         from toontown.npcplayers.NPCPlayerManagerAI import getAreaId
         party = [npc for npc in self.partyOf(player)
-                 if npc.crew is None and not npc.busy and npc.doId not in elevator.seats]
+                 if npc.crew is None and not npc.busy and npc.doId not in seatsOf(elevator)]
         if party:
             return party[0]
         areaId = getAreaId(elevator.zoneId)
@@ -167,7 +183,7 @@ class NPCParty:
             if npc.isDeleted() or elevator.isDeleted():
                 return Task.done
             npc.b_setAnimState('Happy', 1.0)
-            if elevator.accepting and None in elevator.seats:
+            if isAccepting(elevator) and None in seatsOf(elevator):
                 npc.asSender(elevator.requestBoard)
             # Seated or not, the boarding is over; a seated toon stays put
             # (see follow) until the elevator leaves.
@@ -200,7 +216,7 @@ class NPCParty:
                 continue
             if npc.crew is not None:
                 continue
-            seated = [e for e in self.getElevators() if npc.doId in e.seats]
+            seated = [e for e in self.getElevators() if npc.doId in seatsOf(e)]
             if seated:
                 continue
             if player.zoneId != npc.zoneId:
@@ -219,10 +235,11 @@ class NPCParty:
                 continue
             if npc.busy or npc.walk is not None:
                 continue
-            if self.isGolfing(npc):
-                # The course puts each golfer where it wants them.
+            if self.isPlaying(npc):
+                # A golf course or a trolley game puts each toon where it
+                # wants them.
                 continue
-            if [e for e in self.getElevators() if player.doId in e.seats]:
+            if [e for e in self.getElevators() if player.doId in seatsOf(e)]:
                 continue
             playerPos = self.manager.getPlayerPos(player)
             distance = (npc.getPos() - playerPos).length()
@@ -257,8 +274,8 @@ class NPCParty:
                 if responses.get(npc.doId) == 0:
                     npc.asSender(getattr(obj, method))
 
-    def isGolfing(self, npc):
-        return any(isinstance(obj, DistributedGolfCourseAI) and npc.doId in obj.avIdList
+    def isPlaying(self, npc):
+        return any(isinstance(obj, (DistributedGolfCourseAI, DistributedMinigameAI)) and npc.doId in obj.avIdList
                    for obj in self.air.doId2do.values() if getattr(obj, 'zoneId', None) == npc.zoneId)
 
     def answerBarriers(self, npc, obj):

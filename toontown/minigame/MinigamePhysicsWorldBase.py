@@ -3,6 +3,7 @@ from panda3d.ode import OdeWorld, OdeSimpleSpace, OdeJointGroup, OdeUtil
 from direct.directnotify import DirectNotifyGlobal
 from direct.distributed.ClockDelta import globalClockDelta
 from panda3d.core import NodePath
+from direct.showbase.DirectObject import DirectObject
 
 class MinigamePhysicsWorldBase:
     notify = DirectNotifyGlobal.directNotify.newCategory('MinigamePhysicsWorldBase')
@@ -42,9 +43,21 @@ class MinigamePhysicsWorldBase:
         self.useQuickStep = False
         self.deterministic = True
         self.numStepsInSimulateTask = 0
+        # Panda 1.11's autoCollide no longer returns the contacts; they come
+        # as events instead, one per contact.
+        self.colEntries = []
+        self.colCount = 0
+        self.collisionEventName = 'ode-collision-%d' % id(self)
+        self.space.setCollisionEvent(self.collisionEventName)
+        self.collisionListener = DirectObject()
+        self.collisionListener.accept(self.collisionEventName, self.__collisionHandler)
+
+    def __collisionHandler(self, entry):
+        self.colEntries.append(entry)
 
     def delete(self):
         self.notify.debug('Max Collision Count was %s' % self.maxColCount)
+        self.collisionListener.ignoreAll()
         self.stopSim()
         self.commonObjectDict = None
         if self.canRender:
@@ -135,7 +148,11 @@ class MinigamePhysicsWorldBase:
                     pandaNodePathGeom.setPos(0.0, 0.0, -100.0)
 
     def simulate(self):
-        self.colCount = self.space.autoCollide()
+        self.colEntries = []
+        self.space.autoCollide()
+        # The contact events are needed now, before colEntries is looked at.
+        eventMgr.doEvents()
+        self.colCount = len(self.colEntries)
         if self.maxColCount < self.colCount:
             self.maxColCount = self.colCount
             self.notify.debug('New Max Collision Count %s' % self.maxColCount)
@@ -158,8 +175,9 @@ class MinigamePhysicsWorldBase:
                 pandaNodePathGeom.setQuat(Quat(odeBody.getQuaternion()[0], odeBody.getQuaternion()[1], odeBody.getQuaternion()[2], odeBody.getQuaternion()[3]))
 
     def getOrderedContacts(self, count):
-        c0 = self.space.getContactId(count, 0)
-        c1 = self.space.getContactId(count, 1)
+        entry = self.colEntries[count]
+        c0 = self.space.getCollideId(entry.getGeom1())
+        c1 = self.space.getCollideId(entry.getGeom2())
         if c0 > c1:
             chold = c1
             c1 = c0
