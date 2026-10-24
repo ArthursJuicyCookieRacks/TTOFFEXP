@@ -1945,6 +1945,54 @@ def scenarioCatalog():
     yield from teleport(ToontownGlobals.ToontownCentral)
 
 
+def scenarioCodes():
+    # Types codes on the Options page, then takes the presents out of the
+    # award mailbox.
+    from toontown.coderedemption.TTCodeRedemptionConsts import RedeemErrors
+    me = localAvatar.doId
+    yield until(lambda: hasattr(base, 'codeRedemptionMgr'), 60, 'the code redemption manager')
+    results = []
+
+    def redeem(code):
+        base.codeRedemptionMgr.redeemCode(code, lambda result, awardResult: results.append((code, result, awardResult)))
+
+    expected = [('toontown', RedeemErrors.Success), ('TOONTOWN', RedeemErrors.CodeAlreadyRedeemed),
+                ('notacode', RedeemErrors.CodeDoesntExist), ('toon council', RedeemErrors.CodeDoesntExist),
+                ('ToonCouncil', RedeemErrors.Success)]
+    for code, result in expected:
+        redeem(code)
+        yield until(lambda: len(results) and results[-1][0] == code, 30, 'the answer for code %s' % code)
+        if results[-1][1] != result:
+            raise StepFailed('code %s gave %s, expected %s' % (code, results[-1][1:], result))
+    log('codes: %s' % results)
+    yield until(lambda: len(localAvatar.awardMailboxContents) == 2, 30, 'the awards in the mailbox')
+    yield until(walking, 60, 'walking before going home')
+    place().goHomeNow(localAvatar.zoneId)
+    yield until(lambda: placeName() == 'Estate' and walking(), 180, 'walking around the estate')
+    house = None
+    yield until(lambda: findObject('DistributedHouse', lambda do: do.ownerId == me), 60, 'the toon\'s own house')
+    house = findObject('DistributedHouse', lambda do: do.ownerId == me)
+    yield until(lambda: findObject('DistributedMailbox', lambda do: do.houseId == house.doId), 60, 'the mailbox')
+    mailbox = findObject('DistributedMailbox', lambda do: do.houseId == house.doId)
+    mailbox.sendUpdate('avatarEnter', [])
+    yield sleep(2)
+    money = localAvatar.getMoney() + localAvatar.getBankMoney()
+    accepted = []
+    while len(localAvatar.awardMailboxContents):
+        count = len(localAvatar.awardMailboxContents)
+        item = localAvatar.awardMailboxContents[0]
+        mailbox.acceptItem(item, 0, lambda retcode, item, index: accepted.append((item.__class__.__name__, retcode)))
+        yield until(lambda: len(accepted) and len(localAvatar.awardMailboxContents) < count, 30, 'taking an award from the mailbox')
+    mailbox.sendUpdate('avatarExit', [])
+    failed = [entry for entry in accepted if entry[1] < 0]
+    if failed:
+        raise StepFailed('awards failed: %s' % failed)
+    log('took %s out of the mailbox; jellybeans %d -> %d' % (
+        accepted, money, localAvatar.getMoney() + localAvatar.getBankMoney()))
+    yield sleep(2)
+    yield from teleport(ToontownGlobals.ToontownCentral)
+
+
 def playBoardGames(table, games=(1, 2, 3), seat=1):
     # Sits at a game table and plays each game through against the
     # computer, moving with the same rules the computer players use.
@@ -2195,6 +2243,7 @@ SCENARIOS = [
     ('garden', scenarioGarden),
     ('party', scenarioParty),
     ('catalog', scenarioCatalog),
+    ('codes', scenarioCodes),
     ('boardgames', scenarioBoardGames),
     ('rentals', scenarioRentals),
     ('quest', scenarioQuest),

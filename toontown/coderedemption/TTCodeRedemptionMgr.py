@@ -1,5 +1,6 @@
 from direct.distributed.DistributedObject import DistributedObject
 from direct.directnotify.DirectNotifyGlobal import directNotify
+from direct.showbase.PythonUtil import SerialMaskedGen
 
 class TTCodeRedemptionMgr(DistributedObject):
     neverDisable = 1

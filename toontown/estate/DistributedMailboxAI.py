@@ -47,8 +47,8 @@ class DistributedMailboxAI(DistributedObjectAI):
         if not av:
             self.air.writeServerEvent('suspicious', avId=avId, issue='Tried to use mailbox from another shard!')
             return
-        inMailbox = len(av.mailboxContents)
-        onOrder = len(av.onOrder)
+        inMailbox = len(av.mailboxContents) + len(av.awardMailboxContents)
+        onOrder = len(av.onOrder) + len(av.onAwardOrder)
         if inMailbox:
             self.d_setMovie(MailboxGlobals.MAILBOX_MOVIE_READY, avId)
             self.avId = avId
@@ -87,14 +87,27 @@ class DistributedMailboxAI(DistributedObjectAI):
         av = self.air.doId2do.get(avId)
         if not av:
             return
-        if index >= len(av.mailboxContents):
+        item = self.__takeItem(av, index)
+        if item is None:
             self.sendUpdateToAvatarId(avId, 'acceptItemResponse', [context, ToontownGlobals.P_InvalidIndex])
             return
+        self.sendUpdateToAvatarId(avId, 'acceptItemResponse', [context, item.recordPurchase(av, optional)])
+
+    def __takeItem(self, av, index):
+        # The mailbox lists the award items first, then the bought ones.
+        numAwards = len(av.awardMailboxContents)
+        if index < numAwards:
+            item = av.awardMailboxContents[index]
+            del av.awardMailboxContents[index]
+            av.b_setAwardMailboxContents(av.awardMailboxContents)
+            return item
+        index -= numAwards
+        if index >= len(av.mailboxContents):
+            return None
         item = av.mailboxContents[index]
         del av.mailboxContents[index]
         av.b_setMailboxContents(av.mailboxContents)
-        self.sendUpdateToAvatarId(avId, 'acceptItemResponse', [context, item.recordPurchase(av, optional)])
-        
+        return item
 
     def acceptItemResponse(self, todo0, todo1):
         pass
@@ -106,11 +119,9 @@ class DistributedMailboxAI(DistributedObjectAI):
         av = self.air.doId2do.get(avId)
         if not av:
             return
-        if index >= len(av.mailboxContents):
+        if self.__takeItem(av, index) is None:
             self.sendUpdateToAvatarId(avId, 'discardItemResponse', [context, ToontownGlobals.P_InvalidIndex])
             return
-        del av.mailboxContents[index]
-        av.b_setMailboxContents(av.mailboxContents)
         self.sendUpdateToAvatarId(avId, 'discardItemResponse', [context, ToontownGlobals.P_ItemAvailable])
 
     def discardItemResponse(self, todo0, todo1):

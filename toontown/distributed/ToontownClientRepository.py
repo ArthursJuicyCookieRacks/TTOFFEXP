@@ -101,8 +101,8 @@ class ToontownClientRepository(OTPClientRepository.OTPClientRepository):
         self.ttrFriendsManager = self.generateGlobalObject(OtpDoGlobals.OTP_DO_ID_TTR_FRIENDS_MANAGER, 'TTRFriendsManager')
         self.speedchatRelay = self.generateGlobalObject(OtpDoGlobals.OTP_DO_ID_TOONTOWN_SPEEDCHAT_RELAY, 'TTSpeedchatRelay')
         self.deliveryManager = self.generateGlobalObject(OtpDoGlobals.OTP_DO_ID_TOONTOWN_DELIVERY_MANAGER, 'DistributedDeliveryManager')
-        if config.ConfigVariableBool('want-code-redemption', 1).getValue():
-            self.codeRedemptionManager = self.generateGlobalObject(OtpDoGlobals.OTP_DO_ID_TOONTOWN_CODE_REDEMPTION_MANAGER, 'TTCodeRedemptionMgr')
+        # Codes are redeemed with the district's TTCodeRedemptionMgr, which
+        # the AI makes; there is no UberDOG one.
         if config.ConfigVariableBool('want-arg-manager', 0).getValue():
             self.argManager = self.generateGlobalObject(OtpDoGlobals.OTP_DO_ID_TTR_ARG_MANAGER, 'ARGManager')
 

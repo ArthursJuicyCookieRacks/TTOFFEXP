@@ -212,6 +212,10 @@ class ToontownAIRepository(ToontownInternalRepository):
         self.tutorialManager = TutorialManagerAI(self)
         self.tutorialManager.generateWithRequired(2)
 
+        from toontown.coderedemption.TTCodeRedemptionMgrAI import TTCodeRedemptionMgrAI
+        self.codeRedemptionMgr = TTCodeRedemptionMgrAI(self)
+        self.codeRedemptionMgr.generateWithRequired(2)
+
         self.catalogManager = CatalogManagerAI(self)
         self.catalogManager.generateWithRequired(2)
 

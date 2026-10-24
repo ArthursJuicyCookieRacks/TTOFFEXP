@@ -1,3 +1,4 @@
+import os
 from direct.directnotify.DirectNotifyGlobal import directNotify
 from direct.showbase import DConfig
 from direct.showbase.BulletinBoard import BulletinBoard
@@ -56,7 +57,11 @@ class LocalSimBase:
         self.GEMdemoWhisperRecipientDoid = config.ConfigVariableBool('gem-demo-whisper-recipient-doid', 0).getValue()
         self.sqlAvailable = config.ConfigVariableBool('sql-available', 1).getValue()
         self.backups = BackupManager.BackupManager(
-            filepath=config.ConfigVariableString('backups-filepath', 'backups/').getValue(),
+            # Saved district state (cog buildings, redeemed codes, ...) is
+            # kept with the toons' database, so one folder is the whole save.
+            filepath=config.ConfigVariableString('backups-filepath', os.path.join(
+                config.ConfigVariableString('local-db-directory', 'astron/databases/astrondb').getValue(),
+                'backups')).getValue(),
             extension=config.ConfigVariableString('backups-extension', '.json').getValue())
 
     def getRepository(self):
