@@ -1775,6 +1775,86 @@ def scenarioParty():
     log('cancelled tomorrow\'s party: %d beans back, %d lost' % (refund, money - localAvatar.getMoney()))
 
 
+def scenarioCatalog():
+    # Calls Clarabelle on the house phone, buys from the catalog, and takes
+    # the delivery out of the mailbox.
+    from toontown.catalog import CatalogItem
+    me = localAvatar.doId
+    yield until(lambda: len(localAvatar.weeklyCatalog) or len(localAvatar.monthlyCatalog), 60, 'the first catalog')
+    onDistrict(lambda air, avId: air.doId2do[avId].b_setMoney(air.doId2do[avId].getMaxMoney()), me)
+    yield until(walking, 60, 'walking before going home')
+    place().goHomeNow(localAvatar.zoneId)
+    yield until(lambda: placeName() == 'Estate' and walking(), 180, 'walking around the estate')
+    yield until(lambda: findObject('DistributedHouse', lambda do: do.ownerId == me), 60, 'the toon\'s own house')
+    house = findObject('DistributedHouse', lambda do: do.ownerId == me)
+    yield until(lambda: findObject('DistributedHouseDoor', lambda do: do.houseId == house.doId and do.doorType == DoorTypes.EXT_STANDARD), 60, 'the front door')
+    door = findObject('DistributedHouseDoor', lambda do: do.houseId == house.doId and do.doorType == DoorTypes.EXT_STANDARD)
+    yield sleep(2)
+    messenger.send(door.getEnterTriggerEvent(), [None])
+    yield until(lambda: placeName() == 'House' and walking(), 120, 'walking inside the house')
+    yield until(lambda: findObject('DistributedPhone'), 60, 'the phone')
+    phone = findObject('DistributedPhone')
+    phone.sendUpdate('avatarEnter', [])
+    yield sleep(2)
+
+    # One item of each kind the catalog has this week that the toon can buy.
+    kinds = {}
+    for item in list(localAvatar.monthlyCatalog) + list(localAvatar.weeklyCatalog):
+        kind = item.__class__.__name__
+        if kind in kinds or item.loyaltyRequirement() or item.reachedPurchaseLimit(localAvatar):
+            continue
+        if item.getPrice(0) <= localAvatar.getMoney() + localAvatar.getBankMoney():
+            kinds[kind] = item
+    log('buying %s' % sorted(kinds))
+    results = {}
+    for kind, item in sorted(kinds.items()):
+        phone.requestPurchase(item, lambda retcode, item, kind=kind: results.__setitem__(kind, retcode))
+        yield until(lambda: kind in results, 30, 'Clarabelle to take the order for a %s' % kind)
+    phone.sendUpdate('avatarExit', [])
+    failed = {kind: code for kind, code in results.items() if code < 0}
+    if failed:
+        raise StepFailed('purchases failed: %s' % failed)
+    log('bought %d items; %d on order' % (len(results), len(localAvatar.onOrder)))
+
+    if len(localAvatar.onOrder):
+        # Skip the delivery wait.
+        def deliverNow(air, avId):
+            av = air.doId2do[avId]
+            for item in av.onOrder:
+                item.deliveryDate = int(time.time() / 60)
+            # A plain list: the item list would re-read its cached blob.
+            from toontown.catalog.CatalogItemList import CatalogItemList
+            av.b_setDeliverySchedule(CatalogItemList(list(av.onOrder), store=av.onOrder.store))
+
+        onDistrict(deliverNow, me)
+
+        yield until(lambda: len(localAvatar.mailboxContents) and not len(localAvatar.onOrder), 120, 'the delivery')
+    log('%d items in the mailbox' % len(localAvatar.mailboxContents))
+    if len(localAvatar.mailboxContents):
+        # Out the front door to the mailbox.
+        yield until(lambda: findObject('DistributedHouseDoor', lambda do: do.doorType == DoorTypes.INT_STANDARD), 60, 'the inside of the front door')
+        door = findObject('DistributedHouseDoor', lambda do: do.doorType == DoorTypes.INT_STANDARD)
+        messenger.send(door.getEnterTriggerEvent(), [None])
+        yield until(lambda: placeName() == 'Estate' and walking(), 120, 'walking out of the house')
+        yield until(lambda: findObject('DistributedMailbox', lambda do: do.houseId == house.doId), 60, 'the mailbox')
+        mailbox = findObject('DistributedMailbox', lambda do: do.houseId == house.doId)
+        mailbox.sendUpdate('avatarEnter', [])
+        yield sleep(2)
+        accepted = []
+        while len(localAvatar.mailboxContents):
+            count = len(localAvatar.mailboxContents)
+            item = localAvatar.mailboxContents[0]
+            mailbox.acceptItem(item, 0, lambda retcode, item, index: accepted.append((item.__class__.__name__, retcode)))
+            yield until(lambda: len(accepted) and len(localAvatar.mailboxContents) < count, 30, 'taking an item from the mailbox')
+        mailbox.sendUpdate('avatarExit', [])
+        failed = [entry for entry in accepted if entry[1] < 0]
+        if failed:
+            raise StepFailed('mailbox items failed: %s' % failed)
+        log('took %s out of the mailbox' % accepted)
+    yield sleep(3)
+    yield from teleport(ToontownGlobals.ToontownCentral)
+
+
 def scenarioQuest(steps=12):
     # Takes a ToonTask from Toon HQ and plays it through every step to the
     # reward, the way a new toon would.
@@ -1890,6 +1970,7 @@ SCENARIOS = [
     ('invasion', scenarioInvasion),
     ('garden', scenarioGarden),
     ('party', scenarioParty),
+    ('catalog', scenarioCatalog),
     ('quest', scenarioQuest),
 ]
 

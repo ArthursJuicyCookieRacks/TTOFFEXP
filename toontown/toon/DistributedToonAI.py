@@ -2547,21 +2547,11 @@ class DistributedToonAI(DistributedPlayerAI.DistributedPlayerAI, DistributedSmoo
                     nextTime = nextGiftTime
 
 
-            existingDuration = None
-            checkTaskList = taskMgr.getTasksNamed(taskName)
-            if checkTaskList:
-                currentTime = globalClock.getFrameTime()
-                checkTask = checkTaskList[0]
-                existingDuration = checkTask.wakeTime - currentTime
+            # The next delivery is for whatever comes first.
+            taskMgr.remove(taskName)
             if nextTime:
                 newDuration = max(10.0, nextTime * 60 - time.time())
-                if existingDuration and existingDuration >= newDuration:
-                    taskMgr.remove(taskName)
-                    taskMgr.doMethodLater(newDuration, self.__deliverBothPurchases, taskName)
-                elif existingDuration and existingDuration < newDuration:
-                    pass
-                else:
-                    taskMgr.doMethodLater(newDuration, self.__deliverBothPurchases, taskName)
+                taskMgr.doMethodLater(newDuration, self.__deliverBothPurchases, taskName)
         return
 
     def __deliverBothPurchases(self, task):

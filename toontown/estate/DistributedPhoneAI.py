@@ -125,11 +125,10 @@ class DistributedPhoneAI(DistributedFurnitureItemAI):
             return
 
         if item.getDeliveryTime():
-            if len(av.onOrder) > 3: #TODO correct number
+            # Everything on order has to fit in the mailbox when it comes.
+            if len(av.mailboxContents) + len(av.onOrder) >= ToontownGlobals.MaxMailboxContents:
                 self.sendUpdateToAvatarId(avId, 'requestPurchaseResponse', [context, ToontownGlobals.P_OnOrderListFull])
                 return
-            if len(av.mailboxContents) + len(av.onOrder) >= ToontownGlobals.MaxMailboxContents:
-                self.sendUpdateToAvatarId(avId, 'requestPurchaseResponse', [context, ToontownGlobals.P_MailboxFull])
             if not av.takeMoney(price):
                 return
             item.deliveryDate = int(time.time()/60) + item.getDeliveryTime()
