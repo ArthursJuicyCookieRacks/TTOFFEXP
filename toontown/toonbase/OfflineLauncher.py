@@ -204,7 +204,7 @@ class OfflineLauncher(DirectObject):
             self.panel.destroy()
             self.panel = None
 
-    def openPanel(self, title):
+    def openPanel(self, title, titleZ=0.38):
         self.closePanel()
         # A shade over the launcher, which also keeps its buttons from being
         # pressed while the panel is up.
@@ -214,7 +214,7 @@ class OfflineLauncher(DirectObject):
         self.panel.setBin('gui-popup', 50)
         DirectFrame(parent=self.panel, relief=None, image=self.dialogBox, image_scale=(1.6, 1, 1.2),
                     image_color=(1, 1, 0.92, 1), pos=(0, 0, 0.02))
-        DirectLabel(parent=self.panel, relief=None, pos=(0, 0, 0.38), text=title, text_font=self.minnieFont,
+        DirectLabel(parent=self.panel, relief=None, pos=(0, 0, titleZ), text=title, text_font=self.minnieFont,
                     text_scale=0.1, text_fg=RED, text_shadow=(0.3, 0.05, 0, 1))
         close = self.redButton('CLOSE', (0, 0, -0.4), self.closePanel, textScale=0.075)
         close.reparentTo(self.panel)
@@ -240,7 +240,7 @@ class OfflineLauncher(DirectObject):
 
     def showDrivers(self):
         from toontown.toonbase import TurnipDrivers
-        TurnipDrivers.DriversPanel(self, self.openPanel('DRIVERS'))
+        TurnipDrivers.DriversPanel(self, self.openPanel('DRIVERS', titleZ=0.44))
 
     # --- Starting the game ---
 
