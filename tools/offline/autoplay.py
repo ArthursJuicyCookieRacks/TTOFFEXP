@@ -2920,6 +2920,8 @@ def npcStats():
 def withNPCs(scenario, battleKinds):
     # Plays a scenario, then checks NPC players fought in its battles.
     def run():
+        # A full set of gags for each, as after a trip to the playground.
+        onDistrict(lambda air, avId: air.doId2do[avId].doRestock(0), localAvatar.doId)
         yield from scenario()
         stats = npcStats()
         log('NPC players in battles: %s' % stats)
