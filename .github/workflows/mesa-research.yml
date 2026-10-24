@@ -55,7 +55,7 @@ jobs:
         endian = 'little'
         CROSS
         cd mesa
-        meson setup build --cross-file ../android.cross --prefix=/out --force-fallback-for=libdrm,zlib -Dlibdrm:tests=false -Dlibdrm:intel=disabled -Dlibdrm:radeon=disabled -Dlibdrm:amdgpu=disabled -Dlibdrm:nouveau=disabled -Dlibdrm:vmwgfx=disabled -Dbuildtype=release -Db_ndebug=true \
+        meson setup build --cross-file ../android.cross --prefix=/out -Dallow-fallback-for=libdrm --force-fallback-for=libdrm -Dlibdrm:tests=false -Dlibdrm:intel=disabled -Dlibdrm:radeon=disabled -Dlibdrm:amdgpu=disabled -Dlibdrm:nouveau=disabled -Dlibdrm:vmwgfx=disabled -Dbuildtype=release -Db_ndebug=true \
           -Dplatforms= -Dgallium-drivers=zink -Dvulkan-drivers= -Degl=enabled -Dgles1=disabled -Dgles2=enabled \
           -Dglx=disabled -Dgbm=disabled -Dllvm=disabled -Dxmlconfig=disabled -Dzstd=disabled -Dvalgrind=disabled \
           -Dlibunwind=disabled -Degl-lib-suffix=_mesa -Dgles-lib-suffix=_mesa -Dshader-cache=disabled \
