@@ -55,12 +55,12 @@ jobs:
         endian = 'little'
         CROSS
         cd mesa
-        meson setup build --cross-file ../android.cross --prefix=/out -Dbuildtype=release -Db_ndebug=true \
+        meson setup build --cross-file ../android.cross --prefix=/out --force-fallback-for=libdrm,zlib -Dlibdrm:tests=false -Dlibdrm:intel=disabled -Dlibdrm:radeon=disabled -Dlibdrm:amdgpu=disabled -Dlibdrm:nouveau=disabled -Dlibdrm:vmwgfx=disabled -Dbuildtype=release -Db_ndebug=true \
           -Dplatforms= -Dgallium-drivers=zink -Dvulkan-drivers= -Degl=enabled -Dgles1=disabled -Dgles2=enabled \
           -Dglx=disabled -Dgbm=disabled -Dllvm=disabled -Dxmlconfig=disabled -Dzstd=disabled -Dvalgrind=disabled \
           -Dlibunwind=disabled -Degl-lib-suffix=_mesa -Dgles-lib-suffix=_mesa -Dshader-cache=disabled \
           -Dlmsensors=disabled -Dvideo-codecs= -Dgallium-va=disabled -Dgallium-vdpau=disabled \
-          -Dgallium-extra-hud=false -Dbuild-tests=false 2>&1 | tail -80
+          -Dgallium-extra-hud=false -Dbuild-tests=false 2>&1 | grep -v "^Running compile\|^Code\|^Command line\|^-----\|^Working dir" | tail -120
         ninja -C build 2>&1 | tail -60
         DESTDIR=$PWD/../install ninja -C build install > /dev/null
         cd ..
