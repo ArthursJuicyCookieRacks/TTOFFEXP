@@ -1,3 +1,4 @@
+import json
 import os
 import time
 
@@ -11,7 +12,22 @@ from otp.local.LocalMessageDirector import MDParticipant
 try:
     import yaml
 except ImportError:
+    # The packaged builds have no PyYAML (Android has no wheel for it), so
+    # they write JSON, which is also YAML, and read only that.
     yaml = None
+
+
+def loadData(f):
+    if yaml is None:
+        return json.load(f)
+    return yaml.safe_load(f)
+
+
+def dumpData(data, f):
+    if yaml is None:
+        json.dump(data, f, indent=2)
+    else:
+        yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
 
 
 class DatabaseObject:
@@ -41,9 +57,6 @@ class YAMLBackend:
     notify = DirectNotifyGlobal.directNotify.newCategory('LocalDatabase')
 
     def __init__(self, dcFile, directory, minId, maxId, flushInterval=2.0):
-        if yaml is None:
-            raise RuntimeError('PyYAML is required for the local database.')
-
         self.dcFile = dcFile
         self.directory = directory
         self.minId = minId
@@ -69,7 +82,7 @@ class YAMLBackend:
         if not os.path.exists(path):
             return
         with open(path, 'r') as f:
-            info = yaml.safe_load(f) or {}
+            info = loadData(f) or {}
         self.nextId = int(info.get('next', self.minId))
         self.freeIds = [int(doId) for doId in (info.get('free') or [])]
 
@@ -117,7 +130,7 @@ class YAMLBackend:
 
         try:
             with open(path, 'r') as f:
-                data = yaml.safe_load(f) or {}
+                data = loadData(f) or {}
         except Exception as e:
             self.notify.warning('Could not read object %d: %s' % (doId, e))
             return None
@@ -223,7 +236,7 @@ class YAMLBackend:
     def writeFile(self, path, data):
         tmpPath = path + '.tmp'
         with open(tmpPath, 'w') as f:
-            yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
+            dumpData(data, f)
         os.replace(tmpPath, path)
 
 
