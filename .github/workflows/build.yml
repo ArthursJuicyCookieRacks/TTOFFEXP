@@ -28,6 +28,10 @@ env:
   ANDROID_NDK: 29.0.14206865
   ANDROID_THIRDPARTY_COMMIT: 935c80380ca171e08587c570e9dad678d29db3c8
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   panda3d-windows:
     name: Panda3D for Windows
@@ -58,6 +62,7 @@ jobs:
       shell: bash
       working-directory: panda3d
       run: |
+        exec > >(tee -a "$RUNNER_TEMP/steps.log") 2>&1
         curl --retry 5 --retry-delay 10 --retry-all-errors -fLo thirdparty-tools.zip "$WIN_THIRDPARTY"
         unzip -q thirdparty-tools.zip -d thirdparty-tools
         mv thirdparty-tools/panda3d-1.10.16/thirdparty .
@@ -67,6 +72,7 @@ jobs:
       shell: bash
       working-directory: panda3d
       run: |
+        exec > >(tee -a "$RUNNER_TEMP/steps.log") 2>&1
         python makepanda/makepanda.py --git-commit=$PANDA3D_COMMIT --outputdir=built --everything --no-eigen \
           --python-incdir="$pythonLocation/include" --python-libdir="$pythonLocation/lib" \
           --threads=4 --windows-sdk=10 --msvc-version=14.3 --wheel
@@ -76,6 +82,7 @@ jobs:
     - name: Check the wheel has what the game needs
       shell: bash
       run: |
+        exec > >(tee -a "$RUNNER_TEMP/steps.log") 2>&1
         python -m zipfile -l wheels/panda3d-*.whl > contents.txt
         for module in panda3d/core panda3d/direct panda3d/physics panda3d/ode panda3d/fx p3openal_audio pandagl; do
           grep -q "$module" contents.txt || { echo "the wheel is missing $module"; exit 1; }
@@ -86,6 +93,18 @@ jobs:
         name: panda3d-win_amd64
         path: wheels/*.whl
 
+    - name: Show the end of the log
+      if: failure()
+      run: |
+        # The job logs are not always reachable, so the end of the log goes
+        # into annotations too.
+        tail -c 12000 "$RUNNER_TEMP/steps.log" | "$(command -v python || command -v python3)" -c "
+        import sys
+        text = sys.stdin.read().replace('\\r', '')
+        for start in range(0, len(text), 3000):
+            chunk = text[start:start + 3000].replace('%', '%25').replace('\\n', '%0A')
+            print('::error title=Log %d::%s' % (start // 3000 + 1, chunk))
+        "
   panda3d-android:
     name: Panda3D for Android (${{ matrix.abi }})
     runs-on: ubuntu-24.04
@@ -129,7 +148,9 @@ jobs:
 
     - name: Set up the Android NDK
       if: steps.cache.outputs.cache-hit != 'true'
-      run: echo "ANDROID_NDK_ROOT=$ANDROID_SDK_ROOT/ndk/$ANDROID_NDK" >> $GITHUB_ENV
+      run: |
+        exec > >(tee -a "$RUNNER_TEMP/steps.log") 2>&1
+        echo "ANDROID_NDK_ROOT=$ANDROID_SDK_ROOT/ndk/$ANDROID_NDK" >> $GITHUB_ENV
 
     - uses: actions/setup-python@v7
       if: steps.cache.outputs.cache-hit != 'true'
@@ -147,6 +168,7 @@ jobs:
     - name: Build Python for Android
       if: steps.cache.outputs.cache-hit != 'true' && steps.python-cache.outputs.cache-hit != 'true'
       run: |
+        exec > >(tee -a "$RUNNER_TEMP/steps.log") 2>&1
         wget -q https://www.python.org/ftp/python/$ANDROID_PYTHON/Python-$ANDROID_PYTHON.tar.xz
         tar -xJf Python-$ANDROID_PYTHON.tar.xz
         sed -i.bak "s/aarch64-linux-android/${{ matrix.triple }}/" Python-$ANDROID_PYTHON/Android/android.py
@@ -166,6 +188,7 @@ jobs:
       if: steps.cache.outputs.cache-hit != 'true' && steps.thirdparty-cache.outputs.cache-hit != 'true'
       working-directory: panda3d
       run: |
+        exec > >(tee -a "$RUNNER_TEMP/steps.log") 2>&1
         sudo apt-get install -y yasm
         git clone --revision=$ANDROID_THIRDPARTY_COMMIT --depth=1 https://github.com/rdb/panda3d-thirdparty.git thirdparty
         cd thirdparty
@@ -188,6 +211,7 @@ jobs:
       if: steps.cache.outputs.cache-hit != 'true'
       working-directory: panda3d
       run: |
+        exec > >(tee -a "$RUNNER_TEMP/steps.log") 2>&1
         # The wheel takes libpython and the compiled standard library modules
         # from the thirdparty folder.
         libs=thirdparty/${{ matrix.libs }}
@@ -202,6 +226,7 @@ jobs:
 
     - name: Check the wheel has what the game needs
       run: |
+        exec > >(tee -a "$RUNNER_TEMP/steps.log") 2>&1
         python -m zipfile -l wheels/panda3d-*.whl > contents.txt
         for module in panda3d/core panda3d/direct panda3d/physics panda3d/ode panda3d/fx p3openal_audio pandagles2 libdeploy-stubw libpython; do
           grep -q "$module" contents.txt || { echo "the wheel is missing $module"; exit 1; }
@@ -212,6 +237,18 @@ jobs:
         name: panda3d-android-${{ matrix.abi }}
         path: wheels/*.whl
 
+    - name: Show the end of the log
+      if: failure()
+      run: |
+        # The job logs are not always reachable, so the end of the log goes
+        # into annotations too.
+        tail -c 12000 "$RUNNER_TEMP/steps.log" | "$(command -v python || command -v python3)" -c "
+        import sys
+        text = sys.stdin.read().replace('\\r', '')
+        for start in range(0, len(text), 3000):
+            chunk = text[start:start + 3000].replace('%', '%25').replace('\\n', '%0A')
+            print('::error title=Log %d::%s' % (start // 3000 + 1, chunk))
+        "
   resources:
     name: Phase multifiles
     runs-on: ubuntu-24.04
@@ -230,6 +267,7 @@ jobs:
 
     - name: Pack
       run: |
+        exec > >(tee -a "$RUNNER_TEMP/steps.log") 2>&1
         # Any Panda3D can write multifiles.
         pip install panda3d
         mkdir multifiles
@@ -241,6 +279,18 @@ jobs:
         path: multifiles/*.mf
         compression-level: 0
 
+    - name: Show the end of the log
+      if: failure()
+      run: |
+        # The job logs are not always reachable, so the end of the log goes
+        # into annotations too.
+        tail -c 12000 "$RUNNER_TEMP/steps.log" | "$(command -v python || command -v python3)" -c "
+        import sys
+        text = sys.stdin.read().replace('\\r', '')
+        for start in range(0, len(text), 3000):
+            chunk = text[start:start + 3000].replace('%', '%25').replace('\\n', '%0A')
+            print('::error title=Log %d::%s' % (start // 3000 + 1, chunk))
+        "
   game:
     name: Package the game
     needs: [panda3d-windows, panda3d-android, resources]
@@ -275,6 +325,7 @@ jobs:
     - name: Install the build tools
       shell: bash
       run: |
+        exec > >(tee -a "$RUNNER_TEMP/steps.log") 2>&1
         ls -l wheels
         pip install setuptools wheels/panda3d-*win_amd64.whl
 
@@ -282,11 +333,14 @@ jobs:
       shell: bash
       env:
         PIP_FIND_LINKS: ${{ github.workspace }}/wheels
-      run: python setup.py bdist_apps
+      run: |
+        exec > >(tee -a "$RUNNER_TEMP/steps.log") 2>&1
+        python setup.py bdist_apps
 
     - name: Make an installable APK
       shell: bash
       run: |
+        exec > >(tee -a "$RUNNER_TEMP/steps.log") 2>&1
         # A release build is signed with the keystore in the
         # ANDROID_KEYSTORE secret when there is one, otherwise with a
         # throwaway key, which installs fine but cannot update an APK signed
@@ -331,4 +385,19 @@ jobs:
       shell: bash
       env:
         GH_TOKEN: ${{ github.token }}
-      run: gh release create "$GITHUB_REF_NAME" dist/*win_amd64*.zip dist/*.apk dist/*.aab --title "$GITHUB_REF_NAME" --generate-notes
+      run: |
+        exec > >(tee -a "$RUNNER_TEMP/steps.log") 2>&1
+        gh release create "$GITHUB_REF_NAME" dist/*win_amd64*.zip dist/*.apk dist/*.aab --title "$GITHUB_REF_NAME" --generate-notes
+
+    - name: Show the end of the log
+      if: failure()
+      run: |
+        # The job logs are not always reachable, so the end of the log goes
+        # into annotations too.
+        tail -c 12000 "$RUNNER_TEMP/steps.log" | "$(command -v python || command -v python3)" -c "
+        import sys
+        text = sys.stdin.read().replace('\\r', '')
+        for start in range(0, len(text), 3000):
+            chunk = text[start:start + 3000].replace('%', '%25').replace('\\n', '%0A')
+            print('::error title=Log %d::%s' % (start // 3000 + 1, chunk))
+        "
