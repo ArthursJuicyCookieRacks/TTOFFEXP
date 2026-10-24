@@ -89,7 +89,7 @@ launcher.setPandaErrorCode(7)
 # An Android player's own graphics driver has to be in place before the
 # window opens.
 from . import TurnipDrivers
-TurnipDrivers.useDriver(settings)
+TurnipDrivers.useDriver(settings.settings)
 from . import ToonBase
 ToonBase.ToonBase()
 from panda3d.core import *

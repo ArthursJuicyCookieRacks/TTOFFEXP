@@ -52,6 +52,15 @@ def useDriver(settings):
     if sys.platform != 'android' or platform.machine() != 'aarch64':
         # Turnip is for 64-bit Snapdragon phones.
         return False
+    try:
+        return startDriver(settings)
+    except Exception as e:
+        # Whatever goes wrong, the game still starts on the phone's driver.
+        print('TurnipDrivers: %r' % e)
+        return False
+
+
+def startDriver(settings):
     driver = currentDriver(settings)
     if settings.getString('graphics', 'driver-trying', ''):
         # The last start with it never reached the launcher.
