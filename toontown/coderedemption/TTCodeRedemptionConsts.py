@@ -1,4 +1,5 @@
-from enum import Enum, IntEnum
+from enum import Enum
+from otp.otpbase.PythonEnum import IntEnum
 DefaultDbName = 'tt_code_redemption'
 #RedeemErrors = Enum('Success, CodeDoesntExist, CodeIsInactive, CodeAlreadyRedeemed, AwardCouldntBeGiven, TooManyAttempts, SystemUnavailable, ')
 class RedeemErrors(IntEnum):

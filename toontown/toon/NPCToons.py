@@ -113,12 +113,10 @@ def createNPC(air, npcId, desc, zoneId, posIndex = 0, questCallback = None):
             return
         npc = DistributedNPCPartyPersonAI.DistributedNPCPartyPersonAI(air, npcId)
     elif type == NPC_SPECIALQUESTGIVER:
-        return False
         npc = DistributedNPCSpecialQuestGiverAI.DistributedNPCSpecialQuestGiverAI(air, npcId)
     elif type == NPC_FLIPPYTOONHALL:
         npc = DistributedNPCFlippyInToonHallAI.DistributedNPCFlippyInToonHallAI(air, npcId)
     elif type == NPC_SCIENTIST:
-        return False
         npc = DistributedNPCScientistAI.DistributedNPCScientistAI(air, npcId)
     elif type == NPC_SNOWBALLGIVER:
         npc = DistributedNPCSnowballGiverAI.DistributedNPCSnowballGiverAI(air, npcId)

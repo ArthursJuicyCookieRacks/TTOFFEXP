@@ -1,4 +1,5 @@
-from enum import Enum, IntEnum
+from enum import Enum
+from otp.otpbase.PythonEnum import IntEnum
 #GiveAwardErrors = Enum('Success, WrongGender, NotGiftable, FullMailbox, FullAwardMailbox, AlreadyInMailbox, AlreadyInGiftQueue, AlreadyInOrderedQueue, AlreadyInCloset, AlreadyBeingWorn, AlreadyInAwardMailbox, AlreadyInThirtyMinuteQueue, AlreadyInMyPhrases, AlreadyKnowDoodleTraining, AlreadyRented, GenericAlreadyHaveError, UnknownError, UnknownToon, NonToon,')
 class GiveAwardErrors(IntEnum):
     Success = 0

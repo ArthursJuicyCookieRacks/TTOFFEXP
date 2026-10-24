@@ -1,5 +1,6 @@
 import random
-from enum import Enum, IntEnum
+from enum import Enum
+from otp.otpbase.PythonEnum import IntEnum
 from panda3d.core import *
 from direct.interval.FunctionInterval import Wait, Func
 from direct.interval.MetaInterval import Sequence, Parallel

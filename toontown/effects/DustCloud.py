@@ -1,4 +1,5 @@
-from enum import Enum, IntEnum
+from enum import Enum
+from otp.otpbase.PythonEnum import IntEnum
 from panda3d.core import *
 from direct.interval.IntervalGlobal import *
 from direct.showbase import PythonUtil

@@ -1,4 +1,5 @@
-from enum import Enum, IntEnum
+from enum import Enum
+from otp.otpbase.PythonEnum import IntEnum
 from direct.showbase.PythonUtil import invertDictLossless
 from direct.interval.IntervalGlobal import *
 import types

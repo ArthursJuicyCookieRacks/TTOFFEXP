@@ -1,4 +1,5 @@
-from enum import Enum, IntEnum
+from enum import Enum
+from otp.otpbase.PythonEnum import IntEnum
 from panda3d.core import *
 from . import ShtikerPage
 from toontown.toontowngui import TTDialog

@@ -1,5 +1,6 @@
 from direct.showbase import PythonUtil
-from enum import Enum, IntEnum
+from enum import Enum
+from otp.otpbase.PythonEnum import IntEnum
 from panda3d.core import VBase4, Vec3, Point3
 from .CogdoUtil import VariableContainer, DevVariableContainer
 #AI = VariableContainer()

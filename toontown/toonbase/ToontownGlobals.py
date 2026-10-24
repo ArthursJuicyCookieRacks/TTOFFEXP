@@ -1,7 +1,8 @@
 from . import TTLocalizer
 from otp.otpbase.OTPGlobals import *
 from direct.showbase.PythonUtil import invertDict
-from enum import Enum, IntEnum
+from enum import Enum
+from otp.otpbase.PythonEnum import IntEnum
 from panda3d.core import *
 MapHotkeyOn = 'alt'
 MapHotkeyOff = 'alt-up'

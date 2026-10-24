@@ -92,7 +92,7 @@ class DistributedNPCScientistAI(DistributedNPCToonBaseAI.DistributedNPCToonBaseA
 
     def startIfNeeded(self):
         if hasattr(simbase.air, 'holidayManager') and simbase.air.holidayManager:
-            self.curPhase = self.getPhaseTorun()
+            self.curPhase = self.getPhaseToRun()
             if self.curPhase != -1:
                 self.selectPhase(self.curPhase)
 

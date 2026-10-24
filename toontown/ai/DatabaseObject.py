@@ -73,7 +73,10 @@ class DatabaseObject:
         className = do.__class__.__name__
         if className.endswith('AI'):
             className = className[:-2]
-        return self.air.dclassesByName[className]
+        # A pet proxy is read from and stored into its pet's record.
+        if className == 'DistributedPetProxy':
+            className = 'DistributedPet'
+        return self.air.dclassesByName.get(className) or self.air.dclassesByName[className + 'AI']
 
     def getFields(self, fields):
         if not fields:

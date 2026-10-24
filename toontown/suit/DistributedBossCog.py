@@ -596,6 +596,10 @@ class DistributedBossCog(DistributedAvatar.DistributedAvatar, BossCog.BossCog):
     def localToonToSafeZone(self):
         target_sz = ZoneUtil.getSafeZoneId(localAvatar.defaultZone)
         place = self.cr.playGame.getPlace()
+        if place is None:
+            # Already on the way out: the boss is being cleaned up after the
+            # toon left, and its unfinished movie is being wrapped up.
+            return
         place.fsm.request('teleportOut', [{'loader': ZoneUtil.getLoaderName(target_sz),
           'where': ZoneUtil.getWhereName(target_sz, 1),
           'how': 'teleportIn',

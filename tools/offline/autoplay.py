@@ -622,6 +622,14 @@ def fightBoss(interior, bossClass, actions, timeout=2400, prelude={}):
     boss = findObject(bossClass)
     deadline = time.time() + timeout
     lastState = None
+
+    def finishEpilogue(boss):
+        # One click through the speech, as a player would; every click
+        # restarts the walk out of the boss room.
+        if time.time() - stateStart > 3 and time.time() > getattr(boss, 'autoplayNextClick', 0):
+            boss.autoplayNextClick = time.time() + 20
+            messenger.send('doneChatPage', [0])
+
     while placeName() == interior:
         if time.time() > deadline:
             raise StepFailed('the %s did not end in %d seconds (boss state %s)' % (bossClass, timeout, boss.state))
@@ -640,7 +648,7 @@ def fightBoss(interior, bossClass, actions, timeout=2400, prelude={}):
             continue
         # In the epilogue a rescued toon talks; clicking through the speech
         # balloon's pages ends it.
-        action = actions.get(boss.state) or {'Epilogue': lambda boss: messenger.send('doneChatPage', [0])}.get(boss.state)
+        action = actions.get(boss.state) or {'Epilogue': finishEpilogue}.get(boss.state)
         if action is not None:
             action(boss)
         yield sleep(0.5)
@@ -679,6 +687,10 @@ def cfoBattleThree(boss):
         if free is not None:
             free.sendUpdate('requestControl', [])
         return
+    if not crane.magnetOn:
+        # Holding the control key keeps the magnet on; without it the crane
+        # lets go of whatever it picks up.
+        crane._DistributedCashbotBossCrane__controlPressed()
     if time.time() > getattr(boss, 'autoplayNextNote', 0):
         boss.autoplayNextNote = time.time() + 15
         log('cfo: crane %s; my objects %s' % (crane.doId, [(do.__class__.__name__[20:], do.state) for do in base.cr.doId2do.values()
@@ -853,6 +865,15 @@ def scenarioEstate():
     yield from teleport(ToontownGlobals.ToontownCentral)
 
 
+def restock(air, avId):
+    # Stands in for a trip to the Gag Shop and the playground between
+    # fights, so a new 15-laff toon does not go sad.
+    av = air.doId2do[avId]
+    av.b_setHp(av.getMaxHp())
+    av.inventory.maxOutInv()
+    av.b_setInventory(av.inventory.makeNetString())
+
+
 def scenarioPets():
     # Adopts a doodle at the Toontown Central pet shop, then meets it on the
     # estate and plays with it.
@@ -902,6 +923,7 @@ def scenarioPets():
     petId = localAvatar.getPetId()
     yield until(lambda: petId in base.cr.doId2do, 60, 'the doodle on the estate')
     pet = base.cr.doId2do[petId]
+    petName = pet.getName()
     log('the doodle %s is here, feeling %s' % (pet.getName(), pet.mood.getDominantMood() if hasattr(pet, 'mood') else '?'))
     for flag, name in ((PetConstants.PET_MOVIE_CALL, 'calling'), (PetConstants.PET_MOVIE_SCRATCH, 'scratching'),
                        (PetConstants.PET_MOVIE_FEED, 'feeding')):
@@ -935,6 +957,30 @@ def scenarioPets():
     pet.doTrick = doTrick
     if not localAvatar.bPetTutorialDone:
         raise StepFailed('the doodle tutorial was never shown')
+
+    # Calling the doodle for help in a cog battle, through the SOS panel.
+    street = ToontownGlobals.SillyStreet
+    yield from teleport(street - street % 1000, firstVisgroup(street))
+    onDistrict(restock, localAvatar.doId)
+    for attempt in range(5):
+        magicWord('~spawn f 1')
+        yield until(suitsNearby, 120, 'a cog on the street')
+        suit = min(suitsNearby(), key=lambda s: (s.getPos(render) - localAvatar.getPos(render)).length())
+        while placeState() == 'walk' and not suit.isEmpty():
+            localAvatar.setPos(render, suit.getPos(render))
+            yield sleep(0.1)
+        if placeState() != 'walk':
+            break
+    yield until(lambda: townBattleState() == 'Attack', 120, 'the first gag choice')
+    log('calling the doodle for help')
+    townBattle().fsm.request('SOS')
+    townBattle()._TownBattle__handleSOSPanelDone({'mode': 'Pet', 'petId': petId, 'petName': petName})
+    yield until(lambda: townBattleState() == 'SOSPetInfo', 60, 'the doodle to come to the battle')
+    townBattle()._TownBattle__handleSOSPetInfoPanelDone({'mode': 'OK', 'trickId': PetTricks.Tricks.JUMP})
+    yield until(lambda: townBattleState() != 'AttackWait', 120, 'the doodle\'s turn')
+    log('the doodle helped; gag panel now', townBattleState())
+    yield from fightBattle()
+    yield until(walking, 120, 'walking after the battle')
     yield from teleport(ToontownGlobals.ToontownCentral)
 
 
@@ -1177,14 +1223,6 @@ def defeatCogsFor(questId, quest):
     done = lambda: quest.getCompletionStatus(localAvatar, next(q for q in localAvatar.quests if q[0] == questId)) == Quests.COMPLETE
     street = ToontownGlobals.SillyStreet
     yield from teleport(street - street % 1000, firstVisgroup(street))
-    def restock(air, avId):
-        # Stands in for a trip to the Gag Shop and the playground between
-        # fights, so a new 15-laff toon does not go sad.
-        av = air.doId2do[avId]
-        av.b_setHp(av.getMaxHp())
-        av.inventory.maxOutInv()
-        av.b_setInventory(av.inventory.makeNetString())
-
     while not done():
         onDistrict(restock, localAvatar.doId)
         magicWord('~spawn %s %d' % (cog, level))

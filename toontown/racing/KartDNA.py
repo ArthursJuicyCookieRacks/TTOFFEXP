@@ -1,4 +1,4 @@
-from enum import IntEnum
+from otp.otpbase.PythonEnum import IntEnum
 from direct.directnotify import DirectNotifyGlobal
 from direct.showbase import PythonUtil
 from toontown.toonbase import TTLocalizer

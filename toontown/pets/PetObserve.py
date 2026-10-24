@@ -1,4 +1,5 @@
-from enum import Enum, IntEnum
+from enum import Enum
+from otp.otpbase.PythonEnum import IntEnum
 from direct.directnotify import DirectNotifyGlobal
 from direct.showbase.PythonUtil import list2dict
 from toontown.pets import PetTricks

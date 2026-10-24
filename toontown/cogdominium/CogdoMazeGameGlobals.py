@@ -1,4 +1,5 @@
-from enum import Enum, IntEnum
+from enum import Enum
+from otp.otpbase.PythonEnum import IntEnum
 from direct.showbase import PythonUtil
 from panda3d.core import VBase4
 #GameActions = PythonUtil.Enum(('EnterDoor',

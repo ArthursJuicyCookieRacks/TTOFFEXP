@@ -1,4 +1,5 @@
-from enum import Enum, IntEnum
+from enum import Enum
+from otp.otpbase.PythonEnum import IntEnum
 from panda3d.core import BitMask32
 from panda3d.core import Point3, VBase4
 from direct.showbase import PythonUtil
