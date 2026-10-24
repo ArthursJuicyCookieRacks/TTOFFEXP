@@ -120,6 +120,14 @@ class DistributedFurnitureManagerAI(DistributedObjectAI):
                     # If they have a female closet, we need to make it a male closet.
                     item.furnitureType -= 10
                 do = DistributedClosetAI(self.air, self, item)
+            elif item.getFlags() & FLTrunk:
+                # Like the closet, the trunk matches the house owner.
+                if self.house.gender == 0:
+                    if item.furnitureType - 4000 < 10:
+                        item.furnitureType += 10
+                elif item.furnitureType - 4000 > 10:
+                    item.furnitureType -= 10
+                do = DistributedTrunkAI(self.air, self, item)
             elif item.getFlags() & FLBank:
                 do = DistributedBankAI(self.air, self, item)
             elif item.getFlags() & FLPhone:

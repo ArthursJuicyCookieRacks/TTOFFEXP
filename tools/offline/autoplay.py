@@ -479,11 +479,18 @@ def scenarioBattle():
     yield until(suitsNearby, 120, 'a cog on the street')
     suit = min(suitsNearby(), key=lambda s: (s.getPos(render) - localAvatar.getPos(render)).length())
     log('walking into', suit.getName(), suit.doId)
-    while placeState() == 'walk':
-        if suit.isEmpty():
-            raise StepFailed('the cog left before the battle started')
-        localAvatar.setPos(render, suit.getPos(render))
-        yield sleep(0.1)
+    for attempt in range(5):
+        while placeState() == 'walk' and not suit.isEmpty():
+            localAvatar.setPos(render, suit.getPos(render))
+            yield sleep(0.1)
+        if placeState() != 'walk':
+            break
+        # The cog walked into a building or flew off; take the next one.
+        yield until(suitsNearby, 120, 'another cog on the street')
+        suit = min(suitsNearby(), key=lambda s: (s.getPos(render) - localAvatar.getPos(render)).length())
+        log('that cog left; walking into', suit.getName(), suit.doId)
+    else:
+        raise StepFailed('every cog left before a battle started')
     yield from fightBattle()
     yield until(walking, 120, 'walking after the battle')
 
@@ -2324,6 +2331,11 @@ def scenarioAccessories():
         from toontown.catalog.CatalogAccessoryItem import CatalogAccessoryItem
         from toontown.catalog.CatalogAccessoryItemGlobals import AccessoryTypes, ATArticle
         av = air.doId2do[avId]
+        # Start like a toon that never had accessories, so the test can run
+        # again on the same toon.
+        for kind in ('Hat', 'Glasses', 'Backpack', 'Shoes'):
+            getattr(av, 'b_set' + kind)(0, 0, 0)
+            getattr(av, 'b_set%sList' % kind)([])
         trunk = CatalogFurnitureItem.CatalogFurnitureItem(CatalogFurnitureItem.MaxTrunkIds[av.dna.gender == 'f'])
         results = [('trunk', trunk.recordPurchase(av, None))]
         kinds = {}
@@ -2341,14 +2353,24 @@ def scenarioAccessories():
     if any(code < 0 for name, code in results) or len(results) != 5:
         raise StepFailed('the trunk and accessories were not delivered: %s' % (results,))
     yield until(lambda: localAvatar.getMaxAccessories() > 0 and all(
-        len(getattr(localAvatar, 'get%sList' % kind)()) == 3 for kind in ('Hat', 'Glasses', 'Backpack', 'Shoes')), 30, 'the accessories in the trunk')
+        len(getattr(localAvatar, 'get%sList' % kind)()) >= 3 for kind in ('Hat', 'Glasses', 'Backpack', 'Shoes')), 30, 'the accessories in the trunk')
 
     # Arrange the furniture: the trunk comes out of the attic.
     manager = base.cr.furnitureManager
     manager.d_suggestDirector(me)
     yield until(lambda: manager.director == me, 30, 'furniture arranging')
     from toontown.catalog.CatalogFurnitureItem import FLTrunk
-    yield until(lambda: [item for item in manager.atticItems if item.getFlags() & FLTrunk], 30, 'the trunk in the attic')
+    inAttic = lambda: [item for item in manager.atticItems if item.getFlags() & FLTrunk]
+    yield until(lambda: inAttic() or findObject('DistributedTrunk'), 30, 'the trunk')
+    if not inAttic():
+        # A new trunk replaces one already in the house where it stands, so
+        # it goes up to the attic first.
+        moved = []
+        manager.moveItemToAttic(findObject('DistributedTrunk'), lambda retcode, item: moved.append(retcode))
+        yield until(lambda: moved, 30, 'the trunk to go up to the attic')
+        if moved[0] < 0:
+            raise StepFailed('could not move the trunk to the attic: %s' % moved[0])
+    yield until(inAttic, 30, 'the trunk in the attic')
     index = [i for i, item in enumerate(manager.atticItems) if item.getFlags() & FLTrunk][0]
     placed = []
     pos = localAvatar.getPos(render) + Vec3(0, 6, 0)
