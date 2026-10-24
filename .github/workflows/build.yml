@@ -341,7 +341,9 @@ jobs:
         PIP_FIND_LINKS: ${{ github.workspace }}/wheels
       run: |
         exec > >(tee -a "$RUNNER_TEMP/steps.log") 2>&1
-        python setup.py bdist_apps
+        # One platform at a time: they log differently (see setup.py).
+        TTR_PLATFORMS=win_amd64 python setup.py bdist_apps
+        TTR_PLATFORMS=android python setup.py bdist_apps
 
     - name: Make an installable APK
       shell: bash

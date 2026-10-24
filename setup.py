@@ -2,10 +2,12 @@
 
     python setup.py bdist_apps
 
-builds Windows (a zip) and Android (an .aab) by default. The phase multifiles
-must be in the repository root first (tools/offline/pack_resources.py makes
-them), and pip must be able to find the Panda3D wheels for each platform,
-for example with PIP_FIND_LINKS pointing at a folder of them. The GitHub
+builds Windows (a zip) and Android (an .aab) by default; the release builds
+make each with its own run (TTR_PLATFORMS=win_amd64, then android). The
+phase multifiles must be in the repository root first
+(tools/offline/pack_resources.py makes them), and pip must be able to find
+the Panda3D wheels for each platform, for example with PIP_FIND_LINKS
+pointing at a folder of them. The GitHub
 Actions workflow in .github/workflows/build.yml does all of this.
 """
 
@@ -59,6 +61,18 @@ def directModules():
     return sorted(modules)
 
 
+# TTR_PLATFORMS picks some, e.g. TTR_PLATFORMS=win_amd64.
+PLATFORMS = os.environ.get('TTR_PLATFORMS', 'win_amd64,android').split(',')
+
+# A desktop game writes its output to a log file. On Android it goes to the
+# system log (logcat) instead: there is no home folder for the file, and the
+# app cannot start if the file cannot be made. build_apps takes one setting
+# for every platform, so build Android on its own (the workflow does).
+LOG_OPTIONS = {} if 'android' in PLATFORMS else {
+    'log_filename': '$USER_APPDATA/TTR-Offline/logs/game-%Y-%m-%d_%H-%M-%S.log',
+    'log_filename_strftime': True,
+}
+
 setup(
     name='TTR-Offline',
     version=VERSION,
@@ -88,13 +102,11 @@ setup(
                 'pandagles2',
                 'p3openal_audio',
             ],
-            # TTR_PLATFORMS picks some, e.g. TTR_PLATFORMS=win_amd64.
-            'platforms': os.environ.get('TTR_PLATFORMS', 'win_amd64,android').split(','),
+            'platforms': PLATFORMS,
             'android_abis': ['arm64-v8a', 'armeabi-v7a', 'x86_64'],
             'android_app_category': 'game',
             'android_version_code': 1,
-            'log_filename': '$USER_APPDATA/TTR-Offline/logs/game-%Y-%m-%d_%H-%M-%S.log',
-            'log_filename_strftime': True,
+            **LOG_OPTIONS,
         },
         'bdist_apps': {
             'installers': {
