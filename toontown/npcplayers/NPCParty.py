@@ -23,6 +23,7 @@ from toontown.suit.DistributedBossCogAI import DistributedBossCogAI
 from toontown.npcplayers.NPCNav import getNav
 from toontown.minigame.DistributedMinigameAI import DistributedMinigameAI
 from toontown.safezone.DistributedGolfKartAI import DistributedGolfKartAI
+from toontown.racing.DistributedRaceAI import DistributedRaceAI
 from toontown.safezone.DistributedTrolleyAI import DistributedTrolleyAI
 from toontown.toonbase import ToontownGlobals
 
@@ -247,8 +248,8 @@ class NPCParty:
             if npc.busy or npc.walk is not None:
                 continue
             if self.isPlaying(npc):
-                # A golf course or a trolley game puts each toon where it
-                # wants them.
+                # A golf course, a trolley game or a race puts each toon
+                # where it wants them.
                 continue
             if [e for e in self.getElevators() if player.doId in seatsOf(e)]:
                 continue
@@ -286,8 +287,14 @@ class NPCParty:
                     npc.asSender(getattr(obj, method))
 
     def isPlaying(self, npc):
-        return any(isinstance(obj, (DistributedGolfCourseAI, DistributedMinigameAI)) and npc.doId in obj.avIdList
-                   for obj in self.air.doId2do.values() if getattr(obj, 'zoneId', None) == npc.zoneId)
+        for obj in list(self.air.doId2do.values()):
+            if getattr(obj, 'zoneId', None) != npc.zoneId:
+                continue
+            if isinstance(obj, (DistributedGolfCourseAI, DistributedMinigameAI)) and npc.doId in obj.avIdList:
+                return True
+            if isinstance(obj, DistributedRaceAI) and npc.doId in obj.avatars:
+                return True
+        return False
 
     def answerBarriers(self, npc, obj):
         # Many places wait at a barrier for each toon's client to say it is

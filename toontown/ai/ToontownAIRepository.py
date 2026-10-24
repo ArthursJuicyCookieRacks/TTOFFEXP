@@ -135,6 +135,7 @@ class ToontownAIRepository(ToontownInternalRepository):
         self.statusSender.start()
 
         self.distributedDistrict.b_setAvailable(1)
+        self.districtReady = True
         self.notify.info('District is now ready.')
 
     def incrementPopulation(self):
@@ -224,6 +225,7 @@ class ToontownAIRepository(ToontownInternalRepository):
             '''So the TCP window doesn't fill up and we get the axe'''
             while self.readerPollOnce():
                 pass
+            self.keepGameAnswering()
 
         self.hoods.append(TTHoodAI.TTHoodAI(self))
         clearQueue()
@@ -284,10 +286,27 @@ class ToontownAIRepository(ToontownInternalRepository):
         return 'phase_%s/dna/%s_%s.xml' % (phase, hood, zoneId)
 
     def loadDNA(self, filename):
+        self.keepGameAnswering()
         with open('/' + filename) as f:
             tree = DNAParser.parse(f)
 
         return tree
+
+    def keepGameAnswering(self):
+        # Offline, the AI starts up inside the game, and building every zone
+        # takes most of a minute on a phone. A frame now and then keeps the
+        # game's window answering; Android closes an app that stops.
+        from otp.local.ExecutionContext import getClientBuiltin
+        if getattr(self, 'districtReady', False):
+            return
+        now = time.monotonic()
+        if now - getattr(self, 'lastGameFrame', 0) < 0.5:
+            return
+        self.lastGameFrame = now
+        base = getClientBuiltin('base')
+        engine = getattr(base, 'graphicsEngine', None) if base is not None else None
+        if engine is not None:
+            engine.renderFrame()
 
 
 @magicWord(category=CATEGORY_SYSADMIN, types=[str, int])

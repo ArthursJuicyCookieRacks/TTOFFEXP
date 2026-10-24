@@ -1361,7 +1361,7 @@ def driveKart(race):
     taskMgr.add(drive, 'autoplay-drive-kart')
 
 
-def scenarioRacing():
+def scenarioRacing(practice=True):
     from toontown.racing import KartDNA, RaceGlobals
     yield from teleport(ToontownGlobals.GoofySpeedway)
     if not localAvatar.hasKart():
@@ -1386,13 +1386,17 @@ def scenarioRacing():
         yield sleep(2)
         messenger.send(door(DoorTypes.INT_KS).getEnterTriggerEvent(), [None])
         yield until(lambda: placeName() == 'GSPlayground' and walking(), 120, 'walking out of the kart shop')
-    yield until(lambda: findObject('DistributedStartingBlock',
-                                   lambda do: do.kartPad and getattr(do.kartPad, 'isPractice', lambda: False)() and do.avId == 0),
-                60, 'a practice starting block')
-    block = findObject('DistributedStartingBlock',
-                       lambda do: do.kartPad and getattr(do.kartPad, 'isPractice', lambda: False)() and do.avId == 0)
+    # A pad nobody is on yet, so the race waits for the NPCs to pull up.
+    def freeBlock(do):
+        pad = do.kartPad
+        if not pad or bool(getattr(pad, 'isPractice', lambda: False)()) != practice:
+            return False
+        return all(b.avId == 0 for b in pad.startingBlocks)
+    kind = 'practice' if practice else 'race'
+    yield until(lambda: findObject('DistributedStartingBlock', freeBlock), 60, 'a %s starting block' % kind)
+    block = findObject('DistributedStartingBlock', freeBlock)
     yield sleep(2)
-    log('getting on a practice starting block for track', block.kartPad.trackId)
+    log('getting on a %s starting block for track %d' % (kind, block.kartPad.trackId))
     localAvatar.setPos(render, block.nodePath.getPos(render))
     messenger.send(block.uniqueName('enterStartingBlockSphere'), [None])
     yield until(lambda: getattr(block, 'dialog', None) is not None, 10, 'the practice dialog')
@@ -1405,6 +1409,11 @@ def scenarioRacing():
         messenger.send(race.rulesDoneEvent)
     yield until(lambda: raceState(race) == 'racing', 120, 'the starting light')
     log('racing %d laps on track %d' % (race.lapCount, race.trackId))
+    if not practice:
+        # The other racers pulling away from the grid.
+        for i in range(3):
+            base.screenshot(os.path.join(os.environ.get('AUTOPLAY_SHOTS', '/tmp'), 'race-start-%d.png' % i), defaultFilename=0)
+            yield sleep(1.5)
     driveKart(race)
     deadline = time.time() + 1200
     nextReport = time.time() + 30
@@ -1414,9 +1423,13 @@ def scenarioRacing():
         if time.time() > nextReport:
             nextReport = time.time() + 30
             log('lap %d, %.2f of the way round' % (race.laps, race.currLapT))
+
         yield sleep(0.5)
     log('race over in state', raceState(race))
-    yield sleep(5)
+    log('racers: %s' % ['%d lap %.2f' % (avId, race.gui.racerDict[avId].curvetime if avId in race.gui.racerDict else -1)
+                        for avId in race.avIds])
+    yield sleep(5 if practice else 25)
+    log('places: %s' % race.knownPlace)
     messenger.send('leaveRace')
     yield until(lambda: placeName() == 'GSPlayground' and walking(), 120, 'walking at the speedway again')
 
@@ -2973,6 +2986,7 @@ SCENARIOS = [
     ('npccj', withNPCs(scenarioCJ, ['DistributedBattleFinalAI', 'boss l'])),
     ('npcceo', withNPCs(scenarioCEO, ['DistributedBattleWaitersAI', 'boss c'])),
     ('npcgolf', withNPCs(scenarioGolf, ['golf swings'])),
+    ('npcracing', withNPCs(lambda: scenarioRacing(practice=False), ['race finishes'])),
     ('npcminigames', scenarioNPCMinigames),
     ('npccogdo', withNPCs(scenarioCogdo, ['DistributedCogdoBattleBldgAI'])),
     ('npccogdolaw', withNPCs(lambda: scenarioCogdo('l'), ['DistributedCogdoBattleBldgAI'])),

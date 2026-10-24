@@ -24,6 +24,7 @@ from toontown.npcplayers.NPCBattleCrew import NPCBattleCrew, isNPC
 from toontown.npcplayers.NPCNav import getNav
 from toontown.npcplayers.NPCGolf import NPCGolf
 from toontown.npcplayers.NPCMinigames import NPCMinigames
+from toontown.npcplayers.NPCRacing import NPCRacing
 from toontown.npcplayers.NPCParty import NPCParty
 from toontown.npcplayers.NPCBossCrew import NPCBossCrew
 from toontown.suit.DistributedBossCogAI import DistributedBossCogAI
@@ -149,6 +150,7 @@ class NPCPlayerManagerAI:
         self.party = NPCParty(self)
         self.golf = NPCGolf(self)
         self.minigames = NPCMinigames(self)
+        self.racing = NPCRacing(self)
         self.stats = {}
         self.bossCrews = {}
         self.taskName = 'npcPlayerManager-%d' % id(self)
@@ -165,6 +167,7 @@ class NPCPlayerManagerAI:
                 self.despawn(npc, quietly=True)
         self.party.destroy()
         self.minigames.destroy()
+        self.racing.destroy()
 
     # --- Who and where the players are ---
 

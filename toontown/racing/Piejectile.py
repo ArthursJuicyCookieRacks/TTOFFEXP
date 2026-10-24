@@ -152,8 +152,11 @@ class Piejectile(DirectObject, FlyingGag):
         self.removeNode()
 
     def __updatePhysics(self, task):
-        if self.deleting:
+        # A pie that has splatted is gone.
+        if self.deleting or self.isEmpty():
             return Task.done
+        if self.hasTarget and (self.targetKart is None or self.targetKart.isEmpty()):
+            self.hasTarget = 0
         self.timeRatio = (globalClock.getFrameTime() - self.startTime) / self.maxTime
         self.windResistance.setCoef(0.2 + 0.8 * self.timeRatio)
         if base.cr.doId2do.get(self.targetId) == None:

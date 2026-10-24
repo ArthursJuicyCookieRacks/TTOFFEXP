@@ -33,6 +33,8 @@ class DistributedRaceAI(DistributedObjectAI, FSM):
         self.livingGags = []
         self.currentlyAffectedByAnvil = {}
         self.avatarProgress = {}
+        # When each racer last had a pie thrown at them.
+        self.pieTargets = {}
     
     def generate(self):
         for avatar in self.avatars:
@@ -245,15 +247,18 @@ class DistributedRaceAI(DistributedObjectAI, FSM):
         if self.raceType == RaceGlobals.Practice:
             self.air.writeServerEvent('suspicious', avId=avId, issue='Toon tried to gain gag in a practice race!')
             return
-        places = sorted(self.avatarProgress, key=self.avatarProgress.get)
+        # First place is GagFreq[0].
+        places = sorted(self.avatarProgress, key=self.avatarProgress.get, reverse=True)
         avPlace = places.index(avId)
         gag = self.gags[slot]
         if not gag[0]:
             self.air.writeServerEvent('suspicious', avId=avId, issue='Toon tried to pick up a gag that doesn\'t exist!')
             return
         gagIndex = gag[1]
-        realGag = RaceGlobals.GagFreq[avPlace][gagIndex]
-        if realGag != requestedGag:
+        # A client's idea of its place can be a moment behind; any place
+        # around it will do.
+        nearby = [RaceGlobals.GagFreq[place][gagIndex] for place in range(max(avPlace - 1, 0), min(avPlace + 2, len(places)))]
+        if requestedGag not in nearby:
             self.air.writeServerEvent('suspicious', avId=avId, issue='Toon tried to get the wrong gag!')
             return
         self.gags[slot] = [0, 0]
@@ -323,7 +328,11 @@ class DistributedRaceAI(DistributedObjectAI, FSM):
         av.b_setTickets(av.getTickets() + winnings)
         if av.getTickets() > RaceGlobals.MaxTickets:
             av.b_setTickets(RaceGlobals.MaxTickets)
-        self.sendUpdate('setPlace', [avId, totalTime, place, entryFee, qualify, (winnings-entryFee-bonus), bonus, trophies, [], 0])
+        # The end panel shows the entry fee back plus what was won. A racer
+        # who didn't qualify gets neither back (and the field can't hold
+        # less than nothing won).
+        shownFee = entryFee if winnings else 0
+        self.sendUpdate('setPlace', [avId, totalTime, place, shownFee, qualify, max(winnings - entryFee - bonus, 0), bonus, trophies, [], 0])
 
         
     def calculateTrophies(self, avId, won, qualify, time):
@@ -386,7 +395,8 @@ class DistributedRaceAI(DistributedObjectAI, FSM):
         avId = self.air.getAvatarIdFromSender()
         if not avId in self.avatars:
             self.air.writeServerEvent('suspicious', avId=avId, issue='Toon tried to throw a gag in a race they\'re not in!')
-        if self.avatarGags[avId] == RaceGlobals.BANANA:
+            return
+        if self.avatarGags.get(avId) == RaceGlobals.BANANA:
             gag = DistributedGagAI(self.air)
             gag.setRace(self.doId)
             gag.setOwnerId(avId)
@@ -400,13 +410,15 @@ class DistributedRaceAI(DistributedObjectAI, FSM):
             pass
         elif self.avatarGags[avId] == RaceGlobals.ANVIL:
             places = sorted(self.avatarProgress, key=self.avatarProgress.get, reverse=True)
+            currAvatar = None
             for i in places:
                 if not i in self.finishedAvatars and not self.currentlyAffectedByAnvil[i]:
                     currAvatar = i
                     break
-            self.currentlyAffectedByAnvil[avId] = True
-            taskMgr.doMethodLater(RaceGlobals.AnvilSquishDuration, self.unsquish, 'unsquish-%i' % currAvatar, [currAvatar])
-            self.sendUpdate('dropAnvilOn', [avId, currAvatar, globalClockDelta.getRealNetworkTime()])
+            if currAvatar is not None:
+                self.currentlyAffectedByAnvil[currAvatar] = True
+                taskMgr.doMethodLater(RaceGlobals.AnvilSquishDuration, self.unsquish, 'unsquish-%i' % currAvatar, [currAvatar])
+                self.sendUpdate('dropAnvilOn', [avId, currAvatar, globalClockDelta.getRealNetworkTime()])
         elif self.avatarGags[avId] == RaceGlobals.PIE:
             places = sorted(self.avatarProgress, key=self.avatarProgress.get)
             avPlace = places.index(avId)
@@ -414,6 +426,7 @@ class DistributedRaceAI(DistributedObjectAI, FSM):
                 target = 0
             else:
                 target = places[avPlace + 1]
+            self.pieTargets[target] = globalClock.getFrameTime()
             self.sendUpdate('shootPiejectile', [avId, target, 0])
         else:
             self.air.writeServerEvent('suspicious', avId=avId, issue='Toon use race gag while not having one!')

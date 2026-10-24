@@ -52,6 +52,9 @@ class NPCPlayerAI(DistributedToonAI):
         self.setMaxCarry(profile['maxCarry'])
         if profile.get('cogSuits'):
             self.giveCogSuits()
+        if 'kart' in profile:
+            self.setKartBodyType(profile['kart'])
+            self.setTickets(profile['tickets'])
         self.inventory.zeroInv()
         self.inventory.maxOutInv()
 

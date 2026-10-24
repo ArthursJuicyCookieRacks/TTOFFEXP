@@ -8,6 +8,7 @@ import random
 
 from toontown.hood import ZoneUtil
 from toontown.makeatoon.NameGenerator import NameGenerator
+from toontown.racing import KartDNA
 from toontown.toon import ToonDNA
 from toontown.toonbase import ToontownGlobals
 from toontown.toonbase.ToontownBattleGlobals import (
@@ -116,4 +117,8 @@ def makeProfile(zoneId, player=None):
         # Toons at Cog HQ have their cog suits, and those in the lobbies are
         # ready to see the boss.
         profile['cogSuits'] = True
+    if ZoneUtil.getHoodId(zoneId) == ToontownGlobals.GoofySpeedway:
+        # Toons at the Speedway have a kart and the tickets to race it.
+        profile['kart'] = random.choice(list(KartDNA.KartDict.keys()))
+        profile['tickets'] = random.randint(300, 2000)
     return profile
