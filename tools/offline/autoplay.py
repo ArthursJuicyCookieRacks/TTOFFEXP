@@ -869,8 +869,11 @@ def castOnce(spot):
     aimCast(spot)
     spot.fsm.request('localCasting')
     yield until(lambda: fishingState(spot) == 'fishing' or spot.avId != localAvatar.doId, 20, 'the bob landing')
+    # No bite in 20 seconds: reel in and cast again, as a player would, before
+    # the spot's idle timer sends the toon away.
+    end = time.time() + 20
     yield until(lambda: fishingState(spot) in ('reward', 'waiting', 'localAdjusting') or
-                spot.avId != localAvatar.doId, 60, 'a bite')
+                spot.avId != localAvatar.doId or time.time() > end, 30, 'a bite')
     if spot.avId != localAvatar.doId:
         raise StepFailed('the fishing spot sent the toon away')
     caught = fishingState(spot) == 'reward'
@@ -901,11 +904,9 @@ def scenarioBingo(timeout=2400):
     while mgr.state != 'Reward':
         if time.time() > end:
             raise StepFailed('no bingo in %d games' % len(games))
+        # Keeps fishing between games too; an idle spot sends the toon away.
         yield sleep(1)
-        if mgr.state != 'Playing':
-            yield until(lambda: mgr.state in ('Playing', 'Reward'), 120, 'the next bingo game')
-            continue
-        if mgr.cardId not in games:
+        if mgr.state == 'Playing' and mgr.cardId not in games:
             games.add(mgr.cardId)
             log('bingo game %d started, card type %d' % (mgr.cardId, mgr.typeId))
         # A trip to the Fisherman between casts: sell the bucket, and keep
@@ -1494,6 +1495,45 @@ def scenarioBlackCat():
     yield until(lambda: not findObject('DistributedBlackCatMgr'), 30, 'the black cat manager to go')
 
 
+def scenarioTrolleyTracks():
+    # During Trolley Tracks the trolley plays the board game between
+    # minigames: the board game, a minigame, Play Again, the next one.
+    onDistrict(lambda air: air.holidayManager.startHoliday(ToontownGlobals.TROLLEY_HOLIDAY))
+    yield from teleport(ToontownGlobals.ToontownCentral)
+    for attempt in range(10):
+        if placeState() == 'walk':
+            trolley = findObject('DistributedTrolley')
+            if trolley is not None:
+                localAvatar.setPos(render, trolley.trolleyCar.getPos(render))
+            messenger.send('entertrolley_sphere', [None])
+        yield sleep(5)
+        if placeState() != 'walk':
+            break
+    seen = []
+    while len(seen) < 3:
+        yield until(lambda: minigameState() == 'frameworkRules' or hoodState() == 'purchase', 180, 'the next game')
+        if hoodState() == 'purchase':
+            yield until(lambda: base.cr.playGame.hood.purchase.fsm.getCurrentState().getName() == 'purchase', 60, 'the gag shop buttons')
+            yield sleep(1)
+            log('playing again')
+            messenger.send('purchasePlayAgain')
+            continue
+        name = base.curMinigame.__class__.__name__
+        seen.append(name)
+        log('trolley tracks game %d: %s, metagame round %d' % (len(seen), name, base.curMinigame.metagameRound))
+        if base.curMinigame.metagameRound < 0:
+            raise StepFailed('the trolley did not start Trolley Tracks')
+        yield sleep(1)
+        messenger.send(base.curMinigame.rulesDoneEvent)
+        yield until(lambda: minigameState() not in ('frameworkRules', 'frameworkWaitServerStart', 'frameworkGame', 'frameworkWaitServerFinish'),
+                    480, 'the %s game to end' % name)
+    if seen[0] != 'DistributedTravelGame' or seen[2] != 'DistributedTravelGame':
+        raise StepFailed('the board game did not come every other game: %s' % seen)
+    log('the board game comes every other game')
+    yield until(lambda: hoodState() == 'purchase' or minigameState() == 'frameworkRules', 180, 'what comes after the board game')
+    onDistrict(lambda air: air.holidayManager.endHoliday(ToontownGlobals.TROLLEY_HOLIDAY))
+
+
 def scenarioQuest(steps=12):
     # Takes a ToonTask from Toon HQ and plays it through every step to the
     # reward, the way a new toon would.
@@ -1605,6 +1645,7 @@ SCENARIOS = [
     ('bingo', scenarioBingo),
     ('sillymeter', scenarioSillyMeter),
     ('blackcat', scenarioBlackCat),
+    ('trolleytracks', scenarioTrolleyTracks),
     ('quest', scenarioQuest),
 ]
 
