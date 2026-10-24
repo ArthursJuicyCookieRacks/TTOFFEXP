@@ -3,11 +3,22 @@
 The player downloads a Turnip driver (the .zip that emulators use: a
 libvulkan_freedreno.so, usually with a meta.json) and picks it here; the game
 then draws through it from its next start.
+
+How the game draws through it: the phone's own OpenGL ES is swapped for Mesa's
+(built with zink, which turns OpenGL ES into Vulkan), and zink is handed the
+Turnip driver, opened with adrenotools.  These come with the Android game in
+turnip/, listed in turnip/runtime.txt, and are copied out to the player's
+folder, since Android only loads libraries from a real file.
+
+If the game doesn't get as far as its launcher with the driver, the next start
+goes back to the phone's own driver.
 """
 
+import ctypes
 import json
 import os
 import shutil
+import sys
 import zipfile
 
 from direct.gui import DirectGuiGlobals as DGG
@@ -17,6 +28,10 @@ from otp.otpbase.Settings import Settings
 
 DRIVERS_DIR = 'drivers'
 PICKED_DIR = os.path.join(DRIVERS_DIR, 'picked')
+RUNTIME_DIR = os.path.join(DRIVERS_DIR, 'runtime')
+CUSTOM_LIBRARY = 'libvulkan_custom.so'
+# adrenotools_open_libvulkan's feature flag for loading a custom driver.
+ADRENOTOOLS_DRIVER_CUSTOM = 1 << 0
 TEXT_DARK = (0.16, 0.16, 0.32, 1)
 
 
@@ -27,6 +42,96 @@ def currentDriver(settings=None):
     if driver and not os.path.isfile(os.path.join(driver, 'meta.json')):
         return ''
     return driver
+
+
+def useDriver(settings):
+    """Starts drawing through the player's driver, if they picked one.
+
+    Must run before the game's window opens.  Returns True if it did.
+    """
+    if sys.platform != 'android':
+        return False
+    driver = currentDriver(settings)
+    if settings.getString('graphics', 'driver-trying', ''):
+        # The last start with it never reached the launcher.
+        print('TurnipDrivers: the last start with %s failed; back to the phone\'s driver' % driver)
+        settings.updateSetting('graphics', 'driver', '')
+        settings.updateSetting('graphics', 'driver-trying', '')
+        return False
+    if not driver:
+        return False
+    try:
+        runtime = unpackRuntime()
+        if runtime is None:
+            print('TurnipDrivers: this build has no custom driver support')
+            return False
+        settings.updateSetting('graphics', 'driver-trying', driver)
+        loadDriver(runtime, driver)
+    except Exception as e:
+        print('TurnipDrivers: could not load %s: %s' % (driver, e))
+        settings.updateSetting('graphics', 'driver-trying', '')
+        return False
+    print('TurnipDrivers: drawing with %s' % driverName(driver))
+    return True
+
+
+def driverWorks(settings):
+    """The game drew its launcher with the driver: keep it."""
+    if settings.getString('graphics', 'driver-trying', ''):
+        settings.updateSetting('graphics', 'driver-trying', '')
+
+
+def unpackRuntime():
+    """Copies the bundled libraries out to the player's folder.
+
+    Returns the folder, and the libraries in the order they load, as
+    (kind, path) pairs.
+    """
+    from panda3d.core import ConfigVariableString, Filename, VirtualFileSystem
+    vfs = VirtualFileSystem.getGlobalPtr()
+    gameDir = Filename(ConfigVariableString('offline-game-dir', '').getValue())
+    listing = vfs.readFile(Filename(gameDir, 'turnip/runtime.txt'), True)
+    if not listing:
+        return None
+    folder = os.path.abspath(RUNTIME_DIR)
+    os.makedirs(folder, exist_ok=True)
+    libraries = []
+    for line in listing.decode('utf-8').splitlines():
+        if not line.strip():
+            continue
+        kind, name, size = line.split()
+        path = os.path.join(folder, name)
+        libraries.append((kind, path))
+        if os.path.isfile(path) and os.path.getsize(path) == int(size):
+            continue
+        data = vfs.readFile(Filename(gameDir, 'turnip/%s.bin' % name), True)
+        with open(path + '.part', 'wb') as file:
+            file.write(data)
+        os.replace(path + '.part', path)
+    return folder, libraries
+
+
+def loadDriver(runtime, driver):
+    folder, libraries = runtime
+    adrenotools = [path for kind, path in libraries if kind == 'adrenotools'][0]
+    tools = ctypes.CDLL(adrenotools)
+    openVulkan = tools.adrenotools_open_libvulkan
+    openVulkan.restype = ctypes.c_void_p
+    openVulkan.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p,
+                           ctypes.c_char_p, ctypes.c_char_p, ctypes.c_void_p]
+    # RTLD_NOW; the hooks were copied into the same folder as adrenotools.
+    handle = openVulkan(2, ADRENOTOOLS_DRIVER_CUSTOM, (folder + '/').encode(), (folder + '/').encode(),
+                        (driver + '/').encode(), CUSTOM_LIBRARY.encode(), None, None)
+    if not handle:
+        raise RuntimeError('adrenotools could not open the driver')
+    # zink takes over the driver's handle; Mesa's OpenGL ES is put in front of
+    # the phone's, for the game's window to find.
+    os.environ['ZINK_VULKAN_HANDLE'] = hex(handle)
+    os.environ['MESA_LOADER_DRIVER_OVERRIDE'] = 'zink'
+    os.environ['EGL_PLATFORM'] = 'surfaceless'
+    for kind, path in libraries:
+        if kind == 'mesa':
+            ctypes.CDLL(path, mode=ctypes.RTLD_GLOBAL)
 
 
 def driverName(folder):

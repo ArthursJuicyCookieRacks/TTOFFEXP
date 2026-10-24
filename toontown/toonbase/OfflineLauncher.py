@@ -341,8 +341,14 @@ def run():
     """Shows the launcher and waits until the player presses PLAY!."""
     global _launcher
     _launcher = OfflineLauncher()
+    frames = 0
     while not _launcher.started:
         taskMgr.step()
+        frames += 1
+        if frames == 30:
+            # It drew: a custom graphics driver works.
+            from toontown.toonbase import TurnipDrivers
+            TurnipDrivers.driverWorks(_launcher.settings)
 
 
 def progress(value, label=None):

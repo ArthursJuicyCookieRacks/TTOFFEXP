@@ -86,6 +86,10 @@ print('ToontownStart: setting default font')
 from . import ToontownGlobals
 DirectGuiGlobals.setDefaultFontFunc(ToontownGlobals.getInterfaceFont)
 launcher.setPandaErrorCode(7)
+# An Android player's own graphics driver has to be in place before the
+# window opens.
+from . import TurnipDrivers
+TurnipDrivers.useDriver(settings)
 from . import ToonBase
 ToonBase.ToonBase()
 from panda3d.core import *
