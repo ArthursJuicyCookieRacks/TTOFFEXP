@@ -316,6 +316,8 @@ class DistributedBanquetTable(DistributedObject.DistributedObject, FSM.FSM, Banq
             foodModel.setScale(newScale)
 
         def foodDetach(self = self, diner = diner):
+            if not diner.getRightHand().getNumChildren():
+                return
             foodModel = diner.getRightHand().getChild(0)
             (foodModel.reparentTo(serviceLoc),)
             (foodModel.setPosHpr(0, 0, 0, 0, 0, 0),)
@@ -323,7 +325,7 @@ class DistributedBanquetTable(DistributedObject.DistributedObject, FSM.FSM, Banq
             if SuitDNA.getSuitBodyType(diner.dna.name) == 'c':
                 scaleAdj = 0.6
             else:
-                scakeAdj = 0.8
+                scaleAdj = 0.8
             oldScale = foodModel.getScale()
             newScale = oldScale / scaleAdj
             foodModel.setScale(newScale)
