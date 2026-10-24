@@ -17,6 +17,7 @@ from direct.gui.DirectGui import DirectButton, DirectFrame, DirectLabel, DirectW
 from direct.showbase.DirectObject import DirectObject
 from panda3d.core import Camera, CardMaker, ClockObject, ConfigVariableBool, ConfigVariableString, Filename, NodePath
 from panda3d.core import ATSNone, OrthographicLens, PGTop, PNMImage, SamplerState, Texture, TextNode, loadPrcFileData
+from panda3d.core import Geom, GeomNode, GeomTriangles, GeomVertexData, GeomVertexFormat, GeomVertexWriter, TransparencyAttrib
 
 from otp.local.ExecutionContext import getClientBuiltin
 from otp.otpbase.Settings import Settings
@@ -29,6 +30,11 @@ IMAGE_WIDTH, IMAGE_HEIGHT = 750.0, 500.0
 EXTRA_WIDTH = 500 / 2250.0
 # The sky at the picture's edges, for the sides of a still wider screen.
 SIDE_COLOR = (0.43, 0.67, 0.86, 1)
+# The navy border around the art, and its shadow.
+NAVY = (0.07, 0.11, 0.33, 1)
+BORDER_WIDTH = 0.022
+SHADOW_WIDTH = 0.09
+SHADOW_ALPHA = 0.35
 
 RED = (1, 0.18, 0.15, 1)
 RED_ROLLOVER = (1, 0.38, 0.32, 1)
@@ -134,6 +140,51 @@ class OfflineLauncher(DirectObject):
         texture.setMinfilter(SamplerState.FTLinear)
         texture.setMagfilter(SamplerState.FTLinear)
         self.background.setTexture(texture)
+        self.makeBorder()
+
+    def makeBorder(self):
+        # A navy border around the art, with a soft shadow falling outward
+        # onto the picture's extended sides.
+        width = IMAGE_WIDTH / IMAGE_HEIGHT
+        border = self.canvas.attachNewNode('offlineLauncherBorder')
+        border.setTransparency(TransparencyAttrib.MAlpha)
+        shadow = (0, 0, 0.08, SHADOW_ALPHA)
+        clear = (0, 0, 0.08, 0)
+        for side in (-1, 1):
+            edge = side * width
+            # The shadow, fading out from the border.
+            self.gradientCard(border, edge, edge + side * SHADOW_WIDTH, -1, 1, shadow, clear)
+            # The border's sides.
+            self.gradientCard(border, edge - side * BORDER_WIDTH / 2, edge + side * BORDER_WIDTH / 2, -1, 1,
+                              NAVY, NAVY)
+            # The top and bottom, kept on the screen.
+            z = side * (1 - BORDER_WIDTH / 2)
+            self.gradientCard(border, -width - BORDER_WIDTH / 2, width + BORDER_WIDTH / 2,
+                              z - BORDER_WIDTH / 2, z + BORDER_WIDTH / 2, NAVY, NAVY)
+            # A faint shadow just inside the top and bottom.
+            inner = side * (1 - BORDER_WIDTH)
+            self.gradientCard(border, -width, width, inner, inner - side * SHADOW_WIDTH / 2, shadow, clear,
+                              vertical=True)
+
+    def gradientCard(self, parent, x0, x1, z0, z1, color0, color1, vertical=False):
+        # A rectangle shaded from color0 (at x0, or z0 if vertical) to color1.
+        data = GeomVertexData('launcherCard', GeomVertexFormat.getV3c4(), Geom.UHStatic)
+        vertices = GeomVertexWriter(data, 'vertex')
+        colors = GeomVertexWriter(data, 'color')
+        for x, z in ((x0, z0), (x1, z0), (x1, z1), (x0, z1)):
+            vertices.addData3(x, 0, z)
+            near = (z == z0) if vertical else (x == x0)
+            colors.addData4(*(color0 if near else color1))
+        triangles = GeomTriangles(Geom.UHStatic)
+        triangles.addVertices(0, 1, 2)
+        triangles.addVertices(0, 2, 3)
+        geom = Geom(data)
+        geom.addPrimitive(triangles)
+        node = GeomNode('launcherCard')
+        node.addGeom(geom)
+        card = parent.attachNewNode(node)
+        card.setTwoSided(True)
+        return card
 
     def buttonImages(self, colors=None):
         # The rounded button of the original game; tinted, for the red ones.
