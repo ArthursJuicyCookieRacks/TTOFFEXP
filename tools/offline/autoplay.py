@@ -15,6 +15,7 @@ client or a server hits an exception.
 
 import builtins
 import glob
+import math
 import os
 import re
 import sys
@@ -27,7 +28,7 @@ os.chdir(ROOT)
 
 DB = os.path.abspath(os.environ.get('AUTOPLAY_DB', 'autoplay-db'))
 
-from panda3d.core import loadPrcFileData
+from panda3d.core import loadPrcFileData, Point3, Vec3
 loadPrcFileData('autoplay', '''
 audio-library-name null
 toontown-auto-run 0
@@ -46,6 +47,7 @@ from toontown.toonbase import ToontownStart
 from toontown.toonbase import ToontownBattleGlobals
 from toontown.toonbase import ToontownGlobals
 from toontown.hood import ZoneUtil
+from toontown.building import DoorTypes
 from direct.showbase.DirectObject import DirectObject
 from otp.local import LocalServer
 
@@ -134,7 +136,7 @@ def hoodState():
 
 def placeState():
     p = place()
-    if p is None or p.fsm is None:
+    if p is None or getattr(p, 'fsm', None) is None:
         return None
     return p.fsm.getCurrentState().getName()
 
@@ -487,8 +489,12 @@ def clearRooms(interior, facilityClass, timeout=3600):
                                               for suit in suits), localAvatar.getPos(render), placeState()))
                 yield sleep(0.2)
         yield sleep(3)
-        if placeName() == interior and findObject('DistributedElevatorFloor'):
-            yield from boardElevator('DistributedElevatorFloor')
+        # DA offices join floors with DistributedElevatorFloor, country clubs
+        # with DistributedClubElevator.
+        elevatorClass = next((name for name in ('DistributedElevatorFloor', 'DistributedClubElevator')
+                              if findObject(name)), None)
+        if placeName() == interior and elevatorClass:
+            yield from boardElevator(elevatorClass)
             yield until(lambda: findObject(facilityClass, newFloor) or placeName() != interior, 300,
                         'the next floor')
         else:
@@ -587,7 +593,7 @@ def cfoBattleThree(boss):
     if held is not None:
         held.sendUpdate('hitBoss', [1.0])
         return
-    wantSafe = boss.heldObject is not None or boss.attackCode == ToontownGlobals.BossCogDizzy
+    wantSafe = boss.heldObject is not None or getattr(boss, 'attackCode', None) == ToontownGlobals.BossCogDizzy
     kinds = ['DistributedCashbotBossSafe', 'DistributedCashbotBossGoon']
     if not wantSafe:
         kinds.reverse()
@@ -638,7 +644,47 @@ def fishingState(spot):
     return spot.fsm.getCurrentState().getName()
 
 
+def watchFishingTargets():
+    from toontown.fishing.DistributedFishingTarget import DistributedFishingTarget
+    setState = DistributedFishingTarget.setState
+
+    def recordingSetState(self, stateIndex, angle, radius, time, timeStamp):
+        self.autoplayDest = self.getDestPos(angle, radius)
+        setState(self, stateIndex, angle, radius, time, timeStamp)
+
+    DistributedFishingTarget.setState = recordingSetState
+
+
+def aimCast(spot):
+    targets = [do for do in base.cr.doId2do.values() if do.__class__.__name__ == 'DistributedFishingTarget'
+               and do.pondDoId == spot.pondDoId]
+    if not targets:
+        spot.power = 0.6
+        return
+    parent = spot.angleNP.getParent()
+
+    def resting(target):
+        # Where the fish is swimming to; it waits there a few seconds.
+        return getattr(target, 'autoplayDest', None) or target.getPos(render)
+
+    center = min((parent.getRelativePoint(render, Point3(resting(target))) for target in targets),
+                 key=lambda point: point.length())
+    spot.angleNP.setH(math.degrees(math.atan2(-center[0], center[1])))
+    distance = Vec3(center[0], center[1], 0).length()
+
+    def landing(power):
+        # The bob's flight in DistributedFishingSpot.moveBobTask.
+        speed = power * spot.vZeroMax
+        angle = math.radians(power * spot.angleMax)
+        a, b, c = -16.1, speed * math.sin(angle), 8.5 - spot.waterLevel
+        t = (-b - math.sqrt(b * b - 4 * a * c)) / (2 * a)
+        return 3.0 + speed * math.cos(angle) * t
+
+    spot.power = min((p / 100.0 for p in range(5, 101)), key=lambda power: abs(landing(power) - distance))
+
+
 def scenarioFishing(casts=5):
+    watchFishingTargets()
     yield from teleport(ToontownGlobals.ToontownCentral)
     yield until(lambda: findObject('DistributedFishingSpot', lambda do: do.avId == 0), 60, 'a free fishing spot')
     spot = findObject('DistributedFishingSpot', lambda do: do.avId == 0)
@@ -648,17 +694,51 @@ def scenarioFishing(casts=5):
     caught = 0
     for cast in range(casts):
         yield sleep(2)
-        # What dragging the cast button and letting go does.
+        # What dragging the cast button and letting go does, aimed at the
+        # middle of where a fish swims.
         spot.fsm.request('localAdjusting')
-        spot.power = 0.4 + 0.1 * cast
+        aimCast(spot)
         spot.fsm.request('localCasting')
-        yield until(lambda: fishingState(spot) in ('reward', 'waiting', 'localAdjusting'), 120, 'a bite')
+        yield until(lambda: fishingState(spot) == 'fishing' or spot.avId != localAvatar.doId, 20, 'the bob landing')
+        if fishingState(spot) == 'fishing':
+            targets = [do for do in base.cr.doId2do.values() if do.__class__.__name__ == 'DistributedFishingTarget'
+                       and do.pondDoId == spot.pondDoId]
+            bob = spot.bob.getPos(render)
+            log('bob landed at %s, nearest fish %.1f away' % (
+                bob, min([(target.getPos(render) - bob).length() for target in targets] or [-1])))
+        yield until(lambda: fishingState(spot) in ('reward', 'waiting', 'localAdjusting') or
+                    spot.avId != localAvatar.doId, 60, 'a bite')
+        if spot.avId != localAvatar.doId:
+            raise AssertionError('the fishing spot sent the toon away after %d casts' % cast)
         if fishingState(spot) == 'reward':
             caught += 1
         yield until(lambda: spot.track is None or not spot.track.isPlaying(), 30, 'reeling in')
     log('caught %d things in %d casts' % (caught, casts))
     spot._DistributedFishingSpot__userExit()
     yield until(walking, 60, 'walking after fishing')
+
+
+def scenarioEstate():
+    yield until(walking, 60, 'walking before going home')
+    log('going home')
+    place().goHomeNow(localAvatar.zoneId)
+    yield until(lambda: placeName() == 'Estate' and walking(), 180, 'walking around the estate')
+    me = localAvatar.doId
+    yield until(lambda: findObject('DistributedHouse', lambda do: do.ownerId == me), 60, 'the toon\'s own house')
+    house = findObject('DistributedHouse', lambda do: do.ownerId == me)
+    houses = [do for do in base.cr.doId2do.values() if do.__class__.__name__ == 'DistributedHouse']
+    log('%d houses on the estate; ours is %d' % (len(houses), house.doId))
+    yield until(lambda: findObject('DistributedHouseDoor', lambda do: do.houseId == house.doId and do.doorType == DoorTypes.EXT_STANDARD),
+                60, 'the front door')
+    door = findObject('DistributedHouseDoor', lambda do: do.houseId == house.doId and do.doorType == DoorTypes.EXT_STANDARD)
+    yield sleep(2)
+    log('going inside')
+    messenger.send(door.getEnterTriggerEvent(), [None])
+    yield until(lambda: placeName() == 'House' and walking(), 120, 'walking inside the house')
+    furniture = [do for do in base.cr.doId2do.values() if 'Furniture' in do.__class__.__name__]
+    log('inside, with %d pieces of furniture' % len(furniture))
+    yield sleep(3)
+    yield from teleport(ToontownGlobals.ToontownCentral)
 
 
 def scenarioFactory():
@@ -727,6 +807,7 @@ SCENARIOS = [
     ('cj', scenarioCJ),
     ('ceo', scenarioCEO),
     ('fishing', scenarioFishing),
+    ('estate', scenarioEstate),
 ]
 
 
