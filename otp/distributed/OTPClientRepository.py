@@ -35,7 +35,7 @@ from otp.login import LoginTTRAccount
 from otp.login import HTTPUtil
 from otp.otpbase import OTPGlobals
 from otp.otpbase import OTPLauncherGlobals
-from enum import Enum
+from enum import Enum, IntEnum
 from otp.uberdog import OtpAvatarManager
 from otp.distributed import OtpDoGlobals
 from otp.distributed.TelemetryLimiter import TelemetryLimiter
@@ -50,11 +50,11 @@ class OTPClientRepository(LocalConnectionMixin, ClientRepositoryBase):
     # 'PendingApproval',
     # 'Approved',
     # 'Rejected'])
-    class WishNameResult(Enum):
-        Failure = 1
-        PendingApproval = 2
-        Approved = 3
-        Rejected = 4
+    class WishNameResult(IntEnum):
+        Failure = 0
+        PendingApproval = 1
+        Approved = 2
+        Rejected = 3
     whiteListChatEnabled = 1 # TODO: Have server set this on localAvatar on login.
 
     def __init__(self, serverVersion, launcher = None, playGame = None):

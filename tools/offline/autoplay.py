@@ -298,7 +298,8 @@ def pickGag():
     raise StepFailed('the toon is out of sound, throw, squirt and drop gags')
 
 
-def fightBattle(timeout=1800):
+def fightBattle(timeout=1800, during=None):
+    # during, if given, is called between gag choices.
     yield until(lambda: placeState() == 'battle', 60, 'battle to start')
     deadline = time.time() + timeout
     rounds = 0
@@ -316,6 +317,8 @@ def fightBattle(timeout=1800):
                            [{'mode': 'Attack', 'track': track, 'level': level, 'target': 0}])
             yield until(lambda: townBattleState() != 'Attack', 30, 'gag choice to register')
         else:
+            if during is not None:
+                during()
             yield sleep(0.2)
     log('battle won after %d rounds' % rounds)
 
@@ -589,10 +592,24 @@ def scenarioCountryClub():
     yield from clearRooms('CountryClubInterior', 'DistributedCountryClub')
 
 
-def fightBoss(interior, bossClass, actions, timeout=2400):
+def bossStatus(air, bossId):
+    boss = air.doId2do.get(bossId)
+    if boss is None:
+        return 'no boss on the AI'
+    status = 'damage %s of %s' % (getattr(boss, 'bossDamage', '?'), getattr(boss, 'bossMaxDamage', '?'))
+    if hasattr(boss, 'heldObject'):
+        status += ', helmet %s, attack code %s' % (boss.heldObject and boss.heldObject.doId, boss.attackCode)
+    for crane in getattr(boss, 'cranes', None) or []:
+        if crane.avId:
+            status += ', crane %d holds %s' % (crane.doId, crane.objectId)
+    return status
+
+
+def fightBoss(interior, bossClass, actions, timeout=2400, prelude={}):
     # Plays a boss battle: cog rounds are fought as usual, and actions maps
     # the boss's other states to what a toon does in them (called every
-    # half second with the boss).
+    # half second with the boss). prelude actions also run while that
+    # state's cog round is being fought.
     yield until(lambda: placeName() == interior, 180, 'inside the %s' % interior)
     yield until(lambda: findObject(bossClass), 120, 'the %s' % bossClass)
     boss = findObject(bossClass)
@@ -607,9 +624,12 @@ def fightBoss(interior, bossClass, actions, timeout=2400):
             log('boss state', lastState)
         elif time.time() - stateStart > 60:
             stateStart = time.time()
-            log('boss still in %s; place state %s, gag panel %s' % (boss.state, placeState(), townBattleState()))
+            log('boss still in %s; place state %s, gag panel %s; %s' % (
+                boss.state, placeState(), townBattleState(), onDistrict(bossStatus, boss.doId)))
+        during = lambda: prelude[boss.state](boss) if boss.state in prelude else None
+        during()
         if placeState() == 'battle':
-            yield from fightBattle()
+            yield from fightBattle(during=during)
             continue
         # In the epilogue a rescued toon talks; clicking through the speech
         # balloon's pages ends it.
@@ -685,13 +705,30 @@ def cjBattleThree(boss):
         boss.d_hitBoss(1)
 
 
+def cjBattleTwo(boss):
+    # What the cannons do: take a cannon, and fire a toon into every chair
+    # of the jury box. Jurors put more weight on the toons' side of the
+    # scale when the third round starts.
+    # Cogs fly back into the chairs, so empty ones keep getting refilled.
+    cannon = findObject('DistributedLawbotCannon')
+    if cannon is None:
+        return
+    if not getattr(boss, 'autoplayCannon', False):
+        cannon.sendUpdate('requestEnter', [])
+        boss.autoplayCannon = True
+    chairs = [do for do in base.cr.doId2do.values() if do.__class__.__name__ == 'DistributedLawbotChair'
+              and do.state != 'ToonJuror']
+    for chair in chairs:
+        boss.sendUpdate('hitChair', [chair.index, cannon.index])
+
+
 def scenarioCJ():
     yield from teleport(ToontownGlobals.LawbotHQ, ToontownGlobals.LawbotLobby)
     yield from boardElevator('DistributedCJElevator')
     yield from fightBoss('LawbotHQBossBattle', 'DistributedLawbotBoss', {
         'BattleThree': cjBattleThree,
         'NearVictory': lambda boss: boss.sendUpdate('finalPieSplat', []),
-    })
+    }, prelude={'BattleTwo': cjBattleTwo})
 
 
 def scenarioCEO():
@@ -957,90 +994,148 @@ def scenarioGolf():
 QUEST_COGS = {'c': 'f', 'l': 'bf', 'm': 'sc', 's': 'cc'}
 
 
-def enterHQ():
-    hqDoor = lambda doorType: findObject('DistributedDoor', lambda do: do.doorType == doorType)
-    yield until(lambda: hqDoor(DoorTypes.EXT_HQ), 60, 'the Toon HQ door')
-    yield sleep(2)
-    log('going into the Toon HQ')
-    messenger.send(hqDoor(DoorTypes.EXT_HQ).getEnterTriggerEvent(), [None])
-    yield until(lambda: findObject('DistributedNPCToon', lambda do: do.getName() and hasattr(do, 'questChoiceGui'))
-                and findObject('DistributedHQInterior') and walking(), 120, 'walking in the Toon HQ')
-
-
-def talkToHQOfficer():
-    npc = findObject('DistributedNPCToon', lambda do: hasattr(do, 'questChoiceGui'))
-    log('talking to', npc.getName())
-    npc.handleCollisionSphereEnter(None)
-    return npc
-
-
-def finishNPCChat(npc):
-    # Clicks through the NPC's speech balloon.
-    yield sleep(2)
-    messenger.send(npc.uniqueName('doneChatPage'), [0])
-    yield until(walking, 60, 'walking after talking to %s' % npc.getName())
-
-
-def scenarioQuest():
-    from toontown.quest import Quests
+def recordNPCMovies():
     from toontown.toon.DistributedNPCToon import DistributedNPCToon
+    if getattr(DistributedNPCToon, 'autoplayRecording', False):
+        return
     setMovie = DistributedNPCToon.setMovie
 
     def recordingSetMovie(self, mode, npcId, avId, quests, timestamp):
-        self.autoplayQuests = quests
+        if avId == localAvatar.doId:
+            self.autoplayMovie = (mode, quests)
         setMovie(self, mode, npcId, avId, quests, timestamp)
 
     DistributedNPCToon.setMovie = recordingSetMovie
-    yield from teleport(ToontownGlobals.ToontownCentral)
-    yield from enterHQ()
-    npc = talkToHQOfficer()
-    yield until(lambda: npc.questChoiceGui is not None, 30, 'the ToonTask choices')
-    offered = npc.autoplayQuests
-    log('offered ToonTasks', offered)
-    choices = [offered[i:i + 3] for i in range(0, len(offered), 3)]
-    cogChoices = [c for c in choices if isinstance(Quests.getQuest(c[0]), (Quests.CogQuest,))
-                  and not isinstance(Quests.getQuest(c[0]), (Quests.BuildingQuest, Quests.SkelecogQBase))
-                  and c[2] == Quests.ToonHQ]
-    if not cogChoices:
-        raise StepFailed('no cog ToonTask turned in at Toon HQ among %s' % choices)
-    questId = cogChoices[0][0]
-    quest = Quests.getQuest(questId)
-    log('choosing ToonTask %d: %s' % (questId, quest.__class__.__name__))
-    messenger.send('chooseQuest', [questId])
-    yield until(lambda: any(q[0] == questId for q in localAvatar.quests), 30, 'the ToonTask')
-    yield from finishNPCChat(npc)
-    # Defeat the cogs the task asks for.
+    DistributedNPCToon.autoplayRecording = True
+
+
+def goToNPC(npcId):
+    # Walks in through the front door of the building the NPC works in.
+    from toontown.quest import Quests
+    from toontown.toon import NPCToons
+    if npcId == Quests.ToonHQ:
+        zoneId, name = ToontownGlobals.ToontownCentral + 520, None
+    else:
+        zoneId, name = NPCToons.NPCToonDict[npcId][0], NPCToons.NPCToonDict[npcId][1]
+    hoodId = ZoneUtil.getCanonicalHoodId(zoneId)
+    branchId = ZoneUtil.getCanonicalBranchZone(zoneId)
+    block = zoneId % 100
+    if branchId == hoodId:
+        yield from teleport(hoodId)
+    else:
+        yield from teleport(hoodId, firstVisgroup(branchId))
+        outside = base.cr.playGame.dnaData.getBlock(block).zone
+        if outside != localAvatar.zoneId:
+            yield from teleport(hoodId, outside)
+    isNPC = lambda do: (hasattr(do, 'questChoiceGui') and do.zoneId % 1000 >= 500
+                        and (name is None or do.getName() == name))
+    # Quest NPCs are DistributedNPCToons or subclasses of it (Flippy in
+    # Toon Hall, for one).
+    findNPC = lambda: next((do for do in list(base.cr.doId2do.values()) if isNPC(do)), None)
+    if not findNPC():
+        door = lambda: findObject('DistributedDoor', lambda do: do.block == block and do.doorType in (
+            DoorTypes.EXT_STANDARD, DoorTypes.EXT_HQ))
+        yield until(door, 60, 'the door of building %d' % block)
+        yield sleep(2)
+        log('going into building %d of zone %d for %s' % (block, branchId, name or 'an HQ officer'))
+        messenger.send(door().getEnterTriggerEvent(), [None])
+    yield until(lambda: findNPC() and walking(), 120, 'walking up to %s' % (name or 'an HQ officer'))
+    return findNPC()
+
+
+def talkTo(npc, pickQuest=None):
+    # Talks to an NPC and answers whatever it asks.
+    log('talking to', npc.getName())
+    npc.autoplayMovie = None
+    npc.handleCollisionSphereEnter(None)
+    yield until(lambda: npc.autoplayMovie is not None, 30, '%s to answer' % npc.getName())
+    yield sleep(1)
+    mode, quests = npc.autoplayMovie
+    if npc.questChoiceGui is not None:
+        choices = [quests[i:i + 3] for i in range(0, len(quests), 3)]
+        questId = pickQuest(choices)
+        log('offered ToonTasks %s; choosing %d' % ([c[0] for c in choices], questId))
+        messenger.send('chooseQuest', [questId])
+        yield until(lambda: npc.autoplayMovie[1] is not quests, 30, 'the ToonTask to be given')
+        yield sleep(1)
+    elif npc.trackChoiceGui is not None:
+        log('choosing gag track', quests[0])
+        messenger.send('chooseTrack', [quests[0]])
+        yield until(lambda: npc.autoplayMovie[1] is not quests, 30, 'the track to be given')
+        yield sleep(1)
+    if not walking():
+        messenger.send(npc.uniqueName('doneChatPage'), [0])
+    yield until(walking, 60, 'walking after talking to %s' % npc.getName())
+
+
+def defeatCogsFor(questId, quest):
+    from toontown.quest import Quests
     if isinstance(quest, Quests.CogTrackQuest):
         cog, level = QUEST_COGS[quest.getCogTrack()], 1
     elif isinstance(quest, Quests.CogLevelQuest):
         cog, level = 'f', quest.getCogLevel()
-    elif quest.getCogType() == Quests.Any:
-        cog, level = 'f', 1
-    else:
+    elif isinstance(quest, Quests.CogQuest) and quest.getCogType() != Quests.Any:
         cog, level = quest.getCogType(), 1
-    progress = lambda: next(q[4] for q in localAvatar.quests if q[0] == questId)
-    log('need %d cogs; spawning %s level %d' % (quest.getNumCogs(), cog, level))
+    else:
+        cog, level = 'f', 1
+    done = lambda: quest.getCompletionStatus(localAvatar, next(q for q in localAvatar.quests if q[0] == questId)) == Quests.COMPLETE
     street = ToontownGlobals.SillyStreet
     yield from teleport(street - street % 1000, firstVisgroup(street))
-    while progress() < quest.getNumCogs():
+    def restock(air, avId):
+        # Stands in for a trip to the Gag Shop and the playground between
+        # fights, so a new 15-laff toon does not go sad.
+        av = air.doId2do[avId]
+        av.b_setHp(av.getMaxHp())
+        av.inventory.maxOutInv()
+        av.b_setInventory(av.inventory.makeNetString())
+
+    while not done():
+        onDistrict(restock, localAvatar.doId)
         magicWord('~spawn %s %d' % (cog, level))
         yield until(suitsNearby, 120, 'a cog on the street')
         suit = min(suitsNearby(), key=lambda s: (s.getPos(render) - localAvatar.getPos(render)).length())
         while placeState() == 'walk' and not suit.isEmpty():
             localAvatar.setPos(render, suit.getPos(render))
             yield sleep(0.1)
-        if placeState() == 'battle':
+        if placeState() != 'walk':
             yield from fightBattle()
             yield until(walking, 120, 'walking after the battle')
-        log('ToonTask progress %d of %d' % (progress(), quest.getNumCogs()))
-    # Hand it in.
-    rewards = list(localAvatar.getRewardHistory()[1]) if hasattr(localAvatar, 'getRewardHistory') else None
-    yield from teleport(ToontownGlobals.ToontownCentral)
-    yield from enterHQ()
-    npc = talkToHQOfficer()
-    yield until(lambda: not any(q[0] == questId for q in localAvatar.quests), 30, 'the ToonTask handed in')
-    yield from finishNPCChat(npc)
-    log('ToonTask %d done; reward history %s' % (questId, localAvatar.getRewardHistory() if hasattr(localAvatar, 'getRewardHistory') else '?'))
+        log('ToonTask progress:', quest.getProgressString(localAvatar, next(q for q in localAvatar.quests if q[0] == questId)))
+
+
+def scenarioQuest(steps=12):
+    # Takes a ToonTask from Toon HQ and plays it through every step to the
+    # reward, the way a new toon would.
+    from toontown.quest import Quests
+    recordNPCMovies()
+    fightable = (Quests.CogQuest, Quests.RecoverItemQuest)
+
+    def pickQuest(choices):
+        preferred = [c for c in choices if isinstance(Quests.getQuest(c[0]), fightable + (Quests.VisitQuest,))
+                     and not isinstance(Quests.getQuest(c[0]), (Quests.BuildingQuest, Quests.SkelecogQBase))]
+        return (preferred or choices)[0][0]
+
+    tier = localAvatar.getRewardHistory()
+    npc = yield from goToNPC(Quests.ToonHQ)
+    yield from talkTo(npc, pickQuest)
+    if not localAvatar.quests:
+        raise StepFailed('Toon HQ gave no ToonTask')
+    for step in range(steps):
+        if not localAvatar.quests:
+            break
+        questId, fromNpcId, toNpcId, rewardId, progress = localAvatar.quests[0]
+        quest = Quests.getQuest(questId)
+        log('ToonTask %d (%s), hand in to %s' % (questId, quest.__class__.__name__, toNpcId))
+        status = quest.getCompletionStatus(localAvatar, localAvatar.quests[0])
+        if status != Quests.COMPLETE and isinstance(quest, fightable):
+            yield from defeatCogsFor(questId, quest)
+        elif status != Quests.COMPLETE and not isinstance(quest, (Quests.VisitQuest, Quests.TrackChoiceQuest)):
+            raise StepFailed('the autoplay test cannot do %s yet' % quest.__class__.__name__)
+        npc = yield from goToNPC(toNpcId)
+        yield from talkTo(npc, pickQuest)
+    if localAvatar.quests:
+        raise StepFailed('ToonTask still not done after %d steps: %s' % (steps, localAvatar.quests))
+    log('ToonTask finished; reward history went from %s to %s' % (tier, localAvatar.getRewardHistory()))
 
 
 def scenarioFactory():
