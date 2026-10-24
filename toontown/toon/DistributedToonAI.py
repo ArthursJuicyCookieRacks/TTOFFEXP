@@ -2511,7 +2511,14 @@ class DistributedToonAI(DistributedPlayerAI.DistributedPlayerAI, DistributedSmoo
 
     def b_setBothSchedules(self, onOrder, onGiftOrder, doUpdateLater = True):
         self.setBothSchedules(onOrder, onGiftOrder, doUpdateLater)
-        self.d_setDeliverySchedule(onOrder)
+        self.d_setDeliverySchedule(self.onOrder)
+        self.d_setGiftSchedule(self.onGiftOrder)
+
+    def b_setGiftSchedule(self, onGiftOrder, doUpdateLater = True):
+        self.b_setBothSchedules(None, onGiftOrder, doUpdateLater)
+
+    def d_setGiftSchedule(self, onGiftOrder):
+        self.sendUpdate('setGiftSchedule', [onGiftOrder.getBlob(store=CatalogItem.Customization | CatalogItem.DeliveryDate)])
 
     def setBothSchedules(self, onOrder, onGiftOrder, doUpdateLater = True):
         if onOrder != None:

@@ -276,7 +276,6 @@ class DistributedPhone(DistributedFurnitureItem.DistributedFurnitureItem):
         self.sendUpdate('requestPurchaseMessage', [context, blob, optional])
 
     def requestGiftPurchase(self, item, targetDoID, callback, optional = -1):
-        print('in the client phone')
         blob = item.getBlob(store=CatalogItem.Customization)
         context = self.getCallbackContext(callback, [item])
         self.sendUpdate('requestGiftPurchaseMessage', [context, targetDoID, blob, optional])

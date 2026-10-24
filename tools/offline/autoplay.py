@@ -1945,6 +1945,70 @@ def scenarioCatalog():
     yield from teleport(ToontownGlobals.ToontownCentral)
 
 
+def goInsideHouse():
+    me = localAvatar.doId
+    yield until(walking, 60, 'walking before going home')
+    place().goHomeNow(localAvatar.zoneId)
+    yield until(lambda: placeName() == 'Estate' and walking(), 180, 'walking around the estate')
+    yield until(lambda: findObject('DistributedHouse', lambda do: do.ownerId == me), 60, 'the toon\'s own house')
+    house = findObject('DistributedHouse', lambda do: do.ownerId == me)
+    yield until(lambda: findObject('DistributedHouseDoor', lambda do: do.houseId == house.doId and do.doorType == DoorTypes.EXT_STANDARD), 60, 'the front door')
+    door = findObject('DistributedHouseDoor', lambda do: do.houseId == house.doId and do.doorType == DoorTypes.EXT_STANDARD)
+    yield sleep(2)
+    messenger.send(door.getEnterTriggerEvent(), [None])
+    yield until(lambda: placeName() == 'House' and walking(), 120, 'walking inside the house')
+
+
+def scenarioGifts():
+    # Buys a catalog gift for a friend. The toon is its own friend here, so
+    # the gift comes back to its own mailbox.
+    me = localAvatar.doId
+    yield until(lambda: len(localAvatar.weeklyCatalog), 60, 'the first catalog')
+
+    def setUp(air, avId):
+        av = air.doId2do[avId]
+        av.b_setMoney(av.getMaxMoney())
+        av.friendsList = [(avId, 0)]
+
+    onDistrict(setUp, me)
+    acked = []
+    base.acceptOnce('DeliveryManagerAck', lambda: acked.append(1))
+    base.cr.deliveryManager.sendAck()
+    yield until(lambda: acked, 30, 'the delivery manager to answer')
+    yield from goInsideHouse()
+    yield until(lambda: findObject('DistributedPhone'), 60, 'the phone')
+    phone = findObject('DistributedPhone')
+    phone.sendUpdate('avatarEnter', [])
+    yield sleep(2)
+    gifts = [item for item in list(localAvatar.weeklyCatalog) + list(localAvatar.monthlyCatalog)
+             if item.isGift() and not item.loyaltyRequirement() and not item.reachedPurchaseLimit(localAvatar)
+             and not item.notOfferedTo(localAvatar) and item.getPrice(0) <= localAvatar.getMoney()]
+    if not gifts:
+        raise StepFailed('nothing in the catalog can be a gift')
+    item = gifts[0]
+    results = []
+    phone.requestGiftPurchase(item, me, lambda retcode, item: results.append(retcode))
+    yield until(lambda: results, 30, 'Clarabelle to take the gift order')
+    phone.sendUpdate('avatarExit', [])
+    if results[0] != ToontownGlobals.P_ItemOnOrder:
+        raise StepFailed('the gift order for %s gave %s' % (item.getName(), results[0]))
+    log('ordered a %s as a gift' % item.getName())
+
+    def deliverNow(air, avId):
+        av = air.doId2do[avId]
+        for gift in av.onGiftOrder:
+            gift.deliveryDate = int(time.time() / 60)
+        from toontown.catalog.CatalogItemList import CatalogItemList
+        av.b_setGiftSchedule(CatalogItemList(list(av.onGiftOrder), store=av.onGiftOrder.store))
+
+    count = len(localAvatar.mailboxContents)
+    onDistrict(deliverNow, me)
+    yield until(lambda: len(localAvatar.mailboxContents) > count, 120, 'the gift delivery')
+    gift = localAvatar.mailboxContents[-1]
+    log('the gift arrived: %s from %s' % (gift.getName(), gift.giftTag))
+    onDistrict(lambda air, avId: setattr(air.doId2do[avId], 'friendsList', []), me)
+
+
 def scenarioCodes():
     # Types codes on the Options page, then takes the presents out of the
     # award mailbox.
@@ -2244,6 +2308,7 @@ SCENARIOS = [
     ('party', scenarioParty),
     ('catalog', scenarioCatalog),
     ('codes', scenarioCodes),
+    ('gifts', scenarioGifts),
     ('boardgames', scenarioBoardGames),
     ('rentals', scenarioRentals),
     ('quest', scenarioQuest),
