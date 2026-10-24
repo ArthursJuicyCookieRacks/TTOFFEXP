@@ -97,6 +97,7 @@ class DistributedFindFour(DistributedNode.DistributedNode):
         self.pickerNode = CollisionNode('mouseRay')
         self.pickerNP = camera.attachNewNode(self.pickerNode)
         self.pickerNode.setFromCollideMask(BitMask32(4096))
+        self.pickerNode.setIntoCollideMask(BitMask32.allOff())
         self.pickerRay = CollisionRay()
         self.pickerNode.addSolid(self.pickerRay)
         self.myHandler = CollisionHandlerQueue()
@@ -118,7 +119,7 @@ class DistributedFindFour(DistributedNode.DistributedNode):
         from direct.fsm import ClassicFSM, State
         self.fsm = ClassicFSM.ClassicFSM('ChineseCheckers', [State.State('waitingToBegin', self.enterWaitingToBegin, self.exitWaitingToBegin, ['playing', 'gameOver']), State.State('playing', self.enterPlaying, self.exitPlaying, ['gameOver']), State.State('gameOver', self.enterGameOver, self.exitGameOver, ['waitingToBegin'])], 'waitingToBegin', 'waitingToBegin')
         startLoc = self.boardNode.find('**/locators')
-        self.locatorList = startLoc.getChildren()
+        self.locatorList = list(startLoc.getChildren())
         self.startingPositions = self.locatorList.pop(0)
         self.startingPositions = self.startingPositions.getChildren()
         instancePiece = self.boardNode.find('**/pieces')

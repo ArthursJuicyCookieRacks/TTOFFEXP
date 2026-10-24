@@ -14,6 +14,9 @@ from toontown.safezone.SZTreasurePlannerAI import SZTreasurePlannerAI
 from toontown.safezone import TreasureGlobals
 
 from toontown.estate.GardenAI import GardenAI
+from toontown.estate.DistributedCannonAI import DistributedCannonAI
+from toontown.estate.DistributedTargetAI import DistributedTargetAI
+from toontown.estate import CannonGlobals
 import datetime
 
 
@@ -29,6 +32,8 @@ class DistributedEstateAI(DistributedObjectAI):
         self.dawnTime = 0
         self.lastEpochTimestamp = 0
         self.rentalTimestamp = 0
+        self.rentalType = 0
+        self.rentalObjects = []
         self.houses = [None] * 6
         self.pets = []
         self.gardens = {}
@@ -85,9 +90,58 @@ class DistributedEstateAI(DistributedObjectAI):
         self.createTreasurePlanner()
 
     def rentItem(self, type, duration):
-        pass # TODO - implement this
+        # A rental bought from the catalog starts right away and lasts
+        # duration minutes. Buying again while one runs replaces it.
+        self.endRental(announce=False)
+        self.b_setRentalType(type)
+        self.b_setRentalTimeStamp(int(time.time() + duration * 60))
+        self.startRental()
+
+    def startRental(self):
+        # Puts the rented items out, also when the estate loads while a
+        # rental is still running.
+        remaining = self.rentalTimestamp - time.time()
+        if not self.rentalType or remaining <= 0 or self.rentalObjects:
+            return
+        if self.rentalType == ToontownGlobals.RentalCannon:
+            target = DistributedTargetAI(self.air, -5.6, -24, 40)
+            target.generateWithRequired(self.zoneId)
+            target.setEnabled(1)
+            self.rentalObjects.append(target)
+            for drop in CannonGlobals.cannonDrops:
+                cannon = DistributedCannonAI(self.air, self.doId, target.doId, *drop)
+                cannon.generateWithRequired(self.zoneId)
+                self.rentalObjects.append(cannon)
+        elif self.rentalType == ToontownGlobals.RentalGameTable:
+            from toontown.safezone.DistributedPicnicTableAI import DistributedPicnicTableAI
+            for x, y, z, h in HouseGlobals.GameTablePositions:
+                table = DistributedPicnicTableAI(self.air, self.zoneId, 'gameTable', x, y, z, h, 0, 0)
+                self.rentalObjects.append(table)
+        taskMgr.doMethodLater(remaining, self.__rentalOver, self.uniqueName('rental-over'))
+
+    def __rentalOver(self, task):
+        self.endRental()
+        return task.done
+
+    def endRental(self, announce=True):
+        taskMgr.remove(self.uniqueName('rental-over'))
+        if announce and self.rentalObjects:
+            if self.rentalType == ToontownGlobals.RentalCannon:
+                self.sendUpdate('cannonsOver', [])
+            elif self.rentalType == ToontownGlobals.RentalGameTable:
+                self.sendUpdate('gameTableOver', [])
+        for obj in self.rentalObjects:
+            obj.requestDelete()
+        self.rentalObjects = []
+        if announce and self.rentalType:
+            self.b_setRentalType(0)
+            self.b_setRentalTimeStamp(0)
 
     def destroy(self):
+        taskMgr.remove(self.uniqueName('rental-over'))
+        for obj in self.rentalObjects:
+            obj.requestDelete()
+        self.rentalObjects = []
         taskMgr.remove(self.uniqueName('garden-epoch'))
         for garden in self.gardens.values():
             garden.destroy()
@@ -207,11 +261,18 @@ class DistributedEstateAI(DistributedObjectAI):
     def getRentalTimeStamp(self):
         return self.rentalTimestamp
 
-    def setRentalType(self, todo0):
-        pass
+    def setRentalType(self, type):
+        self.rentalType = type
+
+    def d_setRentalType(self, type):
+        self.sendUpdate('setRentalType', [type])
+
+    def b_setRentalType(self, type):
+        self.setRentalType(type)
+        self.d_setRentalType(type)
 
     def getRentalType(self):
-        return 0
+        return self.rentalType
 
     def setSlot0ToonId(self, id):
         self.toons[0] = id
@@ -434,12 +495,6 @@ class DistributedEstateAI(DistributedObjectAI):
             self.sendUpdateToAvatarId(avId, 'thankSeller', [ToontownGlobals.FISHSALE_TROPHY, len(av.fishCollection), FishGlobals.getTotalNumFish()])
         else:
             self.sendUpdateToAvatarId(avId, 'thankSeller', [ToontownGlobals.FISHSALE_COMPLETE, 0, 0])
-
-    def cannonsOver(self):
-        pass
-
-    def gameTableOver(self):
-        pass
 
     def updateToons(self):
         self.d_setSlot0ToonId(self.toons[0])

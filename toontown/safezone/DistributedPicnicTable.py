@@ -232,6 +232,18 @@ class DistributedPicnicTable(DistributedNode.DistributedNode):
             self.isPlaying = True
 
     def announceWinner(self, winString, avId):
+        if winString.endswith(' Tie') or not avId:
+            # A draw, or a computer player won.
+            stateString = self.fsm.getCurrentState().getName()
+            if stateString == 'sitting' or stateString == 'observing':
+                base.cr.playGame.getPlace().setState('walk')
+            if winString.endswith(' Tie'):
+                message = TTLocalizer.PicnicTableTie % winString[:-len(' Tie')]
+            else:
+                message = TTLocalizer.PicnicTableComputerWon % winString
+            whisper = WhisperPopup(message, OTPGlobals.getInterfaceFont(), WhisperPopup.WTNormal)
+            whisper.manage(base.marginManager)
+            return
         if avId == base.localAvatar.getDoId():
             sound = Sequence(Wait(2.0), Parallel(SoundInterval(self.winSound), SoundInterval(self.happyDance)))
             sound.start()

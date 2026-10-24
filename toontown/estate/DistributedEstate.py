@@ -37,6 +37,8 @@ class DistributedEstate(DistributedObject.DistributedObject):
 
     def __init__(self, cr):
         DistributedObject.DistributedObject.__init__(self, cr)
+        # The flying treasures a cannon shot can hit; setTreasureIds fills it.
+        self.flyingTreasureId = []
         self.closestHouse = 0
         self.ground = None
         self.dayTrack = None

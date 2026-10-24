@@ -1,48 +1,40 @@
 from direct.directnotify import DirectNotifyGlobal
-from direct.distributed.DistributedNodeAI import DistributedNodeAI
+from toontown.safezone.DistributedBoardGameAI import DistributedBoardGameAI
+from toontown.safezone.BoardGameRules import CheckersRules
 
-class DistributedCheckersAI(DistributedNodeAI):
+
+class DistributedCheckersAI(DistributedBoardGameAI):
     notify = DirectNotifyGlobal.directNotify.newCategory("DistributedCheckersAI")
+    GameName = 'Checkers'
+    MinPlayers = 2
+    MaxPlayers = 2
 
-    def requestExit(self):
-        pass
+    def __init__(self, air, table):
+        DistributedBoardGameAI.__init__(self, air, table)
+        self.rules = CheckersRules()
+        self.states = self.rules.getInitialState()
 
-    def requestBegin(self):
-        pass
+    def setupBoard(self, playerNums):
+        self.states = self.rules.getInitialState()
 
-    def requestTimer(self):
-        pass
+    def getGameStateArgs(self, move):
+        return [self.states, list(move)]
 
-    def requestMove(self, todo0):
-        pass
+    def applyMove(self, player, move):
+        after = self.rules.applyMove(self.states, player, list(move))
+        if after is None:
+            return None
+        captured = after.count(0) > self.states.count(0)
+        self.states = after
+        return captured
 
-    def startBeginTimer(self, todo0, todo1):
-        pass
+    def d_setGameState(self, move):
+        # The client animates the piece from where it stood, so the move
+        # goes out with the board as it is after it.
+        self.sendUpdate('setGameState', [self.states, list(move)])
 
-    def gameStart(self, todo0):
-        pass
+    def getWinner(self, player):
+        return self.rules.getWinner(self.states, 3 - player)
 
-    def setTableDoId(self, todo0):
-        pass
-
-    def setGameState(self, todo0, todo1):
-        pass
-
-    def setTimer(self, todo0):
-        pass
-
-    def setTurnTimer(self, todo0):
-        pass
-
-    def sendTurn(self, todo0):
-        pass
-
-    def requestWin(self):
-        pass
-
-    def announceWin(self, todo0):
-        pass
-
-    def illegalMove(self):
-        pass
-
+    def pickMove(self, player):
+        return self.rules.pickMove(self.states, player)

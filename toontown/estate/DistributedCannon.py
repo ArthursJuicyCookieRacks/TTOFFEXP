@@ -469,7 +469,7 @@ class DistributedCannon(DistributedObject.DistributedObject):
         tag.setBillboardOffset(0)
         tag.setAvatar(self.toonHead)
         toon.nametag.addNametag(tag)
-        tagPath = self.toonHead.attachNewNode(tag.upcastToPandaNode())
+        tagPath = self.toonHead.attachNewNode(tag)
         tagPath.setPos(0, 0, 1)
         self.toonHead.tag = tag
         self.__loadToonInCannon()

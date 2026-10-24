@@ -240,6 +240,7 @@ class LoadEstateFSM(FSM):
 
     def enterFinished(self):
         self.estate.placeGardens(self.toons)
+        self.estate.startRental()
 
         # The household's pets wander the estate while it is loaded.
         if simbase.wantPets:

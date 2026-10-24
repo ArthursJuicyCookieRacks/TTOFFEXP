@@ -53,6 +53,7 @@ class DistributedChineseCheckers(DistributedNode.DistributedNode):
         self.pickerNode = CollisionNode('mouseRay')
         self.pickerNP = camera.attachNewNode(self.pickerNode)
         self.pickerNode.setFromCollideMask(ToontownGlobals.WallBitmask)
+        self.pickerNode.setIntoCollideMask(BitMask32.allOff())
         self.pickerRay = CollisionRay()
         self.pickerNode.addSolid(self.pickerRay)
         self.myHandler = CollisionHandlerQueue()

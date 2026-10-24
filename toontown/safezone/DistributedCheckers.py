@@ -49,6 +49,7 @@ class DistributedCheckers(DistributedNode.DistributedNode):
         self.pickerNode = CollisionNode('mouseRay')
         self.pickerNP = camera.attachNewNode(self.pickerNode)
         self.pickerNode.setFromCollideMask(ToontownGlobals.WallBitmask)
+        self.pickerNode.setIntoCollideMask(BitMask32.allOff())
         self.pickerRay = CollisionRay()
         self.pickerNode.addSolid(self.pickerRay)
         self.myHandler = CollisionHandlerQueue()
@@ -586,8 +587,6 @@ class DistributedCheckers(DistributedNode.DistributedNode):
         for xx in range(32):
             for blah in self.locatorList[xx].getChildren():
                 blah.hide()
-                if self.locatorList[xx].getChildren().index(blah) != 0:
-                    blah1 = blah.find('**/checker_k*')
 
             owner = self.board.squareList[xx].getState()
             if owner == self.playerNum:
