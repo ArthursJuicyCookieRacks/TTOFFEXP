@@ -83,18 +83,18 @@ class DriversPanel:
     def __init__(self, launcher, panel):
         self.launcher = launcher
         self.panel = panel
-        self.label = DirectLabel(parent=panel, relief=None, pos=(0, 0, 0.31), text_font=launcher.interfaceFont,
+        self.label = DirectLabel(parent=panel, relief=None, pos=(0, 0, 0.32), text_font=launcher.interfaceFont,
                                  text_scale=0.056, text_fg=TEXT_DARK, text_wordwrap=30, text='')
-        self.pickButton = launcher.redButton('PICK A DRIVER', (0, 0, 0.14), self.pick, textScale=0.04,
+        self.pickButton = launcher.redButton('PICK A DRIVER', (0, 0, 0.136), self.pick, textScale=0.04,
                                              imageScale=(1.9, 1, 1.25))
         self.pickButton.reparentTo(panel)
-        self.resetButton = launcher.redButton("PHONE'S DRIVER", (0, 0, 0.0), self.reset, textScale=0.04,
+        self.resetButton = launcher.redButton("PHONE'S DRIVER", (0, 0, -0.042), self.reset, textScale=0.04,
                                               imageScale=(1.9, 1, 1.25))
         self.resetButton.reparentTo(panel)
-        self.message = DirectLabel(parent=panel, relief=None, pos=(0, 0, -0.13), text_font=launcher.interfaceFont,
+        self.message = DirectLabel(parent=panel, relief=None, pos=(0, 0, -0.205), text_font=launcher.interfaceFont,
                                    text_scale=0.05, text_fg=TEXT_DARK, text_wordwrap=28,
                                    text='Pick a Turnip driver .zip (Snapdragon phones only). '
-                                        'It is used from the next time the game starts.')
+                                        'It is used from the next start.')
         self.update()
 
     def update(self):
@@ -139,8 +139,8 @@ class DriversPanel:
                 pass
         self.launcher.settings.updateSetting('graphics', 'driver', folder)
         self.update()
-        self.say('Done! Restart the game to draw with %s. If it does not start, the game goes back '
-                 "to the phone's own driver." % driverName(folder))
+        self.say("Done! Restart the game to use the new driver. If it won't start, the phone's own "
+                 'driver comes back.')
         return task.done
 
     def reset(self):

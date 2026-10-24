@@ -240,7 +240,7 @@ class OfflineLauncher(DirectObject):
 
     def showDrivers(self):
         from toontown.toonbase import TurnipDrivers
-        TurnipDrivers.DriversPanel(self, self.openPanel('DRIVERS', titleZ=0.44))
+        TurnipDrivers.DriversPanel(self, self.openPanel('DRIVERS', titleZ=0.45))
 
     # --- Starting the game ---
 
