@@ -1,0 +1,28 @@
+name: Mesa research
+on:
+  push:
+    branches: ['research/mesa-android']
+defaults:
+  run:
+    shell: bash
+jobs:
+  look:
+    runs-on: ubuntu-24.04
+    steps:
+    - name: Get Mesa
+      run: |
+        for v in 25.2.6 25.2.5 25.2.4 25.2.3 25.1.9; do
+          if curl -sSfL -o mesa.tar.xz https://archive.mesa3d.org/mesa-$v.tar.xz; then echo "MESA $v"; break; fi
+        done
+        tar xf mesa.tar.xz && mv mesa-* mesa
+        git clone -q --depth 1 https://github.com/bylaws/libadrenotools.git adrenotools
+        git -C adrenotools submodule update --init --depth 1 || true
+    - name: Look
+      run: |
+        cd mesa
+        echo "=== kopper android"; grep -n "ANDROID" src/gallium/drivers/zink/zink_kopper.c src/gallium/drivers/zink/zink_kopper.h src/gallium/frontends/dri/kopper.c | head -60
+        echo "=== platform_android zink/kopper"; grep -n "kopper\|zink\|swrast\|render_node\|kgsl\|ForceSoftware\|droid_open_device\|static EGLBoolean\|^dri2_initialize_android" src/egl/drivers/dri2/platform_android.c | head -80
+        echo "=== zink vulkan loading"; grep -rn "VK_LIBNAME\|util_dl_open\|vkGetInstanceProcAddr\b" src/gallium/drivers/zink/*.c src/gallium/drivers/zink/*.h src/gallium/drivers/zink/*.py | head -30
+        echo "=== meson options"; grep -n "android\|egl-lib-suffix\|gles-lib-suffix\|platforms\|osmesa" meson_options.txt meson.options 2>/dev/null | head -40
+        echo "=== surfaceless"; ls src/egl/drivers/dri2/
+        echo "=== adrenotools"; ls ../adrenotools ../adrenotools/include/adrenotools 2>/dev/null; sed -n 1,200p ../adrenotools/include/adrenotools/driver.h
