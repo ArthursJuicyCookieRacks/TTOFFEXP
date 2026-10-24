@@ -519,7 +519,7 @@ class NewsManager(DistributedObject.DistributedObject):
         for goal, zoneId in sorted(goals.items()):
             shop = TTLocalizer.zone2TitleDict.get(zoneId, ('', ''))[0]
             street = TTLocalizer.GlobalStreetNames.get(ZoneUtil.getCanonicalBranchZone(zoneId), ('', '', ''))[-1]
-            hood = ToontownGlobals.hoodNameMap.get(ZoneUtil.getCanonicalHoodId(zoneId), '')
+            hood = ToontownGlobals.hoodNameMap.get(ZoneUtil.getCanonicalHoodId(zoneId), ('', '', ''))[-1]
             names.append('%s (%s, %s)' % (shop, street, hood))
         return ', '.join(names)
 

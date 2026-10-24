@@ -12,6 +12,7 @@ from direct.task import Task
 from toontown.golf import GolfGlobals
 from toontown.toonbase import ToontownGlobals
 from toontown.toonbase import TTLocalizer
+from toontown.toonbase import TouchControls
 
 class DistributedGolfSpot(DistributedObject.DistributedObject, FSM.FSM):
     notify = DirectNotifyGlobal.directNotify.newCategory('DistributedGolfSpot')
@@ -295,6 +296,7 @@ class DistributedGolfSpot(DistributedObject.DistributedObject, FSM.FSM):
          gui.find('**/CloseBtn_UP')), relief=None, scale=2, text=TTLocalizer.BossbotGolfSpotLeave, text_scale=0.04, text_pos=(0, -0.07), text_fg=VBase4(1, 1, 1, 1), pos=(1.05, 0, -0.82), command=self.__exitGolfSpot)
         self.accept('escape', self.__exitGolfSpot)
         self.accept('control', self.__controlPressed)
+        TouchControls.request('golfSpot')
         self.accept('control-up', self.__controlReleased)
         self.accept('InputState-forward', self.__upArrow)
         self.accept('InputState-reverse', self.__downArrow)
@@ -315,6 +317,7 @@ class DistributedGolfSpot(DistributedObject.DistributedObject, FSM.FSM):
         self.__cleanupGolfSpotAdvice()
         self.ignore('escape')
         self.ignore('control')
+        TouchControls.release('golfSpot')
         self.ignore('control-up')
         self.ignore('InputState-forward')
         self.ignore('InputState-reverse')

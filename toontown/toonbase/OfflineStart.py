@@ -66,8 +66,9 @@ def main():
         'local-event-log-directory %s' % Filename(dataDir, 'logs/events'),
     ]))
     if sys.platform == 'android':
-        # Phones and tablets have OpenGL ES rather than desktop OpenGL.
-        loadPrcFileData('OfflineStart Android', 'load-display pandagles2\naux-display pandagles')
+        # Phones and tablets have OpenGL ES rather than desktop OpenGL, and
+        # no keyboard, so the game gets on-screen controls.
+        loadPrcFileData('OfflineStart Android', 'load-display pandagles2\naux-display pandagles\nwant-touch-controls 1')
     mountPhases(gameDir)
 
     # The player is the only one on their own server; the name only tells

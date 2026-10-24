@@ -31,6 +31,7 @@ from toontown.parties import PartyGlobals # Still relying on PartyGlobals, soon 
 from toontown.toonfest.DistributedToonfestActivity import DistributedToonfestActivity
 from toontown.parties.activityFSMs import TrampolineActivityFSM
 from toontown.parties import PartyUtils
+from toontown.toonbase import TouchControls
 
 class DistributedToonfestTrampolineActivity(DistributedToonfestActivity):
     notify = DirectNotifyGlobal.directNotify.newCategory('DistributedToonfestTrampolineActivity')
@@ -236,6 +237,7 @@ class DistributedToonfestTrampolineActivity(DistributedToonfestActivity):
             self.timer.reset()
             self.trampB = self.leavingTrampB
             self.ignore('control')
+            TouchControls.release('trampoline')
             self.quitEarlyButton.stash()
             self.gui.hide()
         return
@@ -370,6 +372,7 @@ class DistributedToonfestTrampolineActivity(DistributedToonfestActivity):
         self.quitEarlyButton.unstash()
         self.notify.debug('Accepting contorl')
         self.accept('control', self.onJump)
+        TouchControls.request('trampoline')
         self.notify.debug('setting simulate step to true')
         self.doSimulateStep = True
 

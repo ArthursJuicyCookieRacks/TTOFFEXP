@@ -28,6 +28,7 @@ from direct.controls.TwoDWalker import TwoDWalker
 from otp.nametag.Nametag import Nametag
 from otp.ai.MagicWordGlobal import *
 from toontown.toonbase import ToontownGlobals
+from toontown.toonbase import TouchControls
 from otp.margins.WhisperPopup import WhisperPopup
 
 class LocalAvatar(DistributedAvatar.DistributedAvatar, DistributedSmoothNode.DistributedSmoothNode):
@@ -428,11 +429,13 @@ class LocalAvatar(DistributedAvatar.DistributedAvatar, DistributedSmoothNode.Dis
         self.avatarControlsEnabled = 1
         self.setupAnimationEvents()
         self.controlManager.enable()
+        TouchControls.request('walk')
 
     def disableAvatarControls(self):
         if not self.avatarControlsEnabled:
             return
         self.avatarControlsEnabled = 0
+        TouchControls.release('walk')
         self.ignoreAnimationEvents()
         self.controlManager.disable()
         self.clearPageUpDown()

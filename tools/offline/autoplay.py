@@ -28,7 +28,7 @@ os.chdir(ROOT)
 
 DB = os.path.abspath(os.environ.get('AUTOPLAY_DB', 'autoplay-db'))
 
-from panda3d.core import loadPrcFileData, NodePath, Point3, Vec3
+from panda3d.core import loadPrcFileData, Filename, NodePath, Point3, Vec3
 loadPrcFileData('autoplay', '''
 audio-library-name null
 toontown-auto-run 0
@@ -53,6 +53,7 @@ from toontown.hood import ZoneUtil
 from toontown.building import DoorTypes
 from direct.showbase.DirectObject import DirectObject
 from direct.gui import DirectGuiGlobals as DGG
+from direct.showbase.InputStateGlobal import inputState
 from otp.local import LocalServer
 
 
@@ -275,6 +276,61 @@ def scenarioTutorial():
     yield until(inZone(ToontownGlobals.ToontownCentral), 60, 'walking in Toontown Central')
     yield until(lambda: localAvatar.tutorialAck, 30, 'the tutorial to be done')
     log('Toontorial done; ToonTasks %s' % (localAvatar.quests,))
+
+
+def scenarioTouchControls():
+    # The on-screen joystick and jump button of the Android build, pressed
+    # with the X pointer (run with AUTOPLAY_PRC="want-touch-controls 1").
+    import subprocess
+    yield until(walking, 60, 'walking')
+    controls = getattr(base, 'touchControls', None)
+    if controls is None or controls.joystick.isHidden():
+        raise StepFailed('no touch controls while walking')
+    window = str(base.win.getWindowHandle().getIntHandle())
+
+    def pixel(node, offset=(0, 0)):
+        point = render2d.getRelativePoint(node, Point3(offset[0], 0, offset[1]))
+        return (str(int((point[0] + 1) / 2 * base.win.getXSize())), str(int((1 - point[2]) / 2 * base.win.getYSize())))
+
+    def xdotool(*args):
+        subprocess.check_call(['xdotool'] + list(args))
+
+    if os.environ.get('AUTOPLAY_SCREENSHOT'):
+        base.graphicsEngine.renderFrame()
+        base.win.saveScreenshot(Filename.fromOsSpecific(os.environ['AUTOPLAY_SCREENSHOT']))
+    start = localAvatar.getPos(render)
+    xdotool('mousemove', '--window', window, *pixel(controls.joystick))
+    xdotool('mousedown', '1')
+    yield sleep(0.3)
+    xdotool('mousemove', '--window', window, *pixel(controls.joystick, (0, controls.RADIUS)))
+    yield sleep(2)
+    pressed = sorted(controls.pressed)
+    xdotool('mouseup', '1')
+    yield sleep(0.5)
+    moved = (localAvatar.getPos(render) - start).length()
+    log('the joystick pressed %s and the toon walked %.1f feet' % (pressed, moved))
+    if pressed != ['up'] or moved < 5:
+        raise StepFailed('the joystick did not walk the toon forward')
+    if controls.pressed or inputState.isSet('forward'):
+        raise StepFailed('the toon kept walking after the touch ended')
+
+    stopped = localAvatar.getPos(render)
+    yield sleep(1)
+    if (localAvatar.getPos(render) - stopped).length() > 0.5:
+        raise StepFailed('the toon kept moving after the touch ended')
+
+    ground = localAvatar.getZ(render)
+    xdotool('mousemove', '--window', window, *pixel(controls.jumpButton))
+    xdotool('mousedown', '1')
+    highest = ground
+    for i in range(10):
+        yield sleep(0.05)
+        highest = max(highest, localAvatar.getZ(render))
+    xdotool('mouseup', '1')
+    log('the jump button lifted the toon %.1f feet' % (highest - ground))
+    if highest - ground < 1:
+        raise StepFailed('the jump button did not jump')
+    yield sleep(1)
 
 
 def scenarioMaxToon():
@@ -2515,6 +2571,7 @@ def scenarioMinigames():
 SCENARIOS = [
     ('login', scenarioLogin),
     ('tutorial', scenarioTutorial),
+    ('touch', scenarioTouchControls),
     ('maxtoon', scenarioMaxToon),
     ('playgrounds', scenarioPlaygrounds),
     ('streets', scenarioStreets),

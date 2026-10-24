@@ -10,6 +10,7 @@ from . import CogdoGameConsts
 from . import CogdoMazeGameGlobals as Globals
 from .CogdoMazePlayer import CogdoMazePlayer
 from .CogdoMazeCameraManager import CogdoMazeCameraManager
+from toontown.toonbase import TouchControls
 
 class CogdoMazeLocalPlayer(CogdoMazePlayer):
     notify = directNotify.newCategory('CogdoMazeLocalPlayer')
@@ -45,8 +46,10 @@ class CogdoMazeLocalPlayer(CogdoMazePlayer):
          'boss': False,
          'minion': False}
         self.accept('control', self.controlKeyPressed)
+        TouchControls.request('cogdoMaze')
 
     def destroy(self):
+        TouchControls.release('cogdoMaze')
         self.toon.showName()
         self.ignoreAll()
         self.coolDownAfterHitInterval.clearToInitial()
@@ -133,6 +136,7 @@ class CogdoMazeLocalPlayer(CogdoMazePlayer):
         CogdoMazePlayer.enterDone(self)
         self._guiMgr.hideQuestArrow()
         self.ignore('control')
+        TouchControls.release('cogdoMaze')
         self._guiMgr.setMessage('')
         if self.exited == False:
             self.lostMemos()

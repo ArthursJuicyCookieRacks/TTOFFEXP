@@ -1,5 +1,6 @@
 from panda3d.core import ModifierButtons
 from direct.showbase.DirectObject import DirectObject
+from toontown.toonbase import TouchControls
 
 class ArrowKeys(DirectObject):
     UP_KEY = 'w'
@@ -29,8 +30,10 @@ class ArrowKeys(DirectObject):
         self.accept(self.LEFT_KEY, self.__leftKeyPressed)
         self.accept(self.RIGHT_KEY, self.__rightKeyPressed)
         self.accept(self.JUMP_KEY, self.__jumpKeyPressed)
+        TouchControls.request('arrowKeys')
 
     def disable(self):
+        TouchControls.release('arrowKeys')
         self.__upPressed = 0
         self.__downPressed = 0
         self.__leftPressed = 0
