@@ -419,6 +419,12 @@ class LocalAvatar(DistributedAvatar.DistributedAvatar, DistributedSmoothNode.Dis
     def enableAvatarControls(self):
         if self.avatarControlsEnabled:
             return
+        controls = self.controlManager.currentControls
+        if controls and not getattr(controls, 'collisionsActive', 1):
+            # The toon has left the place (an interval that ends by giving
+            # back the controls finished after a teleport began), so there
+            # is nothing to steer; Panda3D 1.11 asserts on this.
+            return
         self.avatarControlsEnabled = 1
         self.setupAnimationEvents()
         self.controlManager.enable()

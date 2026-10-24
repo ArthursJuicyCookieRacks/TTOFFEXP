@@ -29,23 +29,23 @@ class DistributedToonfestActivityAI(DistributedObjectAI):
         self.sendUpdate('setToonsPlaying', [self.toonsPlaying])
 
     def toonJoinRequest(self):
-        print('toon join request')
+        self.notify.debug('toon join request')
         avId = self.air.getAvatarIdFromSender()
         #todo hackyfun i should FSM
         self.toonsPlaying.append(avId)
         self.updateToonsPlaying()
 
     def toonExitRequest(self):
-        print('toon exit request')
+        self.notify.debug('toon exit request')
 
     def toonExitDemand(self):
-        print('toon exit demand')
+        self.notify.debug('toon exit demand')
         avId = self.air.getAvatarIdFromSender()
         self.toonsPlaying.remove(avId)
         self.updateToonsPlaying()
 
     def toonReady(self):
-        print('toon ready')
+        self.notify.debug('toon ready')
 
     def joinRequestDenied(self, todo0):
         pass

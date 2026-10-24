@@ -52,12 +52,12 @@ class DistributedToonfestCogAI(DistributedObjectAI, FSM):
     def enterDown(self):
         self.cogDown = True
         self.sendUpdate('toggleCog', ['Down'])
-        print('Cog has gone down.')
+        self.notify.debug('Cog has gone down.')
 
     def enterUp(self):
         self.cogUp = True
         self.sendUpdate('toggleCog', ['Up'])
-        print('Cog has come up.')
+        self.notify.debug('Cog has come up.')
 
     def updateTower(self, avName):
         base = random.randrange(0, 3)
@@ -65,8 +65,8 @@ class DistributedToonfestCogAI(DistributedObjectAI, FSM):
         for operation in validOperations:
             operation = random.choice(validOperations)
         if not DistributedToonfestTowerAI or not self.air.toonfestTower:
-            print('DistributedToonfestCogAI: ERROR! Could not find the ToonFest Tower.')
+            self.notify.debug('DistributedToonfestCogAI: ERROR! Could not find the ToonFest Tower.')
         else:
             if random.randrange(0, 100) >= 80:
                 self.air.toonfestTower.d_updateTower(operation, base, avName)
-        print('DistributedToonfestCogAI: Told Tower to ' + operation + ' base number ' + str(base + 1))
+        self.notify.debug('DistributedToonfestCogAI: Told Tower to ' + operation + ' base number ' + str(base + 1))

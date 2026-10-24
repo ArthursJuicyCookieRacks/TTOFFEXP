@@ -21,7 +21,7 @@ class DistributedToonfestTowerBaseAI(DistributedObjectAI):
         self.offset = 0.0
 
     def requestSpeedUp(self):
-        print('Toon on base')
+        self.notify.debug('Toon on base')
 
     def requestChangeDirection(self):
         pass

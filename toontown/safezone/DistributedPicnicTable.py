@@ -110,6 +110,9 @@ class DistributedPicnicTable(DistributedNode.DistributedNode):
         return
 
     def handleSleep(self, task = None):
+        if self.fsm is None:
+            # The sleep watch started at generate outlived the table.
+            return
         if self.fsm.getCurrentState().getName() == 'chooseMode':
             self.cancelButtonPushed()
         elif self.fsm.getCurrentState().getName() == 'sitting':
