@@ -478,7 +478,6 @@ def unloadDialog():
 
 class Toon(Avatar.Avatar, ToonHead):
     notify = DirectNotifyGlobal.directNotify.newCategory('Toon')
-    afkTimeout = config.ConfigVariableInt('afk-timeout', 600).getValue()
 
     def __init__(self):
         try:
@@ -2118,9 +2117,10 @@ class Toon(Avatar.Avatar, ToonHead):
         self.loop('neutral')
         self.setPlayRate(animMultiplier * 0.4, 'neutral')
         self.setChatAbsolute(SLEEP_STRING, CFThought)
-        if self == base.localAvatar:
+        afkTimeout = OTPGlobals.getAfkTimeout()
+        if self == base.localAvatar and afkTimeout > 0:
             self.notify.debug('Adding timeout task to Toon.')
-            taskMgr.doMethodLater(self.afkTimeout, self.__handleAfkTimeout, self.uniqueName('afkTimeout'))
+            taskMgr.doMethodLater(afkTimeout, self.__handleAfkTimeout, self.uniqueName('afkTimeout'))
         self.setActiveShadow(0)
 
     def __handleAfkTimeout(self, task):

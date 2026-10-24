@@ -378,3 +378,11 @@ AccessInvalid = 3
 AvatarPendingCreate = -1
 AvatarSlotUnavailable = -2
 AvatarSlotAvailable = -3
+
+
+def getAfkTimeout():
+    # How long a toon may sit idle before being logged out, in seconds; 0
+    # never logs out. Offline (with the game services in this process)
+    # there is nobody to free a place for, so the default is never.
+    offline = ConfigVariableBool('auto-start-server', False).getValue()
+    return ConfigVariableInt('afk-timeout', 0 if offline else 600).getValue()

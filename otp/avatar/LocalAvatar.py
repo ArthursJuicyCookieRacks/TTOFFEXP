@@ -35,7 +35,6 @@ class LocalAvatar(DistributedAvatar.DistributedAvatar, DistributedSmoothNode.Dis
     wantDevCameraPositions = config.ConfigVariableBool('want-dev-camera-positions', 0).getValue()
     wantMouse = config.ConfigVariableBool('want-mouse', 0).getValue()
     sleepTimeout = config.ConfigVariableInt('sleep-timeout', 120).getValue()
-    swimTimeout = config.ConfigVariableInt('afk-timeout', 600).getValue()
     __enableMarkerPlacement = config.ConfigVariableBool('place-markers', 0).getValue()
     acceptingNewFriends = config.ConfigVariableBool('accepting-new-friends', 1).getValue()
     acceptingNonFriendWhispers = config.ConfigVariableBool('accepting-non-friend-whispers', 0).getValue()
@@ -1067,7 +1066,8 @@ class LocalAvatar(DistributedAvatar.DistributedAvatar, DistributedSmoothNode.Dis
             self.wakeUp()
         elif not self.sleepFlag:
             now = globalClock.getFrameTime()
-            if now - self.lastMoved > self.swimTimeout:
+            swimTimeout = OTPGlobals.getAfkTimeout()
+            if swimTimeout > 0 and now - self.lastMoved > swimTimeout:
                 self.swimTimeoutAction()
                 return Task.done
         return Task.cont

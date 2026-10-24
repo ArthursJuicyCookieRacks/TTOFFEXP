@@ -286,23 +286,27 @@ def onDistrict(func, *args):
 
 
 def pickGag():
-    # The strongest single-target gag the toon still carries.
+    # The strongest gag the toon still carries; sound hits every cog at once.
     inventory = localAvatar.inventory
     for level in range(6, -1, -1):
-        for track in (ToontownBattleGlobals.THROW_TRACK, ToontownBattleGlobals.SQUIRT_TRACK,
-                      ToontownBattleGlobals.DROP_TRACK):
+        for track in (ToontownBattleGlobals.SOUND_TRACK, ToontownBattleGlobals.THROW_TRACK,
+                      ToontownBattleGlobals.SQUIRT_TRACK, ToontownBattleGlobals.DROP_TRACK):
             if inventory.numItem(track, level) > 0:
                 return track, level
-    raise StepFailed('the toon is out of throw, squirt and drop gags')
+    raise StepFailed('the toon is out of sound, throw, squirt and drop gags')
 
 
-def fightBattle(timeout=600):
+def fightBattle(timeout=1800):
     yield until(lambda: placeState() == 'battle', 60, 'battle to start')
     deadline = time.time() + timeout
     rounds = 0
+    nextReport = time.time() + 30
     while placeState() == 'battle':
         if time.time() > deadline:
             raise StepFailed('the battle did not end in %d seconds' % timeout)
+        if time.time() > nextReport:
+            nextReport = time.time() + 30
+            log('still in battle: round %d, gag panel %s' % (rounds, townBattleState()))
         if townBattleState() == 'Attack':
             rounds += 1
             track, level = pickGag()
@@ -453,6 +457,8 @@ def clearRooms(interior, facilityClass, timeout=3600):
             facility.warpToRoom(room.roomId)
             # Give the room's cogs time to arrive once the room is visible.
             yield sleep(3)
+            nextReport = time.time() + 30
+            target = targetSince = None
             while placeName() == interior:
                 if time.time() > deadline:
                     raise StepFailed('still inside the %s after %d seconds' % (interior, timeout))
@@ -465,6 +471,20 @@ def clearRooms(interior, facilityClass, timeout=3600):
                     break
                 if walking():
                     localAvatar.setPos(render, suits[0].getPos(render))
+                    if suits[0].doId != target:
+                        target, targetSince = suits[0].doId, time.time()
+                    elif time.time() - targetSince > 5:
+                        # Some cogs stand where the toon's collisions can't
+                        # reach them (a part of the room that isn't shown);
+                        # start the battle the way a battle blocker does.
+                        log('walking into %d did not start a battle; using its battle blocker' % target)
+                        suits[0].handleBattleBlockerCollision()
+                        targetSince = time.time()
+                if time.time() > nextReport:
+                    nextReport = time.time() + 30
+                    log('%d cogs left in the room: %s; toon at %s, state %s' % (
+                        len(suits), ', '.join('%s %s in %s' % (suit.doId, suit.getPos(render), suit.fsm.getCurrentState().getName())
+                                              for suit in suits), localAvatar.getPos(render), placeState()))
                 yield sleep(0.2)
         yield sleep(3)
         if placeName() == interior and findObject('DistributedElevatorFloor'):
@@ -490,6 +510,155 @@ def scenarioOffice():
     yield from boardElevator('DistributedLawOfficeElevatorExt',
                              lambda do: getattr(do, 'intZoneId', None) == ToontownGlobals.LawbotStageIntA)
     yield from clearRooms('StageInterior', 'DistributedStage')
+
+
+def scenarioCountryClub():
+    yield from teleport(ToontownGlobals.BossbotHQ)
+    yield from boardElevator('DistributedCogKart',
+                             lambda do: getattr(do, 'countryClubId', None) == ToontownGlobals.BossbotCountryClubIntA)
+    yield from clearRooms('CountryClubInterior', 'DistributedCountryClub')
+
+
+def fightBoss(interior, bossClass, actions, timeout=2400):
+    # Plays a boss battle: cog rounds are fought as usual, and actions maps
+    # the boss's other states to what a toon does in them (called every
+    # half second with the boss).
+    yield until(lambda: placeName() == interior, 180, 'inside the %s' % interior)
+    yield until(lambda: findObject(bossClass), 120, 'the %s' % bossClass)
+    boss = findObject(bossClass)
+    deadline = time.time() + timeout
+    lastState = None
+    while placeName() == interior:
+        if time.time() > deadline:
+            raise StepFailed('the %s did not end in %d seconds (boss state %s)' % (bossClass, timeout, boss.state))
+        if boss.state != lastState:
+            lastState = boss.state
+            stateStart = time.time()
+            log('boss state', lastState)
+        elif time.time() - stateStart > 60:
+            stateStart = time.time()
+            log('boss still in %s; place state %s, gag panel %s' % (boss.state, placeState(), townBattleState()))
+        if placeState() == 'battle':
+            yield from fightBattle()
+            continue
+        # In the epilogue a rescued toon talks; clicking through the speech
+        # balloon's pages ends it.
+        action = actions.get(boss.state) or {'Epilogue': lambda boss: messenger.send('doneChatPage', [0])}.get(boss.state)
+        if action is not None:
+            action(boss)
+        yield sleep(0.5)
+    yield until(walking, 180, 'walking after the %s' % bossClass)
+    log('out of the %s, in zone %d' % (interior, localAvatar.zoneId))
+
+
+def vpBattleThree(boss):
+    # What hitting the VP with pies sends: take pies from the cage, open
+    # the VP up with a pie inside, then hit him while he is dizzy.
+    if localAvatar.numPies == 0:
+        boss.sendUpdate('touchCage', [])
+    elif boss.attackCode != ToontownGlobals.BossCogDizzyNow:
+        boss.d_hitBossInsides()
+    else:
+        boss.d_hitBoss(1)
+
+
+def scenarioVP():
+    yield from teleport(ToontownGlobals.SellbotHQ, ToontownGlobals.SellbotLobby)
+    yield from boardElevator('DistributedVPElevator')
+    yield from fightBoss('SellbotHQBossBattle', 'DistributedSellbotBoss', {
+        'BattleThree': vpBattleThree,
+        'NearVictory': lambda boss: boss.sendUpdate('finalPieSplat', []),
+    })
+
+
+def cfoBattleThree(boss):
+    # What the cranes do: take a crane, pick up a goon or a safe, and swing
+    # it into the CFO. A safe knocks his helmet off, and hurts him while he
+    # is dizzy; a goon hurts him whenever he has no helmet on.
+    me = localAvatar.doId
+    crane = findObject('DistributedCashbotBossCrane', lambda do: do.avId == me)
+    if crane is None:
+        free = findObject('DistributedCashbotBossCrane', lambda do: do.avId == 0)
+        if free is not None:
+            free.sendUpdate('requestControl', [])
+        return
+    held = findObject('DistributedCashbotBossSafe', lambda do: do.avId == me and do.state in ('Grabbed', 'LocalGrabbed')) or \
+        findObject('DistributedCashbotBossGoon', lambda do: do.avId == me and do.state in ('Grabbed', 'LocalGrabbed'))
+    if held is not None:
+        held.sendUpdate('hitBoss', [1.0])
+        return
+    wantSafe = boss.heldObject is not None or boss.attackCode == ToontownGlobals.BossCogDizzy
+    kinds = ['DistributedCashbotBossSafe', 'DistributedCashbotBossGoon']
+    if not wantSafe:
+        kinds.reverse()
+    for kind in kinds:
+        thing = findObject(kind, lambda do: do.state not in ('Grabbed', 'LocalGrabbed', 'Off') and do is not boss.heldObject)
+        if thing is not None:
+            thing.sendUpdate('requestGrab', [])
+            return
+
+
+def scenarioCFO():
+    yield from teleport(ToontownGlobals.CashbotHQ, ToontownGlobals.CashbotLobby)
+    yield from boardElevator('DistributedCFOElevator')
+    yield from fightBoss('CashbotHQBossBattle', 'DistributedCashbotBoss', {
+        'BattleThree': cfoBattleThree,
+    })
+
+
+def cjBattleThree(boss):
+    # What throwing evidence does: take evidence at the witness stand, then
+    # land it on the scale's pan.
+    if localAvatar.numPies == 0:
+        boss.sendUpdate('touchWitnessStand', [])
+    else:
+        boss.d_hitBoss(1)
+
+
+def scenarioCJ():
+    yield from teleport(ToontownGlobals.LawbotHQ, ToontownGlobals.LawbotLobby)
+    yield from boardElevator('DistributedCJElevator')
+    yield from fightBoss('LawbotHQBossBattle', 'DistributedLawbotBoss', {
+        'BattleThree': cjBattleThree,
+        'NearVictory': lambda boss: boss.sendUpdate('finalPieSplat', []),
+    })
+
+
+def scenarioCEO():
+    # The banquet runs out its clock unserved, so every diner joins the
+    # third round. In the last round, seltzer hits the CEO.
+    yield from teleport(ToontownGlobals.BossbotHQ, ToontownGlobals.BossbotLobby)
+    yield from boardElevator('DistributedBBElevator')
+    yield from fightBoss('BossbotHQBossBattle', 'DistributedBossbotBoss', {
+        'BattleFour': lambda boss: boss.d_hitBoss(1),
+    })
+
+
+def fishingState(spot):
+    return spot.fsm.getCurrentState().getName()
+
+
+def scenarioFishing(casts=5):
+    yield from teleport(ToontownGlobals.ToontownCentral)
+    yield until(lambda: findObject('DistributedFishingSpot', lambda do: do.avId == 0), 60, 'a free fishing spot')
+    spot = findObject('DistributedFishingSpot', lambda do: do.avId == 0)
+    log('walking onto fishing spot', spot.doId)
+    messenger.send(spot.uniqueName('enterFishingSpotSphere'), [None])
+    yield until(lambda: fishingState(spot) == 'waiting', 60, 'holding the fishing pole')
+    caught = 0
+    for cast in range(casts):
+        yield sleep(2)
+        # What dragging the cast button and letting go does.
+        spot.fsm.request('localAdjusting')
+        spot.power = 0.4 + 0.1 * cast
+        spot.fsm.request('localCasting')
+        yield until(lambda: fishingState(spot) in ('reward', 'waiting', 'localAdjusting'), 120, 'a bite')
+        if fishingState(spot) == 'reward':
+            caught += 1
+        yield until(lambda: spot.track is None or not spot.track.isPlaying(), 30, 'reeling in')
+    log('caught %d things in %d casts' % (caught, casts))
+    spot._DistributedFishingSpot__userExit()
+    yield until(walking, 60, 'walking after fishing')
 
 
 def scenarioFactory():
@@ -552,6 +721,12 @@ SCENARIOS = [
     ('factory', scenarioFactory),
     ('mint', scenarioMint),
     ('office', scenarioOffice),
+    ('countryclub', scenarioCountryClub),
+    ('vp', scenarioVP),
+    ('cfo', scenarioCFO),
+    ('cj', scenarioCJ),
+    ('ceo', scenarioCEO),
+    ('fishing', scenarioFishing),
 ]
 
 

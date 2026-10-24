@@ -186,7 +186,11 @@ class QuestMap(DirectFrame):
             try:
                 hoodId = ZoneUtil.getCanonicalHoodId(self.av.getLocation()[1])
                 zoneId = ZoneUtil.getCanonicalBranchZone(self.av.getLocation()[1])
-                # There are no maps for the Cog HQs.
+                # There are no maps for the Cog HQs, nor for the zones made
+                # up for facilities and boss battles.
+                if hoodId not in ToontownGlobals.dnaMap:
+                    self.stop()
+                    return
                 mapsGeom = loader.loadModel('phase_4/models/questmap/%s_maps' % ToontownGlobals.dnaMap[hoodId], okMissing=True)
                 if mapsGeom is None:
                     self.stop()
