@@ -24,6 +24,7 @@ from . import ColorShop
 from . import MakeClothesGUI
 from . import NameShop
 import random
+from otp.nametag.NametagConstants import CFSpeech
 
 class MakeAToon(StateData.StateData):
     notify = DirectNotifyGlobal.directNotify.newCategory('MakeAToon')

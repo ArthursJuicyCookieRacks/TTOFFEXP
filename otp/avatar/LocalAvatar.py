@@ -28,6 +28,7 @@ from direct.controls.TwoDWalker import TwoDWalker
 from otp.nametag.Nametag import Nametag
 from otp.ai.MagicWordGlobal import *
 from toontown.toonbase import ToontownGlobals
+from otp.margins.WhisperPopup import WhisperPopup
 
 class LocalAvatar(DistributedAvatar.DistributedAvatar, DistributedSmoothNode.DistributedSmoothNode):
     notify = DirectNotifyGlobal.directNotify.newCategory('LocalAvatar')

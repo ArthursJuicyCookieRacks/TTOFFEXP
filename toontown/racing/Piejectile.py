@@ -10,6 +10,7 @@ from otp.avatar import ShadowCaster
 from otp.otpbase import OTPGlobals
 from toontown.racing.FlyingGag import FlyingGag
 from toontown.battle import MovieUtil
+from panda3d.physics import ForceNode, LinearEulerIntegrator, LinearFrictionForce, LinearVectorForce, PhysicsManager
 
 class Piejectile(DirectObject, FlyingGag):
     physicsCalculationsPerSecond = 60

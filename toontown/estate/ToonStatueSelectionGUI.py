@@ -12,6 +12,8 @@ from direct.gui.DirectScrolledList import *
 from toontown.toon import Toon
 from toontown.toon import DistributedToon
 from direct.distributed import DistributedObject
+from otp.nametag import NametagGlobals
+from otp.nametag.NametagGroup import NametagGroup
 
 class ToonStatueSelectionGUI(DirectFrame):
     notify = DirectNotifyGlobal.directNotify.newCategory('ToonStatueSelectionGUI')

@@ -129,7 +129,7 @@ class ChatAgentUD(DistributedObjectGlobalUD):
                         cmplist = words[wordit + 1:]
                         del cmplist[len(splitseq):]
                         cmplist = [word.lower() for word in cmplist]
-                        if cmp(cmplist, splitseq) == 0:
+                        if cmplist == splitseq:
                             modifications.append((offset, offset + len(word) + len(sequence) - 1))
             offset += len(word) + 1
 

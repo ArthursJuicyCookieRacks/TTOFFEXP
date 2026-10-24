@@ -6,6 +6,7 @@ from direct.interval.IntervalGlobal import *
 from otp.avatar import ShadowCaster
 from toontown.racing.KartDNA import *
 from toontown.toonbase import TTLocalizer
+from panda3d.physics import ActorNode
 
 class Kart(NodePath, ShadowCaster.ShadowCaster):
     notify = DirectNotifyGlobal.directNotify.newCategory('Kart')

@@ -902,6 +902,7 @@ class ToontownClientRepository(OTPClientRepository.OTPClientRepository):
         messenger.send('friendsMapComplete')
 
     def handleGetFriendsListExtended(self, resp):
+        avatarHandleList = []
         for toon in resp:
             abort = 0
             doId = toon[0]

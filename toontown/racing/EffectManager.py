@@ -11,7 +11,7 @@ class EffectManager(DirectObject):
         self.effectList = []
 
     def delete(self):
-        for effect in effectList:
+        for effect in self.effectList[:]:
             self.__removeEffect(effect)
 
     def addSplatEffect(self, spawner, splatName = 'splat-creampie', time = 1, size = 6, parent = render):

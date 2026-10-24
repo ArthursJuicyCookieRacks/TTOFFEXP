@@ -8,6 +8,7 @@ from toontown.toonbase import TTLocalizer
 from toontown.pets import PetshopGUI
 from toontown.hood import ZoneUtil
 from toontown.toontowngui import TeaserPanel
+from otp.nametag.NametagConstants import CFSpeech, CFTimeout
 
 class DistributedNPCPetclerk(DistributedNPCToonBase):
 

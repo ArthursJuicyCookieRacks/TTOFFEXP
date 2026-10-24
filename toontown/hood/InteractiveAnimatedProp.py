@@ -407,7 +407,7 @@ class InteractiveAnimatedProp(GenericAnimatedProp.GenericAnimatedProp, FSM.FSM):
             elif isinstance(curInfo, str):
                 if curInfo == animName:
                     result = index
-                    breal
+                    break
 
         return result
 

@@ -10,7 +10,7 @@ class AvatarDetail:
         self.enterQuery()
 
     def isReady(self):
-        return true
+        return True
 
     def getId(self):
         return self.id
@@ -30,7 +30,7 @@ class AvatarDetail:
         return
 
     def exitQuery(self):
-        return true
+        return True
 
     def createHolder(self):
         pass

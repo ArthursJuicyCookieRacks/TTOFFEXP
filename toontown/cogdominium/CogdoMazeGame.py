@@ -377,14 +377,14 @@ class CogdoMazeGame(DirectObject):
 
     def randomDrop(self, centerTX, centerTY, radius):
         dropArray = []
-        for i in range(1, distance):
+        for i in range(1, radius):
             dropArray.append(i)
             dropArray.append(-1 * i)
 
         offsetTX = self.distGame.randomNumGen.choice(dropArray)
         offsetTY = self.distGame.randomNumGen.choice(dropArray)
-        dropTX = sourceTX + offsetTX
-        dropTY = sourceTY + offsetTY
+        dropTX = centerTX + offsetTX
+        dropTY = centerTY + offsetTY
         if self.maze.isWalkable(dropTX, dropTY):
             self.generateDrop(dropTX, dropTY)
 

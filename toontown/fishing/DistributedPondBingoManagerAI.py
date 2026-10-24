@@ -71,7 +71,7 @@ class DistributedPondBingoManagerAI(DistributedObjectAI):
             self.sendGameStateUpdate(cellId)
 
     def enableBingo(self):
-        createGame()
+        self.createGame()
 
     def d_enableBingo(self):
         self.sendUpdate('enableBingo', [])

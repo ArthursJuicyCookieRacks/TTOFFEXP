@@ -16,6 +16,7 @@ from toontown.toonbase import ToontownGlobals
 from direct.showbase import PythonUtil
 import random
 import types
+from otp.nametag.NametagConstants import CFSpeech, CFThought
 Component2IconDict = {'boredom': 'Bored',
  'restlessness': None,
  'playfulness': 'Play',

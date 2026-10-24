@@ -5,6 +5,7 @@ from direct.task import Task
 import random
 from panda3d.core import *
 from direct.directnotify import DirectNotifyGlobal
+from toontown.char import CharDNA
 AnimDict = {'mk': (('walk', 'walk', 3),
         ('run', 'run', 3),
         ('neutral', 'wait', 3),

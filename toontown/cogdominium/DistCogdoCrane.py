@@ -12,6 +12,9 @@ from toontown.toonbase import TTLocalizer
 from otp.otpbase import OTPGlobals
 from toontown.cogdominium import CogdoCraneGameConsts as GameConsts
 import random
+from panda3d.physics import ActorNode, PhysicsCollisionHandler
+from otp.nametag import NametagGlobals
+from panda3d.direct import SmoothMover
 
 class DistCogdoCrane(DistributedObject.DistributedObject, FSM.FSM):
     notify = DirectNotifyGlobal.directNotify.newCategory('DistCogdoCrane')

@@ -1216,7 +1216,7 @@ class FactoryNewbieQuest(FactoryQuest, NewbieQuest):
         if FactoryQuest.doesFactoryCount(self, avId, location, avList):
             return self.getNumNewbies(avId, avList)
         else:
-            return num
+            return 0
 
 
 class MintQuest(LocationBasedQuest):
@@ -1292,7 +1292,7 @@ class MintNewbieQuest(MintQuest, NewbieQuest):
         if MintQuest.doesMintCount(self, avId, location, avList):
             return self.getNumNewbies(avId, avList)
         else:
-            return num
+            return 0
 
 
 class CogPartQuest(LocationBasedQuest):
@@ -1369,7 +1369,7 @@ class CogPartNewbieQuest(CogPartQuest, NewbieQuest):
         if CogPartQuest.doesCogPartCount(self, avId, location, avList):
             return self.getNumNewbies(avId, avList)
         else:
-            return num
+            return 0
 
 
 class DeliverGagQuest(Quest):

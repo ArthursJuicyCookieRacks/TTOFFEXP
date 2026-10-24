@@ -6,6 +6,7 @@ from toontown.toonbase import ToontownGlobals
 from otp.otpbase import OTPGlobals
 from direct.fsm import FSM
 from direct.task import Task
+from panda3d.physics import ActorNode, PhysicsCollisionHandler
 smileyDoId = 1
 
 class DistCogdoCraneObject(DistributedSmoothNode.DistributedSmoothNode, FSM.FSM):

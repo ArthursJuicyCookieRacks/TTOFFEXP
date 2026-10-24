@@ -21,6 +21,7 @@ from toontown.distributed import DelayDelete
 from toontown.toonbase import TTLocalizer
 from .CogdoExecutiveSuiteMovies import CogdoExecutiveSuiteIntro
 from .CogdoElevatorMovie import CogdoElevatorMovie
+from otp.nametag.NametagConstants import CFSpeech
 PAINTING_DICT = {'s': 'tt_m_ara_crg_paintingMoverShaker',
  'l': 'tt_m_ara_crg_paintingLegalEagle',
  'm': 'tt_m_ara_crg_paintingMoverShaker',

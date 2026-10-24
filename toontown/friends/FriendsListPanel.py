@@ -370,7 +370,7 @@ class FriendsListPanel(DirectFrame, StateData.StateData):
         if self.panelType == FLPPlayers:
             playerFriendList = base.cr.playerFriendsManager.playerFriendsList
             for playerFriendId in playerFriendList:
-                if base.cr.playerFriendsManager.playerId2Info.has_key(playerFriendId):
+                if playerFriendId in base.cr.playerFriendsManager.playerId2Info:
                     playerFriendInfo = base.cr.playerFriendsManager.playerId2Info.get(playerFriendId)
                     if playerFriendInfo.onlineYesNo:
                         if playerFriendInfo.understandableYesNo:
@@ -408,7 +408,7 @@ class FriendsListPanel(DirectFrame, StateData.StateData):
         if self.panelType == FLPOnlinePlayers:
             playerFriendList = base.cr.playerFriendsManager.playerFriendsList
             for playerFriendId in playerFriendList:
-                if base.cr.playerFriendsManager.playerId2Info.has_key(playerFriendId):
+                if playerFriendId in base.cr.playerFriendsManager.playerId2Info:
                     playerFriendInfo = base.cr.playerFriendsManager.playerId2Info.get(playerFriendId)
                     if playerFriendInfo.onlineYesNo:
                         if playerFriendInfo.understandableYesNo:

@@ -572,8 +572,6 @@ class DistributedPetAI(DistributedSmoothNodeAI.DistributedSmoothNodeAI, PetLooke
             myOldStackTrace = 'No Trace'
             if hasattr(self, 'doId'):
                 myDoId = self.doId
-            if task:
-                myTaskName = task.name
             if hasattr(self, 'destroyDoStackTrace'):
                 myOldStackTrace = self.destroyDoStackTrace.trace
             simbase.air.writeServerEvent('Pet RequestDelete duplicate', myDoId, 'from task %s' % myTaskName)

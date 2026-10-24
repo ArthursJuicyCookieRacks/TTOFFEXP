@@ -1,3 +1,4 @@
+import functools
 from panda3d import core as PM
 from direct.directnotify.DirectNotifyGlobal import directNotify
 from direct.task.Task import Task
@@ -113,7 +114,7 @@ class DistCogdoCraneGame(CogdoCraneGameBase, DistCogdoLevelGame):
 
         newCollisionNode.setIntoCollideMask(newCollideMask)
         threshold = 0.1
-        planes.sort(lambda p1, p2: p1.compareTo(p2, threshold))
+        planes.sort(key=functools.cmp_to_key(lambda p1, p2: p1.compareTo(p2, threshold)))
         lastPlane = None
         for plane in planes:
             if lastPlane == None or plane.compareTo(lastPlane, threshold) != 0:

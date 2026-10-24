@@ -961,8 +961,8 @@ class BattleCalculatorAI:
     def __clearLuredSuitsByAttack(self, toonId, kbBonusReq = 0, targetId = -1):
         if self.notify.getDebug():
             self.notify.debug('__clearLuredSuitsByAttack')
-        if targetId != -1 and self.__suitIsLured(t.getDoId()):
-            self.__removeLured(t.getDoId())
+        if targetId != -1 and self.__suitIsLured(targetId):
+            self.__removeLured(targetId)
         else:
             tgtList = self.__createToonTargetList(toonId)
             for t in tgtList:

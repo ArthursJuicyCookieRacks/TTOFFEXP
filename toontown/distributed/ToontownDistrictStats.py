@@ -45,7 +45,7 @@ def refresh(event = None):
     if isOpen():
         if isComplete():
             messenger.send(EventName())
-            if event != none:
+            if event != None:
                 messenger.send(event)
     else:
 

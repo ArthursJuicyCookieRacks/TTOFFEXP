@@ -112,7 +112,7 @@ class RewardPanel(DirectFrame):
         totalMerits = CogDisguiseGlobals.getTotalMerits(toon, dept)
         retVal = totalMerits
         if curMerits > totalMerits:
-            retVal = amount
+            retVal = curMerits
         return retVal
 
     def initItemFrame(self, toon):

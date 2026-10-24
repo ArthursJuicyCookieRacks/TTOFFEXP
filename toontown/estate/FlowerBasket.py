@@ -43,7 +43,7 @@ class FlowerBasket:
         if index >= len(self.flowerList):
             return 0
         else:
-            del self.flowerList[i]
+            del self.flowerList[index]
             return 1
 
     def generateRandomBasket(self):

@@ -256,10 +256,36 @@ class CatalogItem:
         return None
 
     def __cmp__(self, other):
-        c = cmp(self.__class__, other.__class__)
-        if c != 0:
-            return c
-        return self.compareTo(other)
+        if self.__class__ is not other.__class__:
+            # Python 2 ordered different classes consistently; order them by name.
+            a, b = self.__class__.__name__, other.__class__.__name__
+            return ((a > b) - (a < b)) or 1
+        c = self.compareTo(other)
+        return (c > 0) - (c < 0)
+
+    # Python 3 ignores __cmp__, but catalog lists rely on its equality and
+    # ordering (in, remove, index, sort).
+    def __eq__(self, other):
+        if not isinstance(other, CatalogItem):
+            return NotImplemented
+        return self.__cmp__(other) == 0
+
+    def __ne__(self, other):
+        if not isinstance(other, CatalogItem):
+            return NotImplemented
+        return self.__cmp__(other) != 0
+
+    def __lt__(self, other):
+        return self.__cmp__(other) < 0
+
+    def __le__(self, other):
+        return self.__cmp__(other) <= 0
+
+    def __gt__(self, other):
+        return self.__cmp__(other) > 0
+
+    def __ge__(self, other):
+        return self.__cmp__(other) >= 0
 
     def __hash__(self):
         return hash((self.__class__, self.getHashContents()))

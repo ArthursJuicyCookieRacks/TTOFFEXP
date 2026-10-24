@@ -27,6 +27,7 @@ from toontown.coghq import CogDisguiseGlobals
 from toontown.suit import Suit
 from toontown.suit import SuitDNA
 from toontown.effects import DustCloud
+from panda3d.core import CSDefault, Mat3, decomposeMatrix, headsUp
 OneBossCog = None
 TTL = TTLocalizer
 

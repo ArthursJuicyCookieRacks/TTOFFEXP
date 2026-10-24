@@ -37,7 +37,7 @@ class DistributedGolfSpot(DistributedObject.DistributedObject, FSM.FSM):
         self.smoothStarted = 0
         self.__broadcastPeriod = 0.2
         if self.index > len(self.positions):
-            self.notify.error('Invalid index %d' % index)
+            self.notify.error('Invalid index %d' % self.index)
         self.fadeTrack = None
         self.setupPowerBar()
         self.aimStart = None

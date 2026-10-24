@@ -670,13 +670,13 @@ class CatalogScreen(DirectFrame):
         self.setNumEmblemPages(numPages)
         currentWeek = base.localAvatar.catalogScheduleCurrentWeek - 1
         if currentWeek < 57:
-            seriesNumber = currentWeek / ToontownGlobals.CatalogNumWeeksPerSeries + 1
+            seriesNumber = currentWeek // ToontownGlobals.CatalogNumWeeksPerSeries + 1
             weekNumber = currentWeek % ToontownGlobals.CatalogNumWeeksPerSeries + 1
         elif currentWeek < 65:
             seriesNumber = 6
             weekNumber = currentWeek - 56
         else:
-            seriesNumber = currentWeek / ToontownGlobals.CatalogNumWeeksPerSeries + 2
+            seriesNumber = currentWeek // ToontownGlobals.CatalogNumWeeksPerSeries + 2
             weekNumber = currentWeek % ToontownGlobals.CatalogNumWeeksPerSeries + 1
         geom = NodePath('cover')
         cover = guiItems.find('**/cover')
@@ -781,10 +781,11 @@ class CatalogScreen(DirectFrame):
         for panel in self.panelList + self.backPanelList + self.loyaltyPanelList + self.emblemPanelList:
             panel.destroy()
 
-        def priceSort(a, b, type):
-            priceA = a.getPrice(type)
-            priceB = b.getPrice(type)
-            return priceB - priceA
+        def priceSort(item): # PY3
+            return item.getPrice(CatalogItem.CatalogTypeWeekly)
+
+        def priceSortBackorder(item): # PY3
+            return item.getPrice(CatalogItem.CatalogTypeBackorder)
 
         self.pageIndex = -1
         self.maxPageIndex = 0
@@ -837,8 +838,8 @@ class CatalogScreen(DirectFrame):
         self.setNumBackPages(numPages)
         numPages = self.packPages(self.loyaltyPanelList, self.loyaltyPageList, 'loyalty')
         self.setNumLoyaltyPages(numPages)
-        seriesNumber = (base.localAvatar.catalogScheduleCurrentWeek - 1) / ToontownGlobals.CatalogNumWeeksPerSeries + 1
-        self.catalogSeries['text'] = Localizer.CatalogSeriesLabel % seriesNumber
+        seriesNumber = (base.localAvatar.catalogScheduleCurrentWeek - 1) // ToontownGlobals.CatalogNumWeeksPerSeries + 1
+        self.catalogSeries['text'] = TTLocalizer.CatalogSeriesLabel % seriesNumber
         weekNumber = (base.localAvatar.catalogScheduleCurrentWeek - 1) % ToontownGlobals.CatalogNumWeeksPerSeries + 1
         self.catalogNumber['text'] = '#%d' % weekNumber
         self.enableBackorderCatalogButton()

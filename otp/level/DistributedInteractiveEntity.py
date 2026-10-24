@@ -1,7 +1,7 @@
 from panda3d.core import *
 from direct.distributed.ClockDelta import *
 from direct.directnotify import DirectNotifyGlobal
-from direct.fsm import ClassicFSM
+from direct.fsm import ClassicFSM, State
 from . import DistributedEntity
 
 class DistributedInteractiveEntity(DistributedEntity.DistributedEntity):

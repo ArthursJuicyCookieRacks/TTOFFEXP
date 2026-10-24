@@ -1779,7 +1779,7 @@ class CatalogGenerator:
                 elif item == get50ItemTrunk:
                     item = getMaxTrunks()
                 else:
-                    self.notify.warning("Don't know how to interpret function " % repr(name))
+                    self.notify.warning("Don't know how to interpret function %s" % repr(item))
                     item = None
             elif isinstance(item, tuple):
                 item = item[1]

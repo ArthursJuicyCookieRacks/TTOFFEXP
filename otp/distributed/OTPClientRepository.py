@@ -6,6 +6,7 @@ import random
 import gc
 import os
 from panda3d.core import *
+from panda3d.direct import CConnectionRepository
 from panda3d.core import *
 from direct.gui.DirectGui import *
 from otp.distributed.OtpDoGlobals import *
@@ -40,6 +41,7 @@ from otp.distributed import OtpDoGlobals
 from otp.distributed.TelemetryLimiter import TelemetryLimiter
 from otp.ai.GarbageLeakServerEventAggregator import GarbageLeakServerEventAggregator
 from toontown.toonbase import ToontownGlobals
+from otp.margins.WhisperPopup import WhisperPopup
 
 class OTPClientRepository(LocalConnectionMixin, ClientRepositoryBase):
     notify = directNotify.newCategory('OTPClientRepository')
@@ -724,6 +726,7 @@ class OTPClientRepository(LocalConnectionMixin, ClientRepositoryBase):
         self.handler = self.handleMessageType
         messenger.send('connectionIssue')
         statusCode = 0
+        url = self.serverList[0] if self.serverList else URLSpec()
         if isinstance(e, HTTPUtil.ConnectionError):
             statusCode = e.statusCode
             self.notify.warning('Got status code %s from connection to %s.' % (statusCode, url.cStr()))

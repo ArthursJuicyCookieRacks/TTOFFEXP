@@ -439,7 +439,7 @@ class DistributedToon(DistributedPlayer.DistributedPlayer, Toon.Toon, Distribute
         try:
             hoodPhase = base.cr.hoodMgr.getPhaseFromHood(zoneId)
         except:
-            self.defaultZone = ToontownCentral
+            self.defaultZone = ToontownGlobals.ToontownCentral
             return
 
         if ConfigVariableBool('want-doomsday', False):

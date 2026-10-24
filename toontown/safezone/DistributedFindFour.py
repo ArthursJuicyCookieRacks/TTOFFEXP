@@ -16,6 +16,7 @@ from direct.distributed.ClockDelta import *
 from otp.otpbase import OTPGlobals
 from direct.showbase import PythonUtil
 from random import *
+from otp.margins.WhisperPopup import WhisperPopup
 
 class DistributedFindFour(DistributedNode.DistributedNode):
 

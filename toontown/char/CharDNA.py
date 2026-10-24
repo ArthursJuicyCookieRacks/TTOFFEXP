@@ -59,7 +59,7 @@ class CharDNA(AvatarDNA.AvatarDNA):
         dgi = PyDatagramIterator(dg)
         self.type = dgi.getFixedString(1)
         if self.type == 'c':
-            self.name = sgi.getFixedString(2)
+            self.name = dgi.getFixedString(2)
         else:
             notify.error('unknown avatar type: ', self.type)
         return None
