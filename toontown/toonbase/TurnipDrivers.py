@@ -17,6 +17,7 @@ goes back to the phone's own driver.
 import ctypes
 import json
 import os
+import platform
 import shutil
 import sys
 import zipfile
@@ -49,7 +50,8 @@ def useDriver(settings):
 
     Must run before the game's window opens.  Returns True if it did.
     """
-    if sys.platform != 'android':
+    if sys.platform != 'android' or platform.machine() != 'aarch64':
+        # Turnip is for 64-bit Snapdragon phones.
         return False
     driver = currentDriver(settings)
     if settings.getString('graphics', 'driver-trying', ''):

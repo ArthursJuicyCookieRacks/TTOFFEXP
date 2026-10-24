@@ -22,3 +22,5 @@ autoplay-db/
 /dist/*.zip
 /dist/*.aab
 /dist/*.apk
+turnip/
+turnip-runtime/

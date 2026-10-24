@@ -97,7 +97,7 @@ setup(
                 'config/ttroff.dc',
                 'assets/*',
                 'phase_*.mf',
-            ],
+            ] + (['turnip/*'] if 'android' in PLATFORMS else []),
             'plugins': [
                 'pandagl',
                 'pandagles2',

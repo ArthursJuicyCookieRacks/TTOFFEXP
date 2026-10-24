@@ -33,6 +33,9 @@ env:
   ANDROID_PYTHON: 3.13.9
   ANDROID_NDK: 29.0.14206865
   ANDROID_THIRDPARTY_COMMIT: 935c80380ca171e08587c570e9dad678d29db3c8
+  # Mesa (zink) for custom graphics drivers on Android phones.
+  MESA_VERSION: 25.2.6
+  ANDROID_API_TURNIP: 29
 
 defaults:
   run:
@@ -278,6 +281,171 @@ jobs:
             chunk = text[start:start + 3000].replace('%', '%25').replace('\\n', '%0A')
             print('::error title=Log %d::%s' % (start // 3000 + 1, chunk))
         "
+  turnip-runtime:
+    name: Mesa and adrenotools for custom drivers (Android)
+    runs-on: ubuntu-24.04
+    steps:
+    - name: Check out the Mesa patches
+      uses: actions/checkout@v7
+      with:
+        sparse-checkout: tools/offline/mesa-patches
+        path: game
+
+    - name: Restore the libraries
+      id: cache
+      uses: actions/cache@v5
+      with:
+        path: out
+        key: turnip-runtime-mesa${{ env.MESA_VERSION }}-${{ hashFiles('game/tools/offline/mesa-patches/*.patch') }}-ndk${{ env.ANDROID_NDK }}-v1
+
+    - name: Set up the Android NDK
+      if: steps.cache.outputs.cache-hit != 'true'
+      uses: android-actions/setup-android@v4
+      with:
+        packages: 'ndk;${{ env.ANDROID_NDK }}'
+
+    - name: Get the sources
+      if: steps.cache.outputs.cache-hit != 'true'
+      run: |
+        exec > >(tee -a "$RUNNER_TEMP/steps.log") 2>&1
+        curl -sSfL https://archive.mesa3d.org/mesa-$MESA_VERSION.tar.xz | tar xJ
+        mv mesa-$MESA_VERSION mesa
+        cd mesa
+        for patch in ../game/tools/offline/mesa-patches/*.patch; do patch -p1 < "$patch"; done
+        # Built with the NDK alone: no Android system tracing.
+        sed -i 's/DETECT_OS_ANDROID/0/' src/util/perf/cpu_trace.h
+        cd ..
+        git clone -q --depth 1 --recurse-submodules --shallow-submodules https://github.com/bylaws/libadrenotools.git adrenotools
+
+    - name: Install the build tools
+      if: steps.cache.outputs.cache-hit != 'true'
+      run: |
+        exec > >(tee -a "$RUNNER_TEMP/steps.log") 2>&1
+        sudo apt-get update -q && sudo apt-get install -y -q ninja-build glslang-tools
+        pip install -q meson mako pyyaml packaging
+
+    - name: Build Mesa
+      if: steps.cache.outputs.cache-hit != 'true'
+      run: |
+        exec > >(tee -a "$RUNNER_TEMP/steps.log") 2>&1
+        # Mesa's OpenGL ES on zink, drawing into Android windows through
+        # Vulkan (see tools/offline/mesa-patches), for the game to load in
+        # place of the phone's own when the player picks a Turnip driver.
+        BIN=$ANDROID_SDK_ROOT/ndk/$ANDROID_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin
+        CC=$BIN/aarch64-linux-android$ANDROID_API_TURNIP-clang
+        # What Mesa's Android code uses of system libraries an app can't load
+        # is done here with the NDK instead.
+        cat > ndkstub.c <<'STUB'
+        #include <errno.h>
+        #include <linux/sync_file.h>
+        #include <poll.h>
+        #include <string.h>
+        #include <sys/ioctl.h>
+        #include <sys/system_properties.h>
+        int property_get(const char *key, char *value, const char *default_value);
+        int property_get(const char *key, char *value, const char *default_value)
+        {
+           int len = __system_property_get(key, value);
+           if (len > 0)
+              return len;
+           len = default_value ? (int)strlen(default_value) : 0;
+           if (len > PROP_VALUE_MAX - 1)
+              len = PROP_VALUE_MAX - 1;
+           if (len)
+              memcpy(value, default_value, len);
+           value[len] = 0;
+           return len;
+        }
+        int sync_merge(const char *name, int fd1, int fd2);
+        int sync_merge(const char *name, int fd1, int fd2)
+        {
+           struct sync_merge_data data;
+           memset(&data, 0, sizeof(data));
+           data.fd2 = fd2;
+           strncpy(data.name, name, sizeof(data.name) - 1);
+           if (ioctl(fd1, SYNC_IOC_MERGE, &data) < 0)
+              return -1;
+           return data.fence;
+        }
+        int sync_wait(int fd, int timeout);
+        int sync_wait(int fd, int timeout)
+        {
+           struct pollfd fds = {fd, POLLIN, 0};
+           int ret;
+           do {
+              ret = poll(&fds, 1, timeout);
+           } while (ret == -1 && (errno == EINTR || errno == EAGAIN));
+           if (ret == 0) {
+              errno = ETIME;
+              return -1;
+           }
+           return ret > 0 ? 0 : -1;
+        }
+        STUB
+        $CC -O2 -fPIC -c ndkstub.c -o ndkstub.o
+        $BIN/llvm-ar rcs $PWD/libndkstub.a ndkstub.o
+        cat > android.cross <<CROSS
+        [binaries]
+        c = '$CC'
+        cpp = '${CC}++'
+        ar = '$BIN/llvm-ar'
+        strip = '$BIN/llvm-strip'
+        pkg-config = '/bin/false'
+        [built-in options]
+        c_args = ['-DVK_USE_PLATFORM_ANDROID_KHR', '-I$PWD/mesa/include/android_stub']
+        cpp_args = ['-DVK_USE_PLATFORM_ANDROID_KHR', '-I$PWD/mesa/include/android_stub']
+        c_link_args = ['-landroid', '-llog', '$PWD/libndkstub.a']
+        cpp_link_args = ['-landroid', '-llog', '$PWD/libndkstub.a', '-static-libstdc++']
+        [host_machine]
+        system = 'android'
+        cpu_family = 'aarch64'
+        cpu = 'armv8'
+        endian = 'little'
+        CROSS
+        cd mesa
+        meson setup build --cross-file ../android.cross --prefix=/out -Dbuildtype=release -Db_ndebug=true \
+          -Dallow-fallback-for=libdrm --force-fallback-for=libdrm -Dlibdrm:tests=false -Dlibdrm:intel=disabled \
+          -Dlibdrm:radeon=disabled -Dlibdrm:amdgpu=disabled -Dlibdrm:nouveau=disabled -Dlibdrm:vmwgfx=disabled \
+          -Dplatforms= -Dgallium-drivers=zink -Dvulkan-drivers= -Degl=enabled -Dgles1=disabled -Dgles2=enabled \
+          -Dglx=disabled -Dgbm=disabled -Dllvm=disabled -Dxmlconfig=disabled -Dzstd=disabled -Dvalgrind=disabled \
+          -Dlibunwind=disabled -Degl-lib-suffix=_mesa -Dgles-lib-suffix=_mesa -Dshader-cache=disabled \
+          -Dlmsensors=disabled -Dvideo-codecs= -Dgallium-va=disabled -Dgallium-vdpau=disabled \
+          -Dgallium-extra-hud=false -Dbuild-tests=false > ../meson.log 2>&1 || { tail -60 ../meson.log; exit 1; }
+        ninja -C build -k 0 > ../ninja.log 2>&1 || { grep -B2 -A6 "error:\|undefined" ../ninja.log | head -200; exit 1; }
+        DESTDIR=$PWD/../install ninja -C build install > /dev/null
+
+    - name: Build adrenotools
+      if: steps.cache.outputs.cache-hit != 'true'
+      run: |
+        exec > >(tee -a "$RUNNER_TEMP/steps.log") 2>&1
+        # Opens the player's Turnip driver in place of the phone's Vulkan
+        # driver.
+        cmake -S adrenotools -B adrenotools/build -G Ninja \
+          -DCMAKE_TOOLCHAIN_FILE=$ANDROID_SDK_ROOT/ndk/$ANDROID_NDK/build/cmake/android.toolchain.cmake \
+          -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=$ANDROID_API_TURNIP -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON
+        ninja -C adrenotools/build
+        mkdir out
+        cp install/out/lib/libdrm.so install/out/lib/libgallium-*.so install/out/lib/libEGL_mesa.so \
+          install/out/lib/libGLESv2_mesa.so adrenotools/build/libadrenotools.so adrenotools/build/src/hook/*.so out/
+        $ANDROID_SDK_ROOT/ndk/$ANDROID_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip --strip-unneeded out/*.so
+        ls -l out
+
+    - uses: actions/upload-artifact@v7
+      with:
+        name: turnip-runtime
+        path: out/*.so
+
+    - name: Show the end of the log
+      if: failure()
+      run: |
+        tail -c 12000 "$RUNNER_TEMP/steps.log" | python3 -c "
+        import sys
+        text = sys.stdin.read().replace('\\r', '')
+        for start in range(0, len(text), 3000):
+            chunk = text[start:start + 3000].replace('%', '%25').replace('\\n', '%0A')
+            print('::error title=Log %d::%s' % (start // 3000 + 1, chunk))
+        "
+
   resources:
     name: Phase multifiles
     runs-on: ubuntu-24.04
@@ -322,7 +490,7 @@ jobs:
         "
   game:
     name: Package the game
-    needs: [panda3d-windows, panda3d-android, resources]
+    needs: [panda3d-windows, panda3d-android, resources, turnip-runtime]
     runs-on: windows-2022
     permissions:
       contents: write
@@ -351,10 +519,17 @@ jobs:
         name: multifiles
         path: .
 
+    - name: Get the custom driver libraries
+      uses: actions/download-artifact@v8
+      with:
+        name: turnip-runtime
+        path: turnip-runtime
+
     - name: Install the build tools
       shell: bash
       run: |
         exec > >(tee -a "$RUNNER_TEMP/steps.log") 2>&1
+        python tools/offline/pack_turnip_runtime.py turnip-runtime .
         ls -l wheels
         # protobuf writes the Android App Bundle.
         pip install setuptools "protobuf>=6.33" wheels/panda3d-*win_amd64.whl
