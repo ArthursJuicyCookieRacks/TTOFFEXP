@@ -1,3 +1,4 @@
+from toontown.toonbase import ToontownGlobals
 from toontown.toonbase.ToontownGlobals import *
 from otp.ai.AIBaseGlobal import *
 from direct.distributed.ClockDelta import *
@@ -19,14 +20,29 @@ class DistributedToonInteriorAI(DistributedObjectAI.DistributedObjectAI):
         self.fsm = ClassicFSM.ClassicFSM('DistributedToonInteriorAI', [State.State('toon', self.enterToon, self.exitToon, ['beingTakenOver']), State.State('beingTakenOver', self.enterBeingTakenOver, self.exitBeingTakenOver, []), State.State('off', self.enterOff, self.exitOff, [])], 'toon', 'off')
         self.fsm.enterInitialState()
 
-        if config.ConfigVariableBool('want-toonhall-cats', False).getValue():
-            if self.zoneId == 2513:
-                from toontown.ai.DistributedBlackCatMgrAI import DistributedBlackCatMgrAI
-                self.blackCatMgr = DistributedBlackCatMgrAI(air)
-                self.blackCatMgr.generateWithRequired(self.zoneId)
+        # On Black Cat Day, cats who say "Toontastic!" in Toon Hall turn black.
+        self.blackCatMgr = None
+        if self.zoneId == 2513:
+            self.accept('holidayStarted', self.__updateBlackCatMgr)
+            self.accept('holidayEnded', self.__updateBlackCatMgr)
+            self.__updateBlackCatMgr()
+
+    def __updateBlackCatMgr(self, holidayId=None):
+        wanted = config.ConfigVariableBool('want-toonhall-cats', False).getValue() or \
+                 self.air.holidayManager.isHolidayRunning(ToontownGlobals.BLACK_CAT_DAY, ToontownGlobals.SPOOKY_BLACK_CAT)
+        if wanted and not self.blackCatMgr:
+            from toontown.ai.DistributedBlackCatMgrAI import DistributedBlackCatMgrAI
+            self.blackCatMgr = DistributedBlackCatMgrAI(self.air)
+            self.blackCatMgr.generateWithRequired(self.zoneId)
+        elif not wanted and self.blackCatMgr:
+            self.blackCatMgr.requestDelete()
+            self.blackCatMgr = None
 
     def delete(self):
         self.ignoreAll()
+        if self.blackCatMgr:
+            self.blackCatMgr.requestDelete()
+            self.blackCatMgr = None
         for npc in self.npcs:
             if npc:
                 npc.requestDelete()

@@ -179,6 +179,12 @@ class ToontownAIRepository(ToontownInternalRepository):
         from toontown.ai.ScavengerHuntMgrAI import ScavengerHuntMgrAI
         self.scavengerHuntMgr = ScavengerHuntMgrAI(self)
 
+        from toontown.ai.DialogueManagerAI import DialogueManagerAI
+        self.dialogueManager = DialogueManagerAI(self)
+
+        from toontown.ai.PhasedHolidayMgrAI import PhasedHolidayMgrAI
+        self.phasedHolidayMgr = PhasedHolidayMgrAI(self)
+
         self.magicWordManager = MagicWordManagerAI(self)
         self.magicWordManager.generateWithRequired(2)
 

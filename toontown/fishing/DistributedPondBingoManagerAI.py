@@ -16,7 +16,10 @@ RequestCard = {}
 
 
 class DistributedPondBingoManagerAI(DistributedObjectAI):
+    # Each pond has one; it plays Fish Bingo games back to back while a
+    # bingo holiday runs.
     notify = DirectNotifyGlobal.directNotify.newCategory("DistributedPondBingoManagerAI")
+    BingoHolidays = (ToontownGlobals.FISH_BINGO_NIGHT, ToontownGlobals.SILLY_SATURDAY_BINGO)
 
     def __init__(self, air):
         DistributedObjectAI.__init__(self, air)
@@ -29,6 +32,30 @@ class DistributedPondBingoManagerAI(DistributedObjectAI):
         self.shouldStop = False
         self.lastUpdate = globalClockDelta.getRealNetworkTime()
         self.cardId = 0
+
+    def announceGenerate(self):
+        DistributedObjectAI.announceGenerate(self)
+        self.accept('holidayStarted', self.__holidayChanged)
+        self.accept('holidayEnded', self.__holidayChanged)
+        self.__holidayChanged()
+
+    def delete(self):
+        self.ignoreAll()
+        for task in ('startWait', 'createGame', 'finishGame', 'turnOff'):
+            taskMgr.remove('%s%d' % (task, self.getDoId()))
+        DistributedObjectAI.delete(self)
+
+    def __holidayChanged(self, holidayId=None):
+        if self.air.holidayManager.isHolidayRunning(*self.BingoHolidays):
+            self.startBingo()
+        else:
+            self.shouldStop = True
+
+    def startBingo(self):
+        self.shouldStop = False
+        if self.state in ('Off', 'CloseEvent'):
+            taskMgr.remove('turnOff%d' % self.getDoId())
+            self.startWait()
 
     def setPondDoId(self, pondId):
         self.pond = self.air.doId2do[pondId]
@@ -105,9 +132,11 @@ class DistributedPondBingoManagerAI(DistributedObjectAI):
         self.d_setJackpot(jackpot)
 
     def activateBingoForPlayer(self, avId):
-        self.sendUpdateToAvatarId(avId, 'setCardState', [self.cardId, self.typeId, self.tileSeed, self.bingoCard.getGameState()])
+        # Before the first game there is no card yet; the toon gets one with
+        # everyone else when the game starts.
+        if self.bingoCard is not None:
+            self.sendUpdateToAvatarId(avId, 'setCardState', [self.cardId, self.typeId, self.tileSeed, self.bingoCard.getGameState()])
         self.sendUpdateToAvatarId(avId, 'setState', [self.state, self.lastUpdate])
-        self.canCall = True
 
     def sendStateUpdate(self):
         self.lastUpdate = globalClockDelta.getRealNetworkTime()
@@ -213,15 +242,15 @@ class DistributedPondBingoManagerAI(DistributedObjectAI):
 @magicWord(category=CATEGORY_OVERRIDE)
 def stopBingo():
     for pond in list(simbase.air.fishManager.ponds.values()):
-        pond.bingoMgr.shouldStop = True
+        if pond.bingoMgr:
+            pond.bingoMgr.shouldStop = True
     return "Stopped Fish Bingo for the current district."
 
 @magicWord(category=CATEGORY_OVERRIDE)
 def startBingo():
     for pond in list(simbase.air.fishManager.ponds.values()):
-        if pond.bingoMgr.state == 'Off':
-            pond.bingoMgr.createGame()
-        pond.bingoMgr.shouldStop = False
+        if pond.bingoMgr:
+            pond.bingoMgr.startBingo()
     return "Started Fish Bingo for the current district."
 
 @magicWord(category=CATEGORY_OVERRIDE, types=[str, int])

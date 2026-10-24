@@ -27,6 +27,10 @@ class HolidayManagerAI:
         (ToontownGlobals.VALENTINES_DAY, (2, 9, 0, 0), (2, 16, 23, 59)),
         (ToontownGlobals.IDES_OF_MARCH, (3, 14, 0, 0), (3, 20, 23, 59)),
         (ToontownGlobals.APRIL_FOOLS_COSTUMES, (3, 29, 0, 0), (4, 11, 23, 59)),
+        (ToontownGlobals.SILLYMETER_HOLIDAY, (3, 29, 0, 0), (4, 11, 23, 59)),
+        (ToontownGlobals.HYDRANT_ZERO_HOLIDAY, (3, 29, 0, 0), (4, 4, 23, 59)),
+        (ToontownGlobals.MAILBOX_ZERO_HOLIDAY, (4, 1, 0, 0), (4, 7, 23, 59)),
+        (ToontownGlobals.TRASHCAN_ZERO_HOLIDAY, (4, 5, 0, 0), (4, 11, 23, 59)),
         (ToontownGlobals.JULY4_FIREWORKS, (6, 29, 0, 0), (7, 5, 23, 59)),
         (ToontownGlobals.HALLOWEEN_PROPS, (10, 18, 0, 0), (11, 1, 23, 59)),
         (ToontownGlobals.HALLOWEEN_COSTUMES, (10, 18, 0, 0), (11, 1, 23, 59)),
@@ -49,6 +53,19 @@ class HolidayManagerAI:
         ToontownGlobals.SILLY_SATURDAY_TROLLEY,
     ]
 
+    # Holidays that move through phases over their run, and how many.
+    PhasedHolidays = {
+        ToontownGlobals.SILLYMETER_HOLIDAY: 16,
+        ToontownGlobals.HYDRANT_ZERO_HOLIDAY: 7,
+        ToontownGlobals.MAILBOX_ZERO_HOLIDAY: 7,
+        ToontownGlobals.TRASHCAN_ZERO_HOLIDAY: 7,
+    }
+
+    # The Silly Meter's SpeedChat phrases, by phase.
+    SillyChatterPhases = [ToontownGlobals.SILLY_CHATTER_ONE] * 4 + [ToontownGlobals.SILLY_CHATTER_TWO] * 4 + \
+                         [ToontownGlobals.SILLY_CHATTER_THREE] * 4 + [ToontownGlobals.SILLY_CHATTER_FOUR] * 3 + \
+                         [ToontownGlobals.SILLY_CHATTER_FIVE]
+
     FireworksHolidays = {
         ToontownGlobals.JULY4_FIREWORKS: ToontownGlobals.JULY4_FIREWORKS,
         ToontownGlobals.NEWYEARS_FIREWORKS: ToontownGlobals.NEWYEARS_FIREWORKS,
@@ -62,7 +79,9 @@ class HolidayManagerAI:
         # separated list of holiday ids that always run.
         self.wantHolidays = config.ConfigVariableBool('want-holidays', True).getValue()
         self.forcedHolidays = []
+        self.forcedStartTimes = {}
         self.stoppedHolidays = []
+        self.phaseOverrides = {}
         for holidayId in config.ConfigVariableString('force-holidays', '').getValue().split(','):
             if holidayId.strip():
                 self.forcedHolidays.append(int(holidayId))
@@ -99,6 +118,9 @@ class HolidayManagerAI:
         for holidayId in self.forcedHolidays:
             if holidayId not in holidays:
                 holidays.append(holidayId)
+        if ToontownGlobals.SILLYMETER_HOLIDAY in holidays and ToontownGlobals.SILLYMETER_HOLIDAY not in self.stoppedHolidays:
+            phase = self.getHolidayPhase(ToontownGlobals.SILLYMETER_HOLIDAY, time.mktime(now))
+            holidays.append(self.SillyChatterPhases[phase])
         return [holidayId for holidayId in holidays if holidayId not in self.stoppedHolidays]
 
     def updateHolidays(self):
@@ -118,19 +140,48 @@ class HolidayManagerAI:
         if newsManager is not None:
             newsManager.b_setHolidayIdList(self.currentHolidays)
 
-    def getHolidayEndTime(self, holidayId):
-        # When the current run of a yearly holiday ends, in seconds since the
-        # epoch. Holidays started by hand last a day.
-        now = time.localtime()
+    def getHolidayRun(self, holidayId, now=None):
+        # The (start, end) of the current run of a holiday, in seconds since
+        # the epoch. A holiday started by hand runs for a day from then.
+        if now is None:
+            now = time.time()
+        if holidayId in self.forcedStartTimes:
+            start = self.forcedStartTimes[holidayId]
+            return start, start + 86400
+        local = time.localtime(now)
         for yearlyId, start, end in self.YearlyHolidays:
-            if yearlyId != holidayId or holidayId in self.forcedHolidays:
+            if yearlyId != holidayId:
                 continue
-            year = now.tm_year
-            if end < start and (now.tm_mon, now.tm_mday) >= start[:2]:
-                year += 1
-            month, day, hour, minute = end
-            return int(time.mktime((year, month, day, hour, minute, 59, 0, 0, -1)))
-        return int(time.time()) + 86400
+            startYear = endYear = local.tm_year
+            if end < start:
+                # A run over New Year's: which one depends on the side we are on.
+                if (local.tm_mon, local.tm_mday, local.tm_hour, local.tm_min) >= start:
+                    endYear += 1
+                else:
+                    startYear -= 1
+            startTime = time.mktime((startYear,) + start + (0, 0, 0, -1))
+            endTime = time.mktime((endYear,) + end + (59, 0, 0, -1))
+            return int(startTime), int(endTime)
+        dayStart = time.mktime(local[:3] + (0, 0, 0, 0, 0, -1))
+        return int(dayStart), int(dayStart) + 86400
+
+    def getHolidayEndTime(self, holidayId):
+        return self.getHolidayRun(holidayId)[1]
+
+    def getHolidayPhase(self, holidayId, now=None):
+        # Which phase a phased holiday is in: its run split evenly.
+        if now is None:
+            now = time.time()
+        start, end = self.getHolidayRun(holidayId, now)
+        numPhases = self.PhasedHolidays[holidayId]
+        phase = int((now - start) * numPhases // max(1, end - start))
+        phase = max(0, min(numPhases - 1, phase))
+        return self.phaseOverrides.get(holidayId, phase)
+
+    def setHolidayPhase(self, holidayId, phase):
+        self.phaseOverrides[holidayId] = phase
+        self.updateHolidays()
+        messenger.send('holidayPhaseChanged', [holidayId])
 
     def startHoliday(self, holidayId):
         # Starts a holiday until endHoliday, whatever the calendar says.
@@ -138,12 +189,15 @@ class HolidayManagerAI:
             self.stoppedHolidays.remove(holidayId)
         if holidayId not in self.forcedHolidays:
             self.forcedHolidays.append(holidayId)
+            self.forcedStartTimes[holidayId] = int(time.time())
         self.updateHolidays()
 
     def endHoliday(self, holidayId):
         # Ends a holiday until startHoliday, whatever the calendar says.
         if holidayId in self.forcedHolidays:
             self.forcedHolidays.remove(holidayId)
+            self.forcedStartTimes.pop(holidayId, None)
+        self.phaseOverrides.pop(holidayId, None)
         if holidayId not in self.stoppedHolidays:
             self.stoppedHolidays.append(holidayId)
         self.updateHolidays()

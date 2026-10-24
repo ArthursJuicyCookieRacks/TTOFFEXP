@@ -754,14 +754,35 @@ def scenarioCJ():
     }, prelude={'BattleTwo': cjBattleTwo})
 
 
+def ceoBattleTwo(boss):
+    # Waits on the banquet: takes food off a belt and serves it to a hungry
+    # diner, the way a toon runs between the belts and the tables. Diners
+    # who eat enough leave and stay out of the next cog round.
+    if time.time() < getattr(boss, 'autoplayNextServe', 0):
+        return
+    boss.autoplayNextServe = time.time() + 1
+    avId = localAvatar.doId
+    if not boss.toonFoodStatus.get(avId):
+        boss.autoplayFoodNum = getattr(boss, 'autoplayFoodNum', 0) + 1
+        boss.localToonTouchedBeltFood(0, 0, boss.autoplayFoodNum)
+        return
+    for table in list(boss.tables.values()):
+        for chairIndex, status in table.dinerStatus.items():
+            if status in (table.HUNGRY, table.ANGRY):
+                boss.localToonTouchedChair(table.index, chairIndex)
+                boss.autoplayServed = getattr(boss, 'autoplayServed', 0) + 1
+                return
+
+
 def scenarioCEO():
-    # The banquet runs out its clock unserved, so every diner joins the
-    # third round. In the last round, seltzer hits the CEO.
+    # Serves the banquet, fights the diners who are left, and in the last
+    # round seltzer hits the CEO.
     yield from teleport(ToontownGlobals.BossbotHQ, ToontownGlobals.BossbotLobby)
     yield from boardElevator('DistributedBBElevator')
     yield from fightBoss('BossbotHQBossBattle', 'DistributedBossbotBoss', {
+        'BattleTwo': ceoBattleTwo,
         'BattleFour': lambda boss: boss.d_hitBoss(1),
-    })
+    }, timeout=5400)
 
 
 def fishingState(spot):
@@ -838,6 +859,71 @@ def scenarioFishing(casts=5):
             caught += 1
         yield until(lambda: spot.track is None or not spot.track.isPlaying(), 30, 'reeling in')
     log('caught %d things in %d casts' % (caught, casts))
+    spot._DistributedFishingSpot__userExit()
+    yield until(walking, 60, 'walking after fishing')
+
+
+def castOnce(spot):
+    # One cast at the nearest fish; True if something was caught.
+    spot.fsm.request('localAdjusting')
+    aimCast(spot)
+    spot.fsm.request('localCasting')
+    yield until(lambda: fishingState(spot) == 'fishing' or spot.avId != localAvatar.doId, 20, 'the bob landing')
+    yield until(lambda: fishingState(spot) in ('reward', 'waiting', 'localAdjusting') or
+                spot.avId != localAvatar.doId, 60, 'a bite')
+    if spot.avId != localAvatar.doId:
+        raise StepFailed('the fishing spot sent the toon away')
+    caught = fishingState(spot) == 'reward'
+    yield until(lambda: spot.track is None or not spot.track.isPlaying(), 30, 'reeling in')
+    return caught
+
+
+def scenarioBingo(timeout=2400):
+    # Plays Fish Bingo at the Toontown Central pond until the toon wins a
+    # game, marking each catch on the card like a player clicking it.
+    watchFishingTargets()
+    onDistrict(lambda air: air.holidayManager.startHoliday(ToontownGlobals.FISH_BINGO_NIGHT))
+    # Each cast costs a jellybean; the jackpot goes to the bank.
+    onDistrict(lambda air, avId: (air.doId2do[avId].b_setMoney(air.doId2do[avId].getMaxMoney()),
+                                  air.doId2do[avId].b_setBankMoney(0)), localAvatar.doId)
+    yield from teleport(ToontownGlobals.ToontownCentral)
+    yield until(lambda: findObject('DistributedFishingSpot', lambda do: do.avId == 0), 60, 'a free fishing spot')
+    spot = findObject('DistributedFishingSpot', lambda do: do.avId == 0)
+    messenger.send(spot.uniqueName('enterFishingSpotSphere'), [None])
+    yield until(lambda: fishingState(spot) == 'waiting', 60, 'holding the fishing pole')
+    pond = base.cr.doId2do[spot.pondDoId]
+    yield until(lambda: getattr(pond, 'pondBingoMgr', None) is not None, 60, 'the pond bingo manager')
+    mgr = pond.pondBingoMgr
+    yield until(lambda: mgr.state == 'Playing', 120, 'a bingo game')
+    log('bingo game %d started, card type %d, jackpot %d' % (mgr.cardId, mgr.typeId, mgr.jackpot))
+    games = set([mgr.cardId])
+    end = time.time() + timeout
+    while mgr.state != 'Reward':
+        if time.time() > end:
+            raise StepFailed('no bingo in %d games' % len(games))
+        yield sleep(1)
+        if mgr.state != 'Playing':
+            yield until(lambda: mgr.state in ('Playing', 'Reward'), 120, 'the next bingo game')
+            continue
+        if mgr.cardId not in games:
+            games.add(mgr.cardId)
+            log('bingo game %d started, card type %d' % (mgr.cardId, mgr.typeId))
+        # A trip to the Fisherman between casts: sell the bucket, and keep
+        # jellybeans for casting.
+        onDistrict(lambda air, avId: (air.doId2do[avId].b_setFishTank([], [], []),
+                                      air.doId2do[avId].b_setMoney(air.doId2do[avId].getMaxMoney())), localAvatar.doId)
+        caught = yield from castOnce(spot)
+        if caught and mgr.lastCatch is not None and mgr.state == 'Playing':
+            matches = mgr.card.getUnmarkedMatches(mgr.lastCatch)
+            if matches:
+                mgr.checkForUpdate(matches[0].cellId)
+                log('marked cell %d for %s' % (matches[0].cellId, mgr.lastCatch if mgr.lastCatch else 'the catch'))
+            if mgr.card.checkForBingo():
+                log('Bingo!')
+                mgr.checkForBingo()
+    yield until(lambda: localAvatar.getBankMoney() > 0, 30, 'the jackpot')
+    log('won the bingo jackpot after %d games' % len(games))
+    onDistrict(lambda air: air.holidayManager.endHoliday(ToontownGlobals.FISH_BINGO_NIGHT))
     spot._DistributedFishingSpot__userExit()
     yield until(walking, 60, 'walking after fishing')
 
@@ -1344,6 +1430,70 @@ def scenarioScavengerHunts():
     log('the Snowman Head went with the holiday')
 
 
+def scenarioSillyMeter():
+    # Runs the Silly Meter through all its phases in Toon Hall, with the
+    # scientists, and checks the Zero props' managers come and go.
+    meter = ToontownGlobals.SILLYMETER_HOLIDAY
+    onDistrict(lambda air: air.holidayManager.startHoliday(meter))
+    yield until(lambda: hasattr(base.cr, 'SillyMeterMgr') and meter in base.cr.newsManager.getHolidayIdList(), 60, 'the Silly Meter manager')
+    npc = yield from goToNPC(2001)
+    interior = findObject('DistributedToonHallInterior')
+    yield until(lambda: interior.sillyFSM.getCurrentState().getName() == 'Phase0', 30, 'the Silly Meter at phase 0')
+    scientists = [do for do in list(base.cr.doId2do.values()) if do.__class__.__name__ == 'DistributedNPCScientist']
+    if not scientists or any(scientist.isHidden() for scientist in scientists):
+        raise StepFailed('the scientists are not out for the Silly Meter')
+    for phase in range(1, 16):
+        onDistrict(lambda air: air.holidayManager.setHolidayPhase(meter, phase))
+        yield until(lambda: interior.sillyFSM.getCurrentState().getName() == 'Phase%d' % phase, 30, 'Silly Meter phase %d' % phase)
+        chatter = onDistrict(lambda air: air.holidayManager.SillyChatterPhases[phase])
+        yield until(lambda: chatter in base.cr.newsManager.getHolidayIdList(), 30, 'the phase %d SpeedChat' % phase)
+        yield sleep(2)
+    log('the Silly Meter went through all 16 phases')
+    from toontown.toon import NPCToons
+    emcee = [scientist for scientist in scientists if scientist.getName() == NPCToons.getNPCName(2020)]
+    yield until(lambda: any(scientist.nametag.getChat() for scientist in emcee), 60, 'the emcee scientist to talk')
+    log('the emcee says:', emcee[0].nametag.getChat())
+    onDistrict(lambda air: air.holidayManager.endHoliday(meter))
+    yield until(lambda: not hasattr(base.cr, 'SillyMeterMgr'), 30, 'the Silly Meter to go')
+    for holidayId, attr in ((ToontownGlobals.HYDRANT_ZERO_HOLIDAY, 'hydrantZeroMgr'),
+                            (ToontownGlobals.MAILBOX_ZERO_HOLIDAY, 'mailboxZeroMgr'),
+                            (ToontownGlobals.TRASHCAN_ZERO_HOLIDAY, 'trashcanZeroMgr')):
+        onDistrict(lambda air: air.holidayManager.startHoliday(holidayId))
+        yield until(lambda: hasattr(base.cr, attr), 30, attr)
+        onDistrict(lambda air: air.holidayManager.setHolidayPhase(holidayId, 6))
+        yield until(lambda: getattr(base.cr, attr).getCurPhase() == 6, 30, '%s phase 6' % attr)
+        onDistrict(lambda air: air.holidayManager.endHoliday(holidayId))
+        yield until(lambda: not hasattr(base.cr, attr), 30, '%s to go' % attr)
+        log(attr, 'came and went')
+
+
+def scenarioBlackCat():
+    # On Black Cat Day a cat who says "Toontastic!" in Toon Hall turns black.
+    from toontown.toon.ToonDNA import ToonDNA
+    from otp.speedchat.SpeedChatGlobals import SCStaticTextMsgEvent
+
+    def makeCat(air, avId):
+        av = air.doId2do[avId]
+        dna = ToonDNA()
+        dna.makeFromNetString(av.getDNAString())
+        dna.head = 'c' + dna.head[1:]
+        av.b_setDNAString(dna.makeNetString())
+        air.holidayManager.startHoliday(ToontownGlobals.BLACK_CAT_DAY)
+
+    onDistrict(makeCat, localAvatar.doId)
+    yield until(lambda: localAvatar.style.getAnimal() == 'cat', 30, 'the toon to be a cat')
+    npc = yield from goToNPC(2001)
+    yield until(lambda: findObject('DistributedBlackCatMgr'), 30, 'the black cat manager')
+    yield sleep(1)
+    messenger.send(SCStaticTextMsgEvent, [5700])
+    black = localAvatar.style.getBlackColor()
+    yield until(lambda: localAvatar.style.headColor == localAvatar.style.armColor == localAvatar.style.legColor == 0x1a,
+                30, 'the toon to turn black')
+    log('the cat turned black')
+    onDistrict(lambda air: air.holidayManager.endHoliday(ToontownGlobals.BLACK_CAT_DAY))
+    yield until(lambda: not findObject('DistributedBlackCatMgr'), 30, 'the black cat manager to go')
+
+
 def scenarioQuest(steps=12):
     # Takes a ToonTask from Toon HQ and plays it through every step to the
     # reward, the way a new toon would.
@@ -1452,6 +1602,9 @@ SCENARIOS = [
     ('toonhall', scenarioToonHall),
     ('holidays', scenarioHolidays),
     ('hunts', scenarioScavengerHunts),
+    ('bingo', scenarioBingo),
+    ('sillymeter', scenarioSillyMeter),
+    ('blackcat', scenarioBlackCat),
     ('quest', scenarioQuest),
 ]
 

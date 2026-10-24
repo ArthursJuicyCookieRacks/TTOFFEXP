@@ -7,7 +7,7 @@ import time
 from toontown.fishing.DistributedFishingPondAI import DistributedFishingPondAI
 from toontown.fishing import FishGlobals
 from toontown.fishing.DistributedFishingTargetAI import DistributedFishingTargetAI
-#from toontown.fishing.DistributedPondBingoManagerAI import DistributedPondBingoManagerAI
+from toontown.fishing.DistributedPondBingoManagerAI import DistributedPondBingoManagerAI
 from toontown.fishing import FishingTargetGlobals
 from toontown.safezone.DistributedFishingSpotAI import DistributedFishingSpotAI
 from toontown.safezone.SZTreasurePlannerAI import SZTreasurePlannerAI
@@ -46,6 +46,9 @@ class DistributedEstateAI(DistributedObjectAI):
         self.pond = DistributedFishingPondAI(simbase.air)
         self.pond.setArea(ToontownGlobals.MyEstate)
         self.pond.generateWithRequired(self.zoneId)
+        self.pond.bingoMgr = DistributedPondBingoManagerAI(self.air)
+        self.pond.bingoMgr.setPondDoId(self.pond.getDoId())
+        self.pond.bingoMgr.generateWithRequired(self.zoneId)
 
         for i in range(FishingTargetGlobals.getNumTargets(ToontownGlobals.MyEstate)):
             target = DistributedFishingTargetAI(self.air)
@@ -103,6 +106,7 @@ class DistributedEstateAI(DistributedObjectAI):
                 house.requestDelete()
         del self.houses[:]
         if self.pond:
+            self.pond.bingoMgr.requestDelete()
             self.pond.requestDelete()
             for spot in self.spots:
                 spot.requestDelete()
