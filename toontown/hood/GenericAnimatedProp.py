@@ -84,7 +84,16 @@ class GenericAnimatedProp(AnimatedProp.AnimatedProp):
         fullString = str(node)
         splits = fullString.split('/')
         try:
-            visId = int(splits[2])
+            # The path holds the visgroup, e.g. hidden/scene/toontownCentral/2150/...
+            # or render/2000:safe_zone/...; take the first numeric part.
+            visId = None
+            for part in splits[1:]:
+                part = part.split(':')[0]
+                if part.isdigit():
+                    visId = int(part)
+                    break
+            if visId is None:
+                raise ValueError('no zone in path')
             self.visId = visId
             self.hoodId = ZoneUtil.getCanonicalHoodId(visId)
             self.notify.debug('calcHoodId %d from %s' % (self.hoodId, fullString))

@@ -43,6 +43,7 @@ os.environ.setdefault('TTR_PLAYCOOKIE', 'autoplay')
 os.environ.setdefault('TTR_GAMESERVER', '127.0.0.1')
 
 from toontown.toonbase import ToontownStart
+from toontown.toonbase import ToontownBattleGlobals
 from toontown.toonbase import ToontownGlobals
 from toontown.hood import ZoneUtil
 from direct.showbase.DirectObject import DirectObject
@@ -231,11 +232,126 @@ def scenarioStreets():
     yield from teleport(ToontownGlobals.ToontownCentral)
 
 
+def suitsNearby():
+    from toontown.suit.DistributedSuit import DistributedSuit
+    return [do for do in base.cr.doId2do.values() if isinstance(do, DistributedSuit) and not do.isEmpty()]
+
+
+def townBattle():
+    p = place()
+    if hasattr(p, 'townBattle'):
+        return p.townBattle
+    return getattr(getattr(p, 'loader', None), 'townBattle', None)
+
+
+def townBattleState():
+    try:
+        return townBattle().fsm.getCurrentState().getName()
+    except AttributeError:
+        return None
+
+
+def onDistrict(func, *args):
+    # Runs func inside the first district's AI, and returns its result.
+    context, simbase = server.servers[1]
+    with server.contexts.use(context):
+        return func(simbase.air, *args)
+
+
+def pickGag():
+    # The strongest single-target gag the toon still carries.
+    inventory = localAvatar.inventory
+    for level in range(6, -1, -1):
+        for track in (ToontownBattleGlobals.THROW_TRACK, ToontownBattleGlobals.SQUIRT_TRACK,
+                      ToontownBattleGlobals.DROP_TRACK):
+            if inventory.numItem(track, level) > 0:
+                return track, level
+    raise StepFailed('the toon is out of throw, squirt and drop gags')
+
+
+def fightBattle(timeout=600):
+    yield until(lambda: placeState() == 'battle', 60, 'battle to start')
+    deadline = time.time() + timeout
+    rounds = 0
+    while placeState() == 'battle':
+        if time.time() > deadline:
+            raise StepFailed('the battle did not end in %d seconds' % timeout)
+        if townBattleState() == 'Attack':
+            rounds += 1
+            track, level = pickGag()
+            messenger.send(townBattle().battleEvent,
+                           [{'mode': 'Attack', 'track': track, 'level': level, 'target': 0}])
+            yield until(lambda: townBattleState() != 'Attack', 30, 'gag choice to register')
+        else:
+            yield sleep(0.2)
+    log('battle won after %d rounds' % rounds)
+
+
+def scenarioBattle():
+    street = ToontownGlobals.SillyStreet
+    yield from teleport(street - street % 1000, firstVisgroup(street))
+    magicWord('~spawn f 1')
+    yield until(suitsNearby, 120, 'a cog on the street')
+    suit = min(suitsNearby(), key=lambda s: (s.getPos(render) - localAvatar.getPos(render)).length())
+    log('walking into', suit.getName(), suit.doId)
+    while placeState() == 'walk':
+        if suit.isEmpty():
+            raise StepFailed('the cog left before the battle started')
+        localAvatar.setPos(render, suit.getPos(render))
+        yield sleep(0.1)
+    yield from fightBattle()
+    yield until(walking, 120, 'walking after the battle')
+
+
+def scenarioBuilding():
+    street = ToontownGlobals.SillyStreet
+
+    def takeOver(air):
+        manager = air.buildingManagers[street]
+        block = manager.getToonBlocks()[0]
+        building = manager.getBuilding(block)
+        building.suitTakeOver('s', 0, 0)
+        return block, building.getExteriorAndInteriorZoneId()[0]
+
+    block, zoneId = onDistrict(takeOver)
+    log('cogs took over block %d in zone %d' % (block, zoneId))
+    yield from teleport(street - street % 1000, zoneId)
+
+    def elevator():
+        from toontown.building.DistributedElevatorExt import DistributedElevatorExt
+        for do in base.cr.doId2do.values():
+            if isinstance(do, DistributedElevatorExt) and getattr(do, 'bldg', None) and do.bldg.block == block:
+                return do
+
+    yield until(elevator, 120, 'the cog building elevator')
+    yield sleep(2)
+    log('boarding the elevator')
+    messenger.send(elevator().uniqueName('enterelevatorSphere'), [None])
+    yield until(lambda: place().__class__.__name__ == 'SuitInterior', 120, 'inside the cog building')
+    deadline = time.time() + 1200
+    while place().__class__.__name__ == 'SuitInterior':
+        if time.time() > deadline:
+            raise StepFailed('still inside the cog building after 20 minutes (place state %s)' % placeState())
+        if placeState() == 'battle':
+            yield from fightBattle()
+        else:
+            yield sleep(0.5)
+    yield until(walking, 180, 'walking after the cog building')
+    log('back outside in zone %d' % localAvatar.zoneId)
+
+    def isToonBlock(air):
+        return air.buildingManagers[street].getBuilding(block).isToonBlock()
+
+    yield until(lambda: onDistrict(isToonBlock), 120, 'the building to turn back into a toon building')
+
+
 SCENARIOS = [
     ('login', scenarioLogin),
     ('maxtoon', scenarioMaxToon),
     ('playgrounds', scenarioPlaygrounds),
     ('streets', scenarioStreets),
+    ('battle', scenarioBattle),
+    ('building', scenarioBuilding),
 ]
 
 
