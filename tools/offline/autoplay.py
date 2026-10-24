@@ -1582,6 +1582,20 @@ def pressShownBookButton():
             return
 
 
+def questStreet(quest):
+    # The street where cogs count for the ToonTask, or None for a Cog HQ.
+    from toontown.quest import Quests
+    location = quest.getLocation() if hasattr(quest, 'getLocation') else Quests.Anywhere
+    if location == Quests.Anywhere:
+        return ToontownGlobals.SillyStreet
+    if ZoneUtil.isCogHQZone(location):
+        return None
+    if location in ToontownGlobals.StreetBranchZones:
+        return location
+    # A playground: its first street.
+    return location + 100
+
+
 def defeatCogsFor(questId, quest):
     from toontown.quest import Quests
     if isinstance(quest, Quests.CogTrackQuest):
@@ -1593,7 +1607,9 @@ def defeatCogsFor(questId, quest):
     else:
         cog, level = 'f', 1
     done = lambda: quest.getCompletionStatus(localAvatar, next(q for q in localAvatar.quests if q[0] == questId)) == Quests.COMPLETE
-    street = ToontownGlobals.SillyStreet
+    street = questStreet(quest)
+    if street is None:
+        raise StepFailed('the autoplay test only fights cogs on streets, not in %s' % quest.getLocationName())
     yield from teleport(street - street % 1000, firstVisgroup(street))
     while not done():
         onDistrict(restock, localAvatar.doId)
@@ -2658,11 +2674,35 @@ def scenarioQuest(steps=12):
     # reward, the way a new toon would.
     from toontown.quest import Quests
     recordNPCMovies()
+    if localAvatar.quests:
+        # Start from no ToonTasks, so Toon HQ hands out a new one.
+        log('dropping the ToonTasks the toon carries:', [q[0] for q in localAvatar.quests])
+        onDistrict(lambda air, avId: air.doId2do[avId].b_setQuests([]), localAvatar.doId)
+        yield until(lambda: not localAvatar.quests, 30, 'the ToonTasks to go')
+    tier = localAvatar.getRewardHistory()
+    if tier[0] >= Quests.ELDER_TIER:
+        # Elder ToonTasks are buildings and Cog HQs; play a Donald's Dock
+        # one instead, and give the toon its place back afterwards.
+        log('playing a Donald\'s Dock ToonTask instead of an elder one')
+        setTier = lambda air, avId, tier, rewards: air.doId2do[avId].b_setRewardHistory(tier, rewards)
+        onDistrict(setTier, localAvatar.doId, Quests.DD_TIER, [])
+        yield until(lambda: localAvatar.getRewardHistory()[0] == Quests.DD_TIER, 30, 'the Donald\'s Dock tier')
+        try:
+            yield from playQuest(steps)
+        finally:
+            onDistrict(setTier, localAvatar.doId, *tier)
+        return
+    yield from playQuest(steps)
+
+
+def playQuest(steps):
+    from toontown.quest import Quests
     fightable = (Quests.CogQuest, Quests.RecoverItemQuest)
 
     def pickQuest(choices):
         preferred = [c for c in choices if isinstance(Quests.getQuest(c[0]), fightable + (Quests.VisitQuest,))
-                     and not isinstance(Quests.getQuest(c[0]), (Quests.BuildingQuest, Quests.SkelecogQBase))]
+                     and not isinstance(Quests.getQuest(c[0]), (Quests.BuildingQuest, Quests.SkelecogQBase))
+                     and not (isinstance(Quests.getQuest(c[0]), fightable) and questStreet(Quests.getQuest(c[0])) is None)]
         return (preferred or choices)[0][0]
 
     tier = localAvatar.getRewardHistory()
