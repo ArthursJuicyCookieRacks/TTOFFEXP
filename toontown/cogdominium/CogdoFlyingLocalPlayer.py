@@ -1,6 +1,6 @@
 import math
 import random
-from enum import Enum
+from enum import Enum, IntEnum
 from panda3d.core import Vec3
 from direct.showbase import PythonUtil
 from direct.directnotify import DirectNotifyGlobal
@@ -29,10 +29,10 @@ class CogdoFlyingLocalPlayer(CogdoFlyingPlayer):
     PlayWaitingMusicEventName = 'PlayWaitingMusicEvent'
     RanOutOfTimeEventName = 'RanOutOfTimeEvent'
     #PropStates = PythonUtil.Enum(('Normal', 'Overdrive', 'Off'))
-    class PropStates(Enum):
-        Normal = 1
-        Overdrive = 2
-        Off = 3
+    class PropStates(IntEnum):
+        Normal = 0
+        Overdrive = 1
+        Off = 2
 
     def __init__(self, toon, game, level, guiMgr):
         CogdoFlyingPlayer.__init__(self, toon)

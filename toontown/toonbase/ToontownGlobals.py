@@ -1,7 +1,7 @@
 from . import TTLocalizer
 from otp.otpbase.OTPGlobals import *
 from direct.showbase.PythonUtil import invertDict
-from enum import Enum
+from enum import Enum, IntEnum
 from panda3d.core import *
 MapHotkeyOn = 'alt'
 MapHotkeyOff = 'alt-up'
@@ -1627,15 +1627,14 @@ NewsPageScaleAdjust = 0.85
 # 'Mailbox',
 # 'Trashcan'), start=-1)
 #EmblemTypes = Enum('Silver', 'Gold')
-class AnimPropTypes(Enum):
-    Unknown = 1
-    Hydrant = 2
-    Mailbox = 3
-    Trashcan = 4
-    start=-1
-class EmblemTypes(Enum):
-    Silver = 1
-    Gold = 2
+class AnimPropTypes(IntEnum):
+    Unknown = -1
+    Hydrant = 0
+    Mailbox = 1
+    Trashcan = 2
+class EmblemTypes(IntEnum):
+    Silver = 0
+    Gold = 1
 NumEmblemTypes = 2
 DefaultMaxBankMoney = 12000
 DefaultBankItemId = 1350

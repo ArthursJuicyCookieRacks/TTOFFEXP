@@ -28,7 +28,7 @@ os.chdir(ROOT)
 
 DB = os.path.abspath(os.environ.get('AUTOPLAY_DB', 'autoplay-db'))
 
-from panda3d.core import loadPrcFileData, Point3, Vec3
+from panda3d.core import loadPrcFileData, NodePath, Point3, Vec3
 loadPrcFileData('autoplay', '''
 audio-library-name null
 toontown-auto-run 0
@@ -435,6 +435,61 @@ def clearFacility(interior, suitClass, levelClass=None, timeout=1800):
     log('out of the %s, in zone %d' % (interior, localAvatar.zoneId))
 
 
+def playMoleField(field, beaten, timeout=900):
+    # Stands in the mole field and hits every cog that pops up (the hills
+    # with HILL_BOMB are the cogs to whack; HILL_MOLE is the bomb).
+    from toontown.coghq import MoleFieldBase
+    log('whacking moles')
+    localAvatar.setPos(render, field.centerNode.getPos(render))
+    deadline = time.time() + timeout
+
+    class Hit:
+        def __init__(self, index):
+            self.index = index
+
+        def getSurfaceNormal(self, other):
+            return Vec3(0, 0, 1)
+
+        def getIntoNodePath(self):
+            return NodePath('moleCol-%d' % self.index)
+
+    while not beaten():
+        if time.time() > deadline:
+            raise StepFailed('the mole field was not beaten in %d seconds' % timeout)
+        for index, hill in enumerate(field.moleHills):
+            if hill.isUp and hill.hillType == MoleFieldBase.HILL_BOMB:
+                field.handleEnterMole(Hit(index))
+        yield sleep(0.1)
+    log('mole field beaten')
+
+
+def playGolfGreen(game, timeout=1300):
+    # Bust-A-Cog: shoots each ball at the lowest ball of its own colour,
+    # which is where a player would usually aim.
+    log('playing the golf green puzzle')
+    game._DistributedGolfGreenGame__handleToonEnter(None)
+    yield until(lambda: localAvatar.doId in game.joinedToons, 30, 'joining the golf green')
+    deadline = time.time() + timeout
+    boards = 0
+    while not game.finished:
+        if time.time() > deadline:
+            raise StepFailed('the golf green puzzle did not finish in %d seconds' % timeout)
+        sprite = game.controlSprite
+        if game.ballLoaded and sprite and not sprite.nodeObj.isEmpty():
+            targets = [(cell[0], cell[1], cell[2]) for row in game.grid for cell in row
+                       if cell[0] is not None and cell[0].colorType == sprite.colorType]
+            if not targets:
+                targets = [(cell[0], cell[1], cell[2]) for row in game.grid for cell in row if cell[0] is not None]
+            if targets:
+                target = min(targets, key=lambda target: target[0].getZ())[0]
+                dx = target.getX() - sprite.getX()
+                dz = target.getZ() - sprite.getZ()
+                game.aimRadian = max(0.2 - math.pi, min(-0.2, -math.atan2(dz, dx)))
+                game._DistributedGolfGreenGame__handleMouseClick()
+        yield sleep(0.5)
+    log('golf green puzzle over')
+
+
 def clearRooms(interior, facilityClass, timeout=3600):
     # Mints, DA offices and country clubs are strings of rooms: go to each
     # room in turn and beat every cog in it. DA offices and country clubs
@@ -459,6 +514,15 @@ def clearRooms(interior, facilityClass, timeout=3600):
             facility.warpToRoom(room.roomId)
             # Give the room's cogs time to arrive once the room is visible.
             yield sleep(3)
+            # Country club rooms can hold a puzzle that unblocks the way on.
+            inRoom = lambda do: getattr(do, 'levelDoId', None) == room.doId
+            moles = findObject('DistributedMoleField', inRoom)
+            if moles:
+                yield from playMoleField(moles, lambda: index not in facility.blockedRooms)
+            golf = findObject('DistributedGolfGreenGame', inRoom)
+            if golf:
+                yield from playGolfGreen(golf)
+                yield until(walking, 60, 'walking after the golf green')
             nextReport = time.time() + 30
             target = targetSince = None
             while placeName() == interior:
@@ -741,6 +805,90 @@ def scenarioEstate():
     yield from teleport(ToontownGlobals.ToontownCentral)
 
 
+def raceState(race):
+    return race.fsm.getCurrentState().getName()
+
+
+def driveKart(race):
+    # Drives the local kart the way a player holding the arrow keys would:
+    # full throttle, steering toward a pole a little way down the track.
+    def drive(task):
+        if race.isDisabled() or raceState(race) != 'racing':
+            return task.done
+        kart = race.localKart
+        pos = kart.getPos(render)
+        goal = race.curvePoints[(race.currentPole + 3) % len(race.curvePoints)]
+        offset = Vec3(goal - pos)
+        wanted = math.degrees(math.atan2(-offset[0], offset[1]))
+        error = (wanted - kart.getH(render) + 180) % 360 - 180
+        kart.arrowVert = 1
+        # A positive arrowHorz turns the kart clockwise (its heading drops).
+        kart.arrowHorz = max(-1.0, min(1.0, -error / 20.0))
+        return task.cont
+
+    taskMgr.add(drive, 'autoplay-drive-kart')
+
+
+def scenarioRacing():
+    from toontown.racing import KartDNA, RaceGlobals
+    yield from teleport(ToontownGlobals.GoofySpeedway)
+    if not localAvatar.hasKart():
+        magicWord('~setTickets %d' % RaceGlobals.MaxTickets)
+        yield until(lambda: localAvatar.getTickets() == RaceGlobals.MaxTickets, 30, 'race tickets')
+        # The kart clerks work inside the kart shop.
+        door = lambda doorType: findObject('DistributedDoor', lambda do: do.doorType == doorType)
+        yield until(lambda: door(DoorTypes.EXT_KS), 60, 'the kart shop door')
+        yield sleep(2)
+        log('going into the kart shop')
+        messenger.send(door(DoorTypes.EXT_KS).getEnterTriggerEvent(), [None])
+        yield until(lambda: findObject('DistributedNPCKartClerk') and walking(), 120, 'walking in the kart shop')
+        clerk = findObject('DistributedNPCKartClerk')
+        log('buying a kart from', clerk.getName())
+        clerk.handleCollisionSphereEnter(None)
+        yield until(lambda: clerk.kartShopGui is not None, 30, 'the kart shop')
+        kartId = min(KartDNA.KartDict, key=KartDNA.getKartCost)
+        clerk._DistributedNPCKartClerk__handleBuyKart(kartId)
+        yield until(localAvatar.hasKart, 30, 'owning a kart')
+        clerk._DistributedNPCKartClerk__handleGuiDone()
+        yield until(walking, 60, 'walking after buying the kart')
+        yield sleep(2)
+        messenger.send(door(DoorTypes.INT_KS).getEnterTriggerEvent(), [None])
+        yield until(lambda: placeName() == 'GSPlayground' and walking(), 120, 'walking out of the kart shop')
+    yield until(lambda: findObject('DistributedStartingBlock',
+                                   lambda do: do.kartPad and getattr(do.kartPad, 'isPractice', lambda: False)() and do.avId == 0),
+                60, 'a practice starting block')
+    block = findObject('DistributedStartingBlock',
+                       lambda do: do.kartPad and getattr(do.kartPad, 'isPractice', lambda: False)() and do.avId == 0)
+    yield sleep(2)
+    log('getting on a practice starting block for track', block.kartPad.trackId)
+    localAvatar.setPos(render, block.nodePath.getPos(render))
+    messenger.send(block.uniqueName('enterStartingBlockSphere'), [None])
+    yield until(lambda: getattr(block, 'dialog', None) is not None, 10, 'the practice dialog')
+    block.dialog.doneStatus = 'ok'
+    messenger.send('enterRequest|dialog')
+    yield until(lambda: findObject('DistributedRace'), 180, 'the race')
+    race = findObject('DistributedRace')
+    yield until(lambda: raceState(race) in ('tutorial', 'waiting', 'start', 'racing'), 120, 'the race rules')
+    if raceState(race) == 'tutorial':
+        messenger.send(race.rulesDoneEvent)
+    yield until(lambda: raceState(race) == 'racing', 120, 'the starting light')
+    log('racing %d laps on track %d' % (race.lapCount, race.trackId))
+    driveKart(race)
+    deadline = time.time() + 1200
+    nextReport = time.time() + 30
+    while raceState(race) == 'racing':
+        if time.time() > deadline:
+            raise StepFailed('still racing after 1200 seconds, lap %d' % race.laps)
+        if time.time() > nextReport:
+            nextReport = time.time() + 30
+            log('lap %d, %.2f of the way round' % (race.laps, race.currLapT))
+        yield sleep(0.5)
+    log('race over in state', raceState(race))
+    yield sleep(5)
+    messenger.send('leaveRace')
+    yield until(lambda: placeName() == 'GSPlayground' and walking(), 120, 'walking at the speedway again')
+
+
 def scenarioFactory():
     yield from teleport(ToontownGlobals.SellbotHQ, ToontownGlobals.SellbotFactoryExt)
     yield from boardElevator('DistributedFactoryElevatorExt')
@@ -808,6 +956,7 @@ SCENARIOS = [
     ('ceo', scenarioCEO),
     ('fishing', scenarioFishing),
     ('estate', scenarioEstate),
+    ('racing', scenarioRacing),
 ]
 
 

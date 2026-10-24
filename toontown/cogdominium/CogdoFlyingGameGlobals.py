@@ -1,5 +1,5 @@
 from direct.showbase import PythonUtil
-from enum import Enum
+from enum import Enum, IntEnum
 from panda3d.core import VBase4, Vec3, Point3
 from .CogdoUtil import VariableContainer, DevVariableContainer
 #AI = VariableContainer()
@@ -30,21 +30,21 @@ class AI:
      4000: 8,
      3000: 12,
      9000: 16}
-    class GameActions(Enum):
-        LandOnWinPlatform = 1
-        WinStateFinished = 2
-        GotoWinState = 3
-        HitWhirlwind = 4
-        HitLegalEagle = 5
-        HitMinion = 6
-        DebuffInvul = 7
-        RequestEnterEagleInterest = 8
-        RequestExitEagleInterest = 9
-        RanOutOfTimePenalty = 10
-        Died = 11
-        Spawn = 12
-        SetBlades = 13
-        BladeLost = 14
+    class GameActions(IntEnum):
+        LandOnWinPlatform = 0
+        WinStateFinished = 1
+        GotoWinState = 2
+        HitWhirlwind = 3
+        HitLegalEagle = 4
+        HitMinion = 5
+        DebuffInvul = 6
+        RequestEnterEagleInterest = 7
+        RequestExitEagleInterest = 8
+        RanOutOfTimePenalty = 9
+        Died = 10
+        Spawn = 11
+        SetBlades = 12
+        BladeLost = 13
 Camera = VariableContainer()
 Camera.Angle = 12.5
 Camera.Distance = 20
@@ -135,17 +135,17 @@ class Gameplay:
     HitCooldownTime = 2.0
     #Gameplay.FuelStates = PythonUtil.Enum(('FuelNoPropeller', 'FuelEmpty', 'FuelVeryLow', 'FuelLow', 'FuelNormal'))
     #Gameplay.BackpackStates = PythonUtil.Enum(('Normal', 'Targeted', 'Attacked', 'Refuel'))
-    class FuelStates(Enum):
-        FuelNoPropeller = 1
-        FuelEmpty = 2
-        FuelVeryLow = 3
-        FuelLow = 4
-        FuelNormal = 5
-    class BackpackStates(Enum):
-        Normal = 1
-        Targeted = 2
-        Attacked = 3
-        Refuel = 4
+    class FuelStates(IntEnum):
+        FuelNoPropeller = 0
+        FuelEmpty = 1
+        FuelVeryLow = 2
+        FuelLow = 3
+        FuelNormal = 4
+    class BackpackStates(IntEnum):
+        Normal = 0
+        Targeted = 1
+        Attacked = 2
+        Refuel = 3
     BackpackRefuelDuration = 4.0
     BackpackState2TextureName = {BackpackStates.Normal: 'tt_t_ara_cfg_propellerPack',
      BackpackStates.Targeted: 'tt_t_ara_cfg_propellerPack_eagleTarget',
@@ -233,19 +233,19 @@ class Level:
     #GatherableTypes = PythonUtil.Enum(('Memo', 'Propeller', 'LaffPowerup', 'InvulPowerup'))
     #ObstacleTypes = PythonUtil.Enum(('Whirlwind', 'Fan', 'Minion'))
     #PlatformTypes = PythonUtil.Enum(('Platform', 'StartPlatform', 'EndPlatform'))
-    class GatherableTypes(Enum):
-        Memo = 1
-        Propeller = 2
-        LaffPowerup = 3
-        InvulPowerup = 4
-    class ObstacleTypes(Enum):
-        Whirlwind = 1
-        Fan = 2
-        Minion = 3
-    class PlatformTypes(Enum):
-        Platform = 1
-        StartPlatform = 2
-        EndPlatform = 3
+    class GatherableTypes(IntEnum):
+        Memo = 0
+        Propeller = 1
+        LaffPowerup = 2
+        InvulPowerup = 3
+    class ObstacleTypes(IntEnum):
+        Whirlwind = 0
+        Fan = 1
+        Minion = 2
+    class PlatformTypes(IntEnum):
+        Platform = 0
+        StartPlatform = 1
+        EndPlatform = 2
     PlatformType2SpawnOffset = {PlatformTypes.Platform: 2.5,
      PlatformTypes.StartPlatform: 5.0,
      PlatformTypes.EndPlatform: 5.0}

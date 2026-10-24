@@ -1,4 +1,4 @@
-from enum import Enum
+from enum import Enum, IntEnum
 from panda3d.core import *
 from direct.distributed.ClockDelta import *
 from direct.task.Task import Task
@@ -20,10 +20,10 @@ from toontown.battle.BattleSounds import *
 
 class DistributedPicnicBasket(DistributedObject.DistributedObject):
     #seatState = Enum('Empty, Full, Eating')
-    class seatState(Enum):
-        Empty = 1
-        Full = 2
-        Eating = 3
+    class seatState(IntEnum):
+        Empty = 0
+        Full = 1
+        Eating = 2
     notify = DirectNotifyGlobal.directNotify.newCategory('DistributedPicnicBasket')
 
     def __init__(self, cr):

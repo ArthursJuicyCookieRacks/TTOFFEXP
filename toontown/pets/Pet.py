@@ -1,4 +1,4 @@
-from enum import Enum
+from enum import Enum, IntEnum
 from panda3d.core import *
 from direct.directnotify import DirectNotifyGlobal
 from direct.interval.IntervalGlobal import *
@@ -34,11 +34,11 @@ class Pet(Avatar.Avatar):
     notify = DirectNotifyGlobal.directNotify.newCategory('Pet')
     SerialNum = 0
     #Interactions = PythonUtil.Enum('SCRATCH, BEG, EAT, NEUTRAL')
-    class Interactions(Enum):
-        SCRATCH = 1
-        BEG = 2
-        EAT = 3
-        NEUTRAL = 4
+    class Interactions(IntEnum):
+        SCRATCH = 0
+        BEG = 1
+        EAT = 2
+        NEUTRAL = 3
     InteractAnims = {Interactions.SCRATCH: ('toPet', 'pet', 'fromPet'),
      Interactions.BEG: ('toBeg', 'beg', 'fromBeg'),
      Interactions.EAT: ('eat', 'swallow', 'neutral'),

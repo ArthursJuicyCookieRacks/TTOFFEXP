@@ -1,4 +1,4 @@
-from enum import Enum
+from enum import Enum, IntEnum
 from panda3d.core import *
 from direct.showbase.PythonUtil import invertDictLossless
 import math
@@ -27,10 +27,10 @@ FleeFromOwnerScale = 0.5
 GettingAttentionGoalScale = 1.2
 GettingAttentionGoalScaleDur = 7.0
 #AnimMoods = Enum('EXCITED, SAD, NEUTRAL')
-class AnimMoods(Enum):
-    EXCITED = 1
-    SAD = 2
-    NEUTRAL = 3
+class AnimMoods(IntEnum):
+    EXCITED = 0
+    SAD = 1
+    NEUTRAL = 2
 FwdSpeed = 12.0
 RotSpeed = 360.0
 _HappyMult = 1.0

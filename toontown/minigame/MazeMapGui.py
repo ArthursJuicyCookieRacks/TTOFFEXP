@@ -1,4 +1,4 @@
-from enum import Enum
+from enum import Enum, IntEnum
 #from direct.showbase.PythonUtil import Enum
 from direct.gui.DirectGui import DirectFrame, DGG
 from panda3d.core import Vec2, VBase4D
@@ -8,10 +8,10 @@ DEFAULT_MASK_RESOLUTION = 32
 DEFAULT_RADIUS_RATIO = 0.05
 MAP_RESOLUTION = 320
 #MazeRevealType = Enum(('SmoothCircle', 'HardCircle', 'Square'))
-class MazeRevealType(Enum):
-    SmoothCircle = 1
-    HardCircle = 2
-    Square = 3
+class MazeRevealType(IntEnum):
+    SmoothCircle = 0
+    HardCircle = 1
+    Square = 2
 MAZE_REVEAL_TYPE = MazeRevealType.SmoothCircle
 
 class MazeMapGui(DirectFrame):

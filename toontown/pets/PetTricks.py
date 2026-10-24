@@ -1,18 +1,18 @@
-from enum import Enum
+from enum import Enum, IntEnum
 from direct.showbase.PythonUtil import invertDictLossless
 from direct.interval.IntervalGlobal import *
 import types
 import random
 #Tricks = Enum('JUMP, BEG, PLAYDEAD, ROLLOVER, BACKFLIP, DANCE, SPEAK, BALK,')
-class Tricks(Enum):
-    JUMP = 1
-    BEG = 2
-    PLAYDEAD = 3
-    ROLLOVER = 4
-    BACKFLIP = 5
-    DANCE = 6
-    SPEAK = 7
-    BALK = 8
+class Tricks(IntEnum):
+    JUMP = 0
+    BEG = 1
+    PLAYDEAD = 2
+    ROLLOVER = 3
+    BACKFLIP = 4
+    DANCE = 5
+    SPEAK = 6
+    BALK = 7
 NonHappyMinActualTrickAptitude = 0.1
 NonHappyMaxActualTrickAptitude = 0.6
 MinActualTrickAptitude = 0.5
