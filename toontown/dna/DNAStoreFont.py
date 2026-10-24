@@ -13,7 +13,13 @@ class DNAStoreFont(DNAStorageElement):
         self.path = path
 
     def _store(self, storage):
-        font = loader.loadFont(self.path)
+        path = self.path
+        if '/' not in path:
+            # A font named by its TTLocalizer setting, such as SignFont in
+            # the tutorial's storage, so it follows the language.
+            from toontown.toonbase import TTLocalizer
+            path = getattr(TTLocalizer, path, path)
+        font = loader.loadFont(path)
         storage.storeFont(font, self.code, self.getScope())
 
 registerElement(DNAStoreFont)

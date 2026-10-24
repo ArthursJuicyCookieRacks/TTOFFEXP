@@ -52,6 +52,7 @@ from toontown.toonbase import ToontownGlobals
 from toontown.hood import ZoneUtil
 from toontown.building import DoorTypes
 from direct.showbase.DirectObject import DirectObject
+from direct.gui import DirectGuiGlobals as DGG
 from otp.local import LocalServer
 
 
@@ -203,14 +204,77 @@ def scenarioLogin():
             mat.goToNextShop()
             yield until(lambda: shop() == name, 30, name)
         yield sleep(2)
-        mat.ns._NameShop__createAvatar(skipTutorial=True)
+        mat.ns._NameShop__createAvatar(skipTutorial=not TUTORIAL)
     else:
         log('choosing the toon in slot 0')
         chooser.choice = 0
         messenger.send(chooser.doneEvent, [{'mode': 'chose'}])
     yield until(lambda: loginState() == 'playingGame', 180, 'playing the game')
+    if TUTORIAL:
+        return
     yield until(walking, 180, 'walking in the playground')
     log('in game as %s (%d) in zone %d' % (localAvatar.getName(), localAvatar.doId, localAvatar.zoneId))
+
+
+# AUTOPLAY_TUTORIAL=1 makes the new toon go through the Toontorial (the
+# tutorial scenario) instead of skipping it.
+TUTORIAL = bool(os.environ.get('AUTOPLAY_TUTORIAL'))
+
+
+def scenarioTutorial():
+    # The Toontorial: Tutorial Tom's ToonTask, the Flunky outside, the HQ
+    # officer, and out through the tunnel to Toontown Central.
+    recordNPCMovies()
+    yield until(lambda: place() and place().__class__.__name__ == 'ToonInterior' and walking(), 120, "Tutorial Tom's shop")
+    shop = localAvatar.zoneId
+    tom = findObject('DistributedNPCToon', lambda do: do.zoneId == shop)
+    yield from talkTo(tom)
+    yield until(lambda: localAvatar.quests, 30, "Tom's ToonTask")
+    log('ToonTask from Tom: %s' % (localAvatar.quests,))
+
+    door = findObject('DistributedDoor', lambda do: do.zoneId == shop)
+    messenger.send(door.getEnterTriggerEvent(), [None])
+    yield until(lambda: localAvatar.zoneId != shop and walking(), 120, 'the tutorial street')
+    street = localAvatar.zoneId
+    yield until(lambda: findObject('DistributedTutorialSuit'), 60, 'the Flunky')
+    suit = findObject('DistributedTutorialSuit')
+    log('fighting the Flunky')
+    while placeState() == 'walk' and not suit.isEmpty():
+        localAvatar.setPos(render, suit.getPos(render))
+        yield sleep(0.1)
+    yield from fightBattle()
+    yield until(walking, 120, 'walking after the Flunky')
+
+    hqDoor = lambda: findObject('DistributedDoor', lambda do: do.zoneId == street and do.doorType == DoorTypes.EXT_HQ)
+    yield until(hqDoor, 60, 'the HQ door')
+    yield sleep(2)
+    messenger.send(hqDoor().getEnterTriggerEvent(), [None])
+    yield until(lambda: localAvatar.zoneId != street and walking(), 120, 'the tutorial HQ')
+    hq = localAvatar.zoneId
+    harry = findObject('DistributedNPCToon', lambda do: do.zoneId == hq)
+    yield from talkTo(harry)
+    log('ToonTask from the HQ officer: %s' % (localAvatar.quests,))
+
+    exitDoor = lambda: findObject('DistributedDoor', lambda do: do.zoneId == hq and do.doorIndex == 1)
+    yield until(exitDoor, 30, 'the HQ door to the playground')
+    yield sleep(2)
+    messenger.send(exitDoor().getEnterTriggerEvent(), [None])
+    yield until(lambda: localAvatar.zoneId != hq and walking(), 120, 'back on the street')
+    tunnel = localAvatar.zoneId
+    yield until(lambda: findObject('DistributedNPCBlocker', lambda do: do.zoneId == tunnel), 30, 'Flippy')
+    log('Flippy is waiting by the tunnel')
+    triggers = render.findAllMatches('**/tunnel_trigger_*')
+    log('walking into the tunnel %s' % triggers[0].getName())
+    messenger.send('enter' + triggers[0].getName(), [None])
+    # Toontown Central greets a new toon with a dialog pointing at their next
+    # ToonTask, which they acknowledge before walking.
+    yield until(lambda: localAvatar.zoneId == ToontownGlobals.ToontownCentral and placeState() == 'popup'
+                and getattr(place(), 'dialog', None), 120, 'the Toontown Central welcome dialog')
+    log('Toontown Central says: %s' % place().dialog['text'])
+    place().dialog['command'](DGG.DIALOG_OK)
+    yield until(inZone(ToontownGlobals.ToontownCentral), 60, 'walking in Toontown Central')
+    yield until(lambda: localAvatar.tutorialAck, 30, 'the tutorial to be done')
+    log('Toontorial done; ToonTasks %s' % (localAvatar.quests,))
 
 
 def scenarioMaxToon():
@@ -1397,9 +1461,27 @@ def talkTo(npc, pickQuest=None):
         messenger.send('chooseTrack', [quests[0]])
         yield until(lambda: npc.autoplayMovie[1] is not quests, 30, 'the track to be given')
         yield sleep(1)
-    if not walking():
+    # Click through the speech pages; a scripted movie such as Tutorial
+    # Tom's has a dozen of them.
+    deadline = time.time() + 300
+    while not walking():
+        if time.time() > deadline:
+            raise StepFailed('still talking to %s' % npc.getName())
         messenger.send(npc.uniqueName('doneChatPage'), [0])
-    yield until(walking, 60, 'walking after talking to %s' % npc.getName())
+        if TUTORIAL:
+            pressShownBookButton()
+        yield sleep(1.5)
+
+
+def pressShownBookButton():
+    # The HQ officer's Toontorial movie waits for the player to open the
+    # Shticker Book, turn its pages and close it, showing each button in turn.
+    book = localAvatar.book
+    for button in (book.bookOpenButton, book.nextArrow, book.bookCloseButton):
+        if not button.isEmpty() and not button.isHidden() and button['command']:
+            log('pressing the Shticker Book button', button.getName())
+            button['command'](*button['extraArgs'])
+            return
 
 
 def defeatCogsFor(questId, quest):
@@ -1614,7 +1696,8 @@ def scenarioHolidayEffects():
     yield from scenarioBattle()
     gained = [new - old for new, old in zip(localAvatar.experience.experience, exp)]
     log('experience gained in a double experience battle: %s' % gained)
-    if not any(gained):
+    maxed = all(e >= ToontownBattleGlobals.regMaxSkill for e in exp)
+    if not any(gained) and not maxed:
         raise StepFailed('no experience from the battle')
     onDistrict(lambda air: air.holidayManager.endHoliday(G.MORE_XP_HOLIDAY))
 
@@ -2431,6 +2514,7 @@ def scenarioMinigames():
 
 SCENARIOS = [
     ('login', scenarioLogin),
+    ('tutorial', scenarioTutorial),
     ('maxtoon', scenarioMaxToon),
     ('playgrounds', scenarioPlaygrounds),
     ('streets', scenarioStreets),

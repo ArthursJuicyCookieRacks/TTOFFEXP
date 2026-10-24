@@ -38,7 +38,7 @@ def openToAll(zoneId, avatar):
     elif zoneId in specialZones:
         allowed = True
     elif canonicalZoneId >= ToontownGlobals.DynamicZonesBegin and not avatar.getTutorialAck():
-        zoneDict = simbase.air.tutorialManager.playerDict.get(avatar.doId)
+        zoneDict = simbase.air.tutorialManager.avId2fsm.get(avatar.doId)
         if zoneDict:
             allowed = True
     return allowed
