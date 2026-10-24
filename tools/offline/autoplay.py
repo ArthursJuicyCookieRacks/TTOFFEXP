@@ -1448,6 +1448,54 @@ def scenarioToonHall():
     yield until(lambda: walking() and localAvatar.zoneId == ToontownGlobals.ToontownCentral, 120, 'back outside')
 
 
+def scenarioToonfest():
+    # ToonFest: whack the cog pinata to spin the tower, and bounce on the
+    # victory trampoline for ToonFest tokens.
+    yield from teleport(ToontownGlobals.ToonFest)
+    yield until(lambda: findObject('DistributedToonfestCog') and findObject('DistributedToonfestVictoryTrampolineActivity'), 60, 'the ToonFest activities')
+
+    def countTowerHits(air):
+        cog = air.doFind('ToonfestCog')
+        cog.hits = 0
+        updateTower = cog.updateTower
+
+        def counted(avName):
+            cog.hits += 1
+            updateTower(avName)
+        cog.updateTower = counted
+
+    onDistrict(countTowerHits)
+    cog = findObject('DistributedToonfestCog')
+    yield until(lambda: cog.state == 'Up', 30, 'the cog to pop up')
+    cog.respondToPieHit(cog.timestamp, cog.position)
+    yield until(lambda: onDistrict(lambda air: air.doFind('ToonfestCog').hits), 30, 'the tower to hear of the hit')
+    log('hit the ToonFest cog')
+
+    tramp = findObject('DistributedToonfestVictoryTrampolineActivity')
+    tokens = localAvatar.getTokens()
+    tramp.onTrampolineTrigger(None)
+    yield until(lambda: tramp.activityFSM.state == 'Rules', 30, 'the trampoline rules')
+    tramp.handleRulesDone()
+    yield until(lambda: tramp.activityFSM.state == 'Active', 30, 'the trampoline to start')
+    yield sleep(3)
+    tramp.collectJellyBeans(10000)
+    log('collected %d trampoline jellybeans' % tramp.numBeansCollected)
+    yield until(lambda: localAvatar.getTokens() > tokens, 120, 'ToonFest tokens from the trampoline')
+    # Click OK on the reward panel.
+    yield sleep(2)
+    messenger.send(tramp.showRewardDoneEvent)
+    yield until(walking, 60, 'walking off the trampoline')
+    log('the trampoline gave %d tokens' % (localAvatar.getTokens() - tokens))
+
+    balloon = findObject('DistributedToonfestBalloon')
+    balloon.sendUpdate('requestEnter', [])
+    yield until(lambda: balloon.state == 'StartRide', 30, 'the balloon to take off')
+    log('riding the balloon with Alec')
+    yield until(lambda: balloon.state == 'RideOver', 120, 'the balloon ride to end')
+    yield until(walking, 60, 'walking after the balloon ride')
+    log('balloon ride over at %s' % localAvatar.getPos(render))
+
+
 def scenarioHolidays():
     # Checks that the holidays the calendar runs today reach the client, then
     # starts and ends a holiday the way the calendar would.
@@ -2347,6 +2395,7 @@ SCENARIOS = [
     ('pets', scenarioPets),
     ('toonhall', scenarioToonHall),
     ('holidays', scenarioHolidays),
+    ('toonfest', scenarioToonfest),
     ('holidayeffects', scenarioHolidayEffects),
     ('hunts', scenarioScavengerHunts),
     ('bingo', scenarioBingo),

@@ -90,13 +90,15 @@ class DistributedToonfestTrampolineActivityAI(DistributedToonfestActivityAI, FSM
         if self.currentAv != avId:
             self.air.writeServerEvent('suspicious', avId=avId, issue='Toon tried to collect jellybeans while someone else was playing!')
             return
+        collected = []
         for bean in beans:
-            if not bean in self.jellybeans:
+            if bean not in self.jellybeans:
                 self.air.writeServerEvent('suspicious', avId=avId, issue='Toon tried to collect non-existent bean!')
-                beans.remove(bean)
-            else:
-                self.collected += 1
-        self.sendUpdate('removeBeansEcho', [beans])
+                continue
+            self.jellybeans.remove(bean)
+            collected.append(bean)
+            self.collected += 1
+        self.sendUpdate('removeBeansEcho', [collected])
         
     def updateToonsPlaying(self):
         if self.currentAv == 0:
@@ -121,7 +123,7 @@ class DistributedToonfestTrampolineActivityAI(DistributedToonfestActivityAI, FSM
         if self.currentAv != avId:  
             self.air.writeServerEvent('suspicious', avId=avId, issue='Toon tried to exit trampoline for someone else!')
             return
-        taskMgr.remove('exitTrampoline'%self.doId)
+        taskMgr.remove('exitTrampoline%d' % self.doId)
         self.sendUpdate('leaveTrampoline', [])
 
     def toonExitDemand(self):
