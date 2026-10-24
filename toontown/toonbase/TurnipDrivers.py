@@ -14,7 +14,6 @@ If the game doesn't get as far as its launcher with the driver, the next start
 goes back to the phone's own driver.
 """
 
-import ctypes
 import json
 import os
 import platform
@@ -113,7 +112,25 @@ def unpackRuntime():
     return folder, libraries
 
 
+def importCtypes():
+    """ctypes, which on Android looks up the name of Python's own library in
+    build settings that the packaged game leaves out."""
+    import sysconfig
+    name = sysconfig._get_sysconfigdata_name()
+    if sys.platform == 'android' and name not in sys.modules:
+        try:
+            __import__(name)
+        except ImportError:
+            import types
+            settings = types.ModuleType(name)
+            settings.build_time_vars = {'LDLIBRARY': 'libpython%d.%d.so' % sys.version_info[:2]}
+            sys.modules[name] = settings
+    import ctypes
+    return ctypes
+
+
 def loadDriver(runtime, driver):
+    ctypes = importCtypes()
     folder, libraries = runtime
     adrenotools = [path for kind, path in libraries if kind == 'adrenotools'][0]
     tools = ctypes.CDLL(adrenotools)
