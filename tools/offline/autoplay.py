@@ -1482,7 +1482,7 @@ def scenarioGolf():
                 log('swung at %d power from %.0f away; the ball went %.0f' % (power, distance, moved))
         else:
             yield sleep(0.2)
-    log('golf course over; scores', course.scores.get(localAvatar.doId))
+    log('golf course over; scores', course.scores)
     yield until(lambda: placeName() == 'GZPlayground' and walking(), 180, 'walking at the golf zone again')
 
 
@@ -2943,6 +2943,7 @@ SCENARIOS = [
     ('npccfo', withNPCs(scenarioCFO, ['DistributedBattleFinalAI', 'boss m'])),
     ('npccj', withNPCs(scenarioCJ, ['DistributedBattleFinalAI', 'boss l'])),
     ('npcceo', withNPCs(scenarioCEO, ['DistributedBattleWaitersAI', 'boss c'])),
+    ('npcgolf', withNPCs(scenarioGolf, ['golf swings'])),
     ('tutorial', scenarioTutorial),
     ('touch', scenarioTouchControls),
     ('maxtoon', scenarioMaxToon),

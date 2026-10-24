@@ -17,9 +17,11 @@ from panda3d.core import Point3
 
 from toontown.building.DistributedElevatorAI import DistributedElevatorAI
 from toontown.building.DistributedElevatorFSMAI import DistributedElevatorFSMAI
+from toontown.golf.DistributedGolfCourseAI import DistributedGolfCourseAI
 from toontown.npcplayers.NPCBattleCrew import isNPC
 from toontown.suit.DistributedBossCogAI import DistributedBossCogAI
 from toontown.npcplayers.NPCNav import getNav
+from toontown.safezone.DistributedGolfKartAI import DistributedGolfKartAI
 from toontown.toonbase import ToontownGlobals
 
 TELEPORT_TIME = 2.6
@@ -95,7 +97,7 @@ class NPCParty:
 
     def getElevators(self):
         return [obj for obj in list(self.air.doId2do.values())
-                if isinstance(obj, (DistributedElevatorAI, DistributedElevatorFSMAI))]
+                if isinstance(obj, (DistributedElevatorAI, DistributedElevatorFSMAI, DistributedGolfKartAI))]
 
     def fillSeats(self):
         for elevator in self.getElevators():
@@ -217,6 +219,9 @@ class NPCParty:
                 continue
             if npc.busy or npc.walk is not None:
                 continue
+            if self.isGolfing(npc):
+                # The course puts each golfer where it wants them.
+                continue
             if [e for e in self.getElevators() if player.doId in e.seats]:
                 continue
             playerPos = self.manager.getPlayerPos(player)
@@ -240,6 +245,8 @@ class NPCParty:
                         and npc.doId not in obj.involvedToons:
                     # What a client sends once it is in the boss's zone.
                     npc.asSender(obj.avatarEnter)
+                if isinstance(obj, DistributedGolfCourseAI):
+                    self.manager.golf.play(npc, obj)
                 table = handshakesFor(obj)
                 if table is None:
                     continue
@@ -249,6 +256,10 @@ class NPCParty:
                     continue
                 if responses.get(npc.doId) == 0:
                     npc.asSender(getattr(obj, method))
+
+    def isGolfing(self, npc):
+        return any(isinstance(obj, DistributedGolfCourseAI) and npc.doId in obj.avIdList
+                   for obj in self.air.doId2do.values() if getattr(obj, 'zoneId', None) == npc.zoneId)
 
     def answerBarriers(self, npc, obj):
         # Many places wait at a barrier for each toon's client to say it is

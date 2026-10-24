@@ -22,6 +22,7 @@ from toontown.hood import ZoneUtil
 from toontown.npcplayers import NPCProfiles
 from toontown.npcplayers.NPCBattleCrew import NPCBattleCrew, isNPC
 from toontown.npcplayers.NPCNav import getNav
+from toontown.npcplayers.NPCGolf import NPCGolf
 from toontown.npcplayers.NPCParty import NPCParty
 from toontown.npcplayers.NPCBossCrew import NPCBossCrew
 from toontown.suit.DistributedBossCogAI import DistributedBossCogAI
@@ -145,6 +146,7 @@ class NPCPlayerManagerAI:
         self.areas = {}
         self.crews = {}
         self.party = NPCParty(self)
+        self.golf = NPCGolf(self)
         self.stats = {}
         self.bossCrews = {}
         self.taskName = 'npcPlayerManager-%d' % id(self)

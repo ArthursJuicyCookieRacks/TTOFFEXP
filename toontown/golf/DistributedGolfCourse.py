@@ -308,7 +308,7 @@ class DistributedGolfCourse(DistributedObject.DistributedObject, FSM, DelayDelet
 
     def setScores(self, scoreList):
         for i in range(len(self.avIdList)):
-            start = i*len(self.avIdList)
+            start = i * self.numHoles
             avScores = scoreList[start:start+self.numHoles]
             self.scores[self.avIdList[i]] = avScores
 
