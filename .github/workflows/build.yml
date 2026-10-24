@@ -327,7 +327,8 @@ jobs:
       run: |
         exec > >(tee -a "$RUNNER_TEMP/steps.log") 2>&1
         ls -l wheels
-        pip install setuptools wheels/panda3d-*win_amd64.whl
+        # protobuf writes the Android App Bundle.
+        pip install setuptools "protobuf>=6.33" wheels/panda3d-*win_amd64.whl
 
     - name: Build
       shell: bash
