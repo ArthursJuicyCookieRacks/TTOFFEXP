@@ -804,7 +804,8 @@ class DistributedToonAI(DistributedPlayerAI.DistributedPlayerAI, DistributedSmoo
         self.notify.debug('setting NPC friends dict to %s' % self.NPCFriendsDict)
 
     def getNPCFriendsDict(self):
-        return self.NPCFriendsDict
+        # In the form the field sends: (npcId, calls) pairs.
+        return list(self.NPCFriendsDict.items())
 
     def b_setNPCFriendsDict(self, NPCFriendsList):
         self.setNPCFriendsDict(NPCFriendsList)

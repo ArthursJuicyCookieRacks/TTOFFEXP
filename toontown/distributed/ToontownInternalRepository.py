@@ -44,6 +44,23 @@ class ToontownInternalRepository(AstronInternalRepository):
         signal.alarm(ai_watchdog.getValue())
         return task.cont
 
+    def callAsSender(self, avId, func, *args):
+        # Runs func as though avId's client had sent the message: the NPC
+        # players act through the same handlers as a real player's client.
+        if self._localConn is None:
+            old = self.getMsgSender()
+            try:
+                self.msgSender = avId
+                return func(*args)
+            finally:
+                self.msgSender = old
+        old = self._localMsgSender
+        self._localMsgSender = avId
+        try:
+            return func(*args)
+        finally:
+            self._localMsgSender = old
+
     def getAvatarIdFromSender(self):
         return self.getMsgSender() & 0xFFFFFFFF
 

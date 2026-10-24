@@ -231,3 +231,16 @@ def createServerContext(name, builtinsOverlay):
     context = ExecutionContext(name, Messenger(), taskMgr, IntervalManager(), builtinsOverlay)
     contexts.addContext(context)
     return context
+
+
+def getClientBuiltin(name, default=None):
+    """
+    What the client has under a builtin name (base, localAvatar), from
+    whichever context is current. Only for code that knows the client shares
+    its process, like the offline game's NPC players.
+    """
+    if contexts is None or contexts.current is contexts.client:
+        value = builtins.__dict__.get(name, _REMOVED)
+    else:
+        value = contexts.current._saved.get(name, _REMOVED)
+    return default if value is _REMOVED else value

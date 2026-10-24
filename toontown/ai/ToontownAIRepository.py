@@ -267,6 +267,10 @@ class ToontownAIRepository(ToontownInternalRepository):
         for sp in list(self.suitPlanners.values()):
             sp.assignInitialSuitBuildings()
 
+        if config.ConfigVariableBool('want-npc-players', True).getValue():
+            from toontown.npcplayers.NPCPlayerManagerAI import NPCPlayerManagerAI
+            self.npcPlayerManager = NPCPlayerManagerAI(self)
+
     def genDNAFileName(self, zoneId):
         zoneId = ZoneUtil.getCanonicalZoneId(zoneId)
         hoodId = ZoneUtil.getCanonicalHoodId(zoneId)

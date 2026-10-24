@@ -2799,8 +2799,119 @@ def scenarioMinigames():
         yield until(walking, 120, 'walking after %s' % name)
 
 
+# Quick prototype: one NPC player next to the toon in TTC.
+import random
+
+def npcCount(areaId):
+    def count(air):
+        area = air.npcPlayerManager.areas.get(areaId)
+        return len(area.npcs) if area else 0
+    return onDistrict(count)
+
+
+def clientNPCs():
+    from toontown.toon.DistributedToon import DistributedToon
+    from toontown.toon.DistributedNPCToonBase import DistributedNPCToonBase
+    return [do for do in base.cr.doId2do.values()
+            if isinstance(do, DistributedToon) and not isinstance(do, DistributedNPCToonBase)
+            and do is not localAvatar and not do.isEmpty()]
+
+
+def checkNPCsWalk(areaId, what):
+    yield until(lambda: npcCount(areaId) >= 12, 60, '12 NPC players in %s' % what)
+    yield until(lambda: len(clientNPCs()) >= 3, 30, 'NPC players in sight in %s' % what)
+    before = dict((npc.doId, npc.getPos(render)) for npc in clientNPCs())
+    yield sleep(20)
+    moved = [npc for npc in clientNPCs()
+             if npc.doId in before and (npc.getPos(render) - before[npc.doId]).length() > 3]
+    log('%s: %d NPC players, %d in sight, %d walked' % (what, npcCount(areaId), len(clientNPCs()), len(moved)))
+    if not moved:
+        raise StepFailed('no NPC player walked in %s' % what)
+    for npc in clientNPCs()[:4]:
+        log('  %s, laff %s, at %s' % (npc.getName(), npc.maxHp, npc.getPos(render)))
+
+
+def checkGagRules(history):
+    # The rules the NPC players follow; see NPCBattleCrew.
+    from toontown.toonbase.ToontownBattleGlobals import LURE_TRACK, SOUND_TRACK, TRAP_TRACK, DROP_TRACK
+    for number, (luredBefore, attacks) in enumerate(history, 1):
+        tracks = [a[2] for a in attacks]
+        players = [a for a in attacks if not a[1]]
+        npcs = [a for a in attacks if a[1]]
+        log('round %d: lured %s; player %s; NPCs %s' % (number, luredBefore, players, npcs))
+        if not npcs:
+            continue
+        if SOUND_TRACK in tracks and LURE_TRACK in tracks:
+            raise StepFailed('round %d had lure and sound together' % number)
+        if TRAP_TRACK in [a[2] for a in players] and SOUND_TRACK not in tracks and LURE_TRACK not in tracks:
+            raise StepFailed('round %d: the player trapped and nobody lured' % number)
+        for a in npcs:
+            if a[2] == DROP_TRACK and (a[4] in luredBefore or LURE_TRACK in tracks):
+                raise StepFailed('round %d: an NPC dropped on a lured cog' % number)
+
+
+def scenarioNPCs():
+    from toontown.toonbase.ToontownBattleGlobals import TRAP_TRACK, SOUND_TRACK, THROW_TRACK
+    yield from teleport(ToontownGlobals.ToontownCentral)
+    yield from checkNPCsWalk(ToontownGlobals.ToontownCentral, 'Toontown Central')
+    base.screenshot(os.path.join(os.environ.get('AUTOPLAY_SHOTS', '/tmp'), 'npcs-ttc.png'), defaultFilename=0)
+
+    street = ToontownGlobals.SillyStreet
+    yield from teleport(street - street % 1000, firstVisgroup(street))
+    yield from checkNPCsWalk(street, 'Silly Street')
+    # A strong cog, so the battle lasts a few rounds.
+    magicWord('~spawn mh 12')
+    magicWord('~spawn mh 12')
+    yield until(suitsNearby, 120, 'a cog on the street')
+    for attempt in range(5):
+        suit = min(suitsNearby(), key=lambda s: (s.getPos(render) - localAvatar.getPos(render)).length())
+        while placeState() == 'walk' and not suit.isEmpty():
+            localAvatar.setPos(render, suit.getPos(render))
+            yield sleep(0.1)
+        if placeState() != 'walk':
+            break
+        yield until(suitsNearby, 120, 'another cog on the street')
+    yield until(lambda: placeState() == 'battle', 60, 'battle to start')
+    def battleToons(air, avId):
+        for battle in air.npcPlayerManager.getBattles():
+            if avId in battle.toons:
+                return len(battle.toons)
+        return 0
+    yield until(lambda: onDistrict(battleToons, localAvatar.doId) >= 2, 60, 'an NPC player to join the battle')
+    def activeToons(air, avId):
+        for battle in air.npcPlayerManager.getBattles():
+            if avId in battle.toons:
+                return len(battle.activeToons)
+        return 0
+    yield until(lambda: onDistrict(activeToons, localAvatar.doId) >= 3, 60, 'NPC players to stand in the battle')
+    # Throw (they hit the same cog), trap (someone has to lure), sound
+    # (nobody may lure), then throw again.
+    plan = [THROW_TRACK, TRAP_TRACK, SOUND_TRACK, THROW_TRACK]
+    rounds = 0
+    deadline = time.time() + 900
+    while placeState() == 'battle':
+        if time.time() > deadline:
+            raise StepFailed('the battle with NPC players did not end')
+        if townBattleState() == 'Attack':
+            track = plan[min(rounds, len(plan) - 1)]
+            rounds += 1
+            # Middling gags, so the cogs last a few rounds.
+            level = max(l for l in range(2) if localAvatar.inventory.numItem(track, l) > 0)
+            messenger.send(townBattle().battleEvent, [{'mode': 'Attack', 'track': track, 'level': level, 'target': 0}])
+            yield until(lambda: townBattleState() != 'Attack', 30, 'gag choice to register')
+        else:
+            yield sleep(0.2)
+    history = onDistrict(lambda air: list(getattr(air.npcPlayerManager, 'lastHistory', [])))
+    log('battle with NPC players won after %d rounds' % rounds)
+    if not [r for r in history if [a for a in r[1] if a[1]]]:
+        raise StepFailed('no NPC player chose a gag')
+    checkGagRules(history)
+    yield until(walking, 120, 'walking after the battle')
+
+
 SCENARIOS = [
     ('login', scenarioLogin),
+    ('npcs', scenarioNPCs),
     ('tutorial', scenarioTutorial),
     ('touch', scenarioTouchControls),
     ('maxtoon', scenarioMaxToon),
