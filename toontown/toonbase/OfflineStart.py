@@ -81,6 +81,9 @@ def main():
         loadPrcFileData('OfflineStart Android', 'load-display pandagles2\naux-display pandagles\nwant-touch-controls 1')
     mountPhases(gameDir)
 
+    from otp.local import NullHTTP
+    NullHTTP.install()
+
     # The player is the only one on their own server; the name only tells
     # their account apart from any other on this device.
     os.environ.setdefault('TTR_PLAYCOOKIE', 'Player')

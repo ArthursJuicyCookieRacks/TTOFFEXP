@@ -73,7 +73,7 @@ TrickSounds = {Tricks.BACKFLIP: 'phase_5/audio/sfx/backflip.ogg',
 def getSoundIval(trickId):
     sounds = TrickSounds.get(trickId, None)
     if sounds:
-        if type(sounds) == bytes:
+        if isinstance(sounds, str):
             sound = loader.loadSfx(sounds)
             return SoundInterval(sound)
         else:
@@ -90,7 +90,7 @@ def getTrickIval(pet, trickId):
     anims = TrickAnims[trickId]
     animRate = random.uniform(0.9, 1.1)
     waitTime = random.uniform(0.0, 1.0)
-    if type(anims) == bytes:
+    if isinstance(anims, str):
         if trickId == Tricks.JUMP:
             animIval = Parallel()
             animIval.append(ActorInterval(pet, anims, playRate=animRate))

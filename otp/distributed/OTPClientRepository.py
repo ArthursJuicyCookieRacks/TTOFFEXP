@@ -1563,7 +1563,8 @@ class OTPClientRepository(LocalConnectionMixin, ClientRepositoryBase):
             try:
                 self.handleUpdateField(di)
             except AssertionError as msg:
-                self.notify.warning('AssertionError: %s' % msg)
+                import traceback
+                self.notify.warning('AssertionError: %s\n%s' % (msg, traceback.format_exc()))
         elif msgType == CLIENT_OBJECT_LEAVING:
             self.handleDelete(di)
         else:

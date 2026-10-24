@@ -998,6 +998,22 @@ def scenarioCEO():
     }, timeout=5400)
 
 
+def scenarioCEOFinal():
+    # Only the CEO's last round: the district skips the boss straight to it.
+    yield from teleport(ToontownGlobals.BossbotHQ, ToontownGlobals.BossbotLobby)
+    yield from boardElevator('DistributedBBElevator')
+
+    def skip(boss):
+        if not getattr(boss, 'autoplaySkipped', False):
+            boss.autoplaySkipped = True
+            onDistrict(lambda air: air.doId2do[boss.doId].b_setState('PrepareBattleFour'))
+
+    yield from fightBoss('BossbotHQBossBattle', 'DistributedBossbotBoss', {
+        'Introduction': skip,
+        'BattleFour': lambda boss: boss.d_hitBoss(1),
+    }, timeout=1800, prelude={'BattleOne': skip})
+
+
 def fishingState(spot):
     return spot.fsm.getCurrentState().getName()
 
@@ -1915,8 +1931,17 @@ def scenarioTrolleyTracks():
     if seen[0] != 'DistributedTravelGame' or seen[2] != 'DistributedTravelGame':
         raise StepFailed('the board game did not come every other game: %s' % seen)
     log('the board game comes every other game')
-    yield until(lambda: hoodState() == 'purchase' or minigameState() == 'frameworkRules', 180, 'what comes after the board game')
     onDistrict(lambda air: air.holidayManager.endHoliday(ToontownGlobals.TROLLEY_HOLIDAY))
+    # Play out the minigame after the board game, then leave the trolley.
+    yield until(lambda: hoodState() == 'purchase' or minigameState() == 'frameworkRules', 180, 'what comes after the board game')
+    if hoodState() != 'purchase':
+        yield sleep(1)
+        messenger.send(base.curMinigame.rulesDoneEvent)
+        yield until(lambda: hoodState() == 'purchase', 600, 'the gag shop after the last game')
+    yield until(lambda: base.cr.playGame.hood.purchase.fsm.getCurrentState().getName() == 'purchase', 60, 'the gag shop buttons')
+    yield sleep(1)
+    messenger.send('purchaseBackToToontown')
+    yield until(walking, 120, 'walking after Trolley Tracks')
 
 
 def scenarioInvasion(battles=2):
@@ -2701,6 +2726,7 @@ SCENARIOS = [
     ('cfo', scenarioCFO),
     ('cj', scenarioCJ),
     ('ceo', scenarioCEO),
+    ('ceofinal', scenarioCEOFinal),
     ('fishing', scenarioFishing),
     ('estate', scenarioEstate),
     ('racing', scenarioRacing),
