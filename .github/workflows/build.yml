@@ -713,7 +713,9 @@ jobs:
         [ -n "$pid" ] || pid=$(grep -o 'pid: [0-9]*' crash.txt | head -1 | cut -d' ' -f2)
         # Leave out the runtime's thread dump, which follows any crash.
         if [ -n "$pid" ]; then grep -E "^\S+ \S+ +$pid " logcat.txt | grep -v 'runtime.cc:' > game.txt || true; fi
-        { head -c 3000 crash.txt; echo; tail -c 24000 game.txt; } > shown.txt
+        # And what the system did with the game's window.
+        grep -E " (ActivityTaskManager|ActivityManager|WindowManager|InputDispatcher)\b" logcat.txt | grep -i "ttroffline\|anr\|focus" | tail -c 6000 > system.txt || true
+        { head -c 3000 crash.txt; echo; tail -c 6000 system.txt; echo; tail -c 24000 game.txt; } > shown.txt
         python3 -c "
         text = open('shown.txt', errors='replace').read()
         for start in range(0, len(text), 3000):
