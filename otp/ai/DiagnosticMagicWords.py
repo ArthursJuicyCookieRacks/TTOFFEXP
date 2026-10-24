@@ -4,18 +4,20 @@ from direct.showbase.ContainerReport import ContainerReport
 from direct.directnotify.DirectNotifyGlobal import *
 import gc
 
-category = CATEGORY_SYSADMIN if game.process == 'server' else CATEGORY_DEBUG
-
 notify = directNotify.newCategory('DiagnosticMagicWords')
 
-def aiPrefix(func):
-    """Prefixes `func`'s name with 'ai' if this is an AI server."""
-    if game.process == 'server':
-        func.__name__ = 'ai' + func.__name__
-    return func
+def diagnosticWord(types=[str]):
+    """
+    Registers `func` with both processes: as-is for the client, and prefixed
+    with 'ai' for the servers (which may run in this same process).
+    """
+    def decorate(func):
+        magicWord(name=func.__name__, category=CATEGORY_DEBUG, types=types, process='client')(func)
+        magicWord(name='ai' + func.__name__, category=CATEGORY_SYSADMIN, types=types, process='server')(func)
+        return func
+    return decorate
 
-@magicWord(category=category)
-@aiPrefix
+@diagnosticWord()
 def garbage(arg=''):
     """Reports the total garbage use for this process."""
 
@@ -26,8 +28,7 @@ def garbage(arg=''):
 
     return 'Garbage report is now being written to log...'
 
-@magicWord(category=category)
-@aiPrefix
+@diagnosticWord()
 def heap():
     """Counts the number of objects in Python's object memory."""
 
@@ -35,8 +36,7 @@ def heap():
                                                len(gc.garbage))
 
 
-@magicWord(category=category, types=[int])
-@aiPrefix
+@diagnosticWord(types=[int])
 def objects(minimum=30):
     """Write the objects down to log."""
 
@@ -59,8 +59,7 @@ def objects(minimum=30):
 
     return 'Wrote object types to log.'
 
-@magicWord(category=category, types=[int])
-@aiPrefix
+@diagnosticWord(types=[int])
 def containers(limit=30):
     """Write the container report to log."""
 

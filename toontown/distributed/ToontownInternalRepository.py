@@ -33,7 +33,9 @@ class ToontownInternalRepository(AstronInternalRepository):
         self.netMessenger.register(3, 'avatarOffline')
         self.netMessenger.register(4, 'enableLogins')
 
-        if hasattr(signal, 'alarm'):
+        # The watchdog kills a stalled AI process. In-process, a slow client
+        # frame (loading a zone) would trip it, so it only runs standalone.
+        if hasattr(signal, 'alarm') and not self.isLocal():
             signal.signal(signal.SIGALRM, watchdogExhausted)
 
             self.__watchdog = taskMgr.add(self.__resetWatchdog, 'watchdog')

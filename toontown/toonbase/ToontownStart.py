@@ -2,6 +2,12 @@ from panda3d.core import *
 import builtins
 import os
 
+# The UberDOG and the AI districts run inside this process (otp.local), so
+# their messengers, task managers and interval managers have to be kept apart
+# from the client's. This must happen before anything from direct is imported.
+from otp.local import ExecutionContext
+ExecutionContext.install()
+
 if __debug__:
     loadPrcFile('config/dev.prc')
 
@@ -205,17 +211,21 @@ if not ConfigVariableBool('want-retro-rewritten', False):
     base.loadingScreen = NewLoadingScreen.NewLoadingScreen()
 
 if config.ConfigVariableBool('auto-start-server', False).getValue():
-    # Start DedicatedServer
+    # Start the game services (UberDOG and AI) inside this process.
     from otp.otpbase.OTPLocalizer import CRLoadingGameServices
 
     dialogClass = ToontownGlobals.getGlobalDialogClass()
     builtins.gameServicesDialog = dialogClass(message=CRLoadingGameServices)
     builtins.gameServicesDialog.show()
 
-    from toontown.toonbase.DedicatedServer import DedicatedServer
+    from otp.local.LocalServer import LocalServer
 
-    builtins.clientServer = DedicatedServer(localServer=True)
-    builtins.clientServer.start()
+    builtins.clientServer = LocalServer()
+
+    def startLocalServer(task):
+        # Wait a frame so the dialog is drawn before the districts load.
+        builtins.clientServer.start()
+        return task.done
 
     def localServerReady():
         builtins.gameServicesDialog.cleanup()
@@ -226,6 +236,7 @@ if config.ConfigVariableBool('auto-start-server', False).getValue():
             base.startShow(cr)
 
     base.accept('localServerReady', localServerReady)
+    taskMgr.doMethodLater(0.1, startLocalServer, 'startLocalServer')
 else:
     if not ConfigVariableBool('want-retro-rewritten', False):
         messenger.send('AllowPressKey')

@@ -1,10 +1,8 @@
 import toontown.minigame.MinigameCreatorAI
 from toontown.distributed.ToontownInternalRepository import ToontownInternalRepository
 from direct.distributed.PyDatagram import *
-from otp.rpc.RPCServer import RPCServer
 from otp.distributed.DistributedDirectoryAI import DistributedDirectoryAI
 from otp.distributed.OtpDoGlobals import *
-from .ToontownRPCHandler import *
 import urllib
 
 if config.ConfigVariableBool('want-mongo-client', False).getValue():
@@ -32,6 +30,9 @@ class ToontownUberRepository(ToontownInternalRepository):
         rootObj.generateWithRequiredAndId(self.getGameDoId(), 0, 0)
 
         if config.ConfigVariableBool('want-rpc-server', False).getValue():
+            # Only for hosted servers; the offline game has no web services.
+            from otp.rpc.RPCServer import RPCServer
+            from .ToontownRPCHandler import ToontownRPCHandler
             self.rpcserver = RPCServer(ToontownRPCHandler(self))
 
         self.createGlobals()

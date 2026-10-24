@@ -782,7 +782,7 @@ class LoadAvatarFSM(AvatarOperationFSM):
         dgcleanup = self.csm.air.netMessenger.prepare('avatarOffline', [self.avId])
         dg = PyDatagram()
         dg.addServerHeader(channel, self.csm.air.ourChannel, CLIENTAGENT_ADD_POST_REMOVE)
-        #dg.addString(dgcleanup.getMessage())
+        dg.addBlob(dgcleanup.getMessage())
         self.csm.air.send(dg)
 
         self.csm.air.writeServerEvent('avatar-chosen', avId=self.avId, accId=self.target)

@@ -12,6 +12,7 @@ from otp.distributed.OtpDoGlobals import *
 from direct.interval.IntervalGlobal import ivalMgr
 from direct.directnotify.DirectNotifyGlobal import directNotify
 from direct.distributed.ClientRepositoryBase import ClientRepositoryBase
+from otp.local.LocalConnection import LocalConnectionMixin
 from direct.fsm.ClassicFSM import ClassicFSM
 from direct.fsm.State import State
 from direct.task import Task
@@ -40,7 +41,7 @@ from otp.distributed.TelemetryLimiter import TelemetryLimiter
 from otp.ai.GarbageLeakServerEventAggregator import GarbageLeakServerEventAggregator
 from toontown.toonbase import ToontownGlobals
 
-class OTPClientRepository(ClientRepositoryBase):
+class OTPClientRepository(LocalConnectionMixin, ClientRepositoryBase):
     notify = directNotify.newCategory('OTPClientRepository')
     avatarLimit = 6
     #WishNameResult = Enum(['Failure',

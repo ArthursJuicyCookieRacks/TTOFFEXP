@@ -12,7 +12,6 @@ from direct.directnotify import DirectNotifyGlobal
 from toontown.hood import ZoneUtil
 import time
 import random
-from pymongo.errors import AutoReconnect
 
 class DistributedBuildingMgrAI:
     notify = DirectNotifyGlobal.directNotify.newCategory('DistributedBuildingMgrAI')
