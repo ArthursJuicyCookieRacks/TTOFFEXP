@@ -889,6 +889,160 @@ def scenarioRacing():
     yield until(lambda: placeName() == 'GSPlayground' and walking(), 120, 'walking at the speedway again')
 
 
+def golfState(do):
+    return do.state if do is not None else None
+
+
+def swingGolf(hole, power):
+    # Holds the swing button and lets go when the power bar reads power,
+    # as a player watching the bar would.
+    elapsed = math.pow(power / 100.0, 1.0 / hole.golfPowerExponent) * hole.golfPowerSpeed
+    hole._DistributedGolfHole__beginTossGolf()
+    hole.aimStart = globalClock.getFrameTime() - elapsed
+    hole.power = power
+    taskMgr.remove(hole.golfPowerTaskName)
+    hole._DistributedGolfHole__endTossGolf()
+
+
+def scenarioGolf():
+    yield from teleport(ToontownGlobals.GolfZone)
+    yield until(lambda: findObject('DistributedGolfKart', lambda do: do.golfCourse == 0), 60, 'the golf kart')
+    kart = findObject('DistributedGolfKart', lambda do: do.golfCourse == 0)
+    yield sleep(2)
+    log('getting in the golf kart for course', kart.golfCourse)
+    messenger.send('entergolfkart_sphere_%d' % kart.doId, [None])
+    yield until(lambda: findObject('DistributedGolfCourse'), 180, 'the golf course')
+    course = findObject('DistributedGolfCourse')
+    distancePerPower = 0.5
+    deadline = time.time() + 1800
+    nextReport = time.time() + 30
+    holesSeen = set()
+    while not course.isDisabled() and golfState(course) not in ('WaitReward', 'Cleanup'):
+        if time.time() > deadline:
+            raise StepFailed('the golf course did not finish in 1800 seconds')
+        hole = base.cr.doId2do.get(course.curHoleDoId)
+        if time.time() > nextReport:
+            nextReport = time.time() + 30
+            log('golf course %s, hole %s' % (golfState(course), golfState(hole)))
+        if hole is None or hole.currentGolfer != localAvatar.doId:
+            yield sleep(0.5)
+            continue
+        if hole.doId not in holesSeen:
+            holesSeen.add(hole.doId)
+            log('playing hole %d of %d (par %d)' % (len(holesSeen), course.numHoles, hole.holeInfo['par']))
+        if golfState(hole) == 'ChooseTee' and not hole.localAvatarChosenTee:
+            yield sleep(1)
+            hole.sendTeeInfo()
+        elif golfState(hole) == 'Aim' and not hole.swingInfoSent:
+            yield sleep(1)
+            hole.ballFollow.headsUp(hole.holeBottomNodePath)
+            start = hole.ballFollow.getPos(render)
+            distance = (hole.holeBottomNodePath.getPos(render) - start).length()
+            power = int(max(5, min(100, distance / distancePerPower)))
+            swingGolf(hole, power)
+            yield until(lambda: golfState(hole) != 'Aim', 30, 'the swing')
+            yield until(lambda: hole.isDisabled() or golfState(hole) not in ('Playback',), 120, 'the ball stopping')
+            if not hole.isDisabled():
+                moved = (hole.ballFollow.getPos(render) - start).length()
+                if moved > 1:
+                    # Learn how far a point of power sends the ball.
+                    distancePerPower = max(0.2, min(1.5, moved / power))
+                log('swung at %d power from %.0f away; the ball went %.0f' % (power, distance, moved))
+        else:
+            yield sleep(0.2)
+    log('golf course over; scores', course.scores.get(localAvatar.doId))
+    yield until(lambda: placeName() == 'GZPlayground' and walking(), 180, 'walking at the golf zone again')
+
+
+QUEST_COGS = {'c': 'f', 'l': 'bf', 'm': 'sc', 's': 'cc'}
+
+
+def enterHQ():
+    hqDoor = lambda doorType: findObject('DistributedDoor', lambda do: do.doorType == doorType)
+    yield until(lambda: hqDoor(DoorTypes.EXT_HQ), 60, 'the Toon HQ door')
+    yield sleep(2)
+    log('going into the Toon HQ')
+    messenger.send(hqDoor(DoorTypes.EXT_HQ).getEnterTriggerEvent(), [None])
+    yield until(lambda: findObject('DistributedNPCToon', lambda do: do.getName() and hasattr(do, 'questChoiceGui'))
+                and findObject('DistributedHQInterior') and walking(), 120, 'walking in the Toon HQ')
+
+
+def talkToHQOfficer():
+    npc = findObject('DistributedNPCToon', lambda do: hasattr(do, 'questChoiceGui'))
+    log('talking to', npc.getName())
+    npc.handleCollisionSphereEnter(None)
+    return npc
+
+
+def finishNPCChat(npc):
+    # Clicks through the NPC's speech balloon.
+    yield sleep(2)
+    messenger.send(npc.uniqueName('doneChatPage'), [0])
+    yield until(walking, 60, 'walking after talking to %s' % npc.getName())
+
+
+def scenarioQuest():
+    from toontown.quest import Quests
+    from toontown.toon.DistributedNPCToon import DistributedNPCToon
+    setMovie = DistributedNPCToon.setMovie
+
+    def recordingSetMovie(self, mode, npcId, avId, quests, timestamp):
+        self.autoplayQuests = quests
+        setMovie(self, mode, npcId, avId, quests, timestamp)
+
+    DistributedNPCToon.setMovie = recordingSetMovie
+    yield from teleport(ToontownGlobals.ToontownCentral)
+    yield from enterHQ()
+    npc = talkToHQOfficer()
+    yield until(lambda: npc.questChoiceGui is not None, 30, 'the ToonTask choices')
+    offered = npc.autoplayQuests
+    log('offered ToonTasks', offered)
+    choices = [offered[i:i + 3] for i in range(0, len(offered), 3)]
+    cogChoices = [c for c in choices if isinstance(Quests.getQuest(c[0]), (Quests.CogQuest,))
+                  and not isinstance(Quests.getQuest(c[0]), (Quests.BuildingQuest, Quests.SkelecogQBase))
+                  and c[2] == Quests.ToonHQ]
+    if not cogChoices:
+        raise StepFailed('no cog ToonTask turned in at Toon HQ among %s' % choices)
+    questId = cogChoices[0][0]
+    quest = Quests.getQuest(questId)
+    log('choosing ToonTask %d: %s' % (questId, quest.__class__.__name__))
+    messenger.send('chooseQuest', [questId])
+    yield until(lambda: any(q[0] == questId for q in localAvatar.quests), 30, 'the ToonTask')
+    yield from finishNPCChat(npc)
+    # Defeat the cogs the task asks for.
+    if isinstance(quest, Quests.CogTrackQuest):
+        cog, level = QUEST_COGS[quest.getCogTrack()], 1
+    elif isinstance(quest, Quests.CogLevelQuest):
+        cog, level = 'f', quest.getCogLevel()
+    elif quest.getCogType() == Quests.Any:
+        cog, level = 'f', 1
+    else:
+        cog, level = quest.getCogType(), 1
+    progress = lambda: next(q[4] for q in localAvatar.quests if q[0] == questId)
+    log('need %d cogs; spawning %s level %d' % (quest.getNumCogs(), cog, level))
+    street = ToontownGlobals.SillyStreet
+    yield from teleport(street - street % 1000, firstVisgroup(street))
+    while progress() < quest.getNumCogs():
+        magicWord('~spawn %s %d' % (cog, level))
+        yield until(suitsNearby, 120, 'a cog on the street')
+        suit = min(suitsNearby(), key=lambda s: (s.getPos(render) - localAvatar.getPos(render)).length())
+        while placeState() == 'walk' and not suit.isEmpty():
+            localAvatar.setPos(render, suit.getPos(render))
+            yield sleep(0.1)
+        if placeState() == 'battle':
+            yield from fightBattle()
+            yield until(walking, 120, 'walking after the battle')
+        log('ToonTask progress %d of %d' % (progress(), quest.getNumCogs()))
+    # Hand it in.
+    rewards = list(localAvatar.getRewardHistory()[1]) if hasattr(localAvatar, 'getRewardHistory') else None
+    yield from teleport(ToontownGlobals.ToontownCentral)
+    yield from enterHQ()
+    npc = talkToHQOfficer()
+    yield until(lambda: not any(q[0] == questId for q in localAvatar.quests), 30, 'the ToonTask handed in')
+    yield from finishNPCChat(npc)
+    log('ToonTask %d done; reward history %s' % (questId, localAvatar.getRewardHistory() if hasattr(localAvatar, 'getRewardHistory') else '?'))
+
+
 def scenarioFactory():
     yield from teleport(ToontownGlobals.SellbotHQ, ToontownGlobals.SellbotFactoryExt)
     yield from boardElevator('DistributedFactoryElevatorExt')
@@ -957,6 +1111,8 @@ SCENARIOS = [
     ('fishing', scenarioFishing),
     ('estate', scenarioEstate),
     ('racing', scenarioRacing),
+    ('golf', scenarioGolf),
+    ('quest', scenarioQuest),
 ]
 
 
