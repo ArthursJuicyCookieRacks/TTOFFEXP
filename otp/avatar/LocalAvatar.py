@@ -664,6 +664,10 @@ class LocalAvatar(DistributedAvatar.DistributedAvatar, DistributedSmoothNode.Dis
         self.posCamera(1, 0.7)
 
     def unsetCameraPosForPetInteraction(self):
+        # Garden movies end on the new plant or plot, so an unset can come
+        # without its set.
+        if not hasattr(self, 'prevIdealPos'):
+            return
         self.setIdealCameraPos(self.prevIdealPos)
         del self.prevIdealPos
         self.posCamera(1, 0.7)

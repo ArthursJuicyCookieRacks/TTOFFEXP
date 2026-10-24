@@ -1,15 +1,17 @@
 from direct.directnotify import DirectNotifyGlobal
-from toontown.estate.DistributedLawnDecorAI import DistributedLawnDecorAI
+from toontown.estate.DistributedPlantBaseAI import DistributedPlantBaseAI
 
-class DistributedStatuaryAI(DistributedLawnDecorAI):
+
+class DistributedStatuaryAI(DistributedPlantBaseAI):
+    # Statues need no water and never die, so they share the plant fields
+    # without the plant care.
     notify = DirectNotifyGlobal.directNotify.newCategory("DistributedStatuaryAI")
 
-    def setTypeIndex(self, todo0):
+    def waterPlant(self):
         pass
 
-    def setWaterLevel(self, todo0):
+    def waterPlantDone(self):
         pass
 
-    def setGrowthLevel(self, todo0):
-        pass
-
+    def runEpoch(self):
+        return True
