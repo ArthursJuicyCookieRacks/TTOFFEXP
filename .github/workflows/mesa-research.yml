@@ -2,37 +2,86 @@ name: Mesa research
 on:
   push:
     branches: ['research/mesa-android']
-permissions:
-  contents: write
 defaults:
   run:
     shell: bash
+env:
+  MESA_VERSION: 25.2.6
+  ANDROID_NDK: 29.0.14206865
+  ANDROID_API: 29
 jobs:
-  look:
+  mesa:
     runs-on: ubuntu-24.04
     steps:
-    - name: Get Mesa
+    - uses: actions/checkout@v7
+      with:
+        sparse-checkout: tools/offline/mesa-patches
+        path: game
+    - uses: android-actions/setup-android@v4
+      with:
+        packages: 'ndk;${{ env.ANDROID_NDK }}'
+    - name: Get the sources
       run: |
-        for v in 25.2.6 25.2.5 25.2.4 25.2.3 25.1.9; do
-          if curl -sSfL -o mesa.tar.xz https://archive.mesa3d.org/mesa-$v.tar.xz; then echo "MESA $v"; break; fi
-        done
-        tar xf mesa.tar.xz && mv mesa-* mesa
-        git clone -q --depth 1 https://github.com/bylaws/libadrenotools.git adrenotools
-        git -C adrenotools submodule update --init --depth 1 || true
-    - name: Push the sources to a branch
+        curl -sSfL https://archive.mesa3d.org/mesa-$MESA_VERSION.tar.xz | tar xJ
+        mv mesa-$MESA_VERSION mesa
+        cd mesa
+        for patch in ../game/tools/offline/mesa-patches/*.patch; do patch -p1 < "$patch"; done
+        cd ..
+        git clone -q --depth 1 --recurse-submodules --shallow-submodules https://github.com/bylaws/libadrenotools.git adrenotools
+    - name: Install the build tools
       run: |
-        mkdir src && cd src && git init -q -b research/mesa-src
-        mkdir -p mesa/src/gallium/frontends mesa/src/gallium/drivers mesa/src/util mesa/docs
-        cp -r ../mesa/src/egl mesa/src/
-        cp -r ../mesa/src/gallium/drivers/zink mesa/src/gallium/drivers/
-        cp -r ../mesa/src/gallium/frontends/dri mesa/src/gallium/frontends/
-        cp -r ../mesa/src/android_stub ../mesa/src/loader mesa/src/
-        cp -r ../mesa/src/gallium/targets mesa/src/gallium/
-        cp ../mesa/meson.options ../mesa/meson.build mesa/
-        cp ../mesa/src/gallium/meson.build mesa/src/gallium/
-        cp ../mesa/src/meson.build mesa/src/
-        cp ../mesa/src/util/u_dl.c ../mesa/src/util/u_dl.h mesa/src/util/
-        cp ../mesa/docs/android.rst mesa/docs/ || true
-        cp -r ../adrenotools adrenotools && rm -rf adrenotools/.git adrenotools/lib/linkernsbypass/.git
-        git add -A && git -c user.name=ci -c user.email=ci@example.com commit -qm "Mesa 25.2.6 sources (research)"
-        git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" research/mesa-src
+        sudo apt-get update -q && sudo apt-get install -y -q ninja-build glslang-tools
+        pip install -q meson mako pyyaml packaging
+    - name: Build Mesa
+      run: |
+        NDK=$ANDROID_SDK_ROOT/ndk/$ANDROID_NDK
+        BIN=$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin
+        cat > android.cross <<CROSS
+        [binaries]
+        c = '$BIN/aarch64-linux-android$ANDROID_API-clang'
+        cpp = '$BIN/aarch64-linux-android$ANDROID_API-clang++'
+        ar = '$BIN/llvm-ar'
+        strip = '$BIN/llvm-strip'
+        pkg-config = '/bin/false'
+        [built-in options]
+        c_args = ['-DVK_USE_PLATFORM_ANDROID_KHR']
+        cpp_args = ['-DVK_USE_PLATFORM_ANDROID_KHR']
+        c_link_args = ['-landroid', '-llog']
+        cpp_link_args = ['-landroid', '-llog', '-static-libstdc++']
+        [host_machine]
+        system = 'android'
+        cpu_family = 'aarch64'
+        cpu = 'armv8'
+        endian = 'little'
+        CROSS
+        cd mesa
+        meson setup build --cross-file ../android.cross --prefix=/out -Dbuildtype=release -Db_ndebug=true \
+          -Dplatforms= -Dgallium-drivers=zink -Dvulkan-drivers= -Degl=enabled -Dgles1=disabled -Dgles2=enabled \
+          -Dglx=disabled -Dgbm=disabled -Dllvm=disabled -Dxmlconfig=disabled -Dzstd=disabled -Dvalgrind=disabled \
+          -Dlibunwind=disabled -Degl-lib-suffix=_mesa -Dgles-lib-suffix=_mesa -Dshader-cache=disabled \
+          -Dlmsensors=disabled -Dvideo-codecs= -Dgallium-va=disabled -Dgallium-vdpau=disabled \
+          -Dgallium-extra-hud=false -Dbuild-tests=false 2>&1 | tail -80
+        ninja -C build 2>&1 | tail -60
+        DESTDIR=$PWD/../install ninja -C build install > /dev/null
+        cd ..
+        find install -name "*.so*" | xargs ls -la
+        for f in $(find install -name "*.so"); do echo "== $f"; $BIN/llvm-readelf -d $f | grep -E "NEEDED|SONAME"; done
+    - name: Build adrenotools
+      run: |
+        NDK=$ANDROID_SDK_ROOT/ndk/$ANDROID_NDK
+        cmake -S adrenotools -B adrenotools/build -G Ninja -DCMAKE_TOOLCHAIN_FILE=$NDK/build/cmake/android.toolchain.cmake \
+          -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=$ANDROID_API -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON
+        ninja -C adrenotools/build
+        find adrenotools/build -name "*.so" | xargs ls -la
+    - name: Pack
+      if: always()
+      run: |
+        mkdir -p out
+        cp $(find install -name "*.so*" -type f) out/ 2>/dev/null || true
+        cp $(find adrenotools/build -name "*.so") out/ 2>/dev/null || true
+        ls -la out
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: mesa-android-arm64
+        path: out

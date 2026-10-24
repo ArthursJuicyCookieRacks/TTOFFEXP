@@ -1,0 +1,424 @@
+diff --git a/src/egl/drivers/dri2/platform_surfaceless.c b/src/egl/drivers/dri2/platform_surfaceless.c
+index 8fbb9a6..5ad994b 100644
+--- a/src/egl/drivers/dri2/platform_surfaceless.c
++++ b/src/egl/drivers/dri2/platform_surfaceless.c
+@@ -38,6 +38,9 @@
+ #include "eglglobals.h"
+ #include "kopper_interface.h"
+ #include "loader.h"
++#ifdef VK_USE_PLATFORM_ANDROID_KHR
++#include <android/native_window.h>
++#endif
+ #include "loader_dri_helper.h"
+ #include "dri_util.h"
+ #include "dri_screen.h"
+@@ -160,6 +163,11 @@ surfaceless_destroy_surface(_EGLDisplay *disp, _EGLSurface *surf)
+ 
+    driDestroyDrawable(dri2_surf->dri_drawable);
+ 
++#ifdef VK_USE_PLATFORM_ANDROID_KHR
++   if (surf->Type == EGL_WINDOW_BIT && surf->NativeSurface)
++      ANativeWindow_release(surf->NativeSurface);
++#endif
++
+    dri2_fini_surface(surf);
+    free(dri2_surf);
+    return EGL_TRUE;
+@@ -220,6 +228,198 @@ static const __DRIextension *kopper_loader_extensions[] = {
+    &image_lookup_extension.base, NULL,
+ };
+ 
++#ifdef VK_USE_PLATFORM_ANDROID_KHR
++/*
++ * Zink can draw straight into an Android window through Vulkan (kopper),
++ * with no DRM device or gralloc in between.  This lets an app run GLES on a
++ * Vulkan driver of its choosing.
++ */
++static _EGLSurface *
++surfaceless_kopper_create_window_surface(_EGLDisplay *disp, _EGLConfig *conf,
++                                         void *native_window,
++                                         const EGLint *attrib_list)
++{
++   struct dri2_egl_display *dri2_dpy = dri2_egl_display(disp);
++   struct dri2_egl_config *dri2_conf = dri2_egl_config(conf);
++   struct ANativeWindow *window = native_window;
++   struct dri2_egl_surface *dri2_surf;
++   const struct dri_config *config;
++
++   if (!window) {
++      _eglError(EGL_BAD_NATIVE_WINDOW, "eglCreateWindowSurface");
++      return NULL;
++   }
++
++   dri2_surf = calloc(1, sizeof *dri2_surf);
++   if (!dri2_surf) {
++      _eglError(EGL_BAD_ALLOC, "eglCreateWindowSurface");
++      return NULL;
++   }
++
++   if (!dri2_init_surface(&dri2_surf->base, disp, EGL_WINDOW_BIT, conf,
++                          attrib_list, false, native_window))
++      goto cleanup_surface;
++
++   dri2_surf->base.Width = ANativeWindow_getWidth(window);
++   dri2_surf->base.Height = ANativeWindow_getHeight(window);
++
++   config = dri2_get_dri_config(dri2_conf, EGL_WINDOW_BIT,
++                                dri2_surf->base.GLColorspace);
++   if (!config) {
++      _eglError(EGL_BAD_MATCH,
++                "Unsupported surfacetype/colorspace configuration");
++      goto cleanup_surface;
++   }
++
++   ANativeWindow_acquire(window);
++   if (!dri2_create_drawable(dri2_dpy, config, dri2_surf, dri2_surf)) {
++      ANativeWindow_release(window);
++      goto cleanup_surface;
++   }
++
++   dri2_surf->base.SwapInterval = 1;
++   kopperSetSwapInterval(dri2_surf->dri_drawable,
++                         dri2_dpy->default_swap_interval);
++   dri2_surf->base.SwapInterval = dri2_dpy->default_swap_interval;
++
++   return &dri2_surf->base;
++
++cleanup_surface:
++   free(dri2_surf);
++   return NULL;
++}
++
++static EGLBoolean
++surfaceless_kopper_swap_buffers(_EGLDisplay *disp, _EGLSurface *draw)
++{
++   struct dri2_egl_surface *dri2_surf = dri2_egl_surface(draw);
++
++   if (draw->Type != EGL_WINDOW_BIT)
++      return EGL_TRUE;
++
++   kopperSwapBuffers(dri2_surf->dri_drawable,
++                     __DRI2_FLUSH_INVALIDATE_ANCILLARY);
++   return EGL_TRUE;
++}
++
++static EGLBoolean
++surfaceless_kopper_swap_interval(_EGLDisplay *disp, _EGLSurface *surf,
++                                 EGLint interval)
++{
++   struct dri2_egl_surface *dri2_surf = dri2_egl_surface(surf);
++
++   if (surf->Type == EGL_WINDOW_BIT)
++      kopperSetSwapInterval(dri2_surf->dri_drawable, interval);
++   return EGL_TRUE;
++}
++
++static EGLint
++surfaceless_kopper_query_buffer_age(_EGLDisplay *disp, _EGLSurface *surf)
++{
++   struct dri2_egl_surface *dri2_surf = dri2_egl_surface(surf);
++
++   if (surf->Type != EGL_WINDOW_BIT)
++      return 0;
++   return kopperQueryBufferAge(dri2_surf->dri_drawable);
++}
++
++static const struct dri2_egl_display_vtbl dri2_surfaceless_android_display_vtbl = {
++   .create_window_surface = surfaceless_kopper_create_window_surface,
++   .create_pbuffer_surface = dri2_surfaceless_create_pbuffer_surface,
++   .destroy_surface = surfaceless_destroy_surface,
++   .create_image = dri2_create_image_khr,
++   .swap_interval = surfaceless_kopper_swap_interval,
++   .swap_buffers = surfaceless_kopper_swap_buffers,
++   .query_buffer_age = surfaceless_kopper_query_buffer_age,
++   .get_dri_drawable = dri2_surface_get_dri_drawable,
++};
++
++static_assert(sizeof(struct kopper_vk_surface_create_storage) >=
++                 sizeof(VkAndroidSurfaceCreateInfoKHR),
++              "");
++
++static void
++surfaceless_kopper_set_surface_create_info(void *_draw,
++                                           struct kopper_loader_info *out)
++{
++   struct dri2_egl_surface *dri2_surf = _draw;
++   VkAndroidSurfaceCreateInfoKHR *asci =
++      (VkAndroidSurfaceCreateInfoKHR *)&out->bos;
++
++   /* A pbuffer has no surface. */
++   if (dri2_surf->base.Type != EGL_WINDOW_BIT)
++      return;
++
++   asci->sType = VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR;
++   asci->pNext = NULL;
++   asci->flags = 0;
++   asci->window = dri2_surf->base.NativeSurface;
++   out->present_opaque = dri2_surf->base.PresentOpaque;
++}
++
++static void
++surfaceless_kopper_get_drawable_info(struct dri_drawable *draw, int *w,
++                                     int *h, void *loaderPrivate)
++{
++   struct dri2_egl_surface *dri2_surf = loaderPrivate;
++
++   if (dri2_surf->base.Type == EGL_WINDOW_BIT &&
++       dri2_surf->base.NativeSurface) {
++      struct ANativeWindow *window = dri2_surf->base.NativeSurface;
++      int width = ANativeWindow_getWidth(window);
++      int height = ANativeWindow_getHeight(window);
++      if (width > 0 && height > 0) {
++         dri2_surf->base.Width = width;
++         dri2_surf->base.Height = height;
++      }
++   }
++   *w = dri2_surf->base.Width;
++   *h = dri2_surf->base.Height;
++}
++
++static const __DRIkopperLoaderExtension kopper_android_loader_extension = {
++   .base = {__DRI_KOPPER_LOADER, 1},
++   .SetSurfaceCreateInfo = surfaceless_kopper_set_surface_create_info,
++   .GetDrawableInfo = surfaceless_kopper_get_drawable_info,
++};
++
++static const __DRIextension *kopper_android_loader_extensions[] = {
++   &kopper_android_loader_extension.base, &image_lookup_extension.base, NULL,
++};
++
++static void
++surfaceless_kopper_add_window_configs(_EGLDisplay *disp)
++{
++   struct dri2_egl_display *dri2_dpy = dri2_egl_display(disp);
++   static const struct {
++      int window_format;
++      enum pipe_format pipe_format;
++   } visuals[] = {
++      {WINDOW_FORMAT_RGBA_8888, PIPE_FORMAT_RGBA8888_UNORM},
++      {WINDOW_FORMAT_RGBX_8888, PIPE_FORMAT_RGBX8888_UNORM},
++      {WINDOW_FORMAT_RGB_565, PIPE_FORMAT_B5G6R5_UNORM},
++   };
++
++   for (unsigned i = 0; i < ARRAY_SIZE(visuals); i++) {
++      for (unsigned j = 0; dri2_dpy->driver_configs[j]; j++) {
++         const struct gl_config *gl_config =
++            (struct gl_config *)dri2_dpy->driver_configs[j];
++         if (util_format_linear(gl_config->color_format) !=
++             visuals[i].pipe_format)
++            continue;
++
++         const EGLint config_attrs[] = {
++            EGL_NATIVE_VISUAL_ID, visuals[i].window_format,
++            EGL_NATIVE_VISUAL_TYPE, visuals[i].window_format,
++            EGL_NONE,
++         };
++         dri2_add_config(disp, dri2_dpy->driver_configs[j],
++                         EGL_WINDOW_BIT | EGL_PBUFFER_BIT, config_attrs);
++      }
++   }
++}
++#endif
++
+ static bool
+ surfaceless_probe_device(_EGLDisplay *disp, bool swrast, bool zink)
+ {
+@@ -361,7 +561,11 @@ surfaceless_probe_device_sw(_EGLDisplay *disp)
+    dri2_detect_swrast_kopper(disp);
+ 
+    if (dri2_dpy->kopper)
++#ifdef VK_USE_PLATFORM_ANDROID_KHR
++      dri2_dpy->loader_extensions = kopper_android_loader_extensions;
++#else
+       dri2_dpy->loader_extensions = kopper_loader_extensions;
++#endif
+    else
+       dri2_dpy->loader_extensions = swrast_loader_extensions;
+ 
+@@ -389,6 +593,11 @@ dri2_initialize_surfaceless(_EGLDisplay *disp)
+     */
+    driver_loaded = surfaceless_probe_device(disp, disp->Options.ForceSoftware,
+                                             disp->Options.Zink);
++#ifdef VK_USE_PLATFORM_ANDROID_KHR
++   /* Phones have no DRM device for zink to sit on. */
++   if (!driver_loaded && disp->Options.Zink)
++      driver_loaded = surfaceless_probe_device_sw(disp);
++#endif
+    if (!driver_loaded && disp->Options.ForceSoftware) {
+       _eglLog(_EGL_DEBUG, "Falling back to surfaceless swrast without DRM.");
+       driver_loaded = surfaceless_probe_device_sw(disp);
+@@ -406,12 +615,22 @@ dri2_initialize_surfaceless(_EGLDisplay *disp)
+ #endif
+    dri2_set_WL_bind_wayland_display(disp);
+ 
++#ifdef VK_USE_PLATFORM_ANDROID_KHR
++   if (dri2_dpy->kopper) {
++      surfaceless_kopper_add_window_configs(disp);
++      dri2_setup_swap_interval(disp, 1);
++   }
++#endif
+    dri2_add_pbuffer_configs_for_visuals(disp);
+ 
+    /* Fill vtbl last to prevent accidentally calling virtual function during
+     * initialization.
+     */
+    dri2_dpy->vtbl = &dri2_surfaceless_display_vtbl;
++#ifdef VK_USE_PLATFORM_ANDROID_KHR
++   if (dri2_dpy->kopper)
++      dri2_dpy->vtbl = &dri2_surfaceless_android_display_vtbl;
++#endif
+ 
+    return EGL_TRUE;
+ 
+diff --git a/src/gallium/drivers/zink/zink_instance.py b/src/gallium/drivers/zink/zink_instance.py
+index 1ab36be..8b2d8c0 100644
+--- a/src/gallium/drivers/zink/zink_instance.py
++++ b/src/gallium/drivers/zink/zink_instance.py
+@@ -47,6 +47,7 @@ EXTENSIONS = [
+     Extension("VK_KHR_wayland_surface"),
+     Extension("VK_KHR_xcb_surface"),
+     Extension("VK_KHR_win32_surface"),
++    Extension("VK_KHR_android_surface"),
+ ]
+ 
+ if platform.system() == "Darwin":
+diff --git a/src/gallium/drivers/zink/zink_kopper.c b/src/gallium/drivers/zink/zink_kopper.c
+index b197fb6..ebe4fe5 100644
+--- a/src/gallium/drivers/zink/zink_kopper.c
++++ b/src/gallium/drivers/zink/zink_kopper.c
+@@ -69,6 +69,11 @@ init_dt_type(struct kopper_displaytarget *cdt)
+    case VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR:
+       cdt->type = KOPPER_WIN32;
+       break;
++#endif
++#ifdef VK_USE_PLATFORM_ANDROID_KHR
++   case VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR:
++      cdt->type = KOPPER_ANDROID;
++      break;
+ #endif
+    default:
+       unreachable("unsupported!");
+@@ -108,6 +113,13 @@ kopper_CreateSurface(struct zink_screen *screen, struct kopper_displaytarget *cd
+       error = VKSCR(CreateWin32SurfaceKHR)(screen->instance, win32, NULL, &surface);
+       break;
+    }
++#endif
++#ifdef VK_USE_PLATFORM_ANDROID_KHR
++   case VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR: {
++      VkAndroidSurfaceCreateInfoKHR *asci = (VkAndroidSurfaceCreateInfoKHR *)&cdt->info.bos;
++      error = VKSCR(CreateAndroidSurfaceKHR)(screen->instance, asci, NULL, &surface);
++      break;
++   }
+ #endif
+    default:
+       unreachable("unsupported!");
+@@ -224,6 +236,13 @@ find_dt_entry(struct zink_screen *screen, const struct kopper_displaytarget *cdt
+       he = _mesa_hash_table_search(&screen->dts, win32->hwnd);
+       break;
+    }
++#endif
++#ifdef VK_USE_PLATFORM_ANDROID_KHR
++   case KOPPER_ANDROID: {
++      VkAndroidSurfaceCreateInfoKHR *asci = (VkAndroidSurfaceCreateInfoKHR *)&cdt->info.bos;
++      he = _mesa_hash_table_search(&screen->dts, asci->window);
++      break;
++   }
+ #endif
+    default:
+       unreachable("unsupported!");
+@@ -289,10 +308,16 @@ kopper_CreateSwapchain(struct zink_screen *screen, struct kopper_displaytarget *
+                                    ? VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR
+                                    : VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+       cswap->scci.clipped = VK_TRUE;
++      if (cdt->type == KOPPER_ANDROID &&
++          !(cdt->caps.supportedCompositeAlpha & cswap->scci.compositeAlpha))
++         cswap->scci.compositeAlpha = VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR;
+    }
+    cswap->scci.presentMode = cdt->present_mode;
+    cswap->scci.minImageCount = cdt->caps.minImageCount;
+    cswap->scci.preTransform = cdt->caps.currentTransform;
++   /* Android rotates the picture itself if it isn't drawn rotated. */
++   if (cdt->type == KOPPER_ANDROID)
++      cswap->scci.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+    if (cdt->formats[1])
+       cswap->scci.pNext = &cdt->format_list;
+ 
+@@ -319,6 +344,7 @@ kopper_CreateSwapchain(struct zink_screen *screen, struct kopper_displaytarget *
+       }
+       break;
+    case KOPPER_WAYLAND:
++   case KOPPER_ANDROID:
+       /* On Wayland, currentExtent is the special value (0xFFFFFFFF, 0xFFFFFFFF), indicating that the
+        * surface size will be determined by the extent of a swapchain targeting the surface. Whatever the
+        * application sets a swapchain’s imageExtent to will be the size of the window, after the first image is
+@@ -431,6 +457,7 @@ zink_kopper_displaytarget_create(struct zink_screen *screen, unsigned tex_usage,
+             break;
+          case KOPPER_WAYLAND:
+          case KOPPER_WIN32:
++         case KOPPER_ANDROID:
+             _mesa_hash_table_init(&screen->dts, screen, _mesa_hash_pointer, _mesa_key_pointer_equal);
+             break;
+          default:
+@@ -502,6 +529,13 @@ zink_kopper_displaytarget_create(struct zink_screen *screen, unsigned tex_usage,
+       _mesa_hash_table_insert(&screen->dts, win32->hwnd, cdt);
+       break;
+    }
++#endif
++#ifdef VK_USE_PLATFORM_ANDROID_KHR
++   case KOPPER_ANDROID: {
++      VkAndroidSurfaceCreateInfoKHR *asci = (VkAndroidSurfaceCreateInfoKHR *)&cdt->info.bos;
++      _mesa_hash_table_insert(&screen->dts, asci->window, cdt);
++      break;
++   }
+ #endif
+    default:
+       unreachable("unsupported!");
+diff --git a/src/gallium/drivers/zink/zink_kopper.h b/src/gallium/drivers/zink/zink_kopper.h
+index fba05a0..5c20065 100644
+--- a/src/gallium/drivers/zink/zink_kopper.h
++++ b/src/gallium/drivers/zink/zink_kopper.h
+@@ -74,7 +74,8 @@ struct kopper_swapchain {
+ enum kopper_type {
+    KOPPER_X11,
+    KOPPER_WAYLAND,
+-   KOPPER_WIN32
++   KOPPER_WIN32,
++   KOPPER_ANDROID
+ };
+ 
+ struct kopper_displaytarget
+diff --git a/src/gallium/drivers/zink/zink_screen.c b/src/gallium/drivers/zink/zink_screen.c
+index 7ec86d0..d0fa26e 100644
+--- a/src/gallium/drivers/zink/zink_screen.c
++++ b/src/gallium/drivers/zink/zink_screen.c
+@@ -3281,6 +3281,15 @@ zink_internal_create_screen(const struct pipe_screen_config *config, int64_t dev
+ 
+    u_trace_state_init();
+ 
++#ifdef __ANDROID__
++   /* An app that opened a Vulkan driver itself (a custom one, loaded with
++    * adrenotools) hands over its dlopen() handle.
++    */
++   const char *vulkan_handle = getenv("ZINK_VULKAN_HANDLE");
++   if (vulkan_handle && *vulkan_handle)
++      screen->loader_lib = (void *)(uintptr_t)strtoull(vulkan_handle, NULL, 0);
++   else
++#endif
+    screen->loader_lib = util_dl_open(VK_LIBNAME);
+    if (!screen->loader_lib) {
+       if (!screen->driver_name_is_inferred)
+diff --git a/src/gallium/frontends/dri/dri_screen.c b/src/gallium/frontends/dri/dri_screen.c
+index fed8c6b..638ba01 100644
+--- a/src/gallium/frontends/dri/dri_screen.c
++++ b/src/gallium/frontends/dri/dri_screen.c
+@@ -349,6 +349,10 @@ dri_fill_in_modes(struct dri_screen *screen)
+       zs_formats[num_zs_formats++] = PIPE_FORMAT_NONE;
+ 
+    allow_rgba_ordering = dri_loader_get_cap(screen, DRI_LOADER_CAP_RGBA_ORDERING);
++#ifdef __ANDROID__
++   /* Android windows take RGBA, not BGRA. */
++   allow_rgba_ordering = true;
++#endif
+    allow_rgb10 = driQueryOptionb(&screen->dev->option_cache, "allow_rgb10_configs");
+    allow_fp16 = dri_loader_get_cap(screen, DRI_LOADER_CAP_FP16);
+ 
