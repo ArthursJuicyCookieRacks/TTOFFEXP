@@ -1259,6 +1259,26 @@ def scenarioToonHall():
     yield until(lambda: walking() and localAvatar.zoneId == ToontownGlobals.ToontownCentral, 120, 'back outside')
 
 
+def scenarioHolidays():
+    # Checks that the holidays the calendar runs today reach the client, then
+    # starts and ends a holiday the way the calendar would.
+    import time
+    expected = onDistrict(lambda air: air.holidayManager.getHolidaysAt(time.localtime()))
+    yield until(lambda: sorted(base.cr.newsManager.getHolidayIdList()) == sorted(expected), 60, 'the holidays %s' % expected)
+    log('holidays running today:', expected)
+    yield from teleport(ToontownGlobals.ToontownCentral)
+    yield sleep(5)
+    for holidayId in (ToontownGlobals.WINTER_DECORATIONS, ToontownGlobals.HALLOWEEN_PROPS, ToontownGlobals.VALENTINES_DAY):
+        running = holidayId in expected
+        action = 'endHoliday' if running else 'startHoliday'
+        onDistrict(lambda air: getattr(air.holidayManager, action)(holidayId))
+        yield until(lambda: (holidayId in base.cr.newsManager.getHolidayIdList()) != running, 30, 'holiday %d to change' % holidayId)
+        log('holiday %d %s' % (holidayId, 'ended' if running else 'started'))
+        yield sleep(5)
+    yield from teleport(ToontownGlobals.DonaldsDock)
+    yield sleep(5)
+
+
 def scenarioQuest(steps=12):
     # Takes a ToonTask from Toon HQ and plays it through every step to the
     # reward, the way a new toon would.
@@ -1365,6 +1385,7 @@ SCENARIOS = [
     ('golf', scenarioGolf),
     ('pets', scenarioPets),
     ('toonhall', scenarioToonHall),
+    ('holidays', scenarioHolidays),
     ('quest', scenarioQuest),
 ]
 
