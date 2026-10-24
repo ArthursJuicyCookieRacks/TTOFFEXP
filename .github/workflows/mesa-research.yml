@@ -26,6 +26,9 @@ jobs:
         mv mesa-$MESA_VERSION mesa
         cd mesa
         for patch in ../game/tools/offline/mesa-patches/*.patch; do patch -p1 < "$patch"; done
+        # Built with the NDK alone: no Android system tracing.
+        sed -i 's/DETECT_OS_ANDROID/0/' src/util/perf/cpu_trace.h
+        echo "Android system headers used:"; grep -rn "include <cutils\|include <log/\|include <sync/\|include <hardware/\|include <vndk\|include <system/" src --include=*.c --include=*.h --include=*.cpp | grep -v "src/android_stub\|src/egl/drivers/dri2/platform_android\|src/util/u_gralloc\|src/vulkan\|src/freedreno\|src/amd\|src/intel\|src/panfrost\|src/broadcom\|src/imagination\|src/virtio\|src/asahi\|src/nouveau\|src/gallium/drivers/[a-y]" || true
         cd ..
         git clone -q --depth 1 --recurse-submodules --shallow-submodules https://github.com/bylaws/libadrenotools.git adrenotools
     - name: Install the build tools
