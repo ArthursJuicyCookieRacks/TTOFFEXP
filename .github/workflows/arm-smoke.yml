@@ -1,0 +1,55 @@
+name: arm64 smoke
+on: push
+permissions:
+  actions: read
+  contents: read
+jobs:
+  arm:
+    runs-on: ubuntu-24.04
+    steps:
+    - uses: actions/download-artifact@v8
+      with:
+        name: TTR-Offline-Android
+        path: .
+        run-id: 40141433018
+        github-token: ${{ github.token }}
+        repository: ArthursJuicyCookieRacks/TTR-Offline-TEST
+    - name: KVM
+      run: |
+        echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+        sudo udevadm control --reload-rules
+        sudo udevadm trigger --name-match=kvm
+        ls -l
+    - name: Script
+      run: |
+        cat > smoke.sh <<'SCRIPT'
+        adb shell getprop ro.product.cpu.abilist
+        adb install -r --abi arm64-v8a *.apk
+        adb shell pm dump com.ttroffline.game | grep -i "abi" | head
+        adb logcat -c
+        adb shell am start -n com.ttroffline.game/org.panda3d.android.PythonActivity
+        sleep 60
+        adb shell pidof com.ttroffline.game > pid.txt
+        adb logcat -d > logcat.txt
+        adb logcat -d -b crash > crash.txt
+        true
+        SCRIPT
+    - uses: reactivecircus/android-emulator-runner@v2
+      with:
+        api-level: 34
+        arch: x86_64
+        target: google_apis
+        disk-size: 6000M
+        emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+        script: bash smoke.sh
+    - name: Show
+      if: always()
+      run: |
+        echo "pid: $(cat pid.txt)"
+        grep -E "ttroffline|Panda3D|python|threaded_app|linker|nativeloader|DEBUG|libc|AndroidRuntime|houdini|ndk_translation" logcat.txt | grep -v "runtime.cc:" > shown.txt || true
+        { head -c 4000 crash.txt; echo; head -c 9000 shown.txt; echo ...; tail -c 9000 shown.txt; } > all.txt
+        python3 -c "
+        text = open('all.txt', errors='replace').read()
+        for start in range(0, len(text), 3000):
+            print('::error title=Log %d::' % (start // 3000 + 1) + text[start:start + 3000].replace('%', '%25').replace('\\n', '%0A'))
+        "
