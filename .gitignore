@@ -15,3 +15,10 @@ PrivacyStart.py
 files.py
 ai-crash.txt
 autoplay-db/
+
+# Packaged builds
+/phase_*.mf
+/build/
+/dist/*.zip
+/dist/*.aab
+/dist/*.apk

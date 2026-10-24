@@ -1,0 +1,334 @@
+# Builds the offline game for Windows and Android.
+#
+# 1. Compiles Panda3D 1.11 (upstream master at PANDA3D_COMMIT; the audio
+#    loop-start change our 1.10 fork carried is part of it) into wheels for
+#    Windows and for each Android ABI.
+# 2. Packs RegDogg/TTR-Offline-resources into the phase multifiles.
+# 3. Freezes the game with build_apps and packages it: a zip for Windows and,
+#    for Android, an .aab plus a universal .apk to install directly.
+#
+# The Panda3D builds are cached by commit, so only the first run is slow.
+
+name: Build
+
+on:
+  push:
+    branches: [offline/local-astron]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+env:
+  PANDA3D_COMMIT: ec9ea0a93a7de249efea3f41b4fdf878f5e1650b
+  RESOURCES_REPO: RegDogg/TTR-Offline-resources
+  PYTHON_VERSION: '3.13'
+  # Upstream Panda3D's own CI uses these.
+  WIN_THIRDPARTY: https://www.panda3d.org/download/panda3d-1.10.16/panda3d-1.10.16-tools-win64.zip
+  ANDROID_PYTHON: 3.13.9
+  ANDROID_NDK: 29.0.14206865
+  ANDROID_THIRDPARTY_COMMIT: 935c80380ca171e08587c570e9dad678d29db3c8
+
+jobs:
+  panda3d-windows:
+    name: Panda3D for Windows
+    runs-on: windows-2022
+    steps:
+    - name: Restore the wheel
+      id: cache
+      uses: actions/cache@v5
+      with:
+        path: wheels
+        key: panda3d-win_amd64-${{ env.PANDA3D_COMMIT }}-py${{ env.PYTHON_VERSION }}-v1
+
+    - name: Check out Panda3D
+      if: steps.cache.outputs.cache-hit != 'true'
+      uses: actions/checkout@v7
+      with:
+        repository: panda3d/panda3d
+        ref: ${{ env.PANDA3D_COMMIT }}
+        path: panda3d
+
+    - uses: actions/setup-python@v7
+      if: steps.cache.outputs.cache-hit != 'true'
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Get the thirdparty packages
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      working-directory: panda3d
+      run: |
+        curl --retry 5 --retry-delay 10 --retry-all-errors -fLo thirdparty-tools.zip "$WIN_THIRDPARTY"
+        unzip -q thirdparty-tools.zip -d thirdparty-tools
+        mv thirdparty-tools/panda3d-1.10.16/thirdparty .
+
+    - name: Build
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      working-directory: panda3d
+      run: |
+        python makepanda/makepanda.py --git-commit=$PANDA3D_COMMIT --outputdir=built --everything --no-eigen \
+          --python-incdir="$pythonLocation/include" --python-libdir="$pythonLocation/lib" \
+          --threads=4 --windows-sdk=10 --msvc-version=14.3 --wheel
+        mkdir -p ../wheels
+        mv panda3d-*.whl ../wheels/
+
+    - name: Check the wheel has what the game needs
+      shell: bash
+      run: |
+        python -m zipfile -l wheels/panda3d-*.whl > contents.txt
+        for module in panda3d/core panda3d/direct panda3d/physics panda3d/ode panda3d/fx p3openal_audio pandagl; do
+          grep -q "$module" contents.txt || { echo "the wheel is missing $module"; exit 1; }
+        done
+
+    - uses: actions/upload-artifact@v7
+      with:
+        name: panda3d-win_amd64
+        path: wheels/*.whl
+
+  panda3d-android:
+    name: Panda3D for Android (${{ matrix.abi }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - abi: arm64-v8a
+          arch: arm64
+          triple: aarch64-linux-android
+          libs: android-libs-arm64
+        - abi: armeabi-v7a
+          arch: arm
+          triple: arm-linux-androideabi
+          libs: android-libs-armv7a
+        - abi: x86_64
+          arch: x86_64
+          triple: x86_64-linux-android
+          libs: android-libs-x86_64
+    steps:
+    - name: Restore the wheel
+      id: cache
+      uses: actions/cache@v5
+      with:
+        path: wheels
+        key: panda3d-android-${{ matrix.abi }}-${{ env.PANDA3D_COMMIT }}-py${{ env.ANDROID_PYTHON }}-v1
+
+    - name: Check out Panda3D
+      if: steps.cache.outputs.cache-hit != 'true'
+      uses: actions/checkout@v7
+      with:
+        repository: panda3d/panda3d
+        ref: ${{ env.PANDA3D_COMMIT }}
+        path: panda3d
+
+    - name: Set up the Android SDK
+      if: steps.cache.outputs.cache-hit != 'true'
+      uses: android-actions/setup-android@v4
+      with:
+        packages: 'tools platform-tools platforms;android-21 ndk;${{ env.ANDROID_NDK }}'
+
+    - name: Set up the Android NDK
+      if: steps.cache.outputs.cache-hit != 'true'
+      run: echo "ANDROID_NDK_ROOT=$ANDROID_SDK_ROOT/ndk/$ANDROID_NDK" >> $GITHUB_ENV
+
+    - uses: actions/setup-python@v7
+      if: steps.cache.outputs.cache-hit != 'true'
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Restore Python for Android
+      if: steps.cache.outputs.cache-hit != 'true'
+      id: python-cache
+      uses: actions/cache@v5
+      with:
+        path: ~/python-prefix
+        key: android-python-${{ env.ANDROID_PYTHON }}-${{ matrix.abi }}-ndk${{ env.ANDROID_NDK }}
+
+    - name: Build Python for Android
+      if: steps.cache.outputs.cache-hit != 'true' && steps.python-cache.outputs.cache-hit != 'true'
+      run: |
+        wget -q https://www.python.org/ftp/python/$ANDROID_PYTHON/Python-$ANDROID_PYTHON.tar.xz
+        tar -xJf Python-$ANDROID_PYTHON.tar.xz
+        sed -i.bak "s/aarch64-linux-android/${{ matrix.triple }}/" Python-$ANDROID_PYTHON/Android/android.py
+        sed -i.bak "s/ndk_version=[0-9.]\{1,\}/ndk_version=$ANDROID_NDK/" Python-$ANDROID_PYTHON/Android/android-env.sh
+        (cd Python-$ANDROID_PYTHON/Android && python3 android.py build ${{ matrix.triple }})
+        cp -R Python-$ANDROID_PYTHON/cross-build/${{ matrix.triple }}/prefix ~/python-prefix
+
+    - name: Restore the thirdparty packages
+      if: steps.cache.outputs.cache-hit != 'true'
+      id: thirdparty-cache
+      uses: actions/cache@v5
+      with:
+        path: panda3d/thirdparty
+        key: android-thirdparty-${{ env.ANDROID_THIRDPARTY_COMMIT }}-${{ matrix.abi }}-ndk${{ env.ANDROID_NDK }}
+
+    - name: Build the thirdparty packages
+      if: steps.cache.outputs.cache-hit != 'true' && steps.thirdparty-cache.outputs.cache-hit != 'true'
+      working-directory: panda3d
+      run: |
+        sudo apt-get install -y yasm
+        git clone --revision=$ANDROID_THIRDPARTY_COMMIT --depth=1 https://github.com/rdb/panda3d-thirdparty.git thirdparty
+        cd thirdparty
+        cmake -B build \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake \
+          -DCMAKE_ANDROID_ARCH_ABI=${{ matrix.abi }} \
+          -DCMAKE_ANDROID_ARCH=${{ matrix.arch }} \
+          -DCMAKE_SYSTEM_VERSION=21 \
+          -DANDROID_ABI=${{ matrix.abi }} \
+          -DANDROID_PLATFORM=android-21 \
+          -DBUILD_FCOLLADA=OFF \
+          -DBUILD_OPENSSL=OFF \
+          -DBUILD_VRPN=OFF \
+          -DBUILD_ARTOOLKIT=OFF
+        cmake --build build --config Release -j4
+        rm -rf build
+
+    - name: Build
+      if: steps.cache.outputs.cache-hit != 'true'
+      working-directory: panda3d
+      run: |
+        # The wheel takes libpython and the compiled standard library modules
+        # from the thirdparty folder.
+        libs=thirdparty/${{ matrix.libs }}
+        [ -d "$libs" ] || libs=$(ls -d thirdparty/android-libs-* | head -1)
+        rm -rf "$libs/python"
+        cp -R ~/python-prefix "$libs/python"
+        python makepanda/makepanda.py --git-commit=$PANDA3D_COMMIT --target android-21 --arch ${{ matrix.arch }} \
+          --python-incdir=$HOME/python-prefix/include --python-libdir=$HOME/python-prefix/lib \
+          --everything --no-openssl --no-tinydisplay --no-pandatool --threads=4 --wheel
+        mkdir -p ../wheels
+        mv panda3d-*.whl ../wheels/
+
+    - name: Check the wheel has what the game needs
+      run: |
+        python -m zipfile -l wheels/panda3d-*.whl > contents.txt
+        for module in panda3d/core panda3d/direct panda3d/physics panda3d/ode panda3d/fx p3openal_audio pandagles2 libdeploy-stubw libpython; do
+          grep -q "$module" contents.txt || { echo "the wheel is missing $module"; exit 1; }
+        done
+
+    - uses: actions/upload-artifact@v7
+      with:
+        name: panda3d-android-${{ matrix.abi }}
+        path: wheels/*.whl
+
+  resources:
+    name: Phase multifiles
+    runs-on: ubuntu-24.04
+    steps:
+    - uses: actions/checkout@v7
+
+    - name: Check out the resources
+      uses: actions/checkout@v7
+      with:
+        repository: ${{ env.RESOURCES_REPO }}
+        path: resources-checkout
+
+    - uses: actions/setup-python@v7
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Pack
+      run: |
+        # Any Panda3D can write multifiles.
+        pip install panda3d
+        mkdir multifiles
+        python tools/offline/pack_resources.py resources-checkout multifiles
+
+    - uses: actions/upload-artifact@v7
+      with:
+        name: multifiles
+        path: multifiles/*.mf
+        compression-level: 0
+
+  game:
+    name: Package the game
+    needs: [panda3d-windows, panda3d-android, resources]
+    runs-on: windows-2022
+    permissions:
+      contents: write
+    steps:
+    - uses: actions/checkout@v7
+
+    - uses: actions/setup-python@v7
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - uses: actions/setup-java@v6
+      with:
+        distribution: temurin
+        java-version: '21'
+
+    - name: Get the Panda3D wheels
+      uses: actions/download-artifact@v8
+      with:
+        pattern: panda3d-*
+        path: wheels
+        merge-multiple: true
+
+    - name: Get the phase multifiles
+      uses: actions/download-artifact@v8
+      with:
+        name: multifiles
+        path: .
+
+    - name: Install the build tools
+      shell: bash
+      run: |
+        ls -l wheels
+        pip install setuptools wheels/panda3d-*win_amd64.whl
+
+    - name: Build
+      shell: bash
+      env:
+        PIP_FIND_LINKS: ${{ github.workspace }}/wheels
+      run: python setup.py bdist_apps
+
+    - name: Make an installable APK
+      shell: bash
+      run: |
+        # A release build is signed with the keystore in the
+        # ANDROID_KEYSTORE secret when there is one, otherwise with a
+        # throwaway key, which installs fine but cannot update an APK signed
+        # with another key.
+        curl -fsSLo bundletool.jar https://github.com/google/bundletool/releases/download/1.18.1/bundletool-all-1.18.1.jar
+        if [ -n "$ANDROID_KEYSTORE" ]; then
+          echo "$ANDROID_KEYSTORE" | base64 -d > game.keystore
+        else
+          keytool -genkeypair -keystore game.keystore -storepass android -keypass android -alias game \
+            -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=TTR-Offline"
+          ANDROID_KEYSTORE_PASSWORD=android
+          ANDROID_KEY_ALIAS=game
+        fi
+        aab=$(ls dist/*.aab)
+        java -jar bundletool.jar build-apks --bundle="$aab" --output=game.apks --mode=universal \
+          --ks=game.keystore --ks-pass=pass:$ANDROID_KEYSTORE_PASSWORD --ks-key-alias=$ANDROID_KEY_ALIAS \
+          --key-pass=pass:$ANDROID_KEYSTORE_PASSWORD
+        python -m zipfile -e game.apks apks
+        mv apks/universal.apk "${aab%.aab}.apk"
+        ls -l dist
+      env:
+        ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
+        ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+
+    - uses: actions/upload-artifact@v7
+      with:
+        name: TTR-Offline-Windows
+        path: dist/*win_amd64*.zip
+        compression-level: 0
+
+    - uses: actions/upload-artifact@v7
+      with:
+        name: TTR-Offline-Android
+        path: |
+          dist/*.apk
+          dist/*.aab
+        compression-level: 0
+
+    - name: Publish the release
+      if: startsWith(github.ref, 'refs/tags/v')
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: gh release create "$GITHUB_REF_NAME" dist/*win_amd64*.zip dist/*.apk dist/*.aab --title "$GITHUB_REF_NAME" --generate-notes

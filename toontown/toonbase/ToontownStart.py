@@ -8,7 +8,8 @@ import os
 from otp.local import ExecutionContext
 ExecutionContext.install()
 
-if __debug__:
+# A packaged game (OfflineStart) has already loaded its own config.
+if __debug__ and not ConfigVariableBool('offline-release', False):
     loadPrcFile('config/dev.prc')
 
 # The VirtualFileSystem, which has already initialized, doesn't see the mount

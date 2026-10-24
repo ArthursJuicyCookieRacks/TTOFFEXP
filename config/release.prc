@@ -1,0 +1,76 @@
+# The PRC configuration for the packaged offline game (Windows and Android),
+# loaded by toontown/toonbase/OfflineStart.py, which adds the paths to the
+# game's files and mounts the phase multifiles. Keep it in step with dev.prc.
+
+# Client settings
+window-title Toontown Rewritten Offline
+server-version ttroff-beta-v2.12.2
+sync-video #f
+want-dev #f
+preload-avatars #t
+texture-anisotropic-degree 16
+want-speedhack-fix #t
+load-display pandagl
+default-directnotify-level warning
+
+
+# New Addons!
+want-WASD #t
+tt-framerate #t
+want-new-toonhall #t
+want-max-font #t
+want-ttc-television #f
+
+
+# Resource settings
+model-path /
+default-model-extension .bam
+
+
+# DC Files: set by OfflineStart.
+
+
+# Server settings
+want-rpc-server #f
+rpc-server-endpoint http://localhost:8080/
+want-cheesy-expirations #t
+
+
+# Beta Modifications
+# Temporary modifications for unimplemented features go here.
+want-pets #t
+want-news-tab #f
+want-news-page #f
+want-accessories #f
+want-parties #t
+want-gardening #t
+want-gifting #f
+want-skip-button #t
+# This is a temporary 'fix' for DistributedSmoothNodes... probably not the permanent solution to our problem, but it works for now.
+smooth-lag 0.4
+want-keep-alive #f
+
+
+# Game options
+estate-day-night #t
+want-instant-parties #t
+show-total-population #f
+want-toontorial #t
+
+
+# Chat stuff
+want-whitelist #f
+want-blacklist-sequence #f
+force-avatar-understandable #t
+force-player-understandable #t
+
+
+# Holidays and Events
+want-arg-manager #f
+want-mega-invasions #f
+mega-invasion-cog-type tm
+
+
+# Working (Custom) Addons!
+want-toonfest #t
+want-doomsday #f
