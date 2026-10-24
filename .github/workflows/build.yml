@@ -12,11 +12,16 @@
 name: Build
 
 on:
+  # Branch pushes are built through their pull request; a tag builds a release.
   push:
-    branches: [offline/local-astron]
     tags: ['v*']
   pull_request:
   workflow_dispatch:
+
+# A newer push to the same pull request replaces a build still running.
+concurrency:
+  group: build-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
 
 env:
   PANDA3D_COMMIT: ec9ea0a93a7de249efea3f41b4fdf878f5e1650b
@@ -498,8 +503,12 @@ jobs:
 
     - name: Check the game
       run: |
-        # The game's own lines and any crash, in a few annotations.
-        cat crash.txt game.txt | tail -c 27000 > shown.txt
+        # The game's own lines and any crash, in a few annotations. A game
+        # that died before its id was noted is found from the crash report.
+        pid=$(cat startpid.txt)
+        [ -n "$pid" ] || pid=$(grep -o 'pid: [0-9]*' crash.txt | head -1 | cut -d' ' -f2)
+        if [ -n "$pid" ]; then grep -E "^\S+ \S+ +$pid " logcat.txt > game.txt || true; fi
+        { tail -c 9000 crash.txt; echo; tail -c 18000 game.txt; } > shown.txt
         python3 -c "
         text = open('shown.txt', errors='replace').read()
         for start in range(0, len(text), 3000):

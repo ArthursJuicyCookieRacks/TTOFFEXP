@@ -1094,7 +1094,7 @@ def castOnce(spot):
     return caught
 
 
-def scenarioBingo(timeout=2400):
+def scenarioBingo(timeout=4800):
     # Plays Fish Bingo at the Toontown Central pond until the toon wins a
     # game, marking each catch on the card like a player clicking it.
     watchFishingTargets()
