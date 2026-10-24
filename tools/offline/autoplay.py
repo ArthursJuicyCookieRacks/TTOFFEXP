@@ -1468,6 +1468,55 @@ def scenarioHolidays():
     yield sleep(5)
 
 
+def scenarioHolidayEffects():
+    # The holidays that change the game rather than its looks: a cog
+    # invasion, double experience, jellybean day and extra fireworks.
+    G = ToontownGlobals
+
+    def invasion(air):
+        mgr = air.suitInvasionManager
+        return mgr.getInvading(), mgr.suitName
+
+    onDistrict(lambda air: air.holidayManager.startHoliday(G.YES_MAN_INVASION))
+    yield until(lambda: onDistrict(invasion) == (True, 'ym'), 30, 'the Yes Man invasion')
+    yield until(lambda: base.cr.newsManager.isHolidayRunning(G.YES_MAN_INVASION), 30, 'the client to hear of the invasion')
+    log('Yes Men are invading')
+    onDistrict(lambda air: air.holidayManager.endHoliday(G.YES_MAN_INVASION))
+    yield until(lambda: not onDistrict(invasion)[0], 30, 'the invasion to end')
+
+    def jellybeans(air):
+        from toontown.fishing import FishGlobals
+        return air.holidayManager.getPartyJellybeanMultiplier(), FishGlobals.getValue(0, 0, 1.0)
+
+    before = onDistrict(jellybeans)
+    onDistrict(lambda air: air.holidayManager.startHoliday(G.JELLYBEAN_DAY))
+    yield until(lambda: base.cr.newsManager.isHolidayRunning(G.JELLYBEAN_DAY), 30, 'jellybean day')
+    after = onDistrict(jellybeans)
+    if after[0] != 2 * before[0] or after[1] != 2 * before[1]:
+        raise StepFailed('jellybean day gave %s, before %s' % (after, before))
+    log('jellybean day doubles party (%s -> %s) and fish (%s -> %s) jellybeans' % (before[0], after[0], before[1], after[1]))
+    onDistrict(lambda air: air.holidayManager.endHoliday(G.JELLYBEAN_DAY))
+
+    onDistrict(lambda air: air.holidayManager.startHoliday(G.MORE_XP_HOLIDAY))
+    yield until(lambda: base.cr.newsManager.isHolidayRunning(G.MORE_XP_HOLIDAY), 30, 'double experience')
+    # A sturdier toon, so the fight is won rather than lost.
+    onDistrict(lambda air, avId: air.doId2do[avId].b_setMaxHp(100), localAvatar.doId)
+    onDistrict(restock, localAvatar.doId)
+    yield sleep(1)
+    exp = list(localAvatar.experience.experience)
+    yield from scenarioBattle()
+    gained = [new - old for new, old in zip(localAvatar.experience.experience, exp)]
+    log('experience gained in a double experience battle: %s' % gained)
+    if not any(gained):
+        raise StepFailed('no experience from the battle')
+    onDistrict(lambda air: air.holidayManager.endHoliday(G.MORE_XP_HOLIDAY))
+
+    yield from teleport(ToontownGlobals.ToontownCentral)
+    onDistrict(lambda air: air.holidayManager.startFireworks(air.holidayManager.FireworksHolidays[G.OCTOBER31_FIREWORKS]))
+    yield until(lambda: findObject('DistributedFireworkShow'), 30, 'the fireworks show')
+    log('fireworks are going off')
+
+
 def scenarioScavengerHunts():
     # Trick-or-treats and carols through every shop of both scavenger hunts,
     # checking the jellybeans for each shop and the head for finishing.
@@ -2298,6 +2347,7 @@ SCENARIOS = [
     ('pets', scenarioPets),
     ('toonhall', scenarioToonHall),
     ('holidays', scenarioHolidays),
+    ('holidayeffects', scenarioHolidayEffects),
     ('hunts', scenarioScavengerHunts),
     ('bingo', scenarioBingo),
     ('sillymeter', scenarioSillyMeter),

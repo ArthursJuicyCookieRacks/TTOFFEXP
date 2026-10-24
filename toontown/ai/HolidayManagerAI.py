@@ -66,9 +66,17 @@ class HolidayManagerAI:
                          [ToontownGlobals.SILLY_CHATTER_THREE] * 4 + [ToontownGlobals.SILLY_CHATTER_FOUR] * 3 + \
                          [ToontownGlobals.SILLY_CHATTER_FIVE]
 
+    # The fireworks holidays, and the shows they use; only the July 4th and
+    # New Year's shows exist, the other holidays borrow them. (June 22nd's
+    # id is also the Cold Caller invasion's, so it is left out.)
     FireworksHolidays = {
         ToontownGlobals.JULY4_FIREWORKS: ToontownGlobals.JULY4_FIREWORKS,
         ToontownGlobals.NEWYEARS_FIREWORKS: ToontownGlobals.NEWYEARS_FIREWORKS,
+        ToontownGlobals.OCTOBER31_FIREWORKS: ToontownGlobals.JULY4_FIREWORKS,
+        ToontownGlobals.NOVEMBER19_FIREWORKS: ToontownGlobals.JULY4_FIREWORKS,
+        ToontownGlobals.FEBRUARY14_FIREWORKS: ToontownGlobals.JULY4_FIREWORKS,
+        ToontownGlobals.JULY14_FIREWORKS: ToontownGlobals.JULY4_FIREWORKS,
+        ToontownGlobals.COMBO_FIREWORKS: ToontownGlobals.NEWYEARS_FIREWORKS,
     }
 
     def __init__(self, air):
@@ -276,6 +284,12 @@ class HolidayManagerAI:
             if holidayId in self.currentHolidays:
                 return True
         return False
+
+    def getPartyJellybeanMultiplier(self):
+        if self.isHolidayRunning(ToontownGlobals.JELLYBEAN_DAY, ToontownGlobals.JELLYBEAN_PARTIES_HOLIDAY,
+                                 ToontownGlobals.JELLYBEAN_PARTIES_HOLIDAY_MONTH):
+            return PartyGlobals.JellyBeanDayMultiplier
+        return 1
 
     def getWeeklyCalendarHolidays(self):
         return [[holidayId, weekday] for holidayId, weekday in self.WeeklyHolidays]

@@ -11,6 +11,48 @@ from direct.directnotify import DirectNotifyGlobal
 # All numbers/values in here are hard-coded. Maybe we should move them to
 # ToontownGlobals or something?
 
+# The holidays that are an invasion, and their cogs: (cog, special suit),
+# special suit being 1 for skelecogs. A None cog is a random one.
+G = ToontownGlobals
+HolidayInvasions = {
+    G.SKELECOG_INVASION: (None, 1),
+    G.MR_HOLLYWOOD_INVASION: ('mh', 0),
+    G.BOSSCOG_INVASION: ('tbc', 0),
+    G.YES_MAN_INVASION: ('ym', 0),
+    G.TIGHTWAD_INVASION: ('tw', 0),
+    G.TELEMARKETER_INVASION: ('tm', 0),
+    G.HEADHUNTER_INVASION: ('hh', 0),
+    G.SPINDOCTOR_INVASION: ('sd', 0),
+    G.MONEYBAGS_INVASION: ('mb', 0),
+    G.TWOFACES_INVASION: ('tf', 0),
+    G.MINGLER_INVASION: ('m', 0),
+    G.LOANSHARK_INVASION: ('ls', 0),
+    G.CORPORATE_RAIDER_INVASION: ('cr', 0),
+    G.ROBBER_BARON_INVASION: ('rb', 0),
+    G.LEGAL_EAGLE_INVASION: ('le', 0),
+    G.BIG_WIG_INVASION: ('bw', 0),
+    G.BIG_CHEESE_INVASION: ('tbc', 0),
+    G.DOWN_SIZER_INVASION: ('ds', 0),
+    G.MOVER_AND_SHAKER_INVASION: ('ms', 0),
+    G.DOUBLETALKER_INVASION: ('dt', 0),
+    G.PENNY_PINCHER_INVASION: ('pp', 0),
+    G.NAME_DROPPER_INVASION: ('nd', 0),
+    G.AMBULANCE_CHASER_INVASION: ('ac', 0),
+    G.MICROMANAGER_INVASION: ('mm', 0),
+    G.NUMBER_CRUNCHER_INVASION: ('nc', 0),
+    G.COLD_CALLER_INVASION: ('cc', 0),
+    G.BEAN_COUNTER_INVASION: ('bc', 0),
+    G.DOUBLE_TALKER_INVASION: ('dt', 0),
+    G.DOWNSIZER_INVASION: ('ds', 0),
+    G.SELLBOT_INVASION_MOVER_AND_SHAKER: ('ms', 0),
+    G.PRE_JULY_4_DOWNSIZER_INVASION: ('ds', 0),
+    G.PRE_JULY_4_BIGWIG_INVASION: ('bw', 0),
+}
+del G
+# Enough cogs to last until the holiday is over.
+HolidayInvasionSuits = 100000
+
+
 class SuitInvasionManagerAI:
     """
     This is a very basic AI class to handle Suit Invasions in Toontown.
@@ -27,6 +69,11 @@ class SuitInvasionManagerAI:
         self.suitName = None
         self.numSuits = 0
         self.spawnedSuits = 0
+        self.holidayInvasion = None
+        messenger.accept('holidayStarted', self, self.__holidayStarted)
+        messenger.accept('holidayEnded', self, self.__holidayEnded)
+        # Holidays already running when the district started.
+        taskMgr.doMethodLater(1, self.__startRunningHolidays, 'holiday-invasions')
 
         if config.ConfigVariableBool('want-mega-invasions', False).getValue(): # TODO - config for this
             # Mega invasion configuration.
@@ -81,6 +128,25 @@ class SuitInvasionManagerAI:
             self.startInvasion(suitName, numSuits, specialSuit)
         return task.again
 
+    def __startRunningHolidays(self, task):
+        for holidayId in self.air.holidayManager.currentHolidays:
+            self.__holidayStarted(holidayId)
+        return task.done
+
+    def __holidayStarted(self, holidayId):
+        if holidayId not in HolidayInvasions:
+            return
+        suitName, specialSuit = HolidayInvasions[holidayId]
+        if self.getInvading():
+            # The holiday's cogs take over from the invasion going on.
+            self.stopInvasion()
+        if self.startInvasion(suitName or choice(SuitDNA.suitHeadTypes), HolidayInvasionSuits, specialSuit):
+            self.holidayInvasion = holidayId
+
+    def __holidayEnded(self, holidayId):
+        if holidayId == self.holidayInvasion:
+            self.stopInvasion()
+
     def getInvading(self):
         """ Tell the caller if an invasion is currently running. """
         return self.invading
@@ -108,6 +174,7 @@ class SuitInvasionManagerAI:
         self.spawnedSuits = 0
         self.invading = 0
         self.suitName = None
+        self.holidayInvasion = None
         self.__spAllCogsSupaFly()
 
     def __checkInvasionOver(self):

@@ -5,6 +5,7 @@ from toontown.racing.DistributedGagAI import DistributedGagAI
 from toontown.racing import RaceGlobals
 from direct.distributed.ClockDelta import *
 from toontown.toonbase import TTLocalizer
+from toontown.toonbase import ToontownGlobals
 from direct.fsm.FSM import FSM
 from direct.task import Task
 
@@ -315,10 +316,14 @@ class DistributedRaceAI(DistributedObjectAI, FSM):
         else:
             winnings = 0
             trophies = []
+        if winnings > entryFee and self.air.holidayManager.isHolidayRunning(ToontownGlobals.KARTING_TICKETS_HOLIDAY):
+            # Twice the tickets won, on top of getting the entry fee back.
+            bonus = (winnings - entryFee) * (RaceGlobals.KARTING_TICKETS_HOLIDAY_MULTIPLIER - 1)
+            winnings += bonus
         av.b_setTickets(av.getTickets() + winnings)
         if av.getTickets() > RaceGlobals.MaxTickets:
             av.b_setTickets(RaceGlobals.MaxTickets)
-        self.sendUpdate('setPlace', [avId, totalTime, place, entryFee, qualify, (winnings-entryFee), bonus, trophies, [], 0])
+        self.sendUpdate('setPlace', [avId, totalTime, place, entryFee, qualify, (winnings-entryFee-bonus), bonus, trophies, [], 0])
 
         
     def calculateTrophies(self, avId, won, qualify, time):
