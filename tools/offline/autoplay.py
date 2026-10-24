@@ -1534,6 +1534,247 @@ def scenarioTrolleyTracks():
     onDistrict(lambda air: air.holidayManager.endHoliday(ToontownGlobals.TROLLEY_HOLIDAY))
 
 
+def scenarioInvasion(battles=2):
+    # A Flunky invasion on Silly Street: the cogs on the street fly away and
+    # every new one is a Flunky. Invasion cogs come to every street, so the
+    # toon fights a few on this one and then calls the invasion off.
+    street = ToontownGlobals.SillyStreet
+    yield from teleport(street - street % 1000, firstVisgroup(street))
+    magicWord('~invasion start f 1000')
+    yield until(lambda: base.cr.newsManager.getInvading(), 60, 'the invasion to start')
+    multiplier = localAvatar.inventory.getInvasionCreditMultiplier()
+    log('invasion started; gag experience multiplier %s' % multiplier)
+    if multiplier != 2.0:
+        raise StepFailed('gag experience is not doubled during the invasion')
+    flunkies = lambda: [suit for suit in suitsNearby() if suit.dna.name == 'f']
+    others = lambda: [suit for suit in suitsNearby() if suit.dna.name != 'f']
+    yield until(lambda: not others(), 300, 'the cogs that were on the street to fly away')
+    for fought in range(battles):
+        onDistrict(restock, localAvatar.doId)
+        yield until(flunkies, 300, 'an invading Flunky')
+        suit = min(flunkies(), key=lambda s: (s.getPos(render) - localAvatar.getPos(render)).length())
+        while placeState() == 'walk' and not suit.isEmpty():
+            localAvatar.setPos(render, suit.getPos(render))
+            yield sleep(0.1)
+        if placeState() != 'walk':
+            yield from fightBattle()
+            yield until(walking, 120, 'walking after the battle')
+        log('fought invading Flunky %d' % (fought + 1))
+    magicWord('~invasion stop')
+    yield until(lambda: not base.cr.newsManager.getInvading(), 60, 'the invasion to end')
+    log('the invasion ended')
+
+
+def scenarioGarden():
+    # Starts a garden the way the Gardening Kit from the catalog does, then
+    # grows, picks and sells a flower, grows a gag tree to organic gags and
+    # picks its gags, and plants a statue, a day at a time.
+    from toontown.estate import GardenGlobals
+    me = localAvatar.doId
+    yield until(walking, 60, 'walking before going home')
+    place().goHomeNow(localAvatar.zoneId)
+    yield until(lambda: placeName() == 'Estate' and walking(), 180, 'walking around the estate')
+
+    def startGarden(air, avId):
+        av = air.doId2do[avId]
+        av.b_setMoney(av.getMaxMoney())
+        av.estate.placeStarterGarden(av)
+        return av.estate.toons.index(avId)
+
+    def nextDay(air, avId):
+        air.doId2do[avId].estate.doEpochNow()
+
+    ownerIndex = onDistrict(startGarden, me)
+    numPlots = len(GardenGlobals.estatePlots[ownerIndex])
+    myPlots = lambda: [do for do in base.cr.doId2do.values() if do.__class__.__name__ == 'DistributedGardenPlot' and do.getOwnerId() == me]
+    yield until(lambda: len(myPlots()) == numPlots, 60, 'the garden plots')
+    boxes = [do for do in base.cr.doId2do.values() if do.__class__.__name__ == 'DistributedGardenBox']
+    log('garden started: %d plots and %d planters' % (numPlots, len(boxes)))
+
+    def plotFor(plantType):
+        return next(plot for plot in myPlots() if GardenGlobals.whatCanBePlanted(plot.ownerIndex, plot.plot) == plantType)
+
+    def plantAt(hardPoint, className):
+        return findObject(className, lambda do: do.plot == hardPoint and do.getOwnerId() == me)
+
+    def dismissDialogs():
+        # Clicks OK on the "you planted..." dialogs, which hold the toon
+        # still until they are closed.
+        from toontown.estate.DistributedLawnDecor import DistributedLawnDecor
+        for do in list(base.cr.doId2do.values()):
+            if isinstance(do, DistributedLawnDecor) and getattr(do, 'resultDialog', None):
+                do.resultsCallback(1)
+
+    def water(plant):
+        level = plant.waterLevel
+        plant.sendUpdate('waterPlant', [])
+        yield until(lambda: plant.waterLevel > level, 30, 'the water to soak in')
+
+    # A flower: one bean is all a new toon's shovel can plant.
+    species, variety = next((s, v) for s in GardenGlobals.getFlowerSpecies()
+                            for v in range(len(GardenGlobals.getFlowerVarieties(s)))
+                            if GardenGlobals.getNumBeansRequired(s, v) == 1)
+    plot = plotFor(GardenGlobals.FLOWER_TYPE)
+    hardPoint = plot.plot
+    money = localAvatar.getMoney()
+    plot.sendUpdate('plantFlower', [species, variety])
+    yield until(lambda: plantAt(hardPoint, 'DistributedFlower'), 60, 'the flower to be planted')
+    flower = plantAt(hardPoint, 'DistributedFlower')
+    log('planted %s for %d bean' % (GardenGlobals.getFlowerVarietyName(species, variety), money - localAvatar.getMoney()))
+    yield until(lambda: not flower.movie or flower.movie.isStopped(), 30, 'the planting movie')
+    yield from water(flower)
+    onDistrict(nextDay, me)
+    yield until(lambda: flower.growthLevel >= 1, 30, 'the flower to bloom')
+    log('a day later the flower bloomed (water %d)' % flower.waterLevel)
+    flower.sendUpdate('removeItem', [])
+    yield until(lambda: len(localAvatar.flowerBasket) == 1, 60, 'the flower in the basket')
+    yield until(lambda: plantAt(hardPoint, 'DistributedGardenPlot'), 60, 'the empty plot')
+    estate = findObject('DistributedEstate')
+    money = localAvatar.getMoney()
+    estate.sendUpdate('completeFlowerSale', [1])
+    yield until(lambda: len(localAvatar.flowerCollection) == 1, 30, 'the flower in the collection')
+    log('sold the flower for %d beans; it is in the flower collection' % (localAvatar.getMoney() - money))
+
+    # A gag tree, planted from a gag. It bears gags once full grown, and a
+    # full grown tree makes its track organic.
+    track, level = ToontownBattleGlobals.THROW_TRACK, 0
+    plot = plotFor(GardenGlobals.GAG_TREE_TYPE)
+    hardPoint = plot.plot
+    plot.sendUpdate('plantGagTree', [track, level])
+    yield until(lambda: plantAt(hardPoint, 'DistributedGagTree'), 60, 'the gag tree to be planted')
+    tree = plantAt(hardPoint, 'DistributedGagTree')
+    thresholds = GardenGlobals.PlantAttributes[tree.typeIndex]['growthThresholds']
+    while tree.growthLevel < thresholds[2]:
+        yield until(lambda: not tree.movie or tree.movie.isStopped(), 30, 'the tree movie')
+        yield from water(tree)
+        growth = tree.growthLevel
+        onDistrict(nextDay, me)
+        yield until(lambda: tree.growthLevel > growth, 30, 'the tree to grow')
+    yield until(lambda: localAvatar.getTrackBonusLevel(track) >= level, 30, 'organic throw gags')
+    log('the tree grew in %d days; throw gags are organic up to level %d' % (tree.growthLevel, localAvatar.getTrackBonusLevel(track)))
+
+    def emptyPies(air, avId):
+        av = air.doId2do[avId]
+        av.inventory.inventory[track][level] = 0
+        av.inventory.calcTotalProps()
+        av.b_setInventory(av.inventory.makeNetString())
+
+    onDistrict(emptyPies, me)
+    yield until(lambda: localAvatar.inventory.numItem(track, level) == 0, 30, 'room for the gags')
+    tree.sendUpdate('requestHarvest', [])
+    yield until(lambda: localAvatar.inventory.numItem(track, level) > 0, 60, 'the picked gags')
+    log('picked %d gags off the tree' % localAvatar.inventory.numItem(track, level))
+
+    # A statue, from a catalog garden item.
+    def giveStatue(air, avId):
+        av = air.doId2do[avId]
+        av.addGardenItem(100, 1)
+        av.addGardenItem(GardenGlobals.GardenAcceleratorSpecial, 1)
+        av.b_setShovelSkill(GardenGlobals.ShovelAttributes[0]['skillPts'] // 2)
+
+    onDistrict(giveStatue, me)
+    yield until(lambda: len(localAvatar.getGardenSpecials()) == 2, 30, 'the garden items')
+    plot = plotFor(GardenGlobals.STATUARY_TYPE)
+    hardPoint = plot.plot
+    plot.sendUpdate('plantStatuary', [200])
+    yield until(lambda: plantAt(hardPoint, 'DistributedStatuary'), 60, 'the statue')
+    yield until(lambda: getattr(plantAt(hardPoint, 'DistributedStatuary'), 'resultDialog', None), 30, 'the statue planting dialog')
+    dismissDialogs()
+    log('planted a %s' % GardenGlobals.PlantAttributes[200]['name'])
+
+    # The garden accelerator from the Shtiker Book makes a day pass.
+    growth = tree.growthLevel
+    responses = []
+    localAvatar.accept('use-special-response', responses.append)
+    localAvatar.sendUpdate('reqUseSpecial', [GardenGlobals.GardenAcceleratorSpecial])
+    yield until(lambda: responses, 30, 'the garden accelerator')
+    localAvatar.ignore('use-special-response')
+    if responses[0] != 'success':
+        raise StepFailed('the garden accelerator answered %s' % responses[0])
+    yield until(lambda: tree.growthLevel > growth or tree.waterLevel < 0, 30, 'the accelerated day')
+    saved = onDistrict(lambda air, avId: air.doId2do[avId].estate.items[ownerIndex], me)
+    log('accelerator used; the estate keeps %d plants: %s' % (len(saved), saved))
+    dismissDialogs()
+    yield until(walking, 30, 'walking after gardening')
+    yield from teleport(ToontownGlobals.ToontownCentral)
+
+
+def scenarioParty():
+    # Plans a party that starts now, goes to it, and has it end; then plans
+    # one more and cancels it for a refund.
+    from toontown.parties import PartyGlobals
+    from toontown.parties.PartyGlobals import ActivityIds, DecorationIds, PartyStatus
+    from datetime import timedelta
+    yield until(walking, 60, 'walking before planning')
+    onDistrict(lambda air, avId: air.doId2do[avId].b_setMoney(air.doId2do[avId].getMaxMoney()), localAvatar.doId)
+    yield until(lambda: localAvatar.getMoney() == localAvatar.getMaxMoney(), 30, 'beans for the party')
+    activities = [[ActivityIds.PartyClock, 9, 13, 0], [ActivityIds.PartyJukebox, 3, 3, 0],
+                  [ActivityIds.PartyTrampoline, 14, 3, 0], [ActivityIds.PartyCatch, 4, 10, 0],
+                  [ActivityIds.PartyCannon, 14, 10, 0], [ActivityIds.PartyDance, 9, 7, 0]]
+    decorations = [[DecorationIds.Cake, 1, 1, 0], [DecorationIds.Bow, 16, 13, 0]]
+    cost = sum(PartyGlobals.ActivityInformationDict[a[0]]['cost'] for a in activities) + \
+           sum(PartyGlobals.DecorationInformationDict[d[0]]['cost'] for d in decorations)
+
+    def plan(start):
+        responses = []
+        base.cr.partyManager.accept('addPartyResponseReceived', lambda hostId, code: responses.append(code))
+        end = start + timedelta(hours=1)
+        fmt = '%Y-%m-%d %H:%M:%S'
+        base.cr.partyManager.sendAddParty(localAvatar.doId, start.strftime(fmt), end.strftime(fmt), 0, 0,
+                                          activities, decorations, [])
+        yield until(lambda: responses, 30, 'the party planner to answer')
+        base.cr.partyManager.ignore('addPartyResponseReceived')
+        if responses[0] != PartyGlobals.AddPartyErrorCode.AllOk:
+            raise StepFailed('planning the party failed with %s' % responses[0])
+
+    def hosted():
+        return localAvatar.hostedParties[0] if localAvatar.hostedParties else None
+
+    # The planner opens in party grounds of its own.
+    zones = []
+    localAvatar.aboutToPlanParty = True
+    base.cr.partyManager.requestPartyZone(localAvatar.doId, 0, lambda hostId, partyId, zoneId: zones.append(zoneId))
+    yield until(lambda: zones, 30, 'a party grounds to plan in')
+    localAvatar.aboutToPlanParty = False
+    if not zones[0]:
+        raise StepFailed('no party grounds to plan in')
+    messenger.send('deallocateZoneIdFromPlannedParty', [zones[0]])
+
+    money = localAvatar.getMoney()
+    now = base.cr.toontownTimeManager.getCurServerDateTime().replace(tzinfo=None, second=0, microsecond=0)
+    yield from plan(now)
+    yield until(lambda: hosted() and hosted().status == PartyStatus.CanStart, 90, 'the party to be able to start')
+    log('planned a party for %d beans (it costs %d); it can start' % (money - localAvatar.getMoney(), cost))
+
+    place().startPartyNow(True, localAvatar.doId)
+    yield until(lambda: placeName() == 'Party' and walking() and hasattr(base, 'distributedParty'), 180, 'walking around the party')
+    party = base.distributedParty
+    acts = [do.__class__.__name__ for do in base.cr.doId2do.values() if do.__class__.__name__.startswith('DistributedParty') and do.__class__.__name__ != 'DistributedPartyManager']
+    log('at the party in zone %d with %s' % (localAvatar.zoneId, sorted(acts)))
+    if len(acts) < len(activities) - 1:
+        raise StepFailed('the party is missing activities')
+    yield sleep(5)
+    magicWord('~endParty')
+    yield until(lambda: placeName() != 'Party' and walking(), 120, 'being sent home when the party ends')
+    yield until(lambda: hosted() and hosted().status == PartyStatus.Finished, 30, 'the party to be over')
+    log('the party ended and the toon went back to %s' % placeName())
+
+    # A party for tomorrow, cancelled.
+    money = localAvatar.getMoney()
+    yield from plan(now + timedelta(days=1))
+    yield until(lambda: hosted() and hosted().status == PartyStatus.Pending, 30, 'the planned party')
+    refunds = []
+    base.cr.partyManager.accept(base.cr.partyManager.PartyStatusChangedEvent, lambda *args: refunds.append(args))
+    base.cr.partyManager.sendChangePartyStatusRequest(hosted().partyId, PartyStatus.Cancelled)
+    yield until(lambda: refunds, 30, 'the cancellation')
+    base.cr.partyManager.ignore(base.cr.partyManager.PartyStatusChangedEvent)
+    partyId, status, errorCode, refund = refunds[0]
+    if status != PartyStatus.Cancelled or errorCode != PartyGlobals.ChangePartyFieldErrorCode.AllOk:
+        raise StepFailed('cancelling answered status %s error %s' % (status, errorCode))
+    yield sleep(1)
+    log('cancelled tomorrow\'s party: %d beans back, %d lost' % (refund, money - localAvatar.getMoney()))
+
+
 def scenarioQuest(steps=12):
     # Takes a ToonTask from Toon HQ and plays it through every step to the
     # reward, the way a new toon would.
@@ -1646,6 +1887,9 @@ SCENARIOS = [
     ('sillymeter', scenarioSillyMeter),
     ('blackcat', scenarioBlackCat),
     ('trolleytracks', scenarioTrolleyTracks),
+    ('invasion', scenarioInvasion),
+    ('garden', scenarioGarden),
+    ('party', scenarioParty),
     ('quest', scenarioQuest),
 ]
 

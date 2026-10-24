@@ -223,6 +223,7 @@ class DistributedToonAI(DistributedPlayerAI.DistributedPlayerAI, DistributedSmoo
         self.inviteMailNotify = ToontownGlobals.NoItems
         self.invites = []
         self.hostedParties = []
+        self.hostedPartyRecord = []
         self.partiesInvitedTo = []
         self.partyReplyInfoBases = []
         self.modulelist = ModuleListAI.ModuleList()
@@ -1986,6 +1987,21 @@ class DistributedToonAI(DistributedPlayerAI.DistributedPlayerAI, DistributedSmoo
 
     def getScavengerHuntGoals(self):
         return self.scavengerHuntGoals
+
+    def setHostedPartyRecord(self, record):
+        # The party this toon planned, kept in the database until it is
+        # over (see DistributedPartyManagerAI).
+        self.hostedPartyRecord = [list(party) for party in record]
+
+    def d_setHostedPartyRecord(self, record):
+        self.sendUpdate('setHostedPartyRecord', [record])
+
+    def b_setHostedPartyRecord(self, record):
+        self.setHostedPartyRecord(record)
+        self.d_setHostedPartyRecord(record)
+
+    def getHostedPartyRecord(self):
+        return self.hostedPartyRecord
 
     def getCheesyEffect(self):
         return (self.savedCheesyEffect, self.savedCheesyHoodId, self.savedCheesyExpireTime)
@@ -3870,7 +3886,7 @@ class DistributedToonAI(DistributedPlayerAI.DistributedPlayerAI, DistributedSmoo
             return 0
 
     def removeFlowerFromBasketAtIndex(self, index):
-        if self.flowerBasket.removeFlowerAtIndex(index):
+        if self.flowerBasket.removeFishAtIndex(index):
             self.d_setFlowerBasket(*self.flowerBasket.getNetLists())
             return 1
         else:
@@ -3996,29 +4012,22 @@ class DistributedToonAI(DistributedPlayerAI.DistributedPlayerAI, DistributedSmoo
         self.sendUpdate('useSpecialResponse', [response])
 
     def tryToUseSpecial(self, special):
-        estateOwnerDoId = simbase.air.estateMgr.zone2owner.get(self.zoneId)
+        # Garden items used from the Shtiker Book, such as the garden
+        # accelerator, work in the toon's own garden.
         response = 'badlocation'
-        doIHaveThisSpecial = False
-        for curSpecial in self.gardenSpecials:
-            if curSpecial[0] == special and curSpecial[1] > 0:
-                doIHaveThisSpecial = True
-                break
-
-        if not doIHaveThisSpecial:
+        if not any(index == special and count > 0 for index, count in self.gardenSpecials):
             return response
-        if not self.doId == estateOwnerDoId:
-            self.notify.warning("how did this happen, planting an item you don't own")
+        estate = getattr(self, 'estate', None)
+        if not estate or estate.zoneId != self.zoneId or self.doId not in estate.toons:
             return response
-        if estateOwnerDoId:
-            estate = simbase.air.estateMgr.estate.get(estateOwnerDoId)
-            if estate and hasattr(estate, 'avIdList'):
-                ownerIndex = estate.avIdList.index(estateOwnerDoId)
-                if ownerIndex >= 0:
-                    estate.doEpochNow(onlyForThisToonIndex=ownerIndex)
-                    self.removeGardenItem(special, 1)
-                    response = 'success'
-                    self.air.writeServerEvent('garden_fertilizer', avId=self.doId)
-        return response
+        ownerIndex = estate.toons.index(self.doId)
+        if ownerIndex not in estate.gardens:
+            return response
+        if special == GardenGlobals.GardenAcceleratorSpecial:
+            estate.doEpochNow(onlyForThisToonIndex=ownerIndex)
+        self.removeGardenItem(special, 1)
+        self.air.writeServerEvent('garden_fertilizer', avId=self.doId)
+        return 'success'
 
     def sendGardenEvent(self):
         if hasattr(self, 'estateZones') and hasattr(self, 'doId'):

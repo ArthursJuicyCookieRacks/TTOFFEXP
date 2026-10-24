@@ -1151,6 +1151,7 @@ dclass DistributedToon : DistributedPlayer {
   keepAlive() ownsend airecv;
   setLastSeen(uint32 timestamp = 0) required db;
   setScavengerHuntGoals(uint32 goals[] = []) required db;
+  setHostedPartyRecord(party record[] = []) required db;
 };
 
 dclass DistributedCCharBase : DistributedObject {

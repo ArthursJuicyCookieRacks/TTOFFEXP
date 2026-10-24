@@ -16,6 +16,14 @@ from toontown.parties.DistributedPartyTugOfWarActivityAI import DistributedParty
 from toontown.parties.DistributedPartyCannonActivityAI import DistributedPartyCannonActivityAI
 from toontown.parties.DistributedPartyCannonAI import DistributedPartyCannonAI
 from toontown.parties.DistributedPartyFireworksActivityAI import DistributedPartyFireworksActivityAI
+from toontown.parties.DistributedPartyValentineJukeboxActivityAI import DistributedPartyValentineJukeboxActivityAI
+from toontown.parties.DistributedPartyValentineJukebox40ActivityAI import DistributedPartyValentineJukebox40ActivityAI
+from toontown.parties.DistributedPartyValentineDanceActivityAI import DistributedPartyValentineDanceActivityAI
+from toontown.parties.DistributedPartyValentineDance20ActivityAI import DistributedPartyValentineDance20ActivityAI
+from toontown.parties.DistributedPartyValentineTrampolineActivityAI import DistributedPartyValentineTrampolineActivityAI
+from toontown.parties.DistributedPartyWinterTrampolineActivityAI import DistributedPartyWinterTrampolineActivityAI
+from toontown.parties.DistributedPartyWinterCatchActivityAI import DistributedPartyWinterCatchActivityAI
+from toontown.parties.DistributedPartyWinterCogActivityAI import DistributedPartyWinterCogActivityAI
 
 """
 dclass DistributedParty : DistributedObject {
@@ -40,6 +48,7 @@ class DistributedPartyAI(DistributedObjectAI):
         # buncha required crap
         PARTY_TIME_FORMAT = '%Y-%m-%d %H:%M:%S'
         self.startedAt = time.strftime(PARTY_TIME_FORMAT)
+        self.startedTimestamp = time.time()
         self.partyState = 0
         self.avIdsAtParty = []
         # apparently 'partyclockinfo' is the xyz on the party grid
@@ -69,6 +78,14 @@ class DistributedPartyAI(DistributedObjectAI):
             ActivityIds.PartyJukebox40: DistributedPartyJukebox40ActivityAI,
             ActivityIds.PartyDance20: DistributedPartyDance20ActivityAI,
             ActivityIds.PartyCog: DistributedPartyCogActivityAI,
+            ActivityIds.PartyValentineJukebox: DistributedPartyValentineJukeboxActivityAI,
+            ActivityIds.PartyValentineJukebox40: DistributedPartyValentineJukebox40ActivityAI,
+            ActivityIds.PartyValentineDance: DistributedPartyValentineDanceActivityAI,
+            ActivityIds.PartyValentineDance20: DistributedPartyValentineDance20ActivityAI,
+            ActivityIds.PartyValentineTrampoline: DistributedPartyValentineTrampolineActivityAI,
+            ActivityIds.PartyWinterTrampoline: DistributedPartyWinterTrampolineActivityAI,
+            ActivityIds.PartyWinterCatch: DistributedPartyWinterCatchActivityAI,
+            ActivityIds.PartyWinterCog: DistributedPartyWinterCogActivityAI,
         }
         for activity in self.info['activities']:
             actId = activity[0]
@@ -90,6 +107,7 @@ class DistributedPartyAI(DistributedObjectAI):
                 act.generateWithRequired(self.zoneId)
                 self.activities.append(act)
     def delete(self):
+        self.ignoreAll()
         for act in self.activities:
             act.requestDelete()
         if self.cannonActivity:
@@ -141,15 +159,16 @@ class DistributedPartyAI(DistributedObjectAI):
     def getHostName(self):
         return self.hostName
 
+    def isPrivate(self):
+        return self.info.get('isPrivate', 0)
+
     def enteredParty(self):
         avId = self.air.getAvatarIdFromSender()
         if not avId in self.avIdsAtParty:
-            self.air.globalPartyMgr.d_toonJoinedParty(self.info.get('partyId', 0), avId)
             self.avIdsAtParty.append(avId)
-        
+            self.acceptOnce(self.air.getAvatarExitEvent(avId), self._removeAvatar, extraArgs=[avId])
+
     def _removeAvatar(self, avId):
         if avId in self.avIdsAtParty:
-            print('REMOVE FROM PARTTY!')
-            self.air.globalPartyMgr.d_toonLeftParty(self.info.get('partyId', 0), avId)
             self.avIdsAtParty.remove(avId)
-
+            self.ignore(self.air.getAvatarExitEvent(avId))
