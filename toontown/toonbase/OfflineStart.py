@@ -11,7 +11,7 @@ by relative path.
 import os
 import sys
 
-from panda3d.core import ExecutionEnvironment, Filename, VirtualFileSystem
+from panda3d.core import ExecutionEnvironment, Filename, Multifile, VirtualFileSystem
 from panda3d.core import loadPrcFile, loadPrcFileData
 
 # The phase files, in the order the game needs them.
@@ -44,7 +44,13 @@ def mountPhases(gameDir):
     for phase in PHASES:
         multifile = Filename(gameDir, 'phase_%s.mf' % phase)
         if vfs.exists(multifile):
-            vfs.mount(multifile, Filename('/'), VirtualFileSystem.MFReadOnly)
+            # Opened through the virtual file system, since on Android the
+            # multifiles sit in the APK's assets, not on disk.
+            mf = Multifile()
+            if mf.openRead(multifile):
+                vfs.mount(mf, Filename('/'), VirtualFileSystem.MFReadOnly)
+            else:
+                print('OfflineStart: could not open %s' % multifile)
         else:
             # A checkout keeps the phases as folders under resources/.
             folder = Filename(gameDir, 'resources/phase_%s' % phase)

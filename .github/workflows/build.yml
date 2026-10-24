@@ -135,7 +135,7 @@ jobs:
       uses: actions/cache@v5
       with:
         path: wheels
-        key: panda3d-android-${{ matrix.abi }}-${{ env.PANDA3D_COMMIT }}-py${{ env.ANDROID_PYTHON }}-v1
+        key: panda3d-android-${{ matrix.abi }}-${{ env.PANDA3D_COMMIT }}-py${{ env.ANDROID_PYTHON }}-v2
 
     - name: Check out Panda3D
       if: steps.cache.outputs.cache-hit != 'true'
@@ -223,6 +223,12 @@ jobs:
         [ -d "$libs" ] || libs=$(ls -d thirdparty/android-libs-* | head -1)
         rm -rf "$libs/python"
         cp -R ~/python-prefix "$libs/python"
+        # build_apps finds a standard library module as libpy.<name>.so, so
+        # the modules lose their platform tag (math.cpython-313-...so).
+        for module in "$libs"/python/lib/python3.*/lib-dynload/*.so; do
+          name=$(basename "$module")
+          mv "$module" "$(dirname "$module")/${name%%.*}.so"
+        done
         python makepanda/makepanda.py --git-commit=$PANDA3D_COMMIT --target android-21 --arch ${{ matrix.arch }} \
           --python-incdir=$HOME/python-prefix/include --python-libdir=$HOME/python-prefix/lib \
           --everything --no-openssl --no-tinydisplay --no-pandatool --threads=4 --wheel
@@ -233,7 +239,7 @@ jobs:
       run: |
         exec > >(tee -a "$RUNNER_TEMP/steps.log") 2>&1
         python -m zipfile -l wheels/panda3d-*.whl > contents.txt
-        for module in panda3d/core panda3d/direct panda3d/physics panda3d/ode panda3d/fx p3openal_audio pandagles2 libdeploy-stubw libpython; do
+        for module in panda3d/core panda3d/direct panda3d/physics panda3d/ode panda3d/fx p3openal_audio pandagles2 libdeploy-stubw libpython deploy_libs/math.so deploy_libs/_struct.so; do
           grep -q "$module" contents.txt || { echo "the wheel is missing $module"; exit 1; }
         done
 
@@ -363,11 +369,14 @@ jobs:
           ANDROID_KEY_ALIAS=game
         fi
         aab=$(ls dist/*.aab)
+        python tools/offline/store_multifiles_uncompressed.py "$aab"
         java -jar bundletool.jar build-apks --bundle="$aab" --output=game.apks --mode=universal \
           --ks=game.keystore --ks-pass=pass:$ANDROID_KEYSTORE_PASSWORD --ks-key-alias=$ANDROID_KEY_ALIAS \
           --key-pass=pass:$ANDROID_KEYSTORE_PASSWORD
         python -m zipfile -e game.apks apks
         mv apks/universal.apk "${aab%.aab}.apk"
+        python -m zipfile -l "${aab%.aab}.apk" > apk-contents.txt
+        echo "::notice title=APK contents::$(grep -c 'lib/x86_64/libpy\.' apk-contents.txt) Python modules for x86_64; $(grep -E 'assets/phase_3\.mf|lib/x86_64/libpy\.math' apk-contents.txt | tr -s ' ' | tr '\n' ';')"
         ls -l dist
       env:
         ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
