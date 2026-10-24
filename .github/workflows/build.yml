@@ -467,6 +467,25 @@ jobs:
         sudo udevadm control --reload-rules
         sudo udevadm trigger --name-match=kvm
 
+    - name: Write the emulator script
+      run: |
+        # The game's own log lines are those of its process, so note its id
+        # while it runs; the crash buffer has any native crash.
+        cat > smoke.sh <<'SCRIPT'
+        adb install -r *.apk
+        adb logcat -c
+        adb shell am start -n com.ttroffline.game/org.panda3d.android.PythonActivity
+        sleep 10
+        adb shell pidof com.ttroffline.game > startpid.txt
+        sleep 140
+        adb exec-out screencap -p > screenshot.png
+        adb shell pidof com.ttroffline.game > pid.txt
+        adb logcat -d > logcat.txt
+        adb logcat -d --pid="$(cat startpid.txt)" > game.txt
+        adb logcat -d -b crash > crash.txt
+        true
+        SCRIPT
+
     - name: Start the game in an emulator
       uses: reactivecircus/android-emulator-runner@v2
       with:
@@ -475,20 +494,20 @@ jobs:
         target: google_apis
         disk-size: 6000M
         emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
-        script: bash -c 'adb install -r *.apk && adb logcat -c && adb shell am start -n com.ttroffline.game/org.panda3d.android.PythonActivity && sleep 150 && adb exec-out screencap -p > screenshot.png; adb logcat -d > logcat.txt; adb shell pidof com.ttroffline.game > pid.txt; true'
+        script: bash smoke.sh
 
     - name: Check the game
       run: |
-        # The game's own lines (and any crash), in a few annotations.
-        grep -E 'ttroffline|Panda3D|panda3d|python|Python|OfflineStart|Traceback|AndroidRuntime|DEBUG|libc|F linker' logcat.txt | grep -v 'Bugle\|NetworkScheduler' | tail -c 15000 > game.txt || true
+        # The game's own lines and any crash, in a few annotations.
+        cat crash.txt game.txt | tail -c 27000 > shown.txt
         python3 -c "
-        text = open('game.txt', errors='replace').read()
+        text = open('shown.txt', errors='replace').read()
         for start in range(0, len(text), 3000):
             print('::notice title=Game log %d::' % (start // 3000 + 1) + text[start:start + 3000].replace('%', '%25').replace('\\n', '%0A'))
         "
-        grep -q 'OfflineStart' logcat.txt || { echo '::error::The game did not start'; exit 1; }
+        [ -s startpid.txt ] || { echo '::error::The game did not start'; exit 1; }
         [ -s pid.txt ] || { echo '::error::The game is no longer running'; exit 1; }
-        if grep -q 'Traceback' logcat.txt; then echo '::error::The log has a Python error'; exit 1; fi
+        if grep -q 'Traceback' game.txt; then echo '::error::The log has a Python error'; exit 1; fi
 
     - uses: actions/upload-artifact@v7
       if: always()
@@ -497,3 +516,5 @@ jobs:
         path: |
           screenshot.png
           logcat.txt
+          game.txt
+          crash.txt
