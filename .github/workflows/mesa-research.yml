@@ -57,6 +57,31 @@ jobs:
         cpu = 'armv8'
         endian = 'little'
         CROSS
+        # Mesa's Android code expects a few system libraries an app can't
+        # load; what it uses of them is done here with the NDK instead.
+        cat > ndkstub.c <<'STUB'
+        #include <string.h>
+        #include <sys/system_properties.h>
+        int property_get(const char *key, char *value, const char *default_value);
+        int property_get(const char *key, char *value, const char *default_value)
+        {
+           int len = __system_property_get(key, value);
+           if (len > 0)
+              return len;
+           len = default_value ? (int)strlen(default_value) : 0;
+           if (len > PROP_VALUE_MAX - 1)
+              len = PROP_VALUE_MAX - 1;
+           if (len)
+              memcpy(value, default_value, len);
+           value[len] = 0;
+           return len;
+        }
+        STUB
+        $BIN/aarch64-linux-android$ANDROID_API-clang -O2 -fPIC -c ndkstub.c -o ndkstub.o
+        $BIN/llvm-ar rcs $PWD/libndkstub.a ndkstub.o
+        sed -i "s|c_link_args = \['-landroid', '-llog'\]|c_link_args = ['-landroid', '-llog', '$PWD/libndkstub.a']|; s|cpp_link_args = \['-landroid', '-llog',|cpp_link_args = ['-landroid', '-llog', '$PWD/libndkstub.a',|; s|c_args = \['-DVK_USE_PLATFORM_ANDROID_KHR'\]|c_args = ['-DVK_USE_PLATFORM_ANDROID_KHR', '-I$PWD/mesa/include/android_stub']|; s|cpp_args = \['-DVK_USE_PLATFORM_ANDROID_KHR'\]|cpp_args = ['-DVK_USE_PLATFORM_ANDROID_KHR', '-I$PWD/mesa/include/android_stub']|" android.cross
+        cat android.cross
+        ls mesa/include/android_stub mesa/include/android_stub/*
         cd mesa
         meson setup build --cross-file ../android.cross --prefix=/out -Dallow-fallback-for=libdrm --force-fallback-for=libdrm -Dlibdrm:tests=false -Dlibdrm:intel=disabled -Dlibdrm:radeon=disabled -Dlibdrm:amdgpu=disabled -Dlibdrm:nouveau=disabled -Dlibdrm:vmwgfx=disabled -Dbuildtype=release -Db_ndebug=true \
           -Dplatforms= -Dgallium-drivers=zink -Dvulkan-drivers= -Degl=enabled -Dgles1=disabled -Dgles2=enabled \
@@ -64,7 +89,7 @@ jobs:
           -Dlibunwind=disabled -Degl-lib-suffix=_mesa -Dgles-lib-suffix=_mesa -Dshader-cache=disabled \
           -Dlmsensors=disabled -Dvideo-codecs= -Dgallium-va=disabled -Dgallium-vdpau=disabled \
           -Dgallium-extra-hud=false -Dbuild-tests=false 2>&1 | grep -v "^Running compile\|^Code\|^Command line\|^-----\|^Working dir" | tail -120
-        ninja -C build 2>&1 | tail -60
+        ninja -C build -k 0 > ../ninja.log 2>&1 || { grep -B2 -A6 "error:\|undefined" ../ninja.log | grep -v "^/usr/local/lib/android" | head -200; exit 1; }
         DESTDIR=$PWD/../install ninja -C build install > /dev/null
         cd ..
         find install -name "*.so*" | xargs ls -la
