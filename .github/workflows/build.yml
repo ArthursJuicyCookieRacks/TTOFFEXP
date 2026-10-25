@@ -468,6 +468,8 @@ jobs:
         # Any Panda3D can write multifiles.
         pip install panda3d
         mkdir multifiles
+        # This repository's own changes to the resources (the new logo).
+        cp -rv resources-overlay/. resources-checkout/
         python tools/offline/pack_resources.py resources-checkout multifiles
 
     - uses: actions/upload-artifact@v7

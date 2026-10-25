@@ -35,6 +35,11 @@ from toontown.toon.DistributedToonAI import DistributedToonAI
 from toontown.toonbase import TTLocalizer, ToontownGlobals
 
 SPAWNS_PER_TICK = 3
+# How long the player's game must have been in a place before NPCs come.
+PLACE_SETTLE = 1.0
+# A toon that finds nowhere to walk this many times in a row is stuck (in a
+# corner, say) and goes off by teleport; another comes in its place.
+STUCK_TRIES = 6
 MANAGER_TICK = 1.0
 WALK_TICK = 0.2
 # How long an area keeps its NPCs once the player has left it.
@@ -50,6 +55,10 @@ TRAIL_SPACING = 8.0
 # How fast a toon turns, in degrees a second; sharper turns slow it down, so
 # it curves round corners the way a player steers.
 TURN_RATE = 400.0
+# How likely a toon that has stood a while is to walk off (rather than do
+# something where it stands), and how long it stops after a walk.
+WALK_CHANCE = 0.65
+PAUSE_AFTER_WALK = (0.5, 4.0)
 # How likely a wander is to go and stand by someone, and how close.
 SOCIAL_WALK = 0.3
 SOCIAL_RANGE = (3.5, 6.0)
@@ -244,7 +253,30 @@ class NPCPlayerManagerAI:
         self.joinBattles()
         self.joinBosses()
 
+    def placeReady(self, area, player):
+        """Whether the player's own game has the place loaded and is in it.
+
+        The ground and walls the NPCs go by are the client's; while the
+        place is still loading, a spot could be found under the steps or
+        inside a wall that isn't there yet, and a toon put there is stuck.
+        """
+        localAvatar = getClientBuiltin('localAvatar')
+        if localAvatar is None or localAvatar.doId != player.doId:
+            return True
+        base = getClientBuiltin('base')
+        place = base.cr.playGame.getPlace() if getattr(base, 'cr', None) and base.cr.playGame else None
+        zoneId = getattr(place, 'zoneId', None)
+        now = globalClock.getFrameTime()
+        if zoneId is None or getAreaId(zoneId) != area.areaId:
+            area.readySince = None
+            return False
+        if getattr(area, 'readySince', None) is None:
+            area.readySince = now
+        return now - area.readySince >= PLACE_SETTLE
+
     def populate(self, area, player, playerPos):
+        if not self.placeReady(area, player):
+            return
         for i in range(SPAWNS_PER_TICK):
             if len(area.npcs) >= self.npcsPerArea:
                 return
@@ -304,8 +336,11 @@ class NPCPlayerManagerAI:
     # --- Walking around ---
 
     def __walkTick(self, task):
-        dt = task.time - getattr(task, 'lastTime', task.time - WALK_TICK)
-        task.lastTime = task.time
+        # The time since the last tick. (task.time starts again from nothing
+        # each time a delayed task comes round, so it can't be used.)
+        now = globalClock.getFrameTime()
+        dt = max(0.0, min(1.0, now - getattr(self, 'lastWalkTick', now - WALK_TICK)))
+        self.lastWalkTick = now
         try:
             for area in list(self.areas.values()):
                 if not area.isActive():
@@ -331,9 +366,16 @@ class NPCPlayerManagerAI:
                 return
             if area is None or now < npc.idleUntil:
                 return
-            if random.random() < 0.35 or not self.idleAction(area, npc):
-                if not self.startWalk(area, npc):
-                    npc.idleUntil = now + random.uniform(1.5, 4)
+            # Mostly on the move, the way players run about; now and then
+            # they stop for something.
+            if random.random() < WALK_CHANCE or not self.idleAction(area, npc):
+                if self.startWalk(area, npc):
+                    npc.stuckTries = 0
+                else:
+                    npc.idleUntil = now + random.uniform(0.5, 2)
+                    npc.stuckTries = getattr(npc, 'stuckTries', 0) + 1
+                    if npc.stuckTries >= STUCK_TRIES and getNav().available():
+                        self.despawn(npc)
             return
         points, speed, zoneId, done = npc.walk
         pos = npc.getPos()
@@ -370,7 +412,7 @@ class NPCPlayerManagerAI:
             npc.stopMoving()
             if zoneId is not None and zoneId != npc.zoneId:
                 npc.b_setLocation(self.air.districtId, zoneId)
-            npc.idleUntil = now + random.uniform(1.5, 7)
+            npc.idleUntil = now + random.uniform(*PAUSE_AFTER_WALK)
             friend = getattr(npc, 'walkingTo', None)
             npc.walkingTo = None
             if friend is not None and not friend.isDeleted() and done is None:
@@ -424,7 +466,7 @@ class NPCPlayerManagerAI:
             roll -= weight
             if roll <= 0:
                 break
-        npc.idleUntil = now + random.uniform(2, 6)
+        npc.idleUntil = now + random.uniform(1.5, 4)
         if action == 'face':
             near = self.neighbours(area, npc, 25.0)
             if not near:
@@ -471,10 +513,11 @@ class NPCPlayerManagerAI:
         far = [p for p in area.points() if WANDER_RANGE[0] <= (p[0] - pos).length() <= WANDER_RANGE[1]]
         random.shuffle(far)
         candidates += [(p, zoneId, None) for p, zoneId in far[:3]]
-        # And a look around close by.
-        for i in range(2):
+        # And a look around close by, which is mostly clear where the far
+        # spots are behind something.
+        for i in range(6):
             angle = random.uniform(0, 2 * math.pi)
-            dist = random.uniform(*WANDER_RANGE) / 3.0
+            dist = random.uniform(8.0, 35.0)
             candidates.append((Point3(pos[0] + dist * math.cos(angle), pos[1] + dist * math.sin(angle), pos[2]), None, None))
         for target, zoneId, friend in candidates:
             path = nav.walkable(pos, target)

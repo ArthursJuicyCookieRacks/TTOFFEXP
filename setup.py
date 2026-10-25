@@ -75,6 +75,12 @@ LOG_OPTIONS = {} if 'android' in PLATFORMS else {
 
 
 
+# The name and icon the game shows on the phone's home screen.
+APP_LABEL = 'Toontown'
+ICON_DIR = os.path.join('tools', 'offline', 'art', 'app-icon')
+ICONS = [os.path.join(ICON_DIR, 'icon-%d.png' % size) for size in (16, 32, 48, 72, 96, 128, 144, 192, 256)]
+
+
 def keepActivityOnConfigChanges():
     """Has Android tell the game of every settings change, rather than
     closing and reopening it, which the game can't live through.
@@ -98,6 +104,9 @@ def keepActivityOnConfigChanges():
         old = 'android:configChanges="'
         assert old in manifest
         manifest = manifest.replace(old, old + 'mcc|mnc|touchscreen|density|colorMode|')
+        # The phone shows the game as plain "Toontown".
+        assert 'android:label="TTR-Offline"' in manifest
+        manifest = manifest.replace('android:label="TTR-Offline"', 'android:label="%s"' % APP_LABEL)
         with open(path, 'w', encoding='utf-8') as file:
             file.write(manifest)
 
@@ -116,6 +125,7 @@ setup(
             'gui_apps': {
                 'TTR-Offline': 'toontown/toonbase/OfflineStart.py',
             },
+            'icons': {'*': ICONS},
             # The Panda3D wheels are our own builds, found through PIP_FIND_LINKS.
             'use_optimized_wheels': False,
             'requirements_path': os.path.join(ROOT, 'tools', 'offline', 'build-requirements.txt'),

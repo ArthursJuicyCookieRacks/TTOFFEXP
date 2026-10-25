@@ -257,6 +257,7 @@ class OfflineLauncher(DirectObject):
     # --- Panels ---
 
     def closePanel(self):
+        self.releaseNPCs()
         if self.panel is not None:
             self.panel.destroy()
             self.panel = None
@@ -292,9 +293,16 @@ class OfflineLauncher(DirectObject):
                     text_scale=0.045, text_fg=TEXT_DARK, text='NPC toons in each place')
         self.npcLabel = DirectLabel(parent=panel, relief=None, pos=(0, 0, -0.22), text_font=self.minnieFont,
                                     text_scale=0.08, text_fg=RED, text=str(npcsPerArea(self.settings)))
-        for text, step, x in (('-10', -10, -0.5), ('-1', -1, -0.27), ('+1', 1, 0.27), ('+10', 10, 0.5)):
-            button = self.redButton(text, (x, 0, -0.2), self.changeNPCs, textScale=0.05, imageScale=(0.55, 1, 1.3))
-            button['extraArgs'] = [step]
+        for text, step, x in (('-10', -10, -0.52), ('-1', -1, -0.235), ('+1', 1, 0.235), ('+10', 10, 0.52)):
+            button = self.redButton(text, (x, 0, -0.2), None, textScale=0.06, imageScale=(0.62, 1, 1.45))
+            # A finger is bigger than these, so the button takes a press a
+            # little outside its picture too, and counts on the press rather
+            # than on letting go (a finger moves a little in between).
+            # Holding it keeps counting.
+            button['frameSize'] = (-0.14, 0.14, -0.085, 0.085)
+            button.bind(DGG.B1PRESS, self.pressNPCs, [step])
+            button.bind(DGG.B1RELEASE, self.releaseNPCs)
+            button.bind(DGG.EXIT, self.releaseNPCs)
             button.reparentTo(panel)
 
     def touchText(self):
@@ -304,6 +312,21 @@ class OfflineLauncher(DirectObject):
         self.settings.updateSetting('controls', 'touch-controls', not touchControlsWanted(self.settings))
         applyTouchSetting(self.settings)
         self.touchButton['text'] = self.touchText()
+
+    def pressNPCs(self, step, event=None):
+        self.releaseNPCs()
+        self.changeNPCs(step)
+        taskMgr.doMethodLater(0.5, self.repeatNPCs, 'launcherNPCRepeat', extraArgs=[step], appendTask=True)
+
+    def repeatNPCs(self, step, task):
+        if self.panel is None:
+            return task.done
+        self.changeNPCs(step)
+        task.delayTime = 0.12
+        return task.again
+
+    def releaseNPCs(self, event=None):
+        taskMgr.remove('launcherNPCRepeat')
 
     def changeNPCs(self, step):
         count = max(0, min(MAX_NPCS_PER_AREA, npcsPerArea(self.settings) + step))

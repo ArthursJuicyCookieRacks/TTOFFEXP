@@ -59,6 +59,11 @@ def mountPhases(gameDir):
                 vfs.mount(folder, Filename('/phase_%s' % phase), VirtualFileSystem.MFReadOnly)
             else:
                 print('OfflineStart: phase_%s is missing' % phase)
+        # Files this repository changes or adds (the new logo) go over the
+        # resources. Packaged games have them in the multifiles already.
+        overlay = Filename(gameDir, 'resources-overlay/phase_%s' % phase)
+        if vfs.isDirectory(overlay):
+            vfs.mount(overlay, Filename('/phase_%s' % phase), VirtualFileSystem.MFReadOnly)
     # The multifiles cover the whole tree from the root, and a file that does
     # not exist yet would be looked for in the last of them, which is read
     # only (so the model cache could not save anything). The real disk goes

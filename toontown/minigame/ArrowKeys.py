@@ -3,11 +3,13 @@ from direct.showbase.DirectObject import DirectObject
 from toontown.toonbase import TouchControls
 
 class ArrowKeys(DirectObject):
-    UP_KEY = 'w'
-    DOWN_KEY = 's'
-    LEFT_KEY = 'a'
-    RIGHT_KEY = 'd'
-    JUMP_KEY = 'space'
+    # Each direction is both its letter and its arrow key, so the games work
+    # with either (and with a controller's stick, which presses the arrows).
+    UP_KEY = ('w', 'arrow_up')
+    DOWN_KEY = ('s', 'arrow_down')
+    LEFT_KEY = ('a', 'arrow_left')
+    RIGHT_KEY = ('d', 'arrow_right')
+    JUMP_KEY = ('space',)
     UP_INDEX = 0
     DOWN_INDEX = 1
     LEFT_INDEX = 2
@@ -17,19 +19,21 @@ class ArrowKeys(DirectObject):
 
     def __init__(self):
         self.__jumpPost = 0
+        self.__held = [set() for i in range(5)]
         self.setPressHandlers(self.NULL_HANDLERS)
         self.setReleaseHandlers(self.NULL_HANDLERS)
         self.origMb = base.buttonThrowers[0].node().getModifierButtons()
         base.buttonThrowers[0].node().setModifierButtons(ModifierButtons())
         self.enable()
 
+    def __keys(self):
+        return (self.UP_KEY, self.DOWN_KEY, self.LEFT_KEY, self.RIGHT_KEY, self.JUMP_KEY)
+
     def enable(self):
         self.disable()
-        self.accept(self.UP_KEY, self.__upKeyPressed)
-        self.accept(self.DOWN_KEY, self.__downKeyPressed)
-        self.accept(self.LEFT_KEY, self.__leftKeyPressed)
-        self.accept(self.RIGHT_KEY, self.__rightKeyPressed)
-        self.accept(self.JUMP_KEY, self.__jumpKeyPressed)
+        for index, keys in enumerate(self.__keys()):
+            for key in keys:
+                self.accept(key, self.__keyPressed, [index, key])
         TouchControls.request('arrowKeys')
 
     def disable(self):
@@ -39,27 +43,18 @@ class ArrowKeys(DirectObject):
         self.__leftPressed = 0
         self.__rightPressed = 0
         self.__jumpPressed = 0
-        self.ignore(self.UP_KEY)
-        self.ignore(self.DOWN_KEY)
-        self.ignore(self.LEFT_KEY)
-        self.ignore(self.RIGHT_KEY)
-        self.ignore(self.JUMP_KEY)
-        self.ignore(self.UP_KEY + '-up')
-        self.ignore(self.DOWN_KEY + '-up')
-        self.ignore(self.LEFT_KEY + '-up')
-        self.ignore(self.RIGHT_KEY + '-up')
-        self.ignore(self.JUMP_KEY + '-up')
+        self.__held = [set() for i in range(5)]
+        for keys in self.__keys():
+            for key in keys:
+                self.ignore(key)
+                self.ignore(key + '-up')
 
     def destroy(self):
         base.buttonThrowers[0].node().setModifierButtons(self.origMb)
-        events = [self.UP_KEY,
-         self.DOWN_KEY,
-         self.LEFT_KEY,
-         self.RIGHT_KEY,
-         self.JUMP_KEY]
-        for event in events:
-            self.ignore(event)
-            self.ignore(event + '-up')
+        for keys in self.__keys():
+            for key in keys:
+                self.ignore(key)
+                self.ignore(key + '-up')
 
     def upPressed(self):
         return self.__upPressed
@@ -109,64 +104,35 @@ class ArrowKeys(DirectObject):
         if callback:
             callback()
 
-    def __upKeyPressed(self):
-        self.ignore(self.UP_KEY)
-        self.accept(self.UP_KEY + '-up', self.__upKeyReleased)
-        self.__upPressed = 1
-        self.__doCallback(self.__pressHandlers[self.UP_INDEX])
+    def __setPressed(self, index, pressed):
+        if index == self.UP_INDEX:
+            self.__upPressed = pressed
+        elif index == self.DOWN_INDEX:
+            self.__downPressed = pressed
+        elif index == self.LEFT_INDEX:
+            self.__leftPressed = pressed
+        elif index == self.RIGHT_INDEX:
+            self.__rightPressed = pressed
+        else:
+            self.__jumpPressed = pressed
+            self.__jumpPost = pressed
 
-    def __downKeyPressed(self):
-        self.ignore(self.DOWN_KEY)
-        self.accept(self.DOWN_KEY + '-up', self.__downKeyReleased)
-        self.__downPressed = 1
-        self.__doCallback(self.__pressHandlers[self.DOWN_INDEX])
+    def __keyPressed(self, index, key):
+        self.ignore(key)
+        self.accept(key + '-up', self.__keyReleased, [index, key])
+        held = self.__held[index]
+        first = not held
+        held.add(key)
+        if first:
+            # The second key of a direction held with the first changes nothing.
+            self.__setPressed(index, 1)
+            self.__doCallback(self.__pressHandlers[index])
 
-    def __leftKeyPressed(self):
-        self.ignore(self.LEFT_KEY)
-        self.accept(self.LEFT_KEY + '-up', self.__leftKeyReleased)
-        self.__leftPressed = 1
-        self.__doCallback(self.__pressHandlers[self.LEFT_INDEX])
-
-    def __rightKeyPressed(self):
-        self.ignore(self.RIGHT_KEY)
-        self.accept(self.RIGHT_KEY + '-up', self.__rightKeyReleased)
-        self.__rightPressed = 1
-        self.__doCallback(self.__pressHandlers[self.RIGHT_INDEX])
-
-    def __jumpKeyPressed(self):
-        self.ignore(self.JUMP_KEY)
-        self.accept(self.JUMP_KEY + '-up', self.__jumpKeyReleased)
-        self.__jumpPressed = 1
-        self.__jumpPost = 1
-        self.__doCallback(self.__pressHandlers[self.JUMP_INDEX])
-
-    def __upKeyReleased(self):
-        self.ignore(self.UP_KEY + '-up')
-        self.accept(self.UP_KEY, self.__upKeyPressed)
-        self.__upPressed = 0
-        self.__doCallback(self.__releaseHandlers[self.UP_INDEX])
-
-    def __downKeyReleased(self):
-        self.ignore(self.DOWN_KEY + '-up')
-        self.accept(self.DOWN_KEY, self.__downKeyPressed)
-        self.__downPressed = 0
-        self.__doCallback(self.__releaseHandlers[self.DOWN_INDEX])
-
-    def __leftKeyReleased(self):
-        self.ignore(self.LEFT_KEY + '-up')
-        self.accept(self.LEFT_KEY, self.__leftKeyPressed)
-        self.__leftPressed = 0
-        self.__doCallback(self.__releaseHandlers[self.LEFT_INDEX])
-
-    def __rightKeyReleased(self):
-        self.ignore(self.RIGHT_KEY + '-up')
-        self.accept(self.RIGHT_KEY, self.__rightKeyPressed)
-        self.__rightPressed = 0
-        self.__doCallback(self.__releaseHandlers[self.RIGHT_INDEX])
-
-    def __jumpKeyReleased(self):
-        self.ignore(self.JUMP_KEY + '-up')
-        self.accept(self.JUMP_KEY, self.__jumpKeyPressed)
-        self.__jumpPressed = 0
-        self.__jumpPost = 0
-        self.__doCallback(self.__releaseHandlers[self.JUMP_INDEX])
+    def __keyReleased(self, index, key):
+        self.ignore(key + '-up')
+        self.accept(key, self.__keyPressed, [index, key])
+        held = self.__held[index]
+        held.discard(key)
+        if not held:
+            self.__setPressed(index, 0)
+            self.__doCallback(self.__releaseHandlers[index])
