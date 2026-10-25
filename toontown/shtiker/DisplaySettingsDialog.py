@@ -426,7 +426,13 @@ class DisplaySettingsDialog(DirectFrame, StateData.StateData):
             self.notify.debug('window properties: %s' % properties)
             self.notify.debug('gsg: %s' % gsg)
             base.pipe = pipe
-            if not base.openMainWindow(props=properties, gsg=gsg, keepCamera=True):
+            try:
+                opened = base.openMainWindow(props=properties, gsg=gsg, keepCamera=True)
+            except Exception as e:
+                # Panda 1.11 raises when the window can't be made.
+                self.notify.warning('OPEN MAIN WINDOW RAISED: %s' % e)
+                opened = False
+            if not opened:
                 self.notify.warning('OPEN MAIN WINDOW FAILED')
                 return 0
             self.notify.info('OPEN MAIN WINDOW PASSED')
@@ -443,7 +449,13 @@ class DisplaySettingsDialog(DirectFrame, StateData.StateData):
         else:
             self.notify.debug('Adjusting properties')
             base.win.requestProperties(properties)
-            base.graphicsEngine.renderFrame()
+            # A resize lands a frame or two later, after the window system
+            # answers; wait for it so the check after this sees the new size.
+            for i in range(10):
+                base.graphicsEngine.renderFrame()
+                if not properties.hasSize() or (base.win.getXSize(), base.win.getYSize()) == \
+                        (properties.getXSize(), properties.getYSize()):
+                    break
         return 1
 
     def isCurrentlyEmbedded(self):

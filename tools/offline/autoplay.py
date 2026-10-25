@@ -3098,9 +3098,29 @@ def scenarioExitToontown():
     yield until(walking, 180, 'walking in the playground again')
 
 
+def scenarioDisplaySettings():
+    # Shticker Book > Options > Display: change the resolution, go full screen
+    # and back to a window, as the Apply button does.
+    from toontown.shtiker import DisplaySettingsDialog
+    yield until(walking, 60, 'walking before changing the display')
+    dialog = DisplaySettingsDialog.DisplaySettingsDialog()
+    dialog.load()
+    for size, fullscreen in (((1024, 768), False), ((1280, 720), True), ((1280, 720), False)):
+        result = dialog.changeDisplayProperties(base.pipe, size[0], size[1], fullscreen)
+        props = base.win.getProperties()
+        log('display', size, 'full screen' if fullscreen else 'window', result, 'window now',
+            props.getXSize(), props.getYSize(), 'full screen', props.getFullscreen())
+        if not result:
+            raise AssertionError('display change to %s %s failed' % (size, fullscreen))
+        yield sleep(1)
+    dialog.unload()
+    yield until(walking, 30, 'still walking after the display changes')
+
+
 SCENARIOS = [
     ('login', scenarioLogin),
     ('exittoontown', scenarioExitToontown),
+    ('displaysettings', scenarioDisplaySettings),
     ('npcs', scenarioNPCs),
     ('npcbuilding', withNPCs(scenarioBuilding, ['DistributedBattleBldgAI'])),
     ('npcfactory', withNPCs(scenarioFactory, ['DistributedBattleFactoryAI'])),
