@@ -102,6 +102,8 @@ def main():
     try:
         from toontown.toonbase import ToontownStart
     except SystemExit:
+        # Say why, for the crash report.
+        print('OfflineStart: the game is closing:\n%s' % traceback.format_exc())
         raise
     except BaseException:
         showError(traceback.format_exc(), dataDir)

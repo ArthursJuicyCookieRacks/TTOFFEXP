@@ -15,7 +15,7 @@ import sys
 MARKER = os.path.join('logs', 'running.txt')
 REPORT = os.path.join('logs', 'last-crash.txt')
 # How many lines of the log the launcher shows.
-SHOWN_LINES = 30
+SHOWN_LINES = 34
 
 report = None
 
@@ -73,6 +73,8 @@ def calm():
 def shownText():
     """The lines of the report worth a look: warnings, errors and Python's."""
     lines = report.splitlines()
-    picked = [line for line in lines if ' E/' in line or ' F/' in line or ' W/' in line or 'python' in line
-              or 'DEBUG' in line or 'libc' in line]
+    # The game's own lines say most; the crash dump that follows an exit
+    # only says that it exited.
+    picked = [line for line in lines if ('python' in line and line.split(':')[-1].strip()) or 'Panda3D' in line or 'threaded_app: APP_CMD' in line]
+    picked = picked or [line for line in lines if ' E/' in line or ' F/' in line or ' W/' in line]
     return '\n'.join((picked or lines)[-SHOWN_LINES:])
