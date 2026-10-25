@@ -1,0 +1,24 @@
+# PythonActivity's keyboard code has two anonymous classes ($1, $2);
+# makepanda lists each class file it dexes, so add them.
+diff --git a/makepanda/makepanda.py b/makepanda/makepanda.py
+index d78766e..90fea24 100755
+--- a/makepanda/makepanda.py
++++ b/makepanda/makepanda.py
+@@ -4967,6 +4967,8 @@ if GetTarget() == 'android':
+     TargetAdd('org/panda3d/android/PandaActivity$2.class', opts=OPTS+['DEPENDENCYONLY'], input='PandaActivity.java')
+     TargetAdd('org/panda3d/android/PythonActivity.class', opts=OPTS, input='PythonActivity.java')
+     TargetAdd('org/panda3d/android/PythonActivity$ActivityResultListener.class', opts=OPTS+['DEPENDENCYONLY'], input='PythonActivity.java')
++    TargetAdd('org/panda3d/android/PythonActivity$1.class', opts=OPTS+['DEPENDENCYONLY'], input='PythonActivity.java')
++    TargetAdd('org/panda3d/android/PythonActivity$2.class', opts=OPTS+['DEPENDENCYONLY'], input='PythonActivity.java')
+ 
+     TargetAdd('classes.dex', input='org/panda3d/android/NativeIStream.class')
+     TargetAdd('classes.dex', input='org/panda3d/android/NativeOStream.class')
+@@ -4975,6 +4977,8 @@ if GetTarget() == 'android':
+     TargetAdd('classes.dex', input='org/panda3d/android/PandaActivity$2.class')
+     TargetAdd('classes.dex', input='org/panda3d/android/PythonActivity.class')
+     TargetAdd('classes.dex', input='org/panda3d/android/PythonActivity$ActivityResultListener.class')
++    TargetAdd('classes.dex', input='org/panda3d/android/PythonActivity$1.class')
++    TargetAdd('classes.dex', input='org/panda3d/android/PythonActivity$2.class')
+ 
+     TargetAdd('p3android_composite1.obj', opts=OPTS, input='p3android_composite1.cxx')
+     TargetAdd('libp3android.dll', input='p3android_composite1.obj')
