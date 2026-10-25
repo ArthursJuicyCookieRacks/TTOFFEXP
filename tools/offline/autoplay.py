@@ -39,6 +39,8 @@ local-event-log-directory %(db)s/events
 local-server-catch-exceptions 1
 sync-video 0
 want-magic-words 1
+trolley-ask-company 0
+npc-specials 0
 ''' % {'db': DB})
 os.environ.setdefault('TTR_PLAYCOOKIE', 'autoplay')
 os.environ.setdefault('TTR_GAMESERVER', '127.0.0.1')
@@ -2845,6 +2847,65 @@ def scenarioMinigames(names=None, withNPCs=False):
         yield until(walking, 120, 'walking after %s' % name)
 
 
+def scenarioNPCSpecials():
+    # The NPC players' SOS cards, pink slips and unites: every NPC has each,
+    # and a battle against a crowd of cogs should see them used.
+    from panda3d.core import ConfigVariableBool
+    from toontown.npcplayers import NPCBattleCrew
+    ConfigVariableBool('npc-specials').setValue(True)
+    chances = NPCBattleCrew.SPECIAL_CHANCES
+    # AUTOPLAY_SPECIALS="fire unite" tries just those.
+    kinds = os.environ.get('AUTOPLAY_SPECIALS', '').split() or [kind for kind, chance in chances]
+    NPCBattleCrew.SPECIAL_CHANCES = tuple((kind, 1.0 if kind in kinds else 0.0) for kind, chance in chances)
+    try:
+        if 'unite' in kinds:
+            # Hurt, so a toon-up unite is wanted.
+            onDistrict(lambda air, avId: air.doId2do[avId].b_setHp(air.doId2do[avId].getMaxHp() // 3), localAvatar.doId)
+        before = dict(npcStats())
+        yield from withNPCs(scenarioBuilding, ['DistributedBattleBldgAI'])()
+        after = npcStats()
+        used = dict((k, after[k] - before.get(k, 0)) for k in after if k.startswith('special '))
+        log('NPC extras used: %s' % used)
+        if not any(used.values()):
+            raise StepFailed('the NPC players used no SOS card, pink slip or unite')
+    finally:
+        ConfigVariableBool('npc-specials').setValue(False)
+        NPCBattleCrew.SPECIAL_CHANCES = chances
+
+
+def scenarioTrolleySolo():
+    # The trolley asks solo or with others; solo, no NPC player gets on.
+    from panda3d.core import ConfigVariableBool
+    ConfigVariableBool('trolley-ask-company').setValue(True)
+    try:
+        yield from teleport(ToontownGlobals.ToontownCentral)
+        magicWord('~requestMinigame ring')
+        yield sleep(1)
+        trolley = findObject('DistributedTrolley')
+        localAvatar.setPos(render, trolley.trolleyCar.getPos(render))
+        messenger.send('entertrolley_sphere', [None])
+        yield until(lambda: getattr(trolley, 'companyDialog', None) is not None, 10, 'the solo or with others question')
+        yield sleep(1)
+        base.screenshot(os.path.join(os.environ.get('AUTOPLAY_SHOTS', '.'), 'trolley-question.png'), defaultFilename=0)
+        trolley.companyDialog.choose(False)
+        yield until(lambda: minigameState() == 'frameworkRules', 120, 'the ring game rules')
+        others = [avId for avId in base.curMinigame.avIdList if avId != localAvatar.doId]
+        log('ring game with %d others' % len(others))
+        if others:
+            raise StepFailed('NPC players got on a solo trolley ride')
+        messenger.send(base.curMinigame.rulesDoneEvent)
+        yield until(lambda: minigameState() not in ('frameworkRules', 'frameworkGame', 'frameworkWaitServerFinish'), 420,
+                    'the ring game to end')
+        yield until(lambda: hoodState() == 'purchase', 120, 'the gag shop')
+        yield until(lambda: base.cr.playGame.hood.purchase.fsm.getCurrentState().getName() == 'purchase', 60,
+                    'the gag shop buttons')
+        yield sleep(1)
+        messenger.send('purchaseBackToToontown')
+        yield until(walking, 120, 'walking after the ring game')
+    finally:
+        ConfigVariableBool('trolley-ask-company').setValue(False)
+
+
 # Quick prototype: one NPC player next to the toon in TTC.
 import random
 
@@ -2988,6 +3049,8 @@ SCENARIOS = [
     ('npcgolf', withNPCs(scenarioGolf, ['golf swings'])),
     ('npcracing', withNPCs(lambda: scenarioRacing(practice=False), ['race finishes'])),
     ('npcminigames', scenarioNPCMinigames),
+    ('trolleysolo', scenarioTrolleySolo),
+    ('npcspecials', scenarioNPCSpecials),
     ('npccogdo', withNPCs(scenarioCogdo, ['DistributedCogdoBattleBldgAI'])),
     ('npccogdolaw', withNPCs(lambda: scenarioCogdo('l'), ['DistributedCogdoBattleBldgAI'])),
     ('tutorial', scenarioTutorial),

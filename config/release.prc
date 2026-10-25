@@ -4,7 +4,7 @@
 
 # Client settings
 window-title Toontown Rewritten Offline
-server-version ttroff-beta-v2.12.2
+server-version TT-OFFEXP-1.0
 sync-video #f
 want-dev #f
 preload-avatars #t

@@ -16,7 +16,10 @@ import os
 from setuptools import setup
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-VERSION = '2.12.2'
+# The game's version, as it shows in game and in the phone's app info.
+GAME_VERSION = 'TT-OFFEXP-1.0'
+# For the packaging tools, which want plain numbers.
+VERSION = '1.0'
 
 
 def gameModules():
@@ -107,6 +110,9 @@ def keepActivityOnConfigChanges():
         # The phone shows the game as plain "Toontown".
         assert 'android:label="TTR-Offline"' in manifest
         manifest = manifest.replace('android:label="TTR-Offline"', 'android:label="%s"' % APP_LABEL)
+        old = 'android:versionName="%s"' % VERSION
+        assert old in manifest
+        manifest = manifest.replace(old, 'android:versionName="%s"' % GAME_VERSION)
         with open(path, 'w', encoding='utf-8') as file:
             file.write(manifest)
 

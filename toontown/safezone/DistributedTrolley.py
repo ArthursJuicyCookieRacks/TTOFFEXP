@@ -13,6 +13,7 @@ from direct.task.Task import Task
 from toontown.hood import ZoneUtil
 from toontown.toontowngui import TeaserPanel
 from toontown.toontowngui import TTDialog
+from toontown.safezone import TrolleyCompanyDialog
 from toontown.election import SafezoneInvasionGlobals
 
 class DistributedTrolley(DistributedObject.DistributedObject):
@@ -123,6 +124,11 @@ class DistributedTrolley(DistributedObject.DistributedObject):
         self.trolleyExitTrack = Parallel(trolleyExitPos, trolleyExitBellInterval, trolleyExitAwayInterval, trolleyExitAnimateInterval, name=self.uniqueName('trolleyExit'))
 
     def disable(self):
+        dialog = getattr(self, 'companyDialog', None)
+        if dialog is not None:
+            dialog.done = None
+            dialog.destroy()
+            self.companyDialog = None
         DistributedObject.DistributedObject.disable(self)
         self.fsm.request('off')
         self.clearToonTracks()
@@ -188,12 +194,32 @@ class DistributedTrolley(DistributedObject.DistributedObject):
         if base.localAvatar.getPos(render).getZ() < self.trolleyCar.getPos(render).getZ():
             return
         if self.allowedToEnter():
-            self.loader.place.detectedTrolleyCollision()
+            if TrolleyCompanyDialog.wantAsk():
+                self.askCompany()
+            else:
+                self.loader.place.detectedTrolleyCollision()
         else:
             place = base.cr.playGame.getPlace()
             if place:
                 place.fsm.request('stopped')
             self.dialog = TeaserPanel.TeaserPanel(pageName='minigames', doneFunc=self.handleOkTeaser)
+
+    def askCompany(self):
+        # Solo or with the NPC players? The toon stands still while asked.
+        if getattr(self, 'companyDialog', None) is not None:
+            return
+        place = self.loader.place
+        place.fsm.request('stopped')
+        self.companyDialog = TrolleyCompanyDialog.TrolleyCompanyDialog(base.localAvatar.doId, self.__companyChosen)
+
+    def __companyChosen(self, boarding):
+        self.companyDialog = None
+        place = base.cr.playGame.getPlace()
+        if place is None or place is not self.loader.place:
+            return
+        place.fsm.request('walk')
+        if boarding:
+            place.detectedTrolleyCollision()
 
     def handleConfirm(self):
         status = self.confirm.doneStatus

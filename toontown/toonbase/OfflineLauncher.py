@@ -22,6 +22,16 @@ from panda3d.core import Geom, GeomNode, GeomTriangles, GeomVertexData, GeomVert
 from otp.local.ExecutionContext import getClientBuiltin
 from otp.otpbase.Settings import Settings
 from toontown.npcplayers.NPCSettings import MAX_NPCS_PER_AREA, npcsPerArea
+
+# The training districts the player can add, one for each cog track, which
+# always has an invasion of that track (see SuitInvasionManagerAI): the
+# setting's key, the button's text and the district.
+TRAINING_DISTRICTS = (
+    ('sellbot', 'SELLBOT', 'Training Tycoon'),
+    ('cashbot', 'CASHBOT', 'Training Tundra'),
+    ('lawbot', 'LAWBOT', 'Training Township'),
+    ('bossbot', 'BOSSBOT', 'Training Turf'),
+)
 from toontown.toonbase import ToontownGlobals
 
 # The background picture is 750 by 500; everything is laid out on it.
@@ -75,6 +85,20 @@ def applyTouchSetting(settings=None):
     # on); the player can turn them off.
     on = isAndroid() and touchControlsWanted(settings)
     loadPrcFileData('OfflineLauncher touch controls', 'want-touch-controls %d' % on)
+
+
+def trainingDistrictWanted(key, settings=None):
+    settings = settings or Settings()
+    return settings.getBool('training-districts', key, False)
+
+
+def applyDistrictSetting(settings=None):
+    # The training districts each run a whole district of their own, which
+    # takes time and memory, so they are there only when the player asks.
+    settings = settings or Settings()
+    names = ['Developers Dreams']
+    names += [name for key, text, name in TRAINING_DISTRICTS if trainingDistrictWanted(key, settings)]
+    loadPrcFileData('OfflineLauncher districts', 'local-districts %s' % ','.join(names))
 
 
 class OfflineLauncher(DirectObject):
@@ -262,7 +286,7 @@ class OfflineLauncher(DirectObject):
             self.panel.destroy()
             self.panel = None
 
-    def openPanel(self, title, titleZ=0.38):
+    def openPanel(self, title, titleZ=0.38, closeZ=-0.4, closeScale=1.0):
         print('OfflineLauncher: opening %s' % title)
         self.closePanel()
         # A shade over the launcher, which also keeps its buttons from being
@@ -275,35 +299,67 @@ class OfflineLauncher(DirectObject):
                     image_color=(1, 1, 0.92, 1), pos=(0, 0, 0.02))
         DirectLabel(parent=self.panel, relief=None, pos=(0, 0, titleZ), text=title, text_font=self.minnieFont,
                     text_scale=0.1, text_fg=RED, text_shadow=(0.3, 0.05, 0, 1))
-        close = self.redButton('CLOSE', (0, 0, -0.4), self.closePanel, textScale=0.075)
+        close = self.redButton('CLOSE', (0, 0, closeZ), self.closePanel, textScale=0.075 * closeScale,
+                               imageScale=(1.45 * closeScale, 1, 2.1 * closeScale))
         close.reparentTo(self.panel)
         return self.panel
 
     def showSettings(self):
-        panel = self.openPanel('SETTINGS')
-        self.touchButton = self.redButton(self.touchText(), (0, 0, 0.2), self.toggleTouch, textScale=0.055,
-                                          imageScale=(2.9, 1, 2.1))
+        panel = self.openPanel('SETTINGS', titleZ=0.46, closeZ=-0.5, closeScale=0.8)
+        self.touchButton = self.redButton(self.touchText(), (0, 0, 0.32), self.toggleTouch, textScale=0.05,
+                                          imageScale=(2.9, 1, 1.8))
         self.touchButton.reparentTo(panel)
-        DirectLabel(parent=panel, relief=None, pos=(0, 0, 0.03), text_font=self.interfaceFont,
+        DirectLabel(parent=panel, relief=None, pos=(0, 0, 0.19), text_font=self.interfaceFont,
                     text_scale=0.045, text_fg=TEXT_DARK, text_wordwrap=26,
                     text='The joystick and jump button on the screen. They go away by themselves while '
                          'a controller is in use.')
+        # A training district for each cog track the player picks.
+        DirectLabel(parent=panel, relief=None, pos=(0, 0, 0.065), text_font=self.interfaceFont,
+                    text_scale=0.045, text_fg=TEXT_DARK, text='Training districts (always invaded by that cog type)')
+        self.trainingButtons = {}
+        for i, (key, text, name) in enumerate(TRAINING_DISTRICTS):
+            button = self.redButton('', (-0.555 + i * 0.37, 0, -0.04), self.toggleTraining, textScale=0.045,
+                                    imageScale=(0.78, 1, 1.35))
+            button['extraArgs'] = [key]
+            button['frameSize'] = (-0.175, 0.175, -0.075, 0.075)
+            button.reparentTo(panel)
+            self.trainingButtons[key] = button
+            self.showTraining(key)
+        DirectLabel(parent=panel, relief=None, pos=(0, 0, -0.15), text_font=self.interfaceFont,
+                    text_scale=0.04, text_fg=TEXT_DARK, text='Each one turned on makes the game take longer to start.')
         # How many NPC toons each place gets.
-        DirectLabel(parent=panel, relief=None, pos=(0, 0, -0.1), text_font=self.interfaceFont,
+        DirectLabel(parent=panel, relief=None, pos=(0, 0, -0.24), text_font=self.interfaceFont,
                     text_scale=0.045, text_fg=TEXT_DARK, text='NPC toons in each place')
-        self.npcLabel = DirectLabel(parent=panel, relief=None, pos=(0, 0, -0.22), text_font=self.minnieFont,
+        self.npcLabel = DirectLabel(parent=panel, relief=None, pos=(0, 0, -0.35), text_font=self.minnieFont,
                                     text_scale=0.08, text_fg=RED, text=str(npcsPerArea(self.settings)))
         for text, step, x in (('-10', -10, -0.52), ('-1', -1, -0.235), ('+1', 1, 0.235), ('+10', 10, 0.52)):
-            button = self.redButton(text, (x, 0, -0.2), None, textScale=0.06, imageScale=(0.62, 1, 1.45))
+            button = self.redButton(text, (x, 0, -0.33), None, textScale=0.06, imageScale=(0.62, 1, 1.35))
             # A finger is bigger than these, so the button takes a press a
             # little outside its picture too, and counts on the press rather
             # than on letting go (a finger moves a little in between).
             # Holding it keeps counting.
-            button['frameSize'] = (-0.14, 0.14, -0.085, 0.085)
+            button['frameSize'] = (-0.14, 0.14, -0.075, 0.075)
             button.bind(DGG.B1PRESS, self.pressNPCs, [step])
             button.bind(DGG.B1RELEASE, self.releaseNPCs)
             button.bind(DGG.EXIT, self.releaseNPCs)
             button.reparentTo(panel)
+
+    def showTraining(self, key):
+        text = dict((k, t) for k, t, n in TRAINING_DISTRICTS)[key]
+        on = trainingDistrictWanted(key, self.settings)
+        button = self.trainingButtons[key]
+        button['text'] = '%s\n%s' % (text, 'ON' if on else 'OFF')
+        # Off is the grey button.
+        button['image'] = self.buttonImages((RED, PRESSED, RED_ROLLOVER, RED)) if on else \
+            [self.buttonImages()[3]] * 3 + [self.buttonImages()[3]]
+        button['text_pos'] = (0, 0.012)
+        button['text_fg'] = YELLOW if on else (0.3, 0.3, 0.3, 1)
+        button['text_shadow'] = (0.3, 0.05, 0, 1) if on else (1, 1, 1, 0.6)
+        button.setText()
+
+    def toggleTraining(self, key):
+        self.settings.updateSetting('training-districts', key, not trainingDistrictWanted(key, self.settings))
+        self.showTraining(key)
 
     def touchText(self):
         return 'TOUCH CONTROLS: %s' % ('ON' if touchControlsWanted(self.settings) else 'OFF')
@@ -360,6 +416,7 @@ class OfflineLauncher(DirectObject):
             return
         print('OfflineLauncher: PLAY!')
         self.started = True
+        applyDistrictSetting(self.settings)
         for button in (self.playButton, self.settingsButton, self.driversButton):
             button['state'] = DGG.DISABLED
         self.setProgress(2, 'Starting Toontown...')

@@ -52,6 +52,26 @@ del G
 # Enough cogs to last until the holiday is over.
 HolidayInvasionSuits = 100000
 
+# The offline game's districts with their own rules. The developers'
+# district only gets an invasion someone summons. Each training district
+# always has an invasion of one cog track, going from one cog of it to
+# another, chosen at random, every TrainingInvasionSuits cogs.
+DEVELOPER_DISTRICTS = ('Developers Dreams', 'Developer Dreamland')
+TRAINING_DISTRICTS = {
+    'Training Tycoon': 's',
+    'Training Tundra': 'm',
+    'Training Township': 'l',
+    'Training Turf': 'c',
+}
+TrainingInvasionSuits = 250
+# The pause between one training invasion and the next.
+TrainingInvasionGap = 5
+
+
+def trainingCogs(dept):
+    start = SuitDNA.suitDepts.index(dept) * SuitDNA.suitsPerDept
+    return SuitDNA.suitHeadTypes[start:start + SuitDNA.suitsPerDept]
+
 
 class SuitInvasionManagerAI:
     """
@@ -70,6 +90,15 @@ class SuitInvasionManagerAI:
         self.numSuits = 0
         self.spawnedSuits = 0
         self.holidayInvasion = None
+        districtName = getattr(air, 'districtName', '')
+        self.trainingDept = TRAINING_DISTRICTS.get(districtName)
+        # Only invasions someone asks for (a summons, a magic word): no
+        # random ones and none for a holiday.
+        self.summonsOnly = districtName in DEVELOPER_DISTRICTS or self.trainingDept is not None
+        if self.trainingDept is not None:
+            taskMgr.doMethodLater(1, self.__nextTrainingInvasion, 'training-invasion')
+        if self.summonsOnly:
+            return
         messenger.accept('holidayStarted', self, self.__holidayStarted)
         messenger.accept('holidayEnded', self, self.__holidayEnded)
         # Holidays already running when the district started.
@@ -128,6 +157,17 @@ class SuitInvasionManagerAI:
             self.startInvasion(suitName, numSuits, specialSuit)
         return task.again
 
+    def __nextTrainingInvasion(self, task=None):
+        if not self.getInvading():
+            cogs = [cog for cog in trainingCogs(self.trainingDept) if cog != self.lastTrainingCog] or \
+                trainingCogs(self.trainingDept)
+            cog = choice(cogs)
+            self.lastTrainingCog = cog
+            self.startInvasion(cog, TrainingInvasionSuits, 0)
+        return Task.done
+
+    lastTrainingCog = None
+
     def __startRunningHolidays(self, task):
         for holidayId in self.air.holidayManager.currentHolidays:
             self.__holidayStarted(holidayId)
@@ -176,6 +216,10 @@ class SuitInvasionManagerAI:
         self.suitName = None
         self.holidayInvasion = None
         self.__spAllCogsSupaFly()
+        if self.trainingDept is not None:
+            # On to the next cog of the track.
+            taskMgr.remove('training-invasion')
+            taskMgr.doMethodLater(TrainingInvasionGap, self.__nextTrainingInvasion, 'training-invasion')
 
     def __checkInvasionOver(self):
         """ Test if the current invasion has created all the suits. """

@@ -18,6 +18,7 @@ from panda3d.core import Point3
 from toontown.building.DistributedElevatorAI import DistributedElevatorAI
 from toontown.building.DistributedElevatorFSMAI import DistributedElevatorFSMAI
 from toontown.golf.DistributedGolfCourseAI import DistributedGolfCourseAI
+from toontown.npcplayers.NPCSettings import wantsTrolleyCompany
 from toontown.npcplayers.NPCBattleCrew import isNPC
 from toontown.suit.DistributedBossCogAI import DistributedBossCogAI
 from toontown.npcplayers.NPCNav import getNav
@@ -138,6 +139,9 @@ class NPCParty:
             if len(getattr(elevator, 'npcOnTheWay', ())) >= list(seats).count(None):
                 continue
             player = players[0]
+            if isinstance(elevator, DistributedTrolleyAI) and not wantsTrolleyCompany(player.doId):
+                # The player chose to ride solo.
+                continue
             npc = self.pickBoarder(elevator, player)
             if npc is not None:
                 elevator.npcBoarding = globalClock.getFrameTime() + 1.0

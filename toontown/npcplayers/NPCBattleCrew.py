@@ -23,8 +23,13 @@ import random
 from direct.directnotify import DirectNotifyGlobal
 from direct.task import Task
 
+from panda3d.core import ConfigVariableBool
+
 from toontown.battle.BattleBase import (attackAffectsGroup, HEAL, TRAP, LURE, SOUND, THROW, SQUIRT, DROP,
-                                        NO_TRAP, PASS, TOON_ID_COL, TOON_TRACK_COL, TOON_LVL_COL, TOON_TGT_COL)
+                                        NO_TRAP, PASS, NPCSOS, FIRE, TOON_ID_COL, TOON_TRACK_COL, TOON_LVL_COL,
+                                        TOON_TGT_COL)
+from toontown.chat import ResistanceChat
+from toontown.toon import NPCToons
 from toontown.battle.DistributedBattleAI import DistributedBattleAI
 from toontown.toonbase.ToontownBattleGlobals import getAvPropDamage, MAX_LEVEL_INDEX
 
@@ -36,6 +41,14 @@ ALONE_DELAY = 3.0
 HEAL_BELOW = 0.5
 CRITICAL_BELOW = 0.25
 DAMAGE_TRACKS = (THROW, SQUIRT, DROP, SOUND)
+# The extras a player can bring to a battle, and how likely an NPC is to
+# have each in one battle. Each NPC uses each it has at most once a battle,
+# and only one is used in a round, never in two rounds running, and only
+# when the battle is going hard enough to want it.
+SPECIAL_CHANCES = (('fire', 0.25), ('sos', 0.35), ('unite', 0.35))
+SPECIAL_GAP = 2
+# SOS cards up to this many stars; the five star ones were rare online.
+SOS_MAX_STARS = 4
 REWARD_STATES = ('Reward', 'BuildingReward', 'FactoryReward', 'MintReward', 'StageReward', 'CountryClubReward')
 
 
@@ -56,6 +69,11 @@ class NPCBattleCrew:
         # What each round's gags were, for the tests: (lured before, attacks).
         self.history = []
         self.roundLured = set()
+        # What extras each NPC has left this battle, and the round the last
+        # one was used.
+        self.specials = {}
+        self.lastSpecialRound = -SPECIAL_GAP
+        self.round = 0
         manager.lastHistory = self.history
         self.taskName = 'npcBattleCrew-%d' % battle.doId
         taskMgr.doMethodLater(TICK, self.__tick, self.taskName)
@@ -70,6 +88,8 @@ class NPCBattleCrew:
         if npc not in self.members:
             self.members.append(npc)
             npc.crew = self
+            if ConfigVariableBool('npc-specials', True).getValue():
+                self.specials[npc.doId] = set(kind for kind, chance in SPECIAL_CHANCES if random.random() < chance)
             self.notify.info('NPC %s fights in battle %d' % (npc.doId, self.battle.doId))
 
     def release(self, npc):
@@ -103,6 +123,8 @@ class NPCBattleCrew:
             self.playersDoneAt = None
             if state == 'WaitForInput':
                 self.roundLured = set(battle.battleCalc.currentlyLuredSuits.keys())
+                self.round += 1
+                self.__maybeUnite()
             elif state == 'PlayMovie':
                 self.recordRound()
         for npc in self.members[:]:
@@ -205,9 +227,104 @@ class NPCBattleCrew:
             return
         # One at a time, each seeing what the others chose.
         npc = waiting[0]
-        track, level, target = RoundPlanner(battle, self.air).choose(npc)
+        planner = RoundPlanner(battle, self.air)
+        special = self.__special(npc, planner)
+        if special is not None:
+            track, level, target = special
+        else:
+            track, level, target = planner.choose(npc)
         npc.asSender(battle.requestAttack, track, level, target)
         self.playersDoneAt = now - delay + 0.3
+
+
+    # --- SOS cards, pink slips and unites ---
+
+    def __canUseSpecial(self, npc, kind):
+        return kind in self.specials.get(npc.doId, ()) and self.round - self.lastSpecialRound >= SPECIAL_GAP
+
+    def __used(self, npc, kind):
+        self.specials[npc.doId].discard(kind)
+        self.lastSpecialRound = self.round
+        self.manager.stats['special ' + kind] = self.manager.stats.get('special ' + kind, 0) + 1
+        self.notify.info('NPC %s uses %s in battle %d' % (npc.doId, kind, self.battle.doId))
+
+    def __players(self):
+        players = []
+        for toonId in self.battle.activeToons:
+            toon = self.air.doId2do.get(toonId)
+            if toon is not None and not isNPC(toon):
+                players.append(toon)
+        return players
+
+    def __hard(self, planner):
+        # A battle worth an extra: a crowd of cogs, a big cog, or a player
+        # in trouble.
+        suits = planner.suits
+        if len(suits) >= 3 or any(s.getActualLevel() >= 8 for s in suits):
+            return True
+        return any(p.getHp() < p.getMaxHp() * HEAL_BELOW for p in self.__players())
+
+    def __special(self, npc, planner):
+        """A pink slip or an SOS card for this NPC's turn, or None."""
+        battle = self.battle
+        if not planner.suits or not self.__hard(planner):
+            return None
+        if self.__canUseSpecial(npc, 'sos'):
+            card = self.__pickCard(planner)
+            if card is not None:
+                npc.NPCFriendsDict[card] = 1
+                self.__used(npc, 'sos')
+                return NPCSOS, -1, card
+        if self.__canUseSpecial(npc, 'fire'):
+            hp = planner.predictedHp()
+            fired = set(a[3] for a in planner.attacks if a[1] == FIRE)
+            # The strongest cog that this round won't take down already.
+            targets = [s for s in planner.suits if hp.get(s.doId, 0) > 0 and s.doId not in fired]
+            if targets:
+                suit = max(targets, key=lambda s: (s.getActualLevel(), s.getHP()))
+                npc.b_setPinkSlips(npc.getPinkSlips() + 1)
+                self.__used(npc, 'fire')
+                return FIRE, -1, suit.doId
+        return None
+
+    def __pickCard(self, planner):
+        battle = self.battle
+        players = self.__players()
+        hurt = any(p.getHp() < p.getMaxHp() * HEAL_BELOW for p in players)
+        taken = set(battle.npcAttacks.keys())
+        cards = [c for c in NPCToons.npcFriendsMinMaxStars(1, SOS_MAX_STARS) if c not in taken]
+        if hurt:
+            cards = [c for c in cards if NPCToons.getNPCTrack(c) == HEAL] or cards
+        else:
+            # Something that hits (not an SOS lure, which could spoil a
+            # trap or a sound plan).
+            hitting = (DROP, THROW, SQUIRT)
+            if not (planner.lured or planner.lureThisRound()):
+                # Sound would wake lured cogs.
+                hitting += (SOUND,)
+            cards = [c for c in cards if NPCToons.getNPCTrack(c) in hitting]
+        return random.choice(cards) if cards else None
+
+    def __maybeUnite(self):
+        # A unite is said, not played as a turn: a toon-up when a player is
+        # hurt, otherwise a gag restock when a player is running low.
+        for npc in self.members:
+            if not self.__canUseSpecial(npc, 'unite') or npc.doId not in self.battle.activeToons:
+                continue
+            players = self.__players()
+            if not players:
+                return
+            if any(p.getHp() < p.getMaxHp() * HEAL_BELOW for p in players):
+                menu, items = ResistanceChat.RESISTANCE_TOONUP, (2, 3, 4)
+            elif any(p.inventory.totalProps < p.getMaxCarry() // 3 for p in players):
+                menu, items = ResistanceChat.RESISTANCE_RESTOCK, (7,)
+            else:
+                continue
+            textId = ResistanceChat.encodeId(menu, random.choice(items))
+            npc.addResistanceMessage(textId)
+            npc.d_setSCResistance(textId, [p.doId for p in players])
+            self.__used(npc, 'unite')
+            return
 
 
 class RoundPlanner:
