@@ -254,7 +254,8 @@ class NPCPlayerManagerAI:
 
     def __update(self):
         now = globalClock.getFrameTime()
-        for player in self.getPlayers():
+        self.lastPlayers = self.getPlayers()
+        for player in self.lastPlayers:
             areaId = getAreaId(player.zoneId)
             if areaId is None:
                 # Inside a shop or other building: the toons outside stay

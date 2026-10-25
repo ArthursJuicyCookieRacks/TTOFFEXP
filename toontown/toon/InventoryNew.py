@@ -33,7 +33,11 @@ class InventoryNew(InventoryBase.InventoryBase, DirectFrame):
     ButtonXOffset = -0.31
     ButtonXSpacing = 0.18
 
-    def __init__(self, toon, invStr = None, ShowSuperGags = 1):
+    def __init__(self, toon, invStr = None, ShowSuperGags = 1, lazyGUI = False):
+        # With lazyGUI the menu's buttons and frames wait until something
+        # first uses them (__getattr__); other toons' menus are never shown,
+        # and building one cost as much as building the toon.
+        self.guiLoaded = not lazyGUI
         InventoryBase.InventoryBase.__init__(self, toon, invStr)
         DirectFrame.__init__(self, relief=None)
         self.initialiseoptions(InventoryNew)
@@ -50,8 +54,10 @@ class InventoryNew(InventoryBase.InventoryBase, DirectFrame):
         self.propAndOrganicBonusStack = config.ConfigVariableBool('prop-and-organic-bonus-stack', 0).getValue()
         self.propBonusIval = Parallel()
         self.activateMode = 'book'
-        self.load()
+        if self.guiLoaded:
+            self.load()
         self.hide()
+        self.lazyReady = True
         return
 
     def setBattleCreditMultiplier(self, mult):
@@ -133,8 +139,30 @@ class InventoryNew(InventoryBase.InventoryBase, DirectFrame):
             textTotal = textTotal + '\n\n' + TTLocalizer.InventroyPinkSlip
         self.totalLabel['text'] = textTotal
 
+    def loadGUI(self):
+        if not self.guiLoaded:
+            self.guiLoaded = True
+            self.load()
+
+    def __getattr__(self, name):
+        # Only reached for attributes that don't exist yet: a GUI part of a
+        # menu that hasn't been built.
+        # (Nor while the frame itself is being made: DirectGui probes for
+        # attributes then.)
+        if name.startswith('__') or self.__dict__.get('guiLoaded', True) or not self.__dict__.get('lazyReady'):
+            raise AttributeError(name)
+        self.loadGUI()
+        return getattr(self, name)
+
     def unload(self):
         self.notify.debug('Unloading Inventory for %d' % self.toon.doId)
+        if not self.guiLoaded:
+            self.stopAndClearPropBonusIval()
+            self.propBonusIval.finish()
+            self.propBonusIval = None
+            InventoryBase.InventoryBase.unload(self)
+            DirectFrame.destroy(self)
+            return
         self.stopAndClearPropBonusIval()
         self.propBonusIval.finish()
         self.propBonusIval = None
@@ -1148,6 +1176,8 @@ class InventoryNew(InventoryBase.InventoryBase, DirectFrame):
         s.start()
 
     def updateGUI(self, track = None, level = None):
+        if not self.guiLoaded:
+            return
         self.updateTotalPropsText()
         if track == None and level == None:
             for track in range(len(Tracks)):

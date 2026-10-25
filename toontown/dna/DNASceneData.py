@@ -40,8 +40,6 @@ class DNASuitGraph(object):
         self._point2outboundEdges = {}
         self._point2inboundEdges = {}
 
-        self._table = uint16array(4 * len(points)*len(points), 0xFF)
-
         if points:
             highestId = max(point.id for point in points)
             self._id2index = uint16array(highestId+1)
@@ -60,6 +58,14 @@ class DNASuitGraph(object):
             self._point2outboundEdges.setdefault(a, []).append(edge)
             self._point2inboundEdges.setdefault(b, []).append(edge)
 
+        # The route table is only for the cog planner's getSuitPath, so it is
+        # made the first time a route is asked for: the game's own copy of
+        # each street never needs it.
+        self._table = None
+
+    def _buildTable(self):
+        points = self.points
+        self._table = uint16array(4 * len(points)*len(points), 0xFF)
         visited = bytearray(len(points))
         for i, point in enumerate(points):
             for neighbor in self.getOriginPoints(point):
@@ -118,6 +124,8 @@ class DNASuitGraph(object):
         return self.getEdgeZone(edges[0])
 
     def getSuitPath(self, startPoint, endPoint, minPathLen, maxPathLen):
+        if self._table is None:
+            self._buildTable()
         start = self._id2index[startPoint.id]
         end = self._id2index[endPoint.id]
 

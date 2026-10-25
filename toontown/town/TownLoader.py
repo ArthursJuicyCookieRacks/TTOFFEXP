@@ -1,4 +1,5 @@
 from panda3d.core import *
+from toontown.hood import SceneryFlattener
 from toontown.battle.BattleProps import *
 from toontown.battle.BattleSounds import *
 from toontown.distributed.ToontownMsgTypes import *
@@ -254,6 +255,7 @@ class TownLoader(StateData.StateData):
             self.holidayPropTransforms[i] = np.getNetTransform()
 
         self.notify.info('skipping self.geom.flattenMedium')
+        SceneryFlattener.flatten(self.geom)
         gsg = base.win.getGsg()
         if gsg:
             self.geom.prepareScene(gsg)

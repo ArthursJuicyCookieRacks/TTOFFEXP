@@ -75,6 +75,36 @@ def isAndroid():
     return sys.platform == 'android'
 
 
+def mobileOptionsAvailable():
+    # The MOBILE options are for phones; launcher-mobile-anywhere lets them
+    # be tried on a computer.
+    return isAndroid() or ConfigVariableBool('launcher-mobile-anywhere', False).getValue()
+
+
+# The MOBILE options: the setting, its values (first = the default) and how
+# each value reads on its button.
+RENDER_SCALES = ((100, '100%'), (75, '75%'), (50, '50%'))
+FILTERING = ((16, 'HIGH'), (8, 'MEDIUM'), (4, 'LOW'), (1, 'OFF'))
+ANTIALIASING = ((0, 'OFF'), (2, '2X'), (4, '4X'))
+
+
+def mobileSetting(key, choices, settings=None):
+    settings = settings or Settings()
+    if key == 'antialiasing':
+        value = settings.getInt('game', 'antialiasing', choices[0][0])
+    else:
+        value = settings.getInt('mobile', key, choices[0][0])
+    return value if value in [c[0] for c in choices] else choices[0][0]
+
+
+def applyMobileSettings(settings=None):
+    """At PLAY!: the texture filtering (the render scale comes in at finish)."""
+    if not mobileOptionsAvailable():
+        return
+    degree = mobileSetting('filtering', FILTERING, settings)
+    loadPrcFileData('OfflineLauncher filtering', 'texture-anisotropic-degree %d' % degree)
+
+
 def touchControlsWanted(settings=None):
     settings = settings or Settings()
     return settings.getBool('controls', 'touch-controls', True)
@@ -277,6 +307,16 @@ class OfflineLauncher(DirectObject):
                                    text_font=self.interfaceFont, text_scale=0.056, text_wordwrap=23,
                                    text_fg=TEXT_DARK, text_align=TextNode.ACenter)
         self.settingsButton = self.redButton('SETTINGS', place(192, 405), self.showSettings)
+        # Phone graphics options: a small button in the bottom right corner,
+        # greyed out off Android like DRIVERS.
+        self.mobileButton = self.redButton('MOBILE', place(706, 478), self.showMobile, textScale=0.04,
+                                           imageScale=(0.62, 1, 1.0))
+        self.mobileButton['frameSize'] = (-0.13, 0.13, -0.05, 0.05)
+        self.mobileButton['image'] = images
+        self.mobileButton['text3_fg'] = (0.85, 0.85, 0.85, 1)
+        self.mobileButton['text3_shadow'] = (0.3, 0.3, 0.3, 1)
+        if not mobileOptionsAvailable():
+            self.mobileButton['state'] = DGG.DISABLED
 
     # --- Panels ---
 
@@ -343,6 +383,39 @@ class OfflineLauncher(DirectObject):
             button.bind(DGG.B1RELEASE, self.releaseNPCs)
             button.bind(DGG.EXIT, self.releaseNPCs)
             button.reparentTo(panel)
+
+    def showMobile(self):
+        panel = self.openPanel('MOBILE', titleZ=0.44, closeZ=-0.43, closeScale=0.75)
+        self.mobileButtons = {}
+        rows = (
+            ('render-scale', RENDER_SCALES, 'RENDER SCALE', 0.29,
+             'Draws the world at a lower resolution. Lower is faster but softer.'),
+            ('filtering', FILTERING, 'TEXTURE FILTERING', 0.07,
+             'Keeps the ground sharp into the distance. Lower is faster.'),
+            ('antialiasing', ANTIALIASING, 'ANTI-ALIASING', -0.15,
+             'Smooths jagged edges but costs speed. Takes effect the next time the game starts.'),
+        )
+        for key, choices, title, z, text in rows:
+            button = self.redButton('', (0, 0, z), self.cycleMobile, textScale=0.05, imageScale=(2.9, 1, 1.6))
+            button['extraArgs'] = [key, choices, title]
+            button.reparentTo(panel)
+            self.mobileButtons[key] = button
+            self.showMobileValue(key, choices, title)
+            DirectLabel(parent=panel, relief=None, pos=(0, 0, z - 0.1), text_font=self.interfaceFont,
+                        text_scale=0.04, text_fg=TEXT_DARK, text_wordwrap=30, text=text)
+
+    def showMobileValue(self, key, choices, title):
+        value = mobileSetting(key, choices, self.settings)
+        self.mobileButtons[key]['text'] = '%s: %s' % (title, dict(choices)[value])
+
+    def cycleMobile(self, key, choices, title):
+        values = [c[0] for c in choices]
+        value = values[(values.index(mobileSetting(key, choices, self.settings)) + 1) % len(values)]
+        if key == 'antialiasing':
+            self.settings.updateSetting('game', 'antialiasing', value)
+        else:
+            self.settings.updateSetting('mobile', key, value)
+        self.showMobileValue(key, choices, title)
 
     def showTraining(self, key):
         text = dict((k, t) for k, t, n in TRAINING_DISTRICTS)[key]
@@ -417,7 +490,8 @@ class OfflineLauncher(DirectObject):
         print('OfflineLauncher: PLAY!')
         self.started = True
         applyDistrictSetting(self.settings)
-        for button in (self.playButton, self.settingsButton, self.driversButton):
+        applyMobileSettings(self.settings)
+        for button in (self.playButton, self.settingsButton, self.driversButton, self.mobileButton):
             button['state'] = DGG.DISABLED
         self.setProgress(2, 'Starting Toontown...')
 
@@ -441,7 +515,7 @@ class OfflineLauncher(DirectObject):
         self.ignoreAll()
         self.closePanel()
         for item in (self.playButton, self.loadingBar, self.loadingLabel, self.driversButton, self.blurb,
-                     self.credits, self.settingsButton):
+                     self.credits, self.settingsButton, self.mobileButton):
             item.destroy()
         base.win.removeDisplayRegion(self.region)
         self.top.removeNode()
@@ -492,4 +566,7 @@ def finish():
         return
     progress(100, 'Ready!')
     launcher, _launcher = _launcher, None
+    if mobileOptionsAvailable():
+        from toontown.toonbase import RenderScale
+        RenderScale.apply(mobileSetting('render-scale', RENDER_SCALES, launcher.settings))
     getClientBuiltin('taskMgr').doMethodLater(0.4, lambda task: launcher.destroy(), 'offlineLauncherFinish')

@@ -131,6 +131,11 @@ class NPCPlayerAI(DistributedToonAI):
         """Calls func as though this toon's client had sent it."""
         return self.air.callAsSender(self.doId, func, *args)
 
+    def setCatalogSchedule(self, currentWeek, nextTime):
+        # NPC toons never shop, so no catalog is made for them.
+        self.catalogScheduleCurrentWeek = currentWeek
+        self.catalogScheduleNextTime = nextTime
+
     # --- Moving ---
 
     def placeAt(self, x, y, z, h):
