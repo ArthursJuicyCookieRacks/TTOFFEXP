@@ -106,6 +106,7 @@ class Hood(StateData.StateData):
             self.sky.setFogOff()
 
     def unload(self):
+        base.cr.flushToonCache()
         if hasattr(self, 'loader'):
             self.notify.info('Aggressively cleaning up loader: %s' % self.loader)
             self.loader.exit()

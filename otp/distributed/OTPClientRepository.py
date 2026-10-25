@@ -941,6 +941,12 @@ class OTPClientRepository(LocalConnectionMixin, ClientRepositoryBase):
             message = OTPLocalizer.CRBootedReasonUnknownCode % self.bootedIndex
         else:
             message = OTPLocalizer.CRLostConnection
+        # Offline a lost connection is always a bug; say where it came from,
+        # so a screenshot of the box tells what happened.
+        conn = getattr(self, '_localConn', None)
+        closeReason = getattr(conn, 'closeReason', None)
+        if closeReason:
+            message += '\n\n(%s)' % closeReason
         reconnect = 1
         if self.bootedIndex in (152, 127):
             reconnect = 0

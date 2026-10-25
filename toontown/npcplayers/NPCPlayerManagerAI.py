@@ -35,6 +35,9 @@ from toontown.toon.DistributedToonAI import DistributedToonAI
 from toontown.toonbase import TTLocalizer, ToontownGlobals
 
 SPAWNS_PER_TICK = 3
+# Building a toon's model takes the player's game a moment, so the toons of
+# one tick come in one at a time, this far apart, rather than in one frame.
+SPAWN_GAP = 0.3
 # How long the player's game must have been in a place before NPCs come.
 PLACE_SETTLE = 1.0
 # A toon that finds nowhere to walk this many times in a row is stuck (in a
@@ -60,7 +63,10 @@ TURN_RATE = 400.0
 WALK_CHANCE = 0.65
 PAUSE_AFTER_WALK = (0.5, 4.0)
 # How likely a wander is to go and stand by someone, and how close.
-SOCIAL_WALK = 0.3
+SOCIAL_WALK = 0.12
+# Toons pick places to go and appear where few others are, so they spread
+# out over the place: how near counts as crowding.
+CROWD_RADIUS = 12.0
 SOCIAL_RANGE = (3.5, 6.0)
 # What a toon may do while it stands about, with how likely each is.
 IDLE_ACTIONS = (('face', 30), ('look', 20), ('emote', 25), ('chat', 10), ('nothing', 15))
@@ -112,6 +118,15 @@ def getAreaId(zoneId):
                                                                     ToontownGlobals.CashbotHQ, ToontownGlobals.LawbotHQ):
         return branchId
     return None
+
+
+def getOutsideAreaId(zoneId):
+    """For a building's inside, the area its front door is in."""
+    if zoneId is None or zoneId >= ToontownGlobals.DynamicZonesBegin or not ZoneUtil.isInterior(zoneId):
+        return None
+    if ZoneUtil.getHoodId(zoneId) in (ToontownGlobals.Tutorial, ToontownGlobals.MyEstate):
+        return None
+    return getAreaId(ZoneUtil.getBranchZone(zoneId))
 
 
 class NPCArea:
@@ -189,6 +204,7 @@ class NPCPlayerManagerAI:
     def delete(self):
         taskMgr.remove(self.taskName)
         taskMgr.remove(self.taskName + '-walk')
+        taskMgr.removeTasksMatching(self.taskName + '-spawn-*')
         for crew in list(self.crews.values()) + list(self.bossCrews.values()):
             crew.destroy()
         for area in self.areas.values():
@@ -230,6 +246,11 @@ class NPCPlayerManagerAI:
         for player in self.getPlayers():
             areaId = getAreaId(player.zoneId)
             if areaId is None:
+                # Inside a shop or other building: the toons outside stay
+                # (standing where they are) for when the player comes out.
+                outside = self.areas.get(getOutsideAreaId(player.zoneId))
+                if outside is not None:
+                    outside.lastKept = now
                 continue
             area = self.areas.get(areaId)
             if area is None:
@@ -239,7 +260,7 @@ class NPCPlayerManagerAI:
             area.addTrail(pos, player.zoneId)
             self.populate(area, player, pos)
         for areaId, area in list(self.areas.items()):
-            if now - area.lastSeen > LINGER:
+            if now - max(area.lastSeen, getattr(area, 'lastKept', 0)) > LINGER:
                 for npc in area.npcs[:]:
                     if getattr(npc, 'crew', None) is None:
                         self.despawn(npc, quietly=True)
@@ -277,19 +298,28 @@ class NPCPlayerManagerAI:
     def populate(self, area, player, playerPos):
         if not self.placeReady(area, player):
             return
+        if getattr(area, 'spawning', 0) > 0:
+            return
         for i in range(SPAWNS_PER_TICK):
-            if len(area.npcs) >= self.npcsPerArea:
-                return
-            spot = self.pickSpawnSpot(area, playerPos, player.zoneId)
-            if spot is None:
-                return
+            area.spawning = getattr(area, 'spawning', 0) + 1
+            taskMgr.doMethodLater(i * SPAWN_GAP, self.__spawnOne, '%s-spawn-%d-%d' % (self.taskName, area.areaId, i),
+                                  extraArgs=[area, player, Point3(playerPos)])
+
+    def __spawnOne(self, area, player, playerPos):
+        area.spawning -= 1
+        if self.areas.get(area.areaId) is not area or player.isDeleted() or len(area.npcs) >= self.npcsPerArea:
+            return
+        if not self.placeReady(area, player):
+            return
+        spot = self.pickSpawnSpot(area, playerPos, player.zoneId)
+        if spot is not None:
             self.spawn(area, spot[0], spot[1], player)
 
     def pickSpawnSpot(self, area, playerPos, playerZone):
         nav = getNav()
         points = area.points()
         random.shuffle(points)
-        for point, zoneId in points[:6]:
+        for point, zoneId in sorted(points[:12], key=lambda p: self.crowding(area, p[0])):
             ground = nav.groundZ(point[0], point[1], point[2])
             if ground is not None:
                 return Point3(point[0], point[1], ground), zoneId
@@ -512,13 +542,16 @@ class NPCPlayerManagerAI:
                 candidates.append((spot, other.zoneId, other))
         far = [p for p in area.points() if WANDER_RANGE[0] <= (p[0] - pos).length() <= WANDER_RANGE[1]]
         random.shuffle(far)
-        candidates += [(p, zoneId, None) for p, zoneId in far[:3]]
+        wander = [(p, zoneId, None) for p, zoneId in far[:6]]
         # And a look around close by, which is mostly clear where the far
         # spots are behind something.
         for i in range(6):
             angle = random.uniform(0, 2 * math.pi)
             dist = random.uniform(8.0, 35.0)
-            candidates.append((Point3(pos[0] + dist * math.cos(angle), pos[1] + dist * math.sin(angle), pos[2]), None, None))
+            wander.append((Point3(pos[0] + dist * math.cos(angle), pos[1] + dist * math.sin(angle), pos[2]), None, None))
+        # The emptier places first.
+        wander.sort(key=lambda c: self.crowding(area, c[0], npc))
+        candidates += wander
         for target, zoneId, friend in candidates:
             path = nav.walkable(pos, target)
             if path:
@@ -529,6 +562,21 @@ class NPCPlayerManagerAI:
                 npc.faceH = None
                 return True
         return False
+
+    def crowding(self, area, point, exclude=None):
+        """How many of the area's toons are at or on their way to near point."""
+        count = 0
+        for other in area.npcs:
+            if other is exclude or other.isDeleted():
+                continue
+            spots = [other.getPos()]
+            if other.walk:
+                spots.append(other.walk[0][-1])
+            for spot in spots:
+                if (Point3(spot[0], spot[1], 0) - Point3(point[0], point[1], 0)).length() < CROWD_RADIUS:
+                    count += 1
+                    break
+        return count
 
     # --- Battles ---
 

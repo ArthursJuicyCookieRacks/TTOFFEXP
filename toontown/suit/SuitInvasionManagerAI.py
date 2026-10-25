@@ -55,7 +55,9 @@ HolidayInvasionSuits = 100000
 # The offline game's districts with their own rules. The developers'
 # district only gets an invasion someone summons. Each training district
 # always has an invasion of one cog track, going from one cog of it to
-# another, chosen at random, every TrainingInvasionSuits cogs.
+# another, chosen at random, every 30 to 60 minutes (TrainingInvasionMinutes).
+# Every street's cogs count towards an invasion's total, so a count runs out
+# in minutes; these invasions end on time instead.
 DEVELOPER_DISTRICTS = ('Developers Dreams', 'Developer Dreamland')
 TRAINING_DISTRICTS = {
     'Training Tycoon': 's',
@@ -63,7 +65,7 @@ TRAINING_DISTRICTS = {
     'Training Township': 'l',
     'Training Turf': 'c',
 }
-TrainingInvasionSuits = 250
+TrainingInvasionMinutes = (30, 60)
 # The pause between one training invasion and the next.
 TrainingInvasionGap = 5
 
@@ -163,7 +165,8 @@ class SuitInvasionManagerAI:
                 trainingCogs(self.trainingDept)
             cog = choice(cogs)
             self.lastTrainingCog = cog
-            self.startInvasion(cog, TrainingInvasionSuits, 0)
+            self.startInvasion(cog, HolidayInvasionSuits, 0,
+                               duration=randint(*TrainingInvasionMinutes) * 60)
         return Task.done
 
     lastTrainingCog = None
@@ -237,7 +240,7 @@ class SuitInvasionManagerAI:
         for sp in list(self.air.suitPlanners.values()):
             sp.flySuits()
 
-    def startInvasion(self, suitName='f', numSuits=1000, specialSuit=0):
+    def startInvasion(self, suitName='f', numSuits=1000, specialSuit=0, duration=None):
         """
         Start an invasion on the current AI. This can be invoked by anything, such
         as a toon summoning an invasion, or an admin manually starting an
@@ -261,7 +264,9 @@ class SuitInvasionManagerAI:
         # take around 20 minutes, becoming 1.2 seconds per cog.
         # We added in a bit of a grace period, making it 1.5 seconds per cog, or 25 minutes.
         timePerCog = config.GetFloat('invasion-time-per-cog', 1.5)
-        taskMgr.doMethodLater(timePerCog * numSuits, self.stopInvasion, 'invasion-timeout')
+        if duration is None:
+            duration = timePerCog * numSuits
+        taskMgr.doMethodLater(duration, self.stopInvasion, 'invasion-timeout')
         self.__spAllCogsSupaFly()
         return True
 

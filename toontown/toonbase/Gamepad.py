@@ -86,6 +86,7 @@ class Gamepad(DirectObject):
         # A touch (or a click) after the controller has gone quiet hands the
         # game back to the screen.
         self.accept('mouse1', self.__touched)
+        self.accept('sprint-stopped', self.__sprintStopped)
         taskMgr.add(self.__poll, 'gamepadPoll', sort=-45)
 
     def destroy(self):
@@ -140,6 +141,11 @@ class Gamepad(DirectObject):
         self.__walk(axes.get('left_x', 0), axes.get('left_y', 0))
         self.__point(axes.get('right_x', 0), axes.get('right_y', 0), globalClock.getDt())
         return task.cont
+
+    def __sprintStopped(self):
+        # The toon stopped sprinting (a battle, a door...): the next press of
+        # the run button starts it again rather than "stopping" it.
+        self.running = False
 
     def __buttons(self, buttons):
         for name in buttons - self.pressed:

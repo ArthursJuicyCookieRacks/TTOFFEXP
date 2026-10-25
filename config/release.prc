@@ -3,13 +3,15 @@
 # game's files and mounts the phase multifiles. Keep it in step with dev.prc.
 
 # Client settings
-window-title Toontown Rewritten Offline
+window-title Toontown
 server-version TT-OFFEXP-1.0
 sync-video #f
 want-dev #f
 preload-avatars #t
 texture-anisotropic-degree 16
-want-speedhack-fix #t
+# Offline there is no server to protect. The check could end the game on its
+# own after a long stall or a clock jump (a phone waking from sleep).
+want-speedhack-fix #f
 load-display pandagl
 default-directnotify-level warning
 

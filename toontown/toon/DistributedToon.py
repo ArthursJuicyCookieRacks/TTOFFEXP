@@ -237,6 +237,12 @@ class DistributedToon(DistributedPlayer.DistributedPlayer, Toon.Toon, Distribute
         DistributedPlayer.DistributedPlayer.disable(self)
         return
 
+    def getCacheable(self):
+        # Offline, every other toon is an NPC player. When the player steps
+        # into a shop and back out, the playground's toons go away and come
+        # back; kept, they come back at once instead of being built again.
+        return self.__class__ is DistributedToon and self.getDelayDeleteCount() <= 0
+
     def delete(self):
         try:
             self.DistributedToon_deleted

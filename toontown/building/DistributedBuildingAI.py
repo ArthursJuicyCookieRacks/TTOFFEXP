@@ -24,6 +24,7 @@ from toontown.cogdominium.DistributedCogdoInteriorAI import DistributedCogdoInte
 from toontown.cogdominium.SuitPlannerCogdoInteriorAI import SuitPlannerCogdoInteriorAI
 from toontown.cogdominium.CogdoLayout import CogdoLayout
 from toontown.cogdominium.DistributedCogdoElevatorExtAI import DistributedCogdoElevatorExtAI
+from otp.ai.MagicWordGlobal import *
 # The game floors of a field office, under the executive suite.
 CogdoGameFloors = 1
 
@@ -554,4 +555,38 @@ class DistributedBuildingAI(DistributedObjectAI.DistributedObjectAI):
 
     def deleteCogdoInterior(self):
         self.deleteSuitInterior()
-# VERIFICATION FAILED
+
+
+# The difficulty (SuitBuildingInfo) of each field office level: cogs of
+# levels 1-3 for a level 1 office, up to 9-11 for a level 5.
+FieldOfficeLevels = {1: 0, 2: 2, 3: 4, 4: 6, 5: 8}
+FieldOfficeTracks = {'s': 's', 'sellbot': 's', 'l': 'l', 'lawbot': 'l'}
+
+@magicWord(category=CATEGORY_OVERRIDE, types=[str, int])
+def fo(track='', level=0):
+    """Make a building on this street a field office: ~fo l|s [level 1-5]."""
+    track = FieldOfficeTracks.get(track.lower())
+    if track is None:
+        return 'Say which: ~fo s (Sellbot) or ~fo l (Lawbot), then a level 1-5 or nothing for any.'
+    if level and level not in FieldOfficeLevels:
+        return 'The level is 1 to 5, or leave it out for any level.'
+    level = level or random.choice(list(FieldOfficeLevels))
+    invoker = spellbook.getInvoker()
+    zoneId = invoker.zoneId
+    manager = simbase.air.buildingManagers.get(ZoneUtil.getBranchZone(zoneId))
+    if manager is None or ZoneUtil.isPlayground(zoneId) or ZoneUtil.isInterior(zoneId):
+        return 'Go out onto a street first.'
+    blocks = []
+    for block in manager.getToonBlocks():
+        building = manager.getBuilding(block)
+        if 'shop' in building.__class__.__name__.lower() or not building.isToonBlock():
+            continue
+        blocks.append(block)
+    if not blocks:
+        return 'There are no toon buildings left on this street.'
+    # One close by if there is one: a building in the part of the street the
+    # player is in.
+    near = [block for block in blocks if manager.getBuilding(block).getExteriorAndInteriorZoneId()[0] == zoneId]
+    block = random.choice(near or blocks)
+    manager.getBuilding(block).cogdoTakeOver(track, FieldOfficeLevels[level], None)
+    return 'A level %d %s field office is landing on block %d.' % (level, 'Sellbot' if track == 's' else 'Lawbot', block)

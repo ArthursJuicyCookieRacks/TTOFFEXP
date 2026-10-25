@@ -1,62 +1,114 @@
 diff --git a/panda/src/android/PythonActivity.java b/panda/src/android/PythonActivity.java
-index 7f625a1..0bc643e 100644
+index 7f625a1..f8e5ba6 100644
 --- a/panda/src/android/PythonActivity.java
 +++ b/panda/src/android/PythonActivity.java
-@@ -15,7 +15,11 @@ package org.panda3d.android;
+@@ -15,7 +15,17 @@ package org.panda3d.android;
  
  import org.panda3d.android.PandaActivity;
  
-+import android.app.AlertDialog;
++import android.content.Context;
  import android.content.Intent;
++import android.text.Editable;
++import android.text.InputFilter;
++import android.text.TextWatcher;
++import android.view.KeyEvent;
++import android.view.ViewGroup;
 +import android.view.WindowManager;
 +import android.view.inputmethod.EditorInfo;
++import android.view.inputmethod.InputMethodManager;
 +import android.widget.EditText;
  import android.database.Cursor;
  import android.net.Uri;
  import android.provider.OpenableColumns;
-@@ -114,6 +118,51 @@ public class PythonActivity extends PandaActivity {
+@@ -114,6 +124,97 @@ public class PythonActivity extends PandaActivity {
          }
      }
  
-+    // Typing a line of text with the system's keyboard, in a small dialog
-+    // (the game's own window takes no typing from an on-screen keyboard).
-+    // typedText is null while the dialog is open, and then what was typed,
-+    // or "" if it was cancelled.
-+    private volatile String typedText = "";
++    // Typing with the system's keyboard straight into the game's own text
++    // box. The game's window takes no typing from an on-screen keyboard, so
++    // an invisible text field takes it, and the game shows what it holds.
++    // getTypedText gives "E:" and the text while typing, "S:" and the text
++    // once it is sent, and "C:" and the text if the keyboard was closed.
++    private volatile String typedText = "C:";
++    private EditText hiddenEdit = null;
 +
 +    public void askText(String title, String text, int maxLength) {
-+        typedText = null;
 +        runOnUiThread(() -> {
-+            final EditText edit = new EditText(this);
-+            edit.setSingleLine(true);
-+            edit.setImeOptions(EditorInfo.IME_ACTION_SEND | EditorInfo.IME_FLAG_NO_EXTRACT_UI);
-+            if (maxLength > 0) {
-+                edit.setFilters(new android.text.InputFilter[] {
-+                    new android.text.InputFilter.LengthFilter(maxLength) });
-+            }
-+            edit.setText(text);
-+            edit.setSelection(edit.getText().length());
-+            final AlertDialog dialog = new AlertDialog.Builder(this)
-+                .setTitle(title)
-+                .setView(edit)
-+                .setPositiveButton("Send", (d, which) -> typedText = edit.getText().toString())
-+                .setNegativeButton("Cancel", (d, which) -> typedText = "")
-+                .setOnCancelListener(d -> typedText = "")
-+                .create();
-+            edit.setOnEditorActionListener((view, action, event) -> {
-+                typedText = edit.getText().toString();
-+                dialog.dismiss();
-+                return true;
-+            });
-+            dialog.setOnDismissListener(d -> {
-+                if (typedText == null) {
-+                    typedText = "";
++            if (maxLength < 0) {
++                // The game is done with the keyboard.
++                if (hiddenEdit != null) {
++                    closeKeyboard();
 +                }
-+            });
-+            dialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE);
-+            dialog.show();
-+            edit.requestFocus();
++                typedText = "C:" + (hiddenEdit != null ? hiddenEdit.getText().toString() : "");
++                return;
++            }
++            if (hiddenEdit == null) {
++                hiddenEdit = new EditText(this) {
++                    @Override
++                    public boolean onKeyPreIme(int keyCode, KeyEvent event) {
++                        if (keyCode == KeyEvent.KEYCODE_BACK && event.getAction() == KeyEvent.ACTION_UP) {
++                            typedText = "C:" + getText().toString();
++                            closeKeyboard();
++                            return true;
++                        }
++                        return super.onKeyPreIme(keyCode, event);
++                    }
++                };
++                hiddenEdit.setSingleLine(true);
++                hiddenEdit.setAlpha(0.0f);
++                hiddenEdit.setImeOptions(EditorInfo.IME_ACTION_SEND | EditorInfo.IME_FLAG_NO_EXTRACT_UI |
++                                         EditorInfo.IME_FLAG_NO_FULLSCREEN);
++                hiddenEdit.addTextChangedListener(new TextWatcher() {
++                    public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
++                    public void onTextChanged(CharSequence s, int start, int before, int count) {}
++                    public void afterTextChanged(Editable s) {
++                        if (typedText.startsWith("E:")) {
++                            typedText = "E:" + s.toString();
++                        }
++                    }
++                });
++                hiddenEdit.setOnEditorActionListener((view, action, event) -> {
++                    typedText = "S:" + hiddenEdit.getText().toString();
++                    closeKeyboard();
++                    return true;
++                });
++                addContentView(hiddenEdit, new ViewGroup.LayoutParams(1, 1));
++            }
++            if (maxLength > 0) {
++                hiddenEdit.setFilters(new InputFilter[] { new InputFilter.LengthFilter(maxLength) });
++            } else {
++                hiddenEdit.setFilters(new InputFilter[0]);
++            }
++            typedText = "E:" + text;
++            hiddenEdit.setText(text);
++            hiddenEdit.setSelection(hiddenEdit.getText().length());
++            hiddenEdit.setFocusableInTouchMode(true);
++            hiddenEdit.requestFocus();
++            // The game's surface can take the focus back a moment later, so
++            // the keyboard is asked for once things have settled too.
++            showKeyboard();
++            hiddenEdit.postDelayed(() -> {
++                if (typedText.startsWith("E:")) {
++                    hiddenEdit.requestFocus();
++                    showKeyboard();
++                }
++            }, 200);
 +        });
++    }
++
++    private void showKeyboard() {
++        InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
++        if (imm != null) {
++            imm.showSoftInput(hiddenEdit, InputMethodManager.SHOW_FORCED);
++        }
++    }
++
++    private void closeKeyboard() {
++        InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
++        if (imm != null) {
++            imm.hideSoftInputFromWindow(hiddenEdit.getWindowToken(), 0);
++        }
++        hiddenEdit.clearFocus();
 +    }
 +
 +    public String getTypedText() {
@@ -67,7 +119,7 @@ index 7f625a1..0bc643e 100644
      protected void onActivityResult(int requestCode, int resultCode, Intent intent) {
          if (requestCode == PICK_FILE_REQUEST) {
 diff --git a/pandatool/src/deploy-stub/android_support.cxx b/pandatool/src/deploy-stub/android_support.cxx
-index 757e71f..15928e5 100644
+index 757e71f..e09ccdc 100644
 --- a/pandatool/src/deploy-stub/android_support.cxx
 +++ b/pandatool/src/deploy-stub/android_support.cxx
 @@ -127,11 +127,73 @@ _py_picked_file(PyObject *self, PyObject *args) {
@@ -75,7 +127,7 @@ index 757e71f..15928e5 100644
  }
  
 +/**
-+ * Opens a dialog to type a line of text in with the system's keyboard;
++ * Brings up the system's keyboard to type a line of text with;
 + * typed_text() gives the text when it is done.
 + */
 +static PyObject *
@@ -94,7 +146,7 @@ index 757e71f..15928e5 100644
 +    if (env != nullptr) {
 +      env->ExceptionClear();
 +    }
-+    PyErr_SetString(PyExc_NotImplementedError, "this activity has no text dialog");
++    PyErr_SetString(PyExc_NotImplementedError, "this activity has no keyboard support");
 +    return NULL;
 +  }
 +  jstring jtitle = env->NewStringUTF(title);
@@ -107,8 +159,8 @@ index 757e71f..15928e5 100644
 +}
 +
 +/**
-+ * Returns None while the text dialog is open, and then the typed text ("" if
-+ * it was cancelled).
++ * Returns what is typed so far, after "E:" while typing, "S:" once sent or
++ * "C:" if the keyboard was closed.
 + */
 +static PyObject *
 +_py_typed_text(PyObject *self, PyObject *args) {

@@ -68,6 +68,10 @@ class ToontownClientRepository(OTPClientRepository.OTPClientRepository):
     def __init__(self, serverVersion, launcher = None):
         OTPClientRepository.OTPClientRepository.__init__(self, serverVersion, launcher, playGame=PlayGame.PlayGame)
         self._playerAvDclass = self.dclassesByName['DistributedToon']
+        # The NPC toons of a playground or street are kept for when the
+        # player comes back out of a shop, rather than built again.
+        from toontown.npcplayers import NPCSettings
+        self.cache.maxCacheItems = NPCSettings.npcsPerArea() + 8
         setInterfaceFont(TTLocalizer.InterfaceFont)
         setSignFont(TTLocalizer.SignFont)
         setFancyFont(TTLocalizer.FancyFont)
@@ -1091,8 +1095,24 @@ class ToontownClientRepository(OTPClientRepository.OTPClientRepository):
         OTPClientRepository.OTPClientRepository.handleUpdateField(self, di)
 
     def handleDelete(self, di):
+        # An object leaving the player's view. Kept ones (see getCacheable)
+        # wait in the cache for the player to come back.
         doId = di.getUint32()
+        obj = self.doId2do.get(doId)
+        if obj is not None and obj.getCacheable() and obj.getDelayDeleteCount() <= 0:
+            del self.doId2do[doId]
+            if self.cache.cache(obj):
+                return
+            self.doId2do[doId] = obj
         self.deleteObject(doId)
+
+    def flushToonCache(self):
+        # The toons kept from the last place are no good in another one.
+        # (CRCache.flush would also send clientCleanup to everything.)
+        for distObj in list(self.cache.dict.values()):
+            distObj.deleteOrDelay()
+        self.cache.dict = {}
+        self.cache.fifo = []
 
     def deleteObject(self, doId, ownerView = False):
         if doId in self.doId2do:

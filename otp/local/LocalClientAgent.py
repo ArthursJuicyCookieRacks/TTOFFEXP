@@ -593,6 +593,12 @@ class LocalClient(MDParticipant):
 
         self.md.removeParticipant(self)
         self.agent.clientDisconnected(self)
+        # Where the drop came from, for the "connection broken" box: offline
+        # there is no network, so a drop is always the game's own doing.
+        import traceback
+        frames = traceback.extract_stack()[-6:-1]
+        self.connection.closeReason = ' < '.join('%s:%d' % (frame.name, frame.lineno) for frame in reversed(frames))
+        self.notify.warning('Client %d dropped: %s' % (self.channel, self.connection.closeReason))
         self.connection.closed(dropped)
 
 

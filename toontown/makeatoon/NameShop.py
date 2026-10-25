@@ -16,6 +16,7 @@ import re
 from toontown.toonbase import TTLocalizer
 from . import NameGenerator
 import random
+from toontown.toonbase import AndroidKeyboard
 from otp.distributed import PotentialAvatar
 from otp.namepanel import NameCheck
 from toontown.toontowngui import TeaserPanel
@@ -607,6 +608,8 @@ class NameShop(StateData.StateData):
     def __handleReject(self):
         self.rejectDialog.cleanup()
         self.nameEntry['focus'] = 1
+        if AndroidKeyboard.available():
+            self.__askAndroidName()
         self.typeANameButton.show()
         self.acceptOnce('next', self.__handleDone)
 
@@ -749,6 +752,12 @@ class NameShop(StateData.StateData):
         self.typeANameButton.wrtReparentTo(aspect2d, sort=2)
         self.nameEntry.set('')
         self.nameEntry['focus'] = 1
+        if AndroidKeyboard.available():
+            self.nameEntry.bind(DGG.B1PRESS, self.__askAndroidName)
+            self.__askAndroidName()
+
+    def __askAndroidName(self, *args):
+        AndroidKeyboard.start(self.nameEntry, 0, onSend=self.__typedAName)
 
     def __typeAName(self):
         if base.cr.productName in ['JP',
@@ -771,6 +780,7 @@ class NameShop(StateData.StateData):
 
     def __typedAName(self, *args):
         self.notify.debug('__typedAName')
+        AndroidKeyboard.stop()
         self.nameEntry['focus'] = 0
         name = self.nameEntry.get()
         #name = TextEncoder().decodeText(name)
@@ -784,6 +794,9 @@ class NameShop(StateData.StateData):
         self.checkNameTyped(justCheck=True)
 
     def exitTypeANameState(self):
+        AndroidKeyboard.stop()
+        if AndroidKeyboard.available():
+            self.nameEntry.unbind(DGG.B1PRESS)
         self.typeANameButton.wrtReparentTo(self.namePanel, sort=2)
         self.uberhide(self.typeANameGUIElements)
 

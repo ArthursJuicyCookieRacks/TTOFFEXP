@@ -153,38 +153,34 @@ class TTChatInputWhiteList(ChatInputWhiteListFrame):
     def activate(self):
         ChatInputWhiteListFrame.activate(self)
         if sys.platform == 'android':
-            # A phone types with its own keyboard, which the game's window
-            # can't take, so the text is typed in a dialog of Android's.
+            # A phone types with its own keyboard, straight into the chat bar;
+            # a tap on the bar brings the keyboard back after it was put away.
             self.askAndroidText()
+            self.chatEntry.bind(DGG.B1PRESS, lambda event: self.askAndroidText())
 
     def deactivate(self):
-        taskMgr.remove('androidChatText')
+        from toontown.toonbase import AndroidKeyboard
+        AndroidKeyboard.stop()
         ChatInputWhiteListFrame.deactivate(self)
 
     def askAndroidText(self):
-        try:
-            import android_support
-            android_support.ask_text(OTPLocalizer.ChatInputNormalSayIt, self.chatEntry.get(plain=True), ANDROID_MAX_CHAT)
-        except (ImportError, AttributeError, NotImplementedError) as e:
-            self.notify.warning('no Android keyboard: %r' % e)
-            return
-        taskMgr.remove('androidChatText')
-        taskMgr.add(self.__waitForAndroidText, 'androidChatText')
+        from toontown.toonbase import AndroidKeyboard
+        AndroidKeyboard.start(self.chatEntry, ANDROID_MAX_CHAT, onSend=self.__androidSend,
+                              onClose=self.__androidClosed, onChange=lambda text: self.applyFilter(None))
 
-    def __waitForAndroidText(self, task):
-        import android_support
-        text = android_support.typed_text()
-        if text is None:
-            return task.cont
+    def __androidSend(self, text):
         if not self.active:
-            return task.done
+            return
         if text.strip():
-            self.chatEntry.set(text)
             self.applyFilter(None)
             self.chatButtonPressed()
         else:
             self.cancelButtonPressed()
-        return task.done
+
+    def __androidClosed(self, text):
+        # The keyboard was put away (the back button): what was typed stays
+        # in the bar, to send with its button or to tap the bar for more.
+        pass
 
     def cancelButtonPressed(self):
         self.requestMode('Off')

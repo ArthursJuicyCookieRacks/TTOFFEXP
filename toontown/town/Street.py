@@ -18,6 +18,9 @@ from toontown.toonbase import ToontownGlobals
 from toontown.toon.Toon import teleportDebug
 from toontown.estate import HouseGlobals
 from toontown.toonbase import TTLocalizer
+
+# How often (seconds) the street checks which part of it the toon is on.
+ZoneCheckInterval = 0.5
 from direct.interval.IntervalGlobal import *
 from otp.nametag import NametagGlobals
 visualizeZones = config.ConfigVariableBool('visualize-zones', 0).getValue()
@@ -347,10 +350,64 @@ class Street(BattlePlace.BattlePlace):
     def visibilityOn(self):
         self.hideAllVisibles()
         self.accept('on-floor', self.enterZone)
+        taskMgr.doMethodLater(ZoneCheckInterval, self.__checkZone, 'streetZoneCheck')
 
     def visibilityOff(self):
+        taskMgr.remove('streetZoneCheck')
         self.ignore('on-floor')
         self.showAllVisibles()
+
+    def __checkZone(self, task):
+        # The part of the street the player is in comes from the camera's
+        # floor ray ('on-floor'), which only hits the parts being drawn. After
+        # a big jump (a battle placing the toon, a teleport, a quick camera
+        # swing) the ray can find nothing, the zone stays the old one and the
+        # parts around the player are never drawn: an empty void. So now and
+        # then the ground under the toon is looked up among all the parts.
+        try:
+            zoneId = self.__zoneUnderToon()
+        except Exception:
+            self.notify.warning('Could not check the zone under the toon')
+            zoneId = None
+        # The camera's part of the street is kept as long as the toon's own
+        # part is drawn with it; only a toon standing in the void moves it.
+        if zoneId is not None and zoneId != self.zoneId and zoneId in self.loader.nodeDict and \
+                zoneId not in [self.loader.nodeToZone[node] for node in self.loader.nodeDict.get(self.zoneId, [])]:
+            self.notify.info('Zone %s found under the toon (was %s)' % (zoneId, self.zoneId))
+            self.enterZone(zoneId)
+        return task.again
+
+    def __zoneUnderToon(self):
+        if not hasattr(self, 'zoneCheckRay'):
+            self.zoneCheckQueue = CollisionHandlerQueue()
+            self.zoneCheckTrav = CollisionTraverser('streetZoneCheck')
+            self.zoneCheckRay = CollisionRay(0, 0, 0, 0, 0, -1)
+            rayNode = CollisionNode('streetZoneCheckRay')
+            rayNode.addSolid(self.zoneCheckRay)
+            rayNode.setFromCollideMask(ToontownGlobals.FloorBitmask)
+            rayNode.setIntoCollideMask(BitMask32.allOff())
+            self.zoneCheckRayPath = NodePath(rayNode)
+            self.zoneCheckTrav.addCollider(self.zoneCheckRayPath, self.zoneCheckQueue)
+        geom = self.loader.geom
+        pos = base.localAvatar.getPos(geom)
+        self.zoneCheckRay.setOrigin(pos[0], pos[1], pos[2] + 2.0)
+        stashed = [node for node in self.loader.nodeList if node.isStashed()]
+        for node in stashed:
+            node.unstash()
+        self.zoneCheckRayPath.reparentTo(geom)
+        try:
+            self.zoneCheckQueue.clearEntries()
+            self.zoneCheckTrav.traverse(geom)
+        finally:
+            self.zoneCheckRayPath.detachNode()
+            for node in stashed:
+                node.stash()
+        self.zoneCheckQueue.sortEntries()
+        for entry in self.zoneCheckQueue.getEntries():
+            name = entry.getIntoNode().getName()
+            if name.isdigit():
+                return int(name)
+        return None
 
     def doEnterZone(self, newZoneId):
         if self.zoneId != None:

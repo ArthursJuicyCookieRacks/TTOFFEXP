@@ -45,16 +45,11 @@ class DistributedNPCFisherman(DistributedNPCToonBase):
     def announceGenerate(self):
         DistributedNPCToonBase.announceGenerate(self)
 
-    def initToonState(self):
-        self.setAnimState('neutral', 1.05, None, None)
-        npcOrigin = self.cr.playGame.hood.loader.geom.find('**/npc_fisherman_origin_%s;+s' % self.posIndex)
-        print('fisherman origin: ', npcOrigin)
-        if not npcOrigin.isEmpty():
-            self.reparentTo(npcOrigin)
-            self.clearMat()
-        else:
-            self.notify.warning('announceGenerate: Could not find npc_fisherman_origin_' + str(self.posIndex))
-        return
+    def getNeutralRate(self):
+        return 1.05
+
+    def findNpcOrigin(self):
+        return self.cr.playGame.hood.loader.geom.find('**/npc_fisherman_origin_%s;+s' % self.posIndex)
 
     def getCollSphereRadius(self):
         return 1.0

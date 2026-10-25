@@ -4760,7 +4760,7 @@ def maxToon(hasConfirmed='UNCONFIRMED'):
     toon = spellbook.getInvoker()
 
     if hasConfirmed != 'CONFIRM':
-        return 'Are you sure you want to max out %s? This process is irreversible. Use "~maxToon CONFIRM" to confirm.' % toon.getName()
+        return 'Are you sure you want to max out %s? This process is irreversible. Press MaxToon in SpeedChat Tools again, or use "~maxToon CONFIRM", to confirm.' % toon.getName()
 
     # Max out gag tracks (all 7 tracks)
     toon.b_setTrackAccess([1] * 7)
