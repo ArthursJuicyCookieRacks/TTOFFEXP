@@ -703,6 +703,7 @@ jobs:
         sleep 134
         adb exec-out screencap -p > screenshot.png
         adb shell pidof com.ttroffline.game > pid.txt
+        adb shell wm size > screen.txt
         adb logcat -d > logcat.txt
         adb logcat -d --pid="$(cat startpid.txt)" > game.txt
         adb logcat -d -b crash > crash.txt
@@ -729,8 +730,8 @@ jobs:
         # Leave out the runtime's thread dump, which follows any crash.
         if [ -n "$pid" ]; then grep -E "^\S+ \S+ +$pid " logcat.txt | grep -v 'runtime.cc:' > game.txt || true; fi
         # And what the system did with the game's window.
-        grep -E " (ActivityTaskManager|ActivityManager|WindowManager|InputDispatcher)\b" logcat.txt | grep -i "ttroffline\|anr\|focus" | tail -c 6000 > system.txt || true
-        { head -c 3000 crash.txt; echo; tail -c 6000 system.txt; echo; tail -c 24000 game.txt; } > shown.txt
+        grep -E " (ActivityTaskManager|ActivityManager|WindowManager|InputDispatcher)\b" logcat.txt | grep -v "Sent Transition\|info={id" | tail -c 6000 > system.txt || true
+        { cat screen.txt; head -c 3000 crash.txt; echo; tail -c 6000 system.txt; echo; tail -c 24000 game.txt; } > shown.txt
         python3 -c "
         text = open('shown.txt', errors='replace').read()
         for start in range(0, len(text), 3000):

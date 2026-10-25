@@ -258,6 +258,7 @@ class OfflineLauncher(DirectObject):
             self.panel = None
 
     def openPanel(self, title, titleZ=0.38):
+        print('OfflineLauncher: opening %s' % title)
         self.closePanel()
         # A shade over the launcher, which also keeps its buttons from being
         # pressed while the panel is up.
@@ -300,6 +301,7 @@ class OfflineLauncher(DirectObject):
     def play(self):
         if self.started:
             return
+        print('OfflineLauncher: PLAY!')
         self.started = True
         for button in (self.playButton, self.settingsButton, self.driversButton):
             button['state'] = DGG.DISABLED

@@ -242,6 +242,7 @@ class DriversPanel:
         self.message['text'] = text
 
     def pick(self):
+        print('TurnipDrivers: opening the file picker')
         try:
             import android_support
             android_support.pick_file('*/*', os.path.abspath(PICKED_DIR))
