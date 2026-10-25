@@ -51,7 +51,7 @@ class MakeClothesGUI(ClothesGUI.ClothesGUI):
             self.accessoryButtons[kind] = (frame, lButton, rButton)
         self.accessoryFrame.hide()
         # The same button as Shuffle, just under it.
-        self.accessoriesButton = DirectButton(parent=self.parentFrame, relief=None, pos=(0, 0, 0.12), hpr=(0, 0, 3), image=(shuffleUp, shuffleDown, shuffleUp), image_scale=(-0.9, 0.6, 0.6), image1_scale=(-0.93, 0.6, 0.6), image2_scale=(-0.93, 0.6, 0.6), text=TTLocalizer.MakeAToonAccessories, text_font=ToontownGlobals.getInterfaceFont(), text_scale=TTLocalizer.SBshuffleBtn * 0.75, text_pos=(0, -0.02), text_fg=(1, 1, 1, 1), text_shadow=(0, 0, 0, 1), command=self.toggleAccessories)
+        self.accessoriesButton = DirectButton(parent=self.parentFrame, relief=None, pos=(0, 0, 0.15), hpr=(0, 0, 5), image=(shuffleUp, shuffleDown, shuffleUp), image_scale=(-0.9, 0.6, 0.6), image1_scale=(-0.93, 0.6, 0.6), image2_scale=(-0.93, 0.6, 0.6), text=TTLocalizer.MakeAToonAccessories, text_font=ToontownGlobals.getInterfaceFont(), text_scale=TTLocalizer.SBshuffleBtn * 0.75, text_pos=(0, -0.02), text_fg=(1, 1, 1, 1), text_shadow=(0, 0, 0, 1), command=self.toggleAccessories)
 
     def unload(self):
         self.accessoriesButton.destroy()

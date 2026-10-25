@@ -21,7 +21,7 @@ from toontown.classicchars import CCharPaths
 from toontown.dna import DNAStoreSuitPoint
 from toontown.hood import ZoneUtil
 from toontown.npcplayers import NPCProfiles
-from toontown.npcplayers.NPCSettings import keepAreas, npcsPerArea
+from toontown.npcplayers.NPCSettings import preloadNPCs, keepAreas, npcsPerArea
 from toontown.npcplayers.NPCBattleCrew import NPCBattleCrew, isNPC
 from toontown.npcplayers.NPCNav import getNav
 from toontown.npcplayers.NPCGolf import NPCGolf
@@ -40,6 +40,11 @@ SPAWNS_PER_TICK = 3
 SPAWN_GAP = 0.3
 # How long the player's game must have been in a place before NPCs come.
 PLACE_SETTLE = 1.0
+# Playgrounds whose toons are there from the start, before the player has
+# been to them (see NPCSettings.preloadNPCs).
+PRELOAD_PLAYGROUNDS = (ToontownGlobals.ToontownCentral, ToontownGlobals.DonaldsDock, ToontownGlobals.DaisyGardens,
+                       ToontownGlobals.MinniesMelodyland, ToontownGlobals.TheBrrrgh, ToontownGlobals.DonaldsDreamland,
+                       ToontownGlobals.GoofySpeedway, ToontownGlobals.OutdoorZone)
 # A toon that finds nowhere to walk this many times in a row is stuck (in a
 # corner, say) and goes off by teleport; another comes in its place.
 STUCK_TRIES = 6
@@ -191,6 +196,7 @@ class NPCPlayerManagerAI:
         self.areas = {}
         self.npcsPerArea = npcsPerArea()
         self.keepAreas = keepAreas()
+        self.preloading = preloadNPCs()
         self.crews = {}
         self.party = NPCParty(self)
         self.golf = NPCGolf(self)
@@ -235,6 +241,10 @@ class NPCPlayerManagerAI:
 
     def __tick(self, task):
         try:
+            if self.preloading and not getattr(self, 'preloaded', False):
+                self.preloaded = True
+                for areaId in PRELOAD_PLAYGROUNDS:
+                    self.preload(areaId).pinned = True
             self.__update()
         except Exception:
             self.notify.warning('update failed')
@@ -264,7 +274,7 @@ class NPCPlayerManagerAI:
         kept = sorted(self.areas.values(), key=lambda a: max(a.lastSeen, getattr(a, 'lastKept', 0)), reverse=True)
         kept = set(id(a) for a in kept[:self.keepAreas])
         for areaId, area in list(self.areas.items()):
-            if id(area) in kept:
+            if id(area) in kept or getattr(area, 'pinned', False):
                 continue
             if now - max(area.lastSeen, getattr(area, 'lastKept', 0)) > LINGER:
                 for npc in area.npcs[:]:
@@ -279,6 +289,65 @@ class NPCPlayerManagerAI:
         self.party.answerHandshakes(zoneIndex)
         self.joinBattles()
         self.joinBosses()
+
+    def preload(self, areaId, player=None, nearZone=None, scene=None):
+        """Fills an area with its toons at once, at its known spots.
+
+        The toons go only where toons are known to stand: the drop points,
+        the classic character's paths and the cogs' sidewalks. Given the
+        place's scenery (loaded by the player's game, not shown yet) they
+        are also put on its ground and sent walking, so the player finds
+        them already about.
+        """
+        area = self.areas.get(areaId)
+        if area is None:
+            area = self.areas[areaId] = NPCArea(self, areaId)
+        nav = getNav()
+        nav.sceneOverride = scene
+        try:
+            if scene is not None:
+                for npc in area.npcs[:]:
+                    if npc.crew is not None or npc.busy or npc.isDeleted():
+                        continue
+                    pos = npc.getPos()
+                    ground = nav.groundZ(pos[0], pos[1], pos[2])
+                    if ground is None:
+                        self.despawn(npc, quietly=True)
+                    elif abs(ground - pos[2]) > 0.01:
+                        npc.placeAt(pos[0], pos[1], ground, npc.getH())
+            spots = list(area.anchors)
+            random.shuffle(spots)
+            if nearZone is not None and nearZone != areaId:
+                # On a street the player's game only sees the zones around
+                # the one it arrives in (they are numbered along the street).
+                spots.sort(key=lambda p: abs(p[1] - nearZone))
+                del spots[max(24, 2 * self.npcsPerArea):]
+                random.shuffle(spots)
+            while len(area.npcs) < self.npcsPerArea and spots:
+                spot = min(spots[:12], key=lambda p: self.crowding(area, p[0]))
+                spots.remove(spot)
+                point = Point3(spot[0])
+                if scene is not None:
+                    ground = nav.groundZ(point[0], point[1], point[2])
+                    if ground is None:
+                        continue
+                    point[2] = ground
+                self.spawn(area, point, spot[1], player)
+            if scene is not None:
+                for npc in area.npcs:
+                    if npc.crew is None and not npc.busy and npc.walk is None and not npc.isDeleted():
+                        self.startWalk(area, npc)
+        finally:
+            nav.sceneOverride = None
+        return area
+
+    def headingTo(self, zoneId, player, scene=None):
+        """The player's game is about to go into zoneId (see NPCPreload)."""
+        areaId = getAreaId(zoneId)
+        if not self.preloading or areaId is None:
+            return
+        area = self.preload(areaId, player, zoneId, scene)
+        area.seen()
 
     def placeReady(self, area, player):
         """Whether the player's own game has the place loaded and is in it.

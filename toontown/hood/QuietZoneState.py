@@ -1,4 +1,5 @@
 from panda3d.core import *
+from toontown.npcplayers import NPCPreload
 from direct.showbase.PythonUtil import Functor, PriorityCallbacks
 from direct.task import Task
 from toontown.distributed.ToontownMsgTypes import *
@@ -261,6 +262,9 @@ class QuietZoneState(StateData.StateData):
             zoneId = self._requestStatus['zoneId']
             base.cr.dumpAllSubShardObjects()
             base.cr.resetDeletedSubShardDoIds()
+            # The place's NPC toons come in with the zone, behind the
+            # loading screen (offline only).
+            NPCPreload.heading(zoneId)
             base.cr.sendSetZoneMsg(zoneId)
             self.waitForDatabase('WaitForSetZoneResponse')
             self.fsm.request('waitForSetZoneComplete')

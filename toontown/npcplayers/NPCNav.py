@@ -22,6 +22,8 @@ CHEST = 2.0
 class NPCNav:
 
     def __init__(self):
+        # A place the client has loaded but not shown yet (see NPCPreload).
+        self.sceneOverride = None
         self.traverser = CollisionTraverser('npcNav')
         self.queue = CollisionHandlerQueue()
         self.root = NodePath('npcNavRays')
@@ -39,6 +41,8 @@ class NPCNav:
         self.segmentPath = self.root.attachNewNode(segmentNode)
 
     def getScene(self):
+        if self.sceneOverride is not None:
+            return self.sceneOverride
         base = getClientBuiltin('base')
         if base is None or not hasattr(base, 'render'):
             return None

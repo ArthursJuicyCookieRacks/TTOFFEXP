@@ -17,6 +17,16 @@ def keepAreas():
     return max(0, ConfigVariableInt('npc-keep-areas', KEEP_AREAS).getValue())
 
 
+def preloadNPCs():
+    """Whether NPC toons are put in a place before the player gets there.
+
+    They are then built behind the loading screen, all at once, instead of
+    coming in one at a time once the player can already see the place.
+    """
+    from panda3d.core import ConfigVariableBool
+    return ConfigVariableBool('npc-preload', True).getValue()
+
+
 def npcsPerArea(settings=None):
     """How many NPC players each place gets."""
     settings = settings or Settings()
