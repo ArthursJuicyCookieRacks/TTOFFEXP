@@ -110,6 +110,9 @@ class OfflineLauncher(DirectObject):
         self.makeBackground()
         self.makePlay()
         self.makeLeftPanel()
+        from toontown.toonbase import CrashReport
+        if CrashReport.report:
+            self.showCrashReport(CrashReport.shownText())
 
     def loadArt(self):
         self.buttonModel = loader.loadModel('phase_3/models/gui/quit_button')
@@ -292,6 +295,22 @@ class OfflineLauncher(DirectObject):
         applyTouchSetting(self.settings)
         self.touchButton['text'] = self.touchText()
 
+    def showCrashReport(self, text):
+        # Over the whole launcher, until the player goes on.
+        aspect = base.getAspectRatio()
+        frame = DirectFrame(parent=self.top, relief=DGG.FLAT, frameColor=(0.05, 0.05, 0.12, 1),
+                            frameSize=(-1, 1, -1, 1), state=DGG.NORMAL)
+        scale = 0.034
+        DirectLabel(parent=frame, relief=None, pos=(-0.96, 0, 0.93), scale=(scale / aspect, 1, scale),
+                    text_align=TextNode.ALeft, text_fg=(1, 0.9, 0.1, 1), text_wordwrap=1.9 / (scale / aspect),
+                    text='The game closed by itself last time. Please send a screenshot of this screen.')
+        DirectLabel(parent=frame, relief=None, pos=(-0.96, 0, 0.85), scale=(0.03 / aspect, 1, 0.03),
+                    text_align=TextNode.ALeft, text_fg=(1, 1, 1, 1), text_wordwrap=1.9 / (0.03 / aspect),
+                    text=text)
+        button = self.redButton('CONTINUE', (0, 0, -0.88), frame.destroy)
+        button.reparentTo(frame)
+        button.setScale(self.canvas.getScale())
+
     def showDrivers(self):
         from toontown.toonbase import TurnipDrivers
         TurnipDrivers.DriversPanel(self, self.openPanel('DRIVERS', titleZ=0.45))
@@ -302,6 +321,8 @@ class OfflineLauncher(DirectObject):
         if self.started:
             return
         print('OfflineLauncher: PLAY!')
+        from toontown.toonbase import CrashReport
+        CrashReport.mark()
         self.started = True
         for button in (self.playButton, self.settingsButton, self.driversButton):
             button['state'] = DGG.DISABLED
@@ -351,6 +372,10 @@ def run():
             # It drew: a custom graphics driver works.
             from toontown.toonbase import TurnipDrivers
             TurnipDrivers.driverWorks(_launcher.settings)
+        if frames == 600:
+            # Ten seconds or so on the launcher: the game starts up well.
+            from toontown.toonbase import CrashReport
+            CrashReport.calm()
 
 
 def progress(value, label=None):
@@ -377,5 +402,7 @@ def finish():
     if _launcher is None:
         return
     progress(100, 'Ready!')
+    from toontown.toonbase import CrashReport
+    CrashReport.calm()
     launcher, _launcher = _launcher, None
     getClientBuiltin('taskMgr').doMethodLater(0.4, lambda task: launcher.destroy(), 'offlineLauncherFinish')

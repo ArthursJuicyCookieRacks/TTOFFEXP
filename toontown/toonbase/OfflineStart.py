@@ -70,6 +70,8 @@ def main():
     gameDir = getGameDir()
     dataDir = getDataDir()
     os.chdir(dataDir.toOsSpecific())
+    from toontown.toonbase import CrashReport
+    CrashReport.begin()
     print('OfflineStart: game files in %s, player files in %s' % (gameDir, dataDir))
 
     loadPrcFile(Filename(gameDir, 'config/release.prc'))

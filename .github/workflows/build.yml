@@ -695,6 +695,11 @@ jobs:
         cat > smoke.sh <<'SCRIPT'
         adb install -r --abi ${{ matrix.abi }} *.apk
         adb logcat -c
+        # A start cut short first, which the next start reports.
+        adb shell am start -n com.ttroffline.game/org.panda3d.android.PythonActivity
+        sleep 6
+        adb shell am force-stop com.ttroffline.game
+        sleep 2
         adb shell am start -n com.ttroffline.game/org.panda3d.android.PythonActivity
         sleep 10
         adb shell pidof com.ttroffline.game > startpid.txt
@@ -740,6 +745,7 @@ jobs:
         [ -s startpid.txt ] || { echo '::error::The game did not start'; exit 1; }
         [ -s pid.txt ] || { echo '::error::The game is no longer running'; exit 1; }
         if grep -q 'Traceback' game.txt; then echo '::error::The log has a Python error'; exit 1; fi
+        grep -q 'CrashReport: the last start ended early' game.txt || { echo '::error::The cut-short start was not reported'; exit 1; }
 
     - uses: actions/upload-artifact@v7
       if: always()
