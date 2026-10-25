@@ -1,5 +1,5 @@
 diff --git a/panda/src/android/PythonActivity.java b/panda/src/android/PythonActivity.java
-index 7f625a1..f8e5ba6 100644
+index 7f625a1..daa4d75 100644
 --- a/panda/src/android/PythonActivity.java
 +++ b/panda/src/android/PythonActivity.java
 @@ -15,7 +15,17 @@ package org.panda3d.android;
@@ -20,7 +20,7 @@ index 7f625a1..f8e5ba6 100644
  import android.database.Cursor;
  import android.net.Uri;
  import android.provider.OpenableColumns;
-@@ -114,6 +124,97 @@ public class PythonActivity extends PandaActivity {
+@@ -114,6 +124,105 @@ public class PythonActivity extends PandaActivity {
          }
      }
  
@@ -36,10 +36,10 @@ index 7f625a1..f8e5ba6 100644
 +        runOnUiThread(() -> {
 +            if (maxLength < 0) {
 +                // The game is done with the keyboard.
++                typedText = "C:" + (hiddenEdit != null ? hiddenEdit.getText().toString() : "");
 +                if (hiddenEdit != null) {
 +                    closeKeyboard();
 +                }
-+                typedText = "C:" + (hiddenEdit != null ? hiddenEdit.getText().toString() : "");
 +                return;
 +            }
 +            if (hiddenEdit == null) {
@@ -88,7 +88,7 @@ index 7f625a1..f8e5ba6 100644
 +            // the keyboard is asked for once things have settled too.
 +            showKeyboard();
 +            hiddenEdit.postDelayed(() -> {
-+                if (typedText.startsWith("E:")) {
++                if (hiddenEdit != null && typedText.startsWith("E:")) {
 +                    hiddenEdit.requestFocus();
 +                    showKeyboard();
 +                }
@@ -108,7 +108,15 @@ index 7f625a1..f8e5ba6 100644
 +        if (imm != null) {
 +            imm.hideSoftInputFromWindow(hiddenEdit.getWindowToken(), 0);
 +        }
-+        hiddenEdit.clearFocus();
++        // The text field goes away altogether. Left in place it keeps the
++        // focus (Android gives it straight back to the only field there
++        // is), and while it has it a controller's buttons go to the
++        // keyboard instead of the game, until the screen is touched.
++        ViewGroup parent = (ViewGroup) hiddenEdit.getParent();
++        if (parent != null) {
++            parent.removeView(hiddenEdit);
++        }
++        hiddenEdit = null;
 +    }
 +
 +    public String getTypedText() {

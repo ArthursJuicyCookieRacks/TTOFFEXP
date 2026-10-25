@@ -1,5 +1,5 @@
 diff --git a/panda/src/android/PythonActivity.java b/panda/src/android/PythonActivity.java
-index f8e5ba6..3fa0d53 100644
+index daa4d75..e4499be 100644
 --- a/panda/src/android/PythonActivity.java
 +++ b/panda/src/android/PythonActivity.java
 @@ -20,7 +20,10 @@ import android.content.Intent;

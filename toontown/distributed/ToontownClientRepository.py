@@ -69,9 +69,10 @@ class ToontownClientRepository(OTPClientRepository.OTPClientRepository):
         OTPClientRepository.OTPClientRepository.__init__(self, serverVersion, launcher, playGame=PlayGame.PlayGame)
         self._playerAvDclass = self.dclassesByName['DistributedToon']
         # The NPC toons of a playground or street are kept for when the
-        # player comes back out of a shop, rather than built again.
+        # player comes back out of a shop or back to the place, rather than
+        # built again (the AI keeps them for NPCSettings.keepAreas places).
         from toontown.npcplayers import NPCSettings
-        self.cache.maxCacheItems = NPCSettings.npcsPerArea() + 8
+        self.cache.maxCacheItems = NPCSettings.npcsPerArea() * max(1, NPCSettings.keepAreas()) + 8
         setInterfaceFont(TTLocalizer.InterfaceFont)
         setSignFont(TTLocalizer.SignFont)
         setFancyFont(TTLocalizer.FancyFont)
@@ -1107,12 +1108,18 @@ class ToontownClientRepository(OTPClientRepository.OTPClientRepository):
         self.deleteObject(doId)
 
     def flushToonCache(self):
-        # The toons kept from the last place are no good in another one.
+        # The toons kept from the last place are no good in another one,
+        # unless the AI keeps each place's toons for when the player is back.
         # (CRCache.flush would also send clientCleanup to everything.)
+        from toontown.npcplayers import NPCSettings
+        from toontown.toon.DistributedToon import DistributedToon
+        keepToons = NPCSettings.keepAreas() > 0
         for distObj in list(self.cache.dict.values()):
+            if keepToons and isinstance(distObj, DistributedToon):
+                continue
+            del self.cache.dict[distObj.doId]
+            self.cache.fifo.remove(distObj)
             distObj.deleteOrDelay()
-        self.cache.dict = {}
-        self.cache.fifo = []
 
     def deleteObject(self, doId, ownerView = False):
         if doId in self.doId2do:

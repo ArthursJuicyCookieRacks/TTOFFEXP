@@ -1700,6 +1700,15 @@ BottomStyles = {'bbs1': [0, [0,
  'hw_gs6': [55, [27]],
  'hw_gs7': [56, [27]],
  'hw_gsk1': [53, [27]]}
+from toontown.toon import ExtraClothes
+Shirts += ExtraClothes.Shirts
+Sleeves += ExtraClothes.Sleeves
+BoyShorts += ExtraClothes.Shorts
+GirlBottoms += [(texture, SHORTS) for texture in ExtraClothes.Shorts] + [(texture, SKIRT) for texture in ExtraClothes.Skirts]
+ShirtStyles.update(ExtraClothes.ShirtStyles)
+BottomStyles.update(ExtraClothes.BoyBottomStyles)
+BottomStyles.update(ExtraClothes.GirlBottomStyles)
+
 MAKE_A_TOON = 1
 TAMMY_TAILOR = 2004
 LONGJOHN_LEROY = 1007
@@ -1766,6 +1775,20 @@ if mergeMATTailor:
         for boyShirts in TailorCollections[tailors][BOY_SHIRTS]:
             if boyShirts not in TailorCollections[MAKE_A_TOON][BOY_SHIRTS]:
                  TailorCollections[MAKE_A_TOON][BOY_SHIRTS].append(boyShirts)
+
+def styleGender(style):
+    # 'bss1', 'c_bss1': a boy's; 'gsk1', 'hw_gsk1': a girl's; 'c_ss1': either.
+    letter = style.split('_')[-1][0]
+    return letter if letter in 'bg' else None
+
+
+# Make-A-Toon offers every shirt, pair of shorts and skirt there is.
+if config.ConfigVariableBool('want-mat-all-clothes', 1).getValue():
+    TailorCollections[MAKE_A_TOON] = [
+        [style for style in ShirtStyles if styleGender(style) != 'g'],
+        [style for style in ShirtStyles if styleGender(style) != 'b'],
+        [style for style in BottomStyles if styleGender(style) == 'b'],
+        [style for style in BottomStyles if styleGender(style) == 'g']]
 
 for style in TailorCollections[MAKE_A_TOON][BOY_SHORTS]:
     index = BottomStyles[style][0]
@@ -2116,6 +2139,10 @@ defaultGirlColorList = [1,
  34,
  35,
  36]
+# Make-A-Toon also offers the black a cat turns on Halloween (38) and the
+# white of the "no color" cheesy effect (0), for every kind of toon.
+defaultBoyColorList += [0, 38]
+defaultGirlColorList += [0, 38]
 allColorsListApproximations = [VBase4(round(x[0], 3), round(x[1], 3), round(x[2], 3), round(x[3], 3)) for x in allColorsList]
 allowedColors = set([allColorsListApproximations[x] for x in set([0] + defaultBoyColorList + defaultGirlColorList + [38])])
 HatModels = [None,
@@ -2491,6 +2518,39 @@ ShoesStyles = {'none': [0, 0, 0],
  'sfb5': [3, 26, 0],
  'sfb6': [3, 27, 0],
  'smj4': [2, 29, 0]}
+
+# Accessory models in the game's files that the lists above leave out, so
+# Make-A-Toon and the trunk can offer every one. Added at the ends of the
+# lists, so the numbers of the accessories before them stay the same.
+ExtraHatModels = ['phase_4/models/accessories/tt_m_chr_avt_acc_hat_ballhat',
+ 'phase_4/models/accessories/tt_m_chr_avt_acc_hat_elfhat',
+ 'phase_4/models/accessories/tt_m_chr_avt_acc_hat_sunHatB',
+ 'phase_4/models/accessories/tt_m_chr_avt_acc_hat_winterhat',
+ 'phase_4/models/accessories/ttr_m_chr_avt_acc_hat_birdHypno',
+ 'phase_4/models/accessories/ttr_m_chr_avt_acc_hat_fez',
+ 'phase_4/models/accessories/ttr_m_chr_avt_acc_hat_pieHat',
+ 'phase_4/models/accessories/ttr_m_chr_avt_acc_hat_strawBoater']
+ExtraGlassesModels = ['phase_4/models/accessories/tt_m_chr_avt_acc_msk_snowgoggles',
+ 'phase_4/models/accessories/ttr_m_chr_avt_acc_msk_moostacheA',
+ 'phase_4/models/accessories/ttr_m_chr_avt_acc_msk_moostacheB',
+ 'phase_4/models/accessories/ttr_m_chr_avt_acc_msk_moostacheC',
+ 'phase_4/models/accessories/ttr_m_chr_avt_acc_msk_roundGlasses',
+ 'phase_4/models/accessories/ttr_m_chr_avt_acc_msk_starryCatEyes',
+ 'phase_4/models/accessories/ttr_m_chr_avt_acc_msk_starryRound']
+ExtraBackpackModels = ['phase_4/models/accessories/tt_m_chr_avt_acc_pac_santa',
+ 'phase_4/models/accessories/tt_m_chr_avt_acc_pac_scarf',
+ 'phase_4/models/accessories/ttr_m_chr_avt_acc_pac_bowtie',
+ 'phase_4/models/accessories/ttr_m_chr_avt_acc_pac_creamPack',
+ 'phase_4/models/accessories/ttr_m_chr_avt_acc_pac_jellybeanJar',
+ 'phase_4/models/accessories/ttr_m_chr_avt_acc_pac_lipstickPack',
+ 'phase_4/models/accessories/ttr_m_chr_avt_acc_pac_oilJar',
+ 'phase_4/models/accessories/ttr_m_chr_avt_acc_pac_trashLid']
+for models, styles, prefix, extra in ((HatModels, HatStyles, 'mat_h', ExtraHatModels),
+                                      (GlassesModels, GlassesStyles, 'mat_g', ExtraGlassesModels),
+                                      (BackpackModels, BackpackStyles, 'mat_b', ExtraBackpackModels)):
+    for n, model in enumerate(extra):
+        styles['%s%d' % (prefix, n + 1)] = [len(models), 0, 0]
+        models.append(model)
 
 def isValidHat(itemIdx, textureIdx, colorIdx):
     for style in list(HatStyles.values()):

@@ -24,6 +24,10 @@ FO_DICT = {'s': 'tt_m_ara_cbe_fieldOfficeMoverShaker',
  'm': 'tt_m_ara_cbe_fieldOfficeMoverShaker',
  'c': 'tt_m_ara_cbe_fieldOfficeMoverShaker'}
 
+def isToonFlat(name):
+    return name[0] == 't' and name.find('_landmark_') == -1
+
+
 class DistributedBuilding(DistributedObject.DistributedObject):
     SUIT_INIT_HEIGHT = 125
     TAKEOVER_SFX_PREFIX = 'phase_5/audio/sfx/'
@@ -526,6 +530,11 @@ class DistributedBuilding(DistributedObject.DistributedObject):
                 tracks.append(showTrack)
                 if not soundPlayed:
                     soundPlayed = 1
+            elif isToonFlat(name):
+                # A field office has no flats of its own to take the place
+                # of the block's, so those stay (darkened) rather than
+                # leaving a hole in the street.
+                continue
             elif name[0] == 't':
                 hideTrack = Sequence(name=self.taskName('ToCogdoToonFlatsTrack'))
                 timeTillSquish = (self.SUIT_INIT_HEIGHT - 20.0) / self.SUIT_INIT_HEIGHT
@@ -684,6 +693,8 @@ class DistributedBuilding(DistributedObject.DistributedObject):
                 if not suitSoundPlayed:
                     suitSoundPlayed = 1
                 tracks.append(hideTrack)
+            elif isToonFlat(name):
+                i.unstash()
             elif name[0] == 't':
                 hideTrack = Sequence(name=self.taskName('ToToonFromCogdoFlatsTrack'))
                 hideTrack.append(Wait(TO_TOON_BLDG_TIME * 0.5))
@@ -894,7 +905,8 @@ class DistributedBuilding(DistributedObject.DistributedObject):
                 if name.find('_landmark_') != -1:
                     i.stash()
                 else:
-                    i.stash()
+                    # The block's toon flats stay; see animToCogdo.
+                    i.unstash()
             elif name[0] == 's':
                 if name.find('_landmark_') != -1:
                     i.removeNode()

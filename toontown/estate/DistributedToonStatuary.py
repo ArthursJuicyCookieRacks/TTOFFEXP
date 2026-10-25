@@ -120,13 +120,27 @@ class DistributedToonStatuary(DistributedStatuary.DistributedStatuary):
                         else:
                             bottom.setTexture(desatSkirtTex, 1)
 
+    def showsOneTexture(self):
+        # Panda's stand-in for the fixed-function pipeline (OpenGL ES 2 and
+        # core-profile OpenGL) only draws texture stage 0.
+        pipe = getattr(base, 'pipe', None)
+        es = pipe is not None and 'ES' in pipe.getInterfaceName()
+        return ConfigVariableBool('statue-single-texture', es).getValue()
+
     def setStoneTexture(self):
         gray = VBase4(1.6, 1.6, 1.6, 1)
         self.toon.setColor(gray, 10)
         stoneTex = loader.loadTexture('phase_5.5/maps/smoothwall_1.jpg')
-        ts = TextureStage('ts')
-        ts.setPriority(1)
-        self.toon.setTexture(ts, stoneTex)
+        if self.showsOneTexture():
+            # On Android (OpenGL ES) only a model's first texture shows, so
+            # the stone layer below never did, and the bright grey (over
+            # full white) left the statue plain white. There the toon's own
+            # shading keeps the face and folds, in a stone grey.
+            self.toon.setColor(VBase4(0.82, 0.78, 0.74, 1), 10)
+        else:
+            ts = TextureStage('ts')
+            ts.setPriority(1)
+            self.toon.setTexture(ts, stoneTex)
         tsDetail = TextureStage('tsDetail')
         tsDetail.setPriority(2)
         tsDetail.setSort(10)

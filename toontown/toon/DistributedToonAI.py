@@ -586,34 +586,8 @@ class DistributedToonAI(DistributedPlayerAI.DistributedPlayerAI, DistributedSmoo
             else:
                 allowedColors = ToonDNA.defaultGirlColorList
 
-            # No idea why this wasn't done by disney, but add sanity checks for black (and now white) toons.
-            if self.dna.getAnimal() == 'bear':
-                allowedColors = allowedColors + [0]
-            if self.dna.getAnimal() == 'cat':
-                allowedColors = allowedColors + [38]
-
-            if 38 in [self.dna.legColor, self.dna.armColor, self.dna.headColor]: # Disney ALSO didn't do this. Verify that a toon is fully black/white.
-                if self.dna.legColor != 38:
-                    self.dna.legColor = 38
-                    changed = True
-                if self.dna.armColor != 38:
-                    self.dna.armColor = 38
-                    changed = True
-                if self.dna.headColor != 38:
-                    self.dna.headColor = 38
-                    changed = True
-
-            elif 0 in [self.dna.legColor, self.dna.armColor, self.dna.headColor]:
-                if self.dna.legColor != 0:
-                    self.dna.legColor = 0
-                    changed = True
-                if self.dna.armColor != 0:
-                    self.dna.armColor = 0
-                    changed = True
-                if self.dna.headColor != 0:
-                    self.dna.headColor = 0
-                    changed = True
-
+            # Black and white are Make-A-Toon colours here, for any toon and
+            # any part of it (Arthur asked for them offline).
             if self.dna.legColor not in allowedColors:
                 self.dna.legColor = allowedColors[0]
                 changed = True
@@ -5062,10 +5036,6 @@ def dna(part, value):
     def isValidColor(colorIndex):
         if not 0 <= colorIndex <= 38: # This could actually be selected from ToonDNA, but I prefer this :D
             return False
-        if colorIndex == 0 and dna.getAnimal() != 'bear':
-            return False
-        if colorIndex == 38 and dna.getAnimal() != 'cat':
-            return False
         return True
 
     # Body Part Colors
@@ -5152,10 +5122,6 @@ def dna(part, value):
         species = ['dog', 'cat', 'horse', 'mouse', 'rabbit', 'duck', 'monkey', 'bear', 'pig', 'crocodile', 'deer']
         if value not in species:
             return "DNA: Invalid head type specified."
-        if dna.headColor == 0x1a and value != 'cat':
-            return "DNA: Cannot have a black toon (non-cat)!"
-        if dna.headColor == 0 and value != 'bear':
-            return "DNA: Cannot have a white toon (non-bear)!"
         species = dict(map(None, species, ToonDNA.toonSpeciesTypes))
         headSize = dna.head[1:3]
         dna.head = (species.get(value) + headSize)

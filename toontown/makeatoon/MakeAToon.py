@@ -170,14 +170,14 @@ class MakeAToon(StateData.StateData):
         self.rotateLeftButton = DirectButton(parent=self.guiBottomBar, relief=None, image=(rotateUp,
          rotateDown,
          rotateUp,
-         rotateDown), image_scale=(-0.4, 0.4, 0.4), image1_scale=(-0.5, 0.5, 0.5), image2_scale=(-0.5, 0.5, 0.5), pos=(-0.329249, 0, 0.202961))
+         rotateDown), image_scale=(-0.4, 0.4, 0.4), image1_scale=(-0.5, 0.5, 0.5), image2_scale=(-0.5, 0.5, 0.5), pos=(-0.329249, 0, 0.262961), sortOrder=DGG.FOREGROUND_SORT_INDEX)
         self.rotateLeftButton.hide()
         self.rotateLeftButton.bind(DGG.B1PRESS, self.rotateToonLeft)
         self.rotateLeftButton.bind(DGG.B1RELEASE, self.stopToonRotateLeftTask)
         self.rotateRightButton = DirectButton(parent=self.guiBottomBar, relief=None, image=(rotateUp,
          rotateDown,
          rotateUp,
-         rotateDown), image_scale=(0.4, 0.4, 0.4), image1_scale=(0.5, 0.5, 0.5), image2_scale=(0.5, 0.5, 0.5), pos=(0.309534, 0, 0.206116))
+         rotateDown), image_scale=(0.4, 0.4, 0.4), image1_scale=(0.5, 0.5, 0.5), image2_scale=(0.5, 0.5, 0.5), pos=(0.309534, 0, 0.266116), sortOrder=DGG.FOREGROUND_SORT_INDEX)
         self.rotateRightButton.hide()
         self.rotateRightButton.bind(DGG.B1PRESS, self.rotateToonRight)
         self.rotateRightButton.bind(DGG.B1RELEASE, self.stopToonRotateRightTask)

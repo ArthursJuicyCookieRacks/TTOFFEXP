@@ -320,7 +320,9 @@ class CogdoFlyingLocalPlayer(CogdoFlyingPlayer):
             self.isToonOnFloor = False
             taskMgr.remove('delayedLandOnPlatform')
             taskMgr.remove('delayedLandOnWinPlatform')
-            if self.state not in ['FlyingUp', 'Spawn']:
+            # A toon waiting on the win platform stays put; sliding off its
+            # floor polygon while the others land is no reason to fly.
+            if self.state not in ['FlyingUp', 'Spawn', 'WaitingForWin', 'Win']:
                 self.notify.debug('Exited floor')
                 self.request('FreeFly')
 

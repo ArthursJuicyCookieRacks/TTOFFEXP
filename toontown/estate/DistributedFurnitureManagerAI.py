@@ -1,3 +1,4 @@
+import math
 from direct.directnotify import DirectNotifyGlobal
 from direct.distributed.DistributedObjectAI import DistributedObjectAI
 from toontown.catalog.CatalogItemList import CatalogItemList
@@ -109,6 +110,16 @@ class DistributedFurnitureManagerAI(DistributedObjectAI):
             item.posHpr = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
             items.append(item)
             # Since we have modified the items list, should we save it back to the house?
+
+        # Every toon has an accessory trunk too (Arthur asked), set down
+        # beside the closet.
+        if self.ownerId != 0 and not any(item.getFlags() & FLTrunk for item in items):
+            closet = [item for item in items if item.getFlags() & FLCloset][0]
+            x, y, z, h, p, r = closet.posHpr
+            angle = math.radians(h)
+            item = CatalogFurnitureItem(4000)
+            item.posHpr = (x + 4.0 * math.cos(angle), y + 4.0 * math.sin(angle), z, h, p, r)
+            items.append(item)
 
         for item in items:
             if item.getFlags() & FLCloset:

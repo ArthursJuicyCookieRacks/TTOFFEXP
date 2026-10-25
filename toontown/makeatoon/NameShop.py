@@ -17,6 +17,7 @@ from toontown.toonbase import TTLocalizer
 from . import NameGenerator
 import random
 from toontown.toonbase import AndroidKeyboard
+from toontown.toon import NewToonAccessories
 from otp.distributed import PotentialAvatar
 from otp.namepanel import NameCheck
 from toontown.toontowngui import TeaserPanel
@@ -83,6 +84,7 @@ class NameShop(StateData.StateData):
          State.State('PickAName', self.enterPickANameState, self.exitPickANameState, ['TypeAName', 'Done']),
          State.State('TypeAName', self.enterTypeANameState, self.exitTypeANameState, ['PickAName',
           'Approval',
+          'ApprovalAccepted',
           'Accepted',
           'Rejected']),
          State.State('Approval', self.enterApprovalState, self.exitApprovalState, ['PickAName', 'ApprovalAccepted']),
@@ -576,7 +578,7 @@ class NameShop(StateData.StateData):
 
     def __createAvatar(self, skipTutorial = False, *args):
         self.notify.debug('__createAvatar')
-        if self.fsm.getCurrentState().getName() == 'TypeAName':
+        if self.fsm.getCurrentState().getName() == 'TypeAName' and self.nameEntry.get() != getattr(self, 'typedNameAccepted', None):
             self.__typedAName()
             return
         if not self.avExists or self.avExists and self.avId == 'deleteMe':
@@ -940,8 +942,12 @@ class NameShop(StateData.StateData):
             self.rejectName(TTLocalizer.NameError)
         if avId == 0:
             if status == 1:
-                self.notify.debug('name check pending')
-                self.fsm.request('Approval')
+                # Offline a typed name is accepted at once, so there is no
+                # Toon Council message to read first.
+                self.notify.debug('name check passed')
+                # (So making the toon goes ahead, not round this check again.)
+                self.typedNameAccepted = self.nameEntry.get()
+                self.approvalAction(1)
             elif status == 0:
                 self.notify.debug('name check rejected')
                 self.fsm.request('TypeAName')
@@ -953,8 +959,10 @@ class NameShop(StateData.StateData):
             if status == 1:
                 style = self.toon.getStyle()
                 avDNA = style.makeNetString()
-                self.names[1] = self.nameEntry.get()
-                self.notify.debug('typed name needs approval')
+                self.names[0] = self.nameEntry.get()
+                self.names[1] = ''
+                self.toon.setName(self.names[0])
+                self.notify.debug('typed name accepted')
                 newPotAv = PotentialAvatar.PotentialAvatar(avId, self.names, avDNA, self.index, 1)
                 if not self.newwarp:
                     self.avList.append(newPotAv)
@@ -971,6 +979,7 @@ class NameShop(StateData.StateData):
         self.newDNA = style.makeNetString()
         self.requestingSkipTutorial = skipTutorial
         if not self.avExists or self.avExists and self.avId == 'deleteMe':
+            NewToonAccessories.choose(self.index, self.toon.getHat(), self.toon.getGlasses(), self.toon.getBackpack(), self.toon.getShoes())
             base.cr.csm.sendCreateAvatar(style, '', self.index)
             self.accept('nameShopCreateAvatarDone', self.handleCreateAvatarResponse)
         else:
@@ -1024,7 +1033,9 @@ class NameShop(StateData.StateData):
         base.cr.skipTutorialRequest = self.requestingSkipTutorial
 
     def __isFirstTime(self):
-        if not self.makeAToon.nameList or self.makeAToon.warp:
+        # Every new toon is asked, the first one too (it used to go
+        # straight into the Toontorial when the account had no toons yet).
+        if self.makeAToon.warp:
             self.__createAvatar()
         else:
             self.promptTutorial()

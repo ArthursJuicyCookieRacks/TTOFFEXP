@@ -17,6 +17,7 @@ from panda3d.core import Point3
 
 from toontown.building.DistributedElevatorAI import DistributedElevatorAI
 from toontown.building.DistributedElevatorFSMAI import DistributedElevatorFSMAI
+from toontown.cogdominium.DistCogdoGameAI import DistCogdoGameAI
 from toontown.golf.DistributedGolfCourseAI import DistributedGolfCourseAI
 from toontown.npcplayers.NPCSettings import wantsTrolleyCompany
 from toontown.npcplayers.NPCBattleCrew import isNPC
@@ -249,11 +250,14 @@ class NPCParty:
                 npc.b_setAnimState('Happy', 1.0)
                 npc.walk = None
                 continue
-            if npc.busy or npc.walk is not None:
+            if npc.busy:
                 continue
             if self.isPlaying(npc):
-                # A golf course, a trolley game or a race puts each toon
-                # where it wants them.
+                # A golf course, a trolley game, a field office game or a
+                # race puts each toon where it wants them.
+                npc.walk = None
+                continue
+            if npc.walk is not None:
                 continue
             if [e for e in self.getElevators() if player.doId in seatsOf(e)]:
                 continue
@@ -297,6 +301,8 @@ class NPCParty:
             if isinstance(obj, (DistributedGolfCourseAI, DistributedMinigameAI)) and npc.doId in obj.avIdList:
                 return True
             if isinstance(obj, DistributedRaceAI) and npc.doId in obj.avatars:
+                return True
+            if isinstance(obj, DistCogdoGameAI) and npc.doId in obj.toons and not obj.isDeleted():
                 return True
         return False
 

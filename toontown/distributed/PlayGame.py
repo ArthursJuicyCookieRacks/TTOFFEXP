@@ -215,7 +215,9 @@ class PlayGame(StateData.StateData):
         self.hood.exit()
         self.hood.unload()
         self.hood = None
-        base.cr.cache.flush()
+        # (Not CRCache.flush: the NPC toons wait in the cache for the player
+        # to come back to their place; see flushToonCache.)
+        base.cr.flushToonCache()
         return
 
     def enterQuietZone(self, requestStatus):

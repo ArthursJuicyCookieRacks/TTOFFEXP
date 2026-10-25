@@ -21,7 +21,7 @@ from toontown.classicchars import CCharPaths
 from toontown.dna import DNAStoreSuitPoint
 from toontown.hood import ZoneUtil
 from toontown.npcplayers import NPCProfiles
-from toontown.npcplayers.NPCSettings import npcsPerArea
+from toontown.npcplayers.NPCSettings import keepAreas, npcsPerArea
 from toontown.npcplayers.NPCBattleCrew import NPCBattleCrew, isNPC
 from toontown.npcplayers.NPCNav import getNav
 from toontown.npcplayers.NPCGolf import NPCGolf
@@ -190,6 +190,7 @@ class NPCPlayerManagerAI:
         self.air = air
         self.areas = {}
         self.npcsPerArea = npcsPerArea()
+        self.keepAreas = keepAreas()
         self.crews = {}
         self.party = NPCParty(self)
         self.golf = NPCGolf(self)
@@ -259,7 +260,12 @@ class NPCPlayerManagerAI:
             pos = self.getPlayerPos(player)
             area.addTrail(pos, player.zoneId)
             self.populate(area, player, pos)
+        # The places seen last keep their toons (see NPCSettings.keepAreas).
+        kept = sorted(self.areas.values(), key=lambda a: max(a.lastSeen, getattr(a, 'lastKept', 0)), reverse=True)
+        kept = set(id(a) for a in kept[:self.keepAreas])
         for areaId, area in list(self.areas.items()):
+            if id(area) in kept:
+                continue
             if now - max(area.lastSeen, getattr(area, 'lastKept', 0)) > LINGER:
                 for npc in area.npcs[:]:
                     if getattr(npc, 'crew', None) is None:

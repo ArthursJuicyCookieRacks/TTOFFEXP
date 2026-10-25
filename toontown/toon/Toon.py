@@ -652,6 +652,9 @@ class Toon(Avatar.Avatar, ToonHead):
         if len(newDNA.torso) < 2:
             self.sendLogSuspiciousEvent('nakedToonDNA %s was requested' % newDNA.torso)
             newDNA.torso = newDNA.torso + 's'
+        if self.style and newDNA.makeNetString() == self.style.makeNetString() and not getattr(self, 'isDisguised', 0):
+            # Back from the cache as it was: nothing to build again.
+            return
         self.setDNA(newDNA)
         self.setBlend(frameBlend = config.ConfigVariableBool('want-smooth-animations', False).getValue())
 
@@ -660,6 +663,10 @@ class Toon(Avatar.Avatar, ToonHead):
             if self.isDisguised:
                 return
         if self.style:
+            # A toon kept in the cache comes back with the same DNA; building
+            # its clothes and colours again cost ~30 ms a toon for nothing.
+            if dna.makeNetString() == self.style.makeNetString():
+                return
             self.updateToonDNA(dna)
         else:
             self.style = dna
@@ -1057,6 +1064,16 @@ class Toon(Avatar.Avatar, ToonHead):
 
         return swappedTorso
 
+    # Crocodiles and deer came without places for hats and glasses, so they
+    # showed none; they borrow the cat's, which fit them best.
+    ACCESSORY_HEAD_STAND_INS = {'x': 'c', 'z': 'c'}
+
+    def accessoryHead(self, table):
+        head = self.style.head[:2]
+        if head not in table and head[0] in self.ACCESSORY_HEAD_STAND_INS:
+            head = self.ACCESSORY_HEAD_STAND_INS[head[0]] + head[1]
+        return head
+
     def generateHat(self, fromRTM = False):
         hat = self.getHat()
         if hat[0] >= len(ToonDNA.HatModels):
@@ -1086,9 +1103,9 @@ class Toon(Avatar.Avatar, ToonHead):
                     importlib.reload(AccessoryGlobals)
                 transOffset = None
                 if AccessoryGlobals.ExtendedHatTransTable.get(hat[0]):
-                    transOffset = AccessoryGlobals.ExtendedHatTransTable[hat[0]].get(self.style.head[:2])
+                    transOffset = AccessoryGlobals.ExtendedHatTransTable[hat[0]].get(self.accessoryHead(AccessoryGlobals.ExtendedHatTransTable[hat[0]]))
                 if transOffset == None:
-                    transOffset = AccessoryGlobals.HatTransTable.get(self.style.head[:2])
+                    transOffset = AccessoryGlobals.HatTransTable.get(self.accessoryHead(AccessoryGlobals.HatTransTable))
                     if transOffset == None:
                         return
                 hatGeom.setPos(transOffset[0][0], transOffset[0][1], transOffset[0][2])
@@ -1131,9 +1148,9 @@ class Toon(Avatar.Avatar, ToonHead):
                     importlib.reload(AccessoryGlobals)
                 transOffset = None
                 if AccessoryGlobals.ExtendedGlassesTransTable.get(glasses[0]):
-                    transOffset = AccessoryGlobals.ExtendedGlassesTransTable[glasses[0]].get(self.style.head[:2])
+                    transOffset = AccessoryGlobals.ExtendedGlassesTransTable[glasses[0]].get(self.accessoryHead(AccessoryGlobals.ExtendedGlassesTransTable[glasses[0]]))
                 if transOffset == None:
-                    transOffset = AccessoryGlobals.GlassesTransTable.get(self.style.head[:2])
+                    transOffset = AccessoryGlobals.GlassesTransTable.get(self.accessoryHead(AccessoryGlobals.GlassesTransTable))
                     if transOffset == None:
                         return
                 glassesGeom.setPos(transOffset[0][0], transOffset[0][1], transOffset[0][2])

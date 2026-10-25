@@ -4,6 +4,7 @@ from direct.distributed.MsgTypes import *
 from direct.fsm.FSM import FSM
 from direct.distributed.PyDatagram import *
 from toontown.toon.ToonDNA import ToonDNA
+from toontown.toon import NewToonAccessories
 from toontown.makeatoon.NameGenerator import NameGenerator
 from toontown.toonbase import TTLocalizer
 from otp.distributed import OtpDoGlobals
@@ -342,6 +343,10 @@ class CreateAvatarFSM(OperationFSM):
             'setDNAString': (self.dna,),
             'setDISLid': (self.target,)
         }
+        accessories = NewToonAccessories.take(self.index)
+        if accessories:
+            for field, value in zip(('setHat', 'setGlasses', 'setBackpack', 'setShoes'), accessories):
+                toonFields[field] = value
 
         self.csm.air.dbInterface.createObject(
             self.csm.air.dbId,
@@ -580,9 +585,12 @@ class SetNameTypedFSM(AvatarOperationFSM):
                 self.csm.air.dbId,
                 self.avId,
                 self.csm.air.dclassesByName['DistributedToonUD'],
-                {'WishNameState': WISHNAME_PENDING,
-                 'WishName': self.name,
-                 'WishNameTimestamp': int(time.time())})
+                # Offline there is no Toon Council: a typed name is the
+                # toon's name straight away.
+                {'WishNameState': WISHNAME_LOCKED,
+                 'WishName': '',
+                 'WishNameTimestamp': int(time.time()),
+                 'setName': (self.name,)})
 
         if self.avId:
             self.csm.air.writeServerEvent('avatar-wishname', avId=self.avId, name=self.name)

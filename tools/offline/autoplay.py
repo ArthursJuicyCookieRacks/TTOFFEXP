@@ -548,6 +548,12 @@ def playCogdoMaze(dist):
     # walks out the exit once it opens.
     from toontown.cogdominium import CogdoMazeGameGlobals as Globals
     game = dist.game
+    if os.environ.get('AUTOPLAY_COGDO_IDLE'):
+        # Stands still so only the NPC toons play the maze.
+        yield until(lambda: game._exit.isOpen(), 600, 'the NPC toons to open the maze exit')
+        log('the NPC toons opened the maze exit')
+        game.handleLocalToonEntersDoor(game._exit)
+        return
     for bossNum in range(dist._numSuits[0]):
         for hit in range(Globals.SuitData[Globals.SuitTypes.Boss]['hp']):
             dist.b_suitHitByGag(Globals.SuitTypes.Boss, bossNum)
@@ -2879,7 +2885,6 @@ def scenarioTrolleySolo():
     ConfigVariableBool('trolley-ask-company').setValue(True)
     try:
         yield from teleport(ToontownGlobals.ToontownCentral)
-        magicWord('~requestMinigame ring')
         yield sleep(1)
         trolley = findObject('DistributedTrolley')
         localAvatar.setPos(render, trolley.trolleyCar.getPos(render))
@@ -2888,7 +2893,16 @@ def scenarioTrolleySolo():
         yield sleep(1)
         base.screenshot(os.path.join(os.environ.get('AUTOPLAY_SHOTS', '.'), 'trolley-question.png'), defaultFilename=0)
         trolley.companyDialog.choose(False)
+        # Then: pick the game, from the list of every trolley game.
+        yield sleep(1)
+        base.screenshot(os.path.join(os.environ.get('AUTOPLAY_SHOTS', '.'), 'trolley-game-question.png'), defaultFilename=0)
+        trolley.companyDialog.chooseGameOrRandom(True)
+        yield sleep(1)
+        base.screenshot(os.path.join(os.environ.get('AUTOPLAY_SHOTS', '.'), 'trolley-game-list.png'), defaultFilename=0)
+        trolley.companyDialog.board(ToontownGlobals.RingGameId)
         yield until(lambda: minigameState() == 'frameworkRules', 120, 'the ring game rules')
+        if base.curMinigame.__class__.__name__ != 'DistributedRingGame':
+            raise StepFailed('the trolley started %s, not the ring game picked' % base.curMinigame.__class__.__name__)
         others = [avId for avId in base.curMinigame.avIdList if avId != localAvatar.doId]
         log('ring game with %d others' % len(others))
         if others:
@@ -2902,6 +2916,36 @@ def scenarioTrolleySolo():
         yield sleep(1)
         messenger.send('purchaseBackToToontown')
         yield until(walking, 120, 'walking after the ring game')
+    finally:
+        ConfigVariableBool('trolley-ask-company').setValue(False)
+
+
+def scenarioTrolleySkip():
+    # The Skip button on a trolley game's rules leaves the game.
+    from panda3d.core import ConfigVariableBool
+    ConfigVariableBool('trolley-ask-company').setValue(True)
+    try:
+        yield from teleport(ToontownGlobals.ToontownCentral)
+        yield sleep(1)
+        trolley = findObject('DistributedTrolley')
+        localAvatar.setPos(render, trolley.trolleyCar.getPos(render))
+        messenger.send('entertrolley_sphere', [None])
+        yield until(lambda: getattr(trolley, 'companyDialog', None) is not None, 10, 'the solo or with others question')
+        trolley.companyDialog.choose(False)
+        trolley.companyDialog.chooseGameOrRandom(False)
+        yield until(lambda: minigameState() == 'frameworkRules', 120, 'the trolley game rules')
+        yield sleep(1)
+        base.screenshot(os.path.join(os.environ.get('AUTOPLAY_SHOTS', '.'), 'trolley-skip.png'), defaultFilename=0)
+        log('skipping %s' % base.curMinigame.__class__.__name__)
+        base.curMinigame.rulesPanel.skipButton.commandFunc(None)
+        # Like the end of any trolley game: the gag shop, then back to town.
+        yield until(lambda: hoodState() == 'purchase' or walking(), 120, 'the gag shop after skipping the game')
+        if hoodState() == 'purchase':
+            yield until(lambda: base.cr.playGame.hood.purchase.fsm.getCurrentState().getName() == 'purchase', 60, 'the gag shop buttons')
+            base.screenshot(os.path.join(os.environ.get('AUTOPLAY_SHOTS', '.'), 'trolley-skip-shop.png'), defaultFilename=0)
+            messenger.send('purchaseBackToToontown')
+        yield until(walking, 120, 'walking after skipping the game')
+        log('back in zone %d' % localAvatar.zoneId)
     finally:
         ConfigVariableBool('trolley-ask-company').setValue(False)
 
@@ -3050,6 +3094,7 @@ SCENARIOS = [
     ('npcracing', withNPCs(lambda: scenarioRacing(practice=False), ['race finishes'])),
     ('npcminigames', scenarioNPCMinigames),
     ('trolleysolo', scenarioTrolleySolo),
+    ('trolleyskip', scenarioTrolleySkip),
     ('npcspecials', scenarioNPCSpecials),
     ('npccogdo', withNPCs(scenarioCogdo, ['DistributedCogdoBattleBldgAI'])),
     ('npccogdolaw', withNPCs(lambda: scenarioCogdo('l'), ['DistributedCogdoBattleBldgAI'])),

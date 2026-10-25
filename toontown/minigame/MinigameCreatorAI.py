@@ -44,6 +44,14 @@ def createMinigame(air, playerArray, trolleyZone, minigameZone = None, previousG
                 del RequestMinigame[avId]
             break
 
+    if mgId == None:
+        # A game picked from the trolley's list.
+        from toontown.npcplayers import NPCSettings
+        for avId in playerArray:
+            picked = NPCSettings.takeTrolleyGame(avId)
+            if picked is not None:
+                mgId = picked
+                break
     if mgId != None:
         pass
     elif getattr(simbase, 'forcedMinigameId', None):

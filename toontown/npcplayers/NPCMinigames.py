@@ -878,53 +878,222 @@ class CogdoPlayer(GamePlayer):
 
 
 class CogdoMazePlayer(CogdoPlayer):
-    """The Sellbot maze: pick up memos, soak the big cogs with water
-    coolers, and run for the exit once it opens."""
+    """The Sellbot maze, played as a toon would on its own: fill up with
+    water at a cooler, find a big cog through the corridors and soak it,
+    pick up the memos the cogs drop, and run for the exit once it opens.
+    Each NPC picks its own cooler, cog and memo, so they spread out."""
 
     def play(self, now):
         game = self.game
         client = self.client()
-        self.follow()
+        mazeGame = getattr(client, 'game', None) if client is not None else None
+        maze = getattr(mazeGame, 'maze', None)
+        if maze is None:
+            return
+        speed = Globals_ToonRunSpeed() * self.memo.setdefault('pace', random.uniform(0.85, 1.0))
         if game.doorOpen:
-            if self.npc.doId not in game.toonsOut and self.after('exit', (2.0, 6.0), now):
+            if self.npc.doId in game.toonsOut:
+                return
+            if self.goTo(maze, ('exit',), maze.exitPos, speed) and self.after('exit', (0.3, 1.5), now):
                 self.send('requestAction', CogdoMazeGameGlobals.GameActions.EnterDoor, 0)
             return
-        if not self.after(('act', self.memo.get('acts', 0)), (3.0, 6.0), now):
+        here = self.npc.getPos()
+        # Memos lying near by come first.
+        memos = [(n, pickup.getPos(clientRender())) for n, pickup in enumerate(mazeGame.pickups)
+                 if n not in game.pickups and not pickup.isEmpty()]
+        memos = [m for m in memos if (m[1] - here).length() < 30 and not self.claimed(('memo', m[0]))]
+        if memos:
+            n, pos = min(memos, key=lambda m: (m[1] - here).length())
+            if self.goTo(maze, ('memo', n), pos, speed, near=1.5):
+                self.send('requestPickUp', n)
+                self.memo.pop('goal', None)
             return
-        self.memo['acts'] = self.memo.get('acts', 0) + 1
-        bosses = [n for n in range(game.numSuits[0]) if n not in game.bossesDefeated]
-        pickups = len(client.game.pickups) if client is not None and getattr(client, 'game', None) else 0
-        free = [n for n in range(pickups) if n not in game.pickups]
-        if bosses and random.random() < 0.55:
-            here = self.npc.getPos()
-            self.send('requestUseGag', here[0], here[1], self.npc.getH(), globalClockDelta.getRealNetworkTime(bits=16))
-            if random.random() < 0.8:
-                self.send('requestSuitHitByGag', CogdoMazeGameGlobals.SuitTypes.Boss, random.choice(bosses))
-        elif free:
-            self.send('requestPickUp', random.choice(free))
+        bosses = [suit for suit in mazeGame.shakers if suit.serialNum not in game.bossesDefeated and not suit.suit.isEmpty()]
+        if not bosses:
+            self.wander(maze, speed, now)
+            return
+        if not self.memo.get('water'):
+            coolers = maze.getWaterCoolers()
+            if not coolers:
+                return
+            mine = self.memo.get('cooler')
+            if mine is None or mine >= len(coolers):
+                # The nearest cooler no other NPC is heading for, mostly;
+                # now and then the next one.
+                order = sorted(range(len(coolers)), key=lambda c: (coolers[c].getPos(clientRender()) - here).length())
+                order = [c for c in order if not self.claimed(('cooler', c))] or order
+                mine = order[0] if random.random() < 0.75 or len(order) == 1 else order[1]
+                self.memo['cooler'] = mine
+            cooler = coolers[mine]
+            if self.goTo(maze, ('cooler', mine), cooler.getPos(clientRender()), speed, near=3.0):
+                self.send('requestGag', cooler.serialNum)
+                self.memo['water'] = 1
+                self.memo.pop('cooler', None)
+                self.memo.pop('goal', None)
+            return
+        # Soak a big cog: each NPC keeps to the one it picked.
+        target = self.memo.get('boss')
+        if target not in [suit.serialNum for suit in bosses]:
+            target = random.choice(bosses).serialNum
+            self.memo['boss'] = target
+        suit = [suit for suit in bosses if suit.serialNum == target][0]
+        pos = suit.suit.getPos(clientRender())
+        distance = (pos - here).length()
+        if distance > CogdoMazeGameGlobals.ThrowDistance * 0.8:
+            # Each NPC comes at the cog from its own side.
+            side = self.memo.setdefault('side', random.uniform(0, 2 * math.pi))
+            spot = Point3(pos[0] + 8.0 * math.cos(side), pos[1] + 8.0 * math.sin(side), 0)
+            self.goTo(maze, ('boss', target), spot, speed, near=3.0, replan=1.0)
+            return
+        if not self.after(('throw', self.memo.get('throws', 0)), (0.3, 0.9), now):
+            return
+        self.memo['throws'] = self.memo.get('throws', 0) + 1
+        delta = pos - here
+        h = -math.degrees(math.atan2(delta[0], delta[1]))
+        self.npc.moveTo(here[0], here[1], here[2], h)
+        self.send('requestUseGag', here[0], here[1], h, globalClockDelta.getRealNetworkTime(bits=16))
+        if random.random() < 0.8:
+            self.send('requestSuitHitByGag', CogdoMazeGameGlobals.SuitTypes.Boss, target)
+        self.memo['water'] = 0
+        self.memo.pop('goal', None)
+
+    def claimed(self, goal):
+        return any(p.memo.get('goal') == goal for p in self.minigames.players.values()
+                   if p.game is self.game and p is not self)
+
+    def wander(self, maze, speed, now):
+        goal = self.memo.get('goal')
+        if goal is None or goal[0] != 'wander':
+            tile = (random.randrange(1, maze.width), random.randrange(1, maze.height))
+            goal = ('wander', tile)
+        pos = maze.tile2world(*goal[1])
+        if self.goTo(maze, goal, Point3(pos[0], pos[1], 0), speed):
+            self.memo.pop('goal', None)
+
+    def goTo(self, maze, goal, pos, speed, near=2.0, replan=None):
+        """A step along the corridors toward pos; True once there."""
+        here = self.npc.getPos()
+        if (Point3(pos[0], pos[1], 0) - Point3(here[0], here[1], 0)).length() <= near:
+            return True
+        now = globalClock.getRealTime()
+        path = self.memo.get('path')
+        if self.memo.get('goal') != goal or not path or (replan and now - self.memo.get('planned', 0) > replan):
+            self.memo['goal'] = goal
+            self.memo['planned'] = now
+            start = tuple(maze.world2tileClipped(here[0], here[1]))
+            end = tuple(maze.world2tileClipped(pos[0], pos[1]))
+            route = self.route(maze, start, end)
+            if route is None:
+                # Nowhere to go from here; try another goal later.
+                self.memo.pop('goal', None)
+                self.memo.pop('cooler', None)
+                self.memo.pop('boss', None)
+                return False
+            path = [maze.tile2world(*tile) for tile in route[1:]] + [(pos[0], pos[1])]
+            self.memo['path'] = path
+        if self.moveTo(Point3(path[0][0], path[0][1], 0), speed=speed):
+            path.pop(0)
+        return False
+
+    def route(self, maze, start, end):
+        # Tiles a toon fits through, else any open tiles.
+        for walkable in (maze.isWalkable, maze.isAccessible):
+            frontier = [start]
+            came = {start: None}
+            while frontier:
+                nextFrontier = []
+                for tile in frontier:
+                    if tile == end or (abs(tile[0] - end[0]) + abs(tile[1] - end[1]) <= 1 and tile != start):
+                        route = []
+                        while tile is not None:
+                            route.append(tile)
+                            tile = came[tile]
+                        route.reverse()
+                        return route
+                    for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                        n = (tile[0] + dx, tile[1] + dy)
+                        if n not in came and walkable(n[0], n[1]):
+                            came[n] = tile
+                            nextFrontier.append(n)
+                frontier = nextFrontier
+        return None
+
+
+def clientRender():
+    return getClientBuiltin('base').render
+
+
+def Globals_ToonRunSpeed():
+    return CogdoMazeGameGlobals.ToonRunSpeed
 
 
 class CogdoFlyingPlayer(CogdoPlayer):
-    """The Lawbot flight: fly along with the player picking up memos, and
-    land on the far platform once the player is there."""
+    """The Lawbot flight, flown by each NPC on its own: forward through the
+    level at its own pace and height, swinging over to memos ahead of it,
+    and landing on the far platform at the end."""
 
     def play(self, now):
         game = self.game
         client = self.client()
         Actions = CogdoFlyingGameGlobals.AI.GameActions
-        self.follow(spread=6.0)
         players = self.players()
-        if self.npc.doId not in game.landed:
-            if players and all(p in game.landed for p in players) and self.after('land', (1.0, 4.0), now):
-                self.send('requestAction', Actions.LandOnWinPlatform, 0)
-            elif self.after(('memo', self.memo.get('memos', 0)), (4.0, 9.0), now):
-                self.memo['memos'] = self.memo.get('memos', 0) + 1
-                memo = self.freeMemo(client)
-                if memo is not None:
-                    self.send('requestPickUp', memo, CogdoFlyingGameGlobals.Level.GatherableTypes.Memo)
+        if self.npc.doId in game.landed:
+            if self.npc.doId not in game.winDone and all(p in game.winDone for p in players):
+                self.send('requestAction', Actions.WinStateFinished, 0)
             return
-        if self.npc.doId not in game.winDone and all(p in game.winDone for p in players):
-            self.send('requestAction', Actions.WinStateFinished, 0)
+        level = getattr(getattr(client, 'game', None), 'level', None)
+        if level is None:
+            return
+        (left, right), (back, forward), (down, up) = level.getBounds()
+        endY = level._endPlatformModel.getY(clientRender())
+        here = self.npc.getPos()
+        speed = CogdoFlyingGameGlobals.Gameplay.ToonVelMax['forward'] * self.memo.setdefault('pace', random.uniform(0.6, 0.95))
+        if here[1] >= endY - 2.0:
+            # Over the far platform: come down and land.
+            if self.moveTo(Point3(here[0], endY + random.uniform(0, 4), CogdoFlyingGameGlobals.Level.EndPlatformHeight),
+                           speed=speed, flat=False) or here[2] <= CogdoFlyingGameGlobals.Level.EndPlatformHeight + 1.0:
+                if self.after('land', (0.5, 2.0), now):
+                    self.send('requestAction', Actions.LandOnWinPlatform, 0)
+            return
+        target = self.memo.get('target')
+        if target is not None:
+            serial, pos = target
+            if serial in game.memoPickups or pos[1] < here[1] - 1.0:
+                target = None
+        if target is None:
+            target = self.nextMemo(level, here, left, right, down, up)
+            self.memo['target'] = target
+        if target is not None:
+            serial, pos = target
+            if self.moveTo(pos, speed=speed, flat=False) or (pos - here).length() < 2.0:
+                if serial not in game.memoPickups:
+                    self.send('requestPickUp', serial, CogdoFlyingGameGlobals.Level.GatherableTypes.Memo)
+                self.memo['target'] = None
+            return
+        # Nothing to pick up ahead: fly on at its own height and lane.
+        lane = self.memo.setdefault('lane', (random.uniform(left * 0.6, right * 0.6), random.uniform(down + 0.3 * (up - down), down + 0.7 * (up - down))))
+        self.moveTo(Point3(lane[0], min(here[1] + 10.0, endY), lane[1]), speed=speed, flat=False)
+
+    def nextMemo(self, level, here, left, right, down, up):
+        taken = set(self.game.memoPickups)
+        others = set(p.memo.get('target', (None,))[0] for p in self.minigames.players.values()
+                     if p.game is self.game and p is not self and p.memo.get('target'))
+        best = None
+        for quadrant in level.quadrants:
+            for g in quadrant.gatherables:
+                if g.type != CogdoFlyingGameGlobals.Level.GatherableTypes.Memo or g.serialNum in taken or g.serialNum in others:
+                    continue
+                try:
+                    pos = g.getPos(clientRender())
+                except Exception:
+                    continue
+                ahead = pos[1] - here[1]
+                if ahead < 2.0 or ahead > 40.0 or abs(pos[0] - here[0]) > 25.0:
+                    continue
+                score = ahead + abs(pos[0] - here[0]) + abs(pos[2] - here[2]) + random.uniform(0, 8)
+                if best is None or score < best[0]:
+                    best = (score, g.serialNum, Point3(pos))
+        return (best[1], best[2]) if best else None
 
     def freeMemo(self, client):
         level = getattr(getattr(client, 'game', None), 'level', None)
