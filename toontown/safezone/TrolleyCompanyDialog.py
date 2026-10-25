@@ -25,23 +25,23 @@ class TrolleyCompanyDialog(DirectFrame):
         """done(boarding) is called with False when the player backs off."""
         box = loader.loadModel('phase_3/models/gui/dialog_box_gui')
         DirectFrame.__init__(self, parent=aspect2d, relief=None, image=box,
-                             image_color=OTPGlobals.GlobalDialogColor, image_scale=(1.1, 1, 0.62),
+                             image_color=OTPGlobals.GlobalDialogColor, image_scale=(1.1, 1, 0.78),
                              pos=(0, 0, 0.1), state=DGG.NORMAL, sortOrder=DGG.NO_FADE_SORT_INDEX)
         self.initialiseoptions(TrolleyCompanyDialog)
         box.removeNode()
         self.avId = avId
         self.done = done
         font = ToontownGlobals.getInterfaceFont()
-        DirectLabel(parent=self, relief=None, pos=(0, 0, 0.17), text=TITLE, text_scale=0.08,
+        DirectLabel(parent=self, relief=None, pos=(0, 0, 0.22), text=TITLE, text_scale=0.08,
                     text_font=ToontownGlobals.getSignFont(), text_fg=(0.1, 0.3, 0.7, 1))
-        DirectLabel(parent=self, relief=None, pos=(0, 0, 0.06), text=QUESTION, text_scale=0.055, text_font=font)
+        DirectLabel(parent=self, relief=None, pos=(0, 0, 0.1), text=QUESTION, text_scale=0.055, text_font=font)
         buttons = loader.loadModel('phase_3/models/gui/quit_button')
         images = (buttons.find('**/QuitBtn_UP'), buttons.find('**/QuitBtn_DN'), buttons.find('**/QuitBtn_RLVR'))
         for i, (text, company) in enumerate(CHOICES):
-            DirectButton(parent=self, relief=None, image=images, image_scale=(1.0, 1, 1.4), pos=(-0.25 + i * 0.5, 0, -0.07),
+            DirectButton(parent=self, relief=None, image=images, image_scale=(1.0, 1, 1.4), pos=(-0.25 + i * 0.5, 0, -0.04),
                          text=text, text_scale=0.055, text_pos=(0, -0.018), text_font=font,
                          command=self.choose, extraArgs=[company])
-        DirectButton(parent=self, relief=None, image=images, image_scale=(0.7, 1, 1.1), pos=(0, 0, -0.2),
+        DirectButton(parent=self, relief=None, image=images, image_scale=(0.7, 1, 1.1), pos=(0, 0, -0.24),
                      text='Cancel', text_scale=0.045, text_pos=(0, -0.014), text_font=font,
                      command=self.cancel)
         buttons.removeNode()

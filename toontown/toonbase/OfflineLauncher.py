@@ -305,35 +305,35 @@ class OfflineLauncher(DirectObject):
         return self.panel
 
     def showSettings(self):
-        panel = self.openPanel('SETTINGS', titleZ=0.46, closeZ=-0.5, closeScale=0.8)
-        self.touchButton = self.redButton(self.touchText(), (0, 0, 0.32), self.toggleTouch, textScale=0.05,
+        panel = self.openPanel('SETTINGS', titleZ=0.5, closeZ=-0.425, closeScale=0.75)
+        self.touchButton = self.redButton(self.touchText(), (0, 0, 0.355), self.toggleTouch, textScale=0.05,
                                           imageScale=(2.9, 1, 1.8))
         self.touchButton.reparentTo(panel)
-        DirectLabel(parent=panel, relief=None, pos=(0, 0, 0.19), text_font=self.interfaceFont,
+        DirectLabel(parent=panel, relief=None, pos=(0, 0, 0.225), text_font=self.interfaceFont,
                     text_scale=0.045, text_fg=TEXT_DARK, text_wordwrap=26,
                     text='The joystick and jump button on the screen. They go away by themselves while '
                          'a controller is in use.')
         # A training district for each cog track the player picks.
-        DirectLabel(parent=panel, relief=None, pos=(0, 0, 0.065), text_font=self.interfaceFont,
+        DirectLabel(parent=panel, relief=None, pos=(0, 0, 0.1), text_font=self.interfaceFont,
                     text_scale=0.045, text_fg=TEXT_DARK, text='Training districts (always invaded by that cog type)')
         self.trainingButtons = {}
         for i, (key, text, name) in enumerate(TRAINING_DISTRICTS):
-            button = self.redButton('', (-0.555 + i * 0.37, 0, -0.04), self.toggleTraining, textScale=0.045,
+            button = self.redButton('', (-0.555 + i * 0.37, 0, 0), self.toggleTraining, textScale=0.045,
                                     imageScale=(0.78, 1, 1.35))
             button['extraArgs'] = [key]
             button['frameSize'] = (-0.175, 0.175, -0.075, 0.075)
             button.reparentTo(panel)
             self.trainingButtons[key] = button
             self.showTraining(key)
-        DirectLabel(parent=panel, relief=None, pos=(0, 0, -0.15), text_font=self.interfaceFont,
+        DirectLabel(parent=panel, relief=None, pos=(0, 0, -0.105), text_font=self.interfaceFont,
                     text_scale=0.04, text_fg=TEXT_DARK, text='Each one turned on makes the game take longer to start.')
         # How many NPC toons each place gets.
-        DirectLabel(parent=panel, relief=None, pos=(0, 0, -0.24), text_font=self.interfaceFont,
+        DirectLabel(parent=panel, relief=None, pos=(0, 0, -0.18), text_font=self.interfaceFont,
                     text_scale=0.045, text_fg=TEXT_DARK, text='NPC toons in each place')
-        self.npcLabel = DirectLabel(parent=panel, relief=None, pos=(0, 0, -0.35), text_font=self.minnieFont,
+        self.npcLabel = DirectLabel(parent=panel, relief=None, pos=(0, 0, -0.28), text_font=self.minnieFont,
                                     text_scale=0.08, text_fg=RED, text=str(npcsPerArea(self.settings)))
         for text, step, x in (('-10', -10, -0.52), ('-1', -1, -0.235), ('+1', 1, 0.235), ('+10', 10, 0.52)):
-            button = self.redButton(text, (x, 0, -0.33), None, textScale=0.06, imageScale=(0.62, 1, 1.35))
+            button = self.redButton(text, (x, 0, -0.26), None, textScale=0.06, imageScale=(0.62, 1, 1.35))
             # A finger is bigger than these, so the button takes a press a
             # little outside its picture too, and counts on the press rather
             # than on letting go (a finger moves a little in between).
