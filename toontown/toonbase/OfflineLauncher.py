@@ -321,8 +321,6 @@ class OfflineLauncher(DirectObject):
         if self.started:
             return
         print('OfflineLauncher: PLAY!')
-        from toontown.toonbase import CrashReport
-        CrashReport.mark()
         self.started = True
         for button in (self.playButton, self.settingsButton, self.driversButton):
             button['state'] = DGG.DISABLED
@@ -372,10 +370,6 @@ def run():
             # It drew: a custom graphics driver works.
             from toontown.toonbase import TurnipDrivers
             TurnipDrivers.driverWorks(_launcher.settings)
-        if frames == 600:
-            # Ten seconds or so on the launcher: the game starts up well.
-            from toontown.toonbase import CrashReport
-            CrashReport.calm()
 
 
 def progress(value, label=None):
@@ -402,7 +396,5 @@ def finish():
     if _launcher is None:
         return
     progress(100, 'Ready!')
-    from toontown.toonbase import CrashReport
-    CrashReport.calm()
     launcher, _launcher = _launcher, None
     getClientBuiltin('taskMgr').doMethodLater(0.4, lambda task: launcher.destroy(), 'offlineLauncherFinish')

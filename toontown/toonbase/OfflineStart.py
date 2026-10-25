@@ -87,8 +87,11 @@ def main():
     ]))
     if sys.platform == 'android':
         # Phones and tablets have OpenGL ES rather than desktop OpenGL, and
-        # no keyboard, so the game gets on-screen controls.
-        loadPrcFileData('OfflineStart Android', 'load-display pandagles2\naux-display pandagles\nwant-touch-controls 1')
+        # no keyboard, so the game gets on-screen controls. OpenGL ES has no
+        # alpha test, which Panda3D's "dual" transparency (used by most of the
+        # models) needs to leave out the see-through parts, so those draw as
+        # plain alpha blending instead (m-dual 0).
+        loadPrcFileData('OfflineStart Android', 'load-display pandagles2\naux-display pandagles\nwant-touch-controls 1\nm-dual 0')
     mountPhases(gameDir)
 
     from otp.local import NullHTTP
@@ -103,7 +106,19 @@ def main():
         from toontown.toonbase import ToontownStart
     except SystemExit:
         # Say why, for the crash report.
-        print('OfflineStart: the game is closing:\n%s' % traceback.format_exc())
+        text = traceback.format_exc()
+        print('OfflineStart: the game is closing:\n%s' % text)
+        import builtins
+        base = getattr(builtins, 'base', None)
+        quitting = any(name in text for name in ('userExit', 'exitShow', 'enterShutdown'))
+        if (sys.platform == 'android' and not quitting and base is not None and base.win is not None
+                and not base.win.isClosed()):
+            # Nothing on a phone should close the game but the player
+            # leaving it.
+            showError(text, dataDir)
+        if 'userExit' not in text and quitting:
+            # The player quit from the game's own menu: no report next time.
+            CrashReport.forget()
         raise
     except BaseException:
         showError(traceback.format_exc(), dataDir)

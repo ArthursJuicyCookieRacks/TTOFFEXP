@@ -1,10 +1,9 @@
 """What the game logged before it last closed by itself, on Android.
 
 A phone gives a player no way to see the game's log, so the game reads its
-own: it notes when it starts, and clears the note once it is running well
-(on the launcher for a while, or done loading after PLAY!). If the note is
-still there at the next start, the last start ended early, and its log
-(Android keeps an app's own log lines, which the app may read) is saved to
+own: it notes its process at each start, and at the next start reads that
+process's log (Android keeps an app's own log lines, which the app may
+read). If it ended in an error or a crash, the log is saved to
 logs/last-crash.txt and shown on the launcher.
 """
 
@@ -18,6 +17,8 @@ REPORT = os.path.join('logs', 'last-crash.txt')
 SHOWN_LINES = 34
 
 report = None
+# What a log that ended badly has in it.
+SIGNS = ('Traceback', 'Fatal signal', ' F/', 'the game is closing', 'userExit', 'ANR in')
 
 
 def begin():
@@ -31,6 +32,10 @@ def begin():
             with open(MARKER) as file:
                 pid = file.read().strip()
             report = readLog(pid)
+            if not any(sign in report for sign in SIGNS):
+                # The player closed it, or Android did to free memory.
+                print('CrashReport: the last start closed without an error')
+                report = None
             if report:
                 print('CrashReport: the last start ended early; its log is in %s' % REPORT)
                 with open(REPORT, 'w') as file:
@@ -52,7 +57,7 @@ def readLog(pid):
 
 
 def mark():
-    """The game is at a step it might not come back from."""
+    """Notes this process, for the next start."""
     if sys.platform != 'android':
         return
     try:
@@ -62,8 +67,8 @@ def mark():
         pass
 
 
-def calm():
-    """The game is running well."""
+def forget():
+    """The game closed as it should, so the next start has nothing to report."""
     try:
         os.remove(MARKER)
     except OSError:

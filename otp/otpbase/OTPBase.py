@@ -241,6 +241,10 @@ class OTPBase(ShowBase):
             self.destroy()
             raise
         except:
+            if config.ConfigVariableBool('offline-release', False).getValue():
+                # The packaged game shows it, with the window still open
+                # (OfflineStart).
+                raise
             self.notify.warning('Handling Python exception.')
             if getattr(self, 'cr', None):
                 if self.cr.timeManager:

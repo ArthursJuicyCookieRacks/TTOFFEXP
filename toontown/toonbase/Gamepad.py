@@ -93,14 +93,14 @@ class Gamepad(DirectObject):
             self.cursor.getParent().removeNode()
 
     def connect(self, device):
-        if device.getDeviceClass() != InputDevice.DeviceClass.gamepad or device in self.devices:
+        if device.device_class != InputDevice.DeviceClass.gamepad or device in self.devices:
             return
-        self.notify.info('controller connected: %s' % device.getName())
+        self.notify.info('controller connected: %s' % device.name)
         self.devices.append(device)
 
     def disconnect(self, device):
         if device in self.devices:
-            self.notify.info('controller disconnected: %s' % device.getName())
+            self.notify.info('controller disconnected: %s' % device.name)
             self.devices.remove(device)
             if not self.devices:
                 self.__releaseAll()
@@ -114,9 +114,9 @@ class Gamepad(DirectObject):
         axes = {}
         for device in self.devices:
             device.poll()
-            for i in range(device.getNumButtons()):
-                if device.isButtonPressed(i):
-                    buttons.add(device.getButtonMap(i).getName())
+            for button in device.buttons:
+                if button.pressed:
+                    buttons.add(button.handle.getName())
             for axis in ('left_x', 'left_y', 'right_x', 'right_y', 'left_trigger', 'right_trigger'):
                 state = device.findAxis(getattr(InputDevice.Axis, axis))
                 if state is not None and abs(state.value) > abs(axes.get(axis, 0)):
