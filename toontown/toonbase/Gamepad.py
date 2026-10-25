@@ -4,9 +4,9 @@ A game controller plays the game through the keys and the mouse, the way the
 game is played on a computer: each button presses a key, the left stick
 walks, and the right stick moves the pointer, which the triggers click.
 
-    A        Control             Start    Escape
+    A        Jump (Space)        Start    Escape
     B        Delete              Select   Shift + Escape
-    X        Alt                 LB       Shift
+    X        Alt                 LB       Control
     Y        End                 RB       Tab
     D-pad    Page Up (up), End (right), Home (left), Page Down (down)
     LT, RT   Left click          Left stick   Walk (the arrow keys)
@@ -27,13 +27,15 @@ from panda3d.core import PNMImage, SamplerState, Texture, TransparencyAttrib, Vi
 
 # What each controller button presses.
 BUTTON_KEYS = {
-    'face_a': ('control',),
+    # A jumps. That was Control in the original game; with want-WASD on
+    # (as the game's config has it) the jump key is Space instead.
+    'face_a': ('space',),
     'face_b': ('delete',),
     'face_x': ('alt',),
     'face_y': ('end',),
     'start': ('escape',),
     'back': ('shift', 'escape'),
-    'lshoulder': ('shift',),
+    'lshoulder': ('control',),
     'rshoulder': ('tab',),
     'rstick': ('f2',),
     'dpad_up': ('page_up',),

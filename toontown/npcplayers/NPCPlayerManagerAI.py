@@ -1,7 +1,8 @@
 """Keeps the places the player goes full of other toons.
 
-Every playground, street, Cog HQ area and boss lobby the player is in gets at
-least NPCS_PER_AREA NPC players walking around, made for the place by
+Every playground, street, Cog HQ area and boss lobby the player is in gets
+NPC players walking around (NPCS_PER_AREA, or as many as the launcher's
+settings say), made for the place by
 NPCProfiles. They stay while the player is near and are taken away a while
 after the player leaves. When the player is in a battle, the nearest NPCs
 come and join it.
@@ -20,6 +21,7 @@ from toontown.classicchars import CCharPaths
 from toontown.dna import DNAStoreSuitPoint
 from toontown.hood import ZoneUtil
 from toontown.npcplayers import NPCProfiles
+from toontown.npcplayers.NPCSettings import npcsPerArea
 from toontown.npcplayers.NPCBattleCrew import NPCBattleCrew, isNPC
 from toontown.npcplayers.NPCNav import getNav
 from toontown.npcplayers.NPCGolf import NPCGolf
@@ -32,7 +34,6 @@ from toontown.npcplayers.NPCPlayerAI import NPCPlayerAI
 from toontown.toon.DistributedToonAI import DistributedToonAI
 from toontown.toonbase import TTLocalizer, ToontownGlobals
 
-NPCS_PER_AREA = 12
 SPAWNS_PER_TICK = 3
 MANAGER_TICK = 1.0
 WALK_TICK = 0.2
@@ -46,6 +47,24 @@ RUN_TO_BATTLE = 40.0
 TELEPORT_TIME = 2.6
 MAX_TRAIL = 200
 TRAIL_SPACING = 8.0
+# How fast a toon turns, in degrees a second; sharper turns slow it down, so
+# it curves round corners the way a player steers.
+TURN_RATE = 400.0
+# How likely a wander is to go and stand by someone, and how close.
+SOCIAL_WALK = 0.3
+SOCIAL_RANGE = (3.5, 6.0)
+# What a toon may do while it stands about, with how likely each is.
+IDLE_ACTIONS = (('face', 30), ('look', 20), ('emote', 25), ('chat', 10), ('nothing', 15))
+# Emotes (indices into OTPLocalizer.EmoteFuncDict) for standing about, and
+# for greeting someone.
+IDLE_EMOTES = (1, 5, 6, 7, 9, 11, 13, 16, 22)
+GREET_EMOTES = (0, 0, 13, 22)
+# SpeedChat phrases (OTPLocalizer.SpeedChatStaticText): hellos and cheers.
+GREET_PHRASES = (101, 102, 103, 104, 105)
+CHEER_PHRASES = (300, 302, 303, 304, 306, 307, 308, 309, 311)
+# How near the player must be to be greeted, and how often a toon may.
+GREET_RANGE = 18.0
+GREET_EVERY = 90.0
 
 COG_HQ_AREAS = (
     ToontownGlobals.BossbotHQ, ToontownGlobals.BossbotLobby,
@@ -146,6 +165,7 @@ class NPCPlayerManagerAI:
     def __init__(self, air):
         self.air = air
         self.areas = {}
+        self.npcsPerArea = npcsPerArea()
         self.crews = {}
         self.party = NPCParty(self)
         self.golf = NPCGolf(self)
@@ -226,7 +246,7 @@ class NPCPlayerManagerAI:
 
     def populate(self, area, player, playerPos):
         for i in range(SPAWNS_PER_TICK):
-            if len(area.npcs) >= NPCS_PER_AREA:
+            if len(area.npcs) >= self.npcsPerArea:
                 return
             spot = self.pickSpawnSpot(area, playerPos, player.zoneId)
             if spot is None:
@@ -306,13 +326,32 @@ class NPCPlayerManagerAI:
     def walkNPC(self, area, npc, dt):
         now = globalClock.getFrameTime()
         if npc.walk is None:
+            if getattr(npc, 'faceH', None) is not None:
+                self.turnNPC(npc, dt)
+                return
             if area is None or now < npc.idleUntil:
                 return
-            if not self.startWalk(area, npc):
-                npc.idleUntil = now + random.uniform(2, 6)
+            if random.random() < 0.35 or not self.idleAction(area, npc):
+                if not self.startWalk(area, npc):
+                    npc.idleUntil = now + random.uniform(1.5, 4)
             return
         points, speed, zoneId, done = npc.walk
         pos = npc.getPos()
+        h = npc.getH()
+        # Turn toward the next point no faster than a toon can, going slower
+        # while the turn is sharp.
+        if points:
+            ahead = points[0] - pos
+            if ahead.lengthSquared() > 0.01:
+                wanted = -math.degrees(math.atan2(ahead[0], ahead[1]))
+                turn = (wanted - h + 180) % 360 - 180
+                if done is None:
+                    maxTurn = TURN_RATE * dt
+                    speed *= max(0.25, math.cos(math.radians(min(abs(turn), 90))))
+                else:
+                    # Going somewhere that matters (a battle): no dawdling.
+                    maxTurn = TURN_RATE * 3 * dt
+                h += max(-maxTurn, min(maxTurn, turn))
         remaining = speed * dt
         while points and remaining > 0:
             target = points[0]
@@ -325,38 +364,126 @@ class NPCPlayerManagerAI:
             else:
                 pos = pos + step * (remaining / length)
                 remaining = 0
-        direction = (points[0] if points else pos) - npc.getPos()
-        h = npc.getH()
-        if direction.lengthSquared() > 0.01:
-            h = -math.degrees(math.atan2(direction[0], direction[1]))
         npc.moveTo(pos[0], pos[1], pos[2], h)
         if not points:
             npc.walk = None
             npc.stopMoving()
             if zoneId is not None and zoneId != npc.zoneId:
                 npc.b_setLocation(self.air.districtId, zoneId)
-            npc.idleUntil = now + random.uniform(3, 14)
+            npc.idleUntil = now + random.uniform(1.5, 7)
+            friend = getattr(npc, 'walkingTo', None)
+            npc.walkingTo = None
+            if friend is not None and not friend.isDeleted() and done is None:
+                # Stopped by someone: turn to them, and sometimes say hello.
+                self.faceToward(npc, friend.getPos())
+                if random.random() < 0.5:
+                    npc.afterTurn = lambda: self.greet(npc, friend)
             if done:
                 done()
+
+    def turnNPC(self, npc, dt):
+        h = npc.getH()
+        turn = (npc.faceH - h + 180) % 360 - 180
+        maxTurn = TURN_RATE * 0.6 * dt
+        if abs(turn) <= maxTurn:
+            h = npc.faceH
+            npc.faceH = None
+        else:
+            h += maxTurn if turn > 0 else -maxTurn
+        pos = npc.getPos()
+        npc.moveTo(pos[0], pos[1], pos[2], h)
+        if npc.faceH is None:
+            npc.stopMoving()
+            then = getattr(npc, 'afterTurn', None)
+            npc.afterTurn = None
+            if then is not None:
+                then()
+
+    def faceToward(self, npc, pos):
+        offset = pos - npc.getPos()
+        if offset.lengthSquared() > 0.01:
+            npc.faceH = -math.degrees(math.atan2(offset[0], offset[1]))
+
+    def neighbours(self, area, npc, distance):
+        """The toons near this one: the area's NPCs and the players."""
+        pos = npc.getPos()
+        near = []
+        for other in area.npcs + self.getPlayers():
+            if other is npc or other.isDeleted() or other.zoneId != npc.zoneId:
+                continue
+            otherPos = self.getPlayerPos(other) if not isNPC(other) else other.getPos()
+            if (otherPos - pos).length() < distance:
+                near.append(other)
+        return near
+
+    def idleAction(self, area, npc):
+        """Something to do while standing about; False to walk instead."""
+        now = globalClock.getFrameTime()
+        roll = random.uniform(0, sum(weight for action, weight in IDLE_ACTIONS))
+        for action, weight in IDLE_ACTIONS:
+            roll -= weight
+            if roll <= 0:
+                break
+        npc.idleUntil = now + random.uniform(2, 6)
+        if action == 'face':
+            near = self.neighbours(area, npc, 25.0)
+            if not near:
+                return False
+            other = random.choice(near)
+            self.faceToward(npc, self.getPlayerPos(other) if not isNPC(other) else other.getPos())
+            if not isNPC(other) and now - getattr(npc, 'lastGreet', -GREET_EVERY) > GREET_EVERY and \
+                    (self.getPlayerPos(other) - npc.getPos()).length() < GREET_RANGE:
+                npc.afterTurn = lambda: self.greet(npc, other)
+        elif action == 'look':
+            npc.faceH = npc.getH() + random.choice((-1, 1)) * random.uniform(30, 120)
+        elif action == 'emote':
+            npc.b_setEmoteState(random.choice(IDLE_EMOTES), 1.0)
+            npc.idleUntil = now + random.uniform(4, 8)
+        elif action == 'chat':
+            npc.d_setSC(random.choice(CHEER_PHRASES))
+        return True
+
+    def greet(self, npc, other):
+        if npc.isDeleted() or npc.walk is not None:
+            return
+        npc.lastGreet = globalClock.getFrameTime()
+        npc.b_setEmoteState(random.choice(GREET_EMOTES), 1.0)
+        if random.random() < 0.6:
+            npc.d_setSC(random.choice(GREET_PHRASES))
+        npc.idleUntil = globalClock.getFrameTime() + random.uniform(3, 6)
 
     def startWalk(self, area, npc):
         nav = getNav()
         if not nav.available():
             return False
         pos = npc.getPos()
-        candidates = [p for p in area.points() if WANDER_RANGE[0] <= (p[0] - pos).length() <= WANDER_RANGE[1]]
-        random.shuffle(candidates)
-        candidates = candidates[:3]
+        candidates = []
+        if random.random() < SOCIAL_WALK:
+            # Go and stand by someone.
+            near = self.neighbours(area, npc, WANDER_RANGE[1])
+            if near:
+                other = random.choice(near)
+                otherPos = self.getPlayerPos(other) if not isNPC(other) else other.getPos()
+                angle = random.uniform(0, 2 * math.pi)
+                dist = random.uniform(*SOCIAL_RANGE)
+                spot = Point3(otherPos[0] + dist * math.cos(angle), otherPos[1] + dist * math.sin(angle), otherPos[2])
+                candidates.append((spot, other.zoneId, other))
+        far = [p for p in area.points() if WANDER_RANGE[0] <= (p[0] - pos).length() <= WANDER_RANGE[1]]
+        random.shuffle(far)
+        candidates += [(p, zoneId, None) for p, zoneId in far[:3]]
         # And a look around close by.
         for i in range(2):
             angle = random.uniform(0, 2 * math.pi)
             dist = random.uniform(*WANDER_RANGE) / 3.0
-            candidates.append((Point3(pos[0] + dist * math.cos(angle), pos[1] + dist * math.sin(angle), pos[2]), None))
-        for target, zoneId in candidates:
+            candidates.append((Point3(pos[0] + dist * math.cos(angle), pos[1] + dist * math.sin(angle), pos[2]), None, None))
+        for target, zoneId, friend in candidates:
             path = nav.walkable(pos, target)
             if path:
-                speed = RUN_SPEED if random.random() < 0.75 else WALK_SPEED
+                # Players mostly run, and walk now and then.
+                speed = RUN_SPEED if random.random() < 0.65 else WALK_SPEED
                 npc.walk = [path, speed, zoneId, None]
+                npc.walkingTo = friend
+                npc.faceH = None
                 return True
         return False
 

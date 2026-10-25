@@ -9,6 +9,10 @@ from otp.otpbase import OTPLocalizer
 from direct.directnotify import DirectNotifyGlobal
 from toontown.toonbase import ToontownGlobals
 
+# The longest line typed on Android's keyboard.
+ANDROID_MAX_CHAT = 120
+
+
 class TTChatInputWhiteList(ChatInputWhiteListFrame):
     notify = DirectNotifyGlobal.directNotify.newCategory('TTChatInputWhiteList')
     TFToggleKey = config.ConfigVariableString('true-friend-toggle-key', 'alt').getValue()
@@ -52,6 +56,9 @@ class TTChatInputWhiteList(ChatInputWhiteListFrame):
          0.05), text=OTPLocalizer.ChatInputNormalWhisper, text_scale=0.04, text_fg=Vec4(0, 0, 0, 1), text_wordwrap=9.5, textMayChange=1)
         self.chatEntry.bind(DGG.OVERFLOW, self.chatOverflow)
         self.chatEntry.bind(DGG.TYPE, self.typeCallback)
+        if sys.platform == 'android':
+            # Tapping the line opens the keyboard again, to change it.
+            self.chatEntry.bind(DGG.B1PRESS, lambda event: self.askAndroidText())
         self.trueFriendChat = 0
         if config.ConfigVariableBool('whisper-to-nearby-true-friends', 1).getValue():
             self.accept(self.TFToggleKey, self.shiftPressed)
@@ -142,6 +149,42 @@ class TTChatInputWhiteList(ChatInputWhiteListFrame):
             base.localAvatar.enableAvatarControls()
         else:
             self.sendFailed(self.chatEntry.get())
+
+    def activate(self):
+        ChatInputWhiteListFrame.activate(self)
+        if sys.platform == 'android':
+            # A phone types with its own keyboard, which the game's window
+            # can't take, so the text is typed in a dialog of Android's.
+            self.askAndroidText()
+
+    def deactivate(self):
+        taskMgr.remove('androidChatText')
+        ChatInputWhiteListFrame.deactivate(self)
+
+    def askAndroidText(self):
+        try:
+            import android_support
+            android_support.ask_text(OTPLocalizer.ChatInputNormalSayIt, self.chatEntry.get(plain=True), ANDROID_MAX_CHAT)
+        except (ImportError, AttributeError, NotImplementedError) as e:
+            self.notify.warning('no Android keyboard: %r' % e)
+            return
+        taskMgr.remove('androidChatText')
+        taskMgr.add(self.__waitForAndroidText, 'androidChatText')
+
+    def __waitForAndroidText(self, task):
+        import android_support
+        text = android_support.typed_text()
+        if text is None:
+            return task.cont
+        if not self.active:
+            return task.done
+        if text.strip():
+            self.chatEntry.set(text)
+            self.applyFilter(None)
+            self.chatButtonPressed()
+        else:
+            self.cancelButtonPressed()
+        return task.done
 
     def cancelButtonPressed(self):
         self.requestMode('Off')

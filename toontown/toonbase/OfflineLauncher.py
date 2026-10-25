@@ -21,6 +21,7 @@ from panda3d.core import Geom, GeomNode, GeomTriangles, GeomVertexData, GeomVert
 
 from otp.local.ExecutionContext import getClientBuiltin
 from otp.otpbase.Settings import Settings
+from toontown.npcplayers.NPCSettings import MAX_NPCS_PER_AREA, npcsPerArea
 from toontown.toonbase import ToontownGlobals
 
 # The background picture is 750 by 500; everything is laid out on it.
@@ -219,7 +220,7 @@ class OfflineLauncher(DirectObject):
         return DirectButton(parent=self.canvas, relief=None, pos=pos, scale=scale,
                             image=self.buttonImages((RED, PRESSED, RED_ROLLOVER, (0.82, 0.22, 0.2, 1))),
                             image_scale=imageScale, text=text, text_font=self.minnieFont, text_scale=textScale,
-                            text_fg=YELLOW, text_shadow=(0.3, 0.05, 0, 1), text_pos=(0, -0.028),
+                            text_fg=YELLOW, text_shadow=(0.3, 0.05, 0, 1), text_pos=(0, -textScale * 0.33),
                             text1_fg=PRESSED_TEXT, text1_shadow=(0.45, 0.3, 0, 1),
                             pressEffect=0, command=command)
 
@@ -279,13 +280,22 @@ class OfflineLauncher(DirectObject):
 
     def showSettings(self):
         panel = self.openPanel('SETTINGS')
-        self.touchButton = self.redButton(self.touchText(), (0, 0, 0.14), self.toggleTouch, textScale=0.055,
+        self.touchButton = self.redButton(self.touchText(), (0, 0, 0.2), self.toggleTouch, textScale=0.055,
                                           imageScale=(2.9, 1, 2.1))
         self.touchButton.reparentTo(panel)
-        DirectLabel(parent=panel, relief=None, pos=(0, 0, -0.04), text_font=self.interfaceFont,
+        DirectLabel(parent=panel, relief=None, pos=(0, 0, 0.03), text_font=self.interfaceFont,
                     text_scale=0.045, text_fg=TEXT_DARK, text_wordwrap=26,
                     text='The joystick and jump button on the screen. They go away by themselves while '
                          'a controller is in use.')
+        # How many NPC toons each place gets.
+        DirectLabel(parent=panel, relief=None, pos=(0, 0, -0.1), text_font=self.interfaceFont,
+                    text_scale=0.045, text_fg=TEXT_DARK, text='NPC toons in each place')
+        self.npcLabel = DirectLabel(parent=panel, relief=None, pos=(0, 0, -0.22), text_font=self.minnieFont,
+                                    text_scale=0.08, text_fg=RED, text=str(npcsPerArea(self.settings)))
+        for text, step, x in (('-10', -10, -0.5), ('-1', -1, -0.27), ('+1', 1, 0.27), ('+10', 10, 0.5)):
+            button = self.redButton(text, (x, 0, -0.2), self.changeNPCs, textScale=0.05, imageScale=(0.55, 1, 1.3))
+            button['extraArgs'] = [step]
+            button.reparentTo(panel)
 
     def touchText(self):
         return 'TOUCH CONTROLS: %s' % ('ON' if touchControlsWanted(self.settings) else 'OFF')
@@ -294,6 +304,11 @@ class OfflineLauncher(DirectObject):
         self.settings.updateSetting('controls', 'touch-controls', not touchControlsWanted(self.settings))
         applyTouchSetting(self.settings)
         self.touchButton['text'] = self.touchText()
+
+    def changeNPCs(self, step):
+        count = max(0, min(MAX_NPCS_PER_AREA, npcsPerArea(self.settings) + step))
+        self.settings.updateSetting('game', 'npc-toons', count)
+        self.npcLabel['text'] = str(count)
 
     def showCrashReport(self, text):
         # Over the whole launcher, until the player goes on.

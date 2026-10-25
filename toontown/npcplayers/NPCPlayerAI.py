@@ -50,6 +50,11 @@ class NPCPlayerAI(DistributedToonAI):
         experience.experience = list(profile['experience'])
         self.setExperience(experience.makeNetString())
         self.setMaxCarry(profile['maxCarry'])
+        accessories = profile.get('accessories', {})
+        for kind, setter in (('hat', self.setHat), ('glasses', self.setGlasses),
+                             ('backpack', self.setBackpack), ('shoes', self.setShoes)):
+            if kind in accessories:
+                setter(*accessories[kind])
         if profile.get('cogSuits'):
             self.giveCogSuits()
         if 'kart' in profile:
@@ -139,6 +144,14 @@ class NPCPlayerAI(DistributedToonAI):
 
     def stopMoving(self):
         self.sendUpdate('setSmStop', [globalClockDelta.getRealNetworkTime(bits=16)])
+
+    # --- Acting like a player ---
+
+    def b_setEmoteState(self, animIndex, animMultiplier):
+        self.sendUpdate('setEmoteState', [animIndex, animMultiplier, globalClockDelta.getRealNetworkTime(bits=16)])
+
+    def d_setSC(self, msgIndex):
+        self.sendUpdate('setSC', [msgIndex])
 
     def delete(self):
         if self.brain is not None:
