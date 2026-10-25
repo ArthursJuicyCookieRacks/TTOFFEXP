@@ -73,6 +73,40 @@ LOG_OPTIONS = {} if 'android' in PLATFORMS else {
     'log_filename_strftime': True,
 }
 
+
+
+def keepActivityOnConfigChanges():
+    """Has Android tell the game of every settings change, rather than
+    closing and reopening it, which the game can't live through.
+
+    build_apps leaves out some, such as a new screen density: phones that
+    lower the resolution of games (Samsung's game optimizing does) change it
+    as the game opens, and the game closed straight away.
+    """
+    from direct.dist import _android, commands
+    _android.ANDROID_ATTRIBUTES['configChanges'] = _android.flag_resource(
+        0x0101001f, mcc=0x0001, mnc=0x0002, locale=0x0004, touchscreen=0x0008, keyboard=0x0010,
+        keyboardHidden=0x0020, navigation=0x0040, orientation=0x0080, screenLayout=0x0100, uiMode=0x0200,
+        screenSize=0x0400, smallestScreenSize=0x0800, density=0x1000, layoutDirection=0x2000, colorMode=0x4000,
+        grammaticalGender=0x8000, fontScale=0x40000000, fontWeightAdjustment=0x10000000)
+    generate = commands.build_apps.generate_android_manifest
+
+    def generateAndroidManifest(self, path):
+        generate(self, path)
+        with open(path, encoding='utf-8') as file:
+            manifest = file.read()
+        old = 'android:configChanges="'
+        assert old in manifest
+        manifest = manifest.replace(old, old + 'mcc|mnc|touchscreen|density|colorMode|')
+        with open(path, 'w', encoding='utf-8') as file:
+            file.write(manifest)
+
+    commands.build_apps.generate_android_manifest = generateAndroidManifest
+
+
+if 'android' in PLATFORMS:
+    keepActivityOnConfigChanges()
+
 setup(
     name='TTR-Offline',
     version=VERSION,
