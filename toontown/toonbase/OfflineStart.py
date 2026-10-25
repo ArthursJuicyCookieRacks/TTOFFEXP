@@ -10,6 +10,7 @@ by relative path.
 
 import os
 import sys
+import traceback
 
 from panda3d.core import ExecutionEnvironment, Filename, Multifile, VirtualFileMountSystem, VirtualFileSystem
 from panda3d.core import loadPrcFile, loadPrcFileData
@@ -96,7 +97,68 @@ def main():
     os.environ.setdefault('TTR_PLAYCOOKIE', 'Player')
     os.environ.setdefault('TTR_GAMESERVER', '127.0.0.1')
 
-    from toontown.toonbase import ToontownStart
+    try:
+        from toontown.toonbase import ToontownStart
+    except SystemExit:
+        raise
+    except BaseException:
+        showError(traceback.format_exc(), dataDir)
+
+
+def showError(text, dataDir):
+    """Keeps the window open on what went wrong, rather than closing.
+
+    On a phone there is nowhere else to see it.
+    """
+    print(text)
+    try:
+        os.makedirs(Filename(dataDir, 'logs').toOsSpecific(), exist_ok=True)
+        with open(Filename(dataDir, 'logs/error.txt').toOsSpecific(), 'w') as file:
+            file.write(text)
+    except OSError:
+        pass
+    import builtins
+    base = getattr(builtins, 'base', None)
+    if base is None or base.win is None or base.win.isClosed():
+        return
+    from panda3d.core import Camera, CardMaker, NodePath, OrthographicLens, TextNode
+    # A layer of its own over everything else in the window.
+    root = NodePath('error')
+    lens = OrthographicLens()
+    lens.setFilmSize(2, 2)
+    lens.setNearFar(-1000, 1000)
+    camera = root.attachNewNode(Camera('errorCamera', lens))
+    region = base.win.makeDisplayRegion()
+    region.setSort(2000)
+    region.setClearDepthActive(True)
+    region.setCamera(camera)
+    root.setDepthTest(False)
+    root.setDepthWrite(False)
+    card = CardMaker('errorCard')
+    card.setFrame(-1, 1, -1, 1)
+    card.setColor(0.05, 0.05, 0.12, 1)
+    root.attachNewNode(card.generate())
+    lines = text.strip().splitlines()[-30:]
+    node = TextNode('errorText')
+    node.setText('The game hit an error. Please send a screenshot of this screen.\n\n' + '\n'.join(lines))
+    node.setTextColor(1, 1, 1, 1)
+    scale = 0.045
+    aspect = base.getAspectRatio()
+    node.setWordwrap(1.9 / (scale / aspect))
+    label = root.attachNewNode(node)
+    label.setScale(scale / aspect, 1, scale)
+    label.setPos(-0.96, 0, 0.92)
+    # Small enough to fit the screen.
+    bounds = label.getTightBounds()
+    if bounds:
+        height = bounds[1][2] - bounds[0][2]
+        if height > 1.84:
+            label.setScale(label.getScale() * (1.84 / height))
+    while not base.win.isClosed():
+        try:
+            base.graphicsEngine.renderFrame()
+        except Exception:
+            break
 
 
 main()

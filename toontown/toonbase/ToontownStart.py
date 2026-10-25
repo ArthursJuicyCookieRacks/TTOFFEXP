@@ -280,5 +280,8 @@ if autoRun:
     except SystemExit:
         raise
     except:
+        if ConfigVariableBool('offline-release', False):
+            # The packaged game shows it (OfflineStart).
+            raise
         import traceback
         traceback.print_exc()

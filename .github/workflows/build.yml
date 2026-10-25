@@ -661,9 +661,21 @@ jobs:
           logs
 
   smoke-android:
-    name: Start the Android build
+    name: Start the Android build (${{ matrix.abi }})
     needs: game
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - abi: x86_64
+          api: 34
+          profile: ''
+        # A phone's build, run through the emulator's ARM translation, on a
+        # phone-sized screen.
+        - abi: arm64-v8a
+          api: 35
+          profile: pixel_7
     steps:
     - uses: actions/download-artifact@v8
       with:
@@ -681,12 +693,14 @@ jobs:
         # The game's own log lines are those of its process, so note its id
         # while it runs; the crash buffer has any native crash.
         cat > smoke.sh <<'SCRIPT'
-        adb install -r *.apk
+        adb install -r --abi ${{ matrix.abi }} *.apk
         adb logcat -c
         adb shell am start -n com.ttroffline.game/org.panda3d.android.PythonActivity
         sleep 10
         adb shell pidof com.ttroffline.game > startpid.txt
-        sleep 140
+        # A player touches the launcher's empty space.
+        for i in 1 2 3; do adb shell input tap 300 300; sleep 2; done
+        sleep 134
         adb exec-out screencap -p > screenshot.png
         adb shell pidof com.ttroffline.game > pid.txt
         adb logcat -d > logcat.txt
@@ -698,9 +712,10 @@ jobs:
     - name: Start the game in an emulator
       uses: reactivecircus/android-emulator-runner@v2
       with:
-        api-level: 34
+        api-level: ${{ matrix.api }}
         arch: x86_64
         target: google_apis
+        profile: ${{ matrix.profile }}
         disk-size: 6000M
         emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
         script: bash smoke.sh
@@ -728,7 +743,7 @@ jobs:
     - uses: actions/upload-artifact@v7
       if: always()
       with:
-        name: smoke-android
+        name: smoke-android-${{ matrix.abi }}
         path: |
           screenshot.png
           logcat.txt
