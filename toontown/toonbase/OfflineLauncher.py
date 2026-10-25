@@ -385,24 +385,25 @@ class OfflineLauncher(DirectObject):
             button.reparentTo(panel)
 
     def showMobile(self):
-        panel = self.openPanel('MOBILE', titleZ=0.44, closeZ=-0.43, closeScale=0.75)
+        panel = self.openPanel('MOBILE', titleZ=0.45, closeZ=-0.43, closeScale=0.75)
         self.mobileButtons = {}
+        # Each description sits on one line in the gap under its button.
         rows = (
-            ('render-scale', RENDER_SCALES, 'RENDER SCALE', 0.29,
-             'Draws the world at a lower resolution. Lower is faster but softer.'),
-            ('filtering', FILTERING, 'TEXTURE FILTERING', 0.07,
-             'Keeps the ground sharp into the distance. Lower is faster.'),
-            ('antialiasing', ANTIALIASING, 'ANTI-ALIASING', -0.15,
-             'Smooths jagged edges but costs speed. Takes effect the next time the game starts.'),
+            ('render-scale', RENDER_SCALES, 'RENDER SCALE', 0.31,
+             'Draws the world smaller. Lower is faster but softer.'),
+            ('filtering', FILTERING, 'TEXTURE FILTERING', 0.065,
+             'Keeps far-off ground sharp. Lower is faster.'),
+            ('antialiasing', ANTIALIASING, 'ANTI-ALIASING', -0.18,
+             'Smooths jagged edges. Costs speed, applies on next start.'),
         )
         for key, choices, title, z, text in rows:
-            button = self.redButton('', (0, 0, z), self.cycleMobile, textScale=0.05, imageScale=(2.9, 1, 1.6))
+            button = self.redButton('', (0, 0, z), self.cycleMobile, textScale=0.05, imageScale=(2.9, 1, 1.25))
             button['extraArgs'] = [key, choices, title]
             button.reparentTo(panel)
             self.mobileButtons[key] = button
             self.showMobileValue(key, choices, title)
-            DirectLabel(parent=panel, relief=None, pos=(0, 0, z - 0.1), text_font=self.interfaceFont,
-                        text_scale=0.04, text_fg=TEXT_DARK, text_wordwrap=30, text=text)
+            DirectLabel(parent=panel, relief=None, pos=(0, 0, z - 0.125), text_font=self.interfaceFont,
+                        text_scale=0.042, text_fg=TEXT_DARK, text_wordwrap=40, text=text)
 
     def showMobileValue(self, key, choices, title):
         value = mobileSetting(key, choices, self.settings)
