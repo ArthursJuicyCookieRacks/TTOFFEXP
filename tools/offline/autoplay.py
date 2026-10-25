@@ -3078,8 +3078,29 @@ def withNPCs(scenario, battleKinds):
     return run
 
 
+def scenarioExitToontown():
+    # Shticker Book > Options > Exit Toontown goes back to Pick-A-Toon, and the
+    # toon can play again from there.
+    yield until(walking, 60, 'walking before opening the book')
+    place().fsm.request('stickerBook')
+    yield until(lambda: place().isAccepting('bookDone'), 30, 'the Shticker Book open')
+    book = localAvatar.book
+    book.doneStatus = {'mode': 'exit', 'exitTo': 'closeShard'}
+    base.cr._userLoggingOut = True
+    messenger.send(book.doneEvent)
+    yield until(lambda: loginState() == 'chooseAvatar', 120, 'Pick-A-Toon after Exit Toontown')
+    yield sleep(2)
+    base.screenshot(os.path.join(os.environ.get('AUTOPLAY_SHOTS', '.'), 'exit-toontown.png'), defaultFilename=0)
+    chooser = base.cr.avChoice
+    chooser.choice = 0
+    messenger.send(chooser.doneEvent, [{'mode': 'chose'}])
+    yield until(lambda: loginState() == 'playingGame', 180, 'playing again')
+    yield until(walking, 180, 'walking in the playground again')
+
+
 SCENARIOS = [
     ('login', scenarioLogin),
+    ('exittoontown', scenarioExitToontown),
     ('npcs', scenarioNPCs),
     ('npcbuilding', withNPCs(scenarioBuilding, ['DistributedBattleBldgAI'])),
     ('npcfactory', withNPCs(scenarioFactory, ['DistributedBattleFactoryAI'])),
