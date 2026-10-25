@@ -87,11 +87,8 @@ def main():
     ]))
     if sys.platform == 'android':
         # Phones and tablets have OpenGL ES rather than desktop OpenGL, and
-        # no keyboard, so the game gets on-screen controls. OpenGL ES has no
-        # alpha test, which Panda3D's "dual" transparency (used by most of the
-        # models) needs to leave out the see-through parts, so those draw as
-        # plain alpha blending instead (m-dual 0).
-        loadPrcFileData('OfflineStart Android', 'load-display pandagles2\naux-display pandagles\nwant-touch-controls 1\nm-dual 0')
+        # no keyboard, so the game gets on-screen controls.
+        loadPrcFileData('OfflineStart Android', 'load-display pandagles2\naux-display pandagles\nwant-touch-controls 1')
     mountPhases(gameDir)
 
     from otp.local import NullHTTP

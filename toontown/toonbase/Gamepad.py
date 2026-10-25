@@ -17,11 +17,13 @@ The controller takes over as soon as it is used, and on a touch screen the
 on-screen controls go away while it is; touching the screen brings them back.
 """
 
+import struct
 import sys
 
 from direct.directnotify import DirectNotifyGlobal
 from direct.showbase.DirectObject import DirectObject
-from panda3d.core import ButtonRegistry, Camera, InputDevice, MouseButton, NodePath, OrthographicLens, TransparencyAttrib
+from panda3d.core import ButtonRegistry, Camera, CardMaker, Filename, InputDevice, MouseButton, NodePath, OrthographicLens
+from panda3d.core import PNMImage, SamplerState, Texture, TransparencyAttrib, VirtualFileSystem
 
 # What each controller button presses.
 BUTTON_KEYS = {
@@ -248,8 +250,8 @@ class Gamepad(DirectObject):
         self.cursor.setPos(px / float(width) * 2 - 1, 0, 1 - py / float(height) * 2)
 
     def __makeCursor(self):
-        # A white arrow with a dark edge, in a layer over everything (the
-        # launcher's too).
+        # The game's own cursor (the one Windows shows), in a layer over
+        # everything (the launcher's too).
         root = NodePath('gamepadCursor')
         lens = OrthographicLens()
         lens.setFilmSize(2, 2)
@@ -261,25 +263,48 @@ class Gamepad(DirectObject):
         root.setDepthTest(False)
         root.setDepthWrite(False)
         root.setTransparency(TransparencyAttrib.MAlpha)
-        from panda3d.core import GeomVertexFormat, GeomVertexData, GeomVertexWriter, GeomTriangles, Geom, GeomNode
-        aspect = base.getAspectRatio()
-        for scale, color in ((1.25, (0.1, 0.1, 0.2, 1)), (1.0, (1, 1, 1, 1))):
-            data = GeomVertexData('cursor', GeomVertexFormat.getV3(), Geom.UHStatic)
-            writer = GeomVertexWriter(data, 'vertex')
-            size = 0.06 * scale
-            for x, z in ((0, 0), (0.0, -size), (size * 0.72, -size * 0.72)):
-                writer.addData3(x / aspect - (scale - 1) * 0.01, 0, z + (scale - 1) * 0.012)
-            tris = GeomTriangles(Geom.UHStatic)
-            tris.addVertices(0, 1, 2)
-            geom = Geom(data)
-            geom.addPrimitive(tris)
-            node = GeomNode('cursorPart')
-            node.addGeom(geom)
-            part = root.attachNewNode(node)
-            part.setColor(*color)
-            part.setTwoSided(True)
         self.cursorArrow = root.attachNewNode('arrow')
-        for part in root.findAllMatches('cursorPart'):
-            part.reparentTo(self.cursorArrow)
+        texture, hotspot = loadCursor('/phase_3/etc/toonmono.cur')
+        card = CardMaker('cursor')
+        # The film is 2 high, so this is 5% of the screen's height.
+        size = 0.1
+        aspect = base.getAspectRatio()
+        hx, hy = hotspot[0] / float(texture.getXSize()), hotspot[1] / float(texture.getYSize())
+        card.setFrame(-hx * size / aspect, (1 - hx) * size / aspect, -(1 - hy) * size, hy * size)
+        image = self.cursorArrow.attachNewNode(card.generate())
+        image.setTexture(texture)
         self.cursorArrow.hide()
         return self.cursorArrow
+
+
+def loadCursor(path):
+    """A monochrome Windows .cur file as a texture, and its hot spot in pixels."""
+    data = VirtualFileSystem.getGlobalPtr().readFile(Filename(path), True)
+    offset = struct.unpack_from('<I', data, 18)[0]
+    hotspot = struct.unpack_from('<HH', data, 10)
+    width, height = struct.unpack_from('<ii', data, offset + 4)
+    # The height counts the color and the transparency masks.
+    height //= 2
+    header = struct.unpack_from('<I', data, offset)[0]
+    palette = [data[offset + header + i * 4:offset + header + i * 4 + 3] for i in range(2)]
+    stride = (width + 31) // 32 * 4
+    xorMask = offset + header + 8
+    andMask = xorMask + stride * height
+    image = PNMImage(width, height, 4)
+    for y in range(height):
+        # The rows go from the bottom up.
+        row = height - 1 - y
+        for x in range(width):
+            bit = 0x80 >> (x % 8)
+            color = 1 if data[xorMask + row * stride + x // 8] & bit else 0
+            if data[andMask + row * stride + x // 8] & bit:
+                # Transparent, or "invert the screen", which shows as dark.
+                image.setXelA(x, y, 0, 0, 0, color * 0.8)
+            else:
+                b, g, r = palette[color]
+                image.setXelA(x, y, r / 255.0, g / 255.0, b / 255.0, 1)
+    texture = Texture('gamepadCursor')
+    texture.load(image)
+    texture.setMinfilter(SamplerState.FT_nearest)
+    texture.setMagfilter(SamplerState.FT_nearest)
+    return texture, hotspot

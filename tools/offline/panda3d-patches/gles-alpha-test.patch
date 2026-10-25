@@ -1,0 +1,153 @@
+diff --git a/panda/src/display/graphicsStateGuardian.cxx b/panda/src/display/graphicsStateGuardian.cxx
+index 9a318a2..64e4468 100644
+--- a/panda/src/display/graphicsStateGuardian.cxx
++++ b/panda/src/display/graphicsStateGuardian.cxx
+@@ -15,6 +15,7 @@
+  *  get_supports_cg_profile)
+  */
+ 
++#include "alphaTestAttrib.h"
+ #include "graphicsStateGuardian.h"
+ #include "graphicsEngine.h"
+ #include "config_display.h"
+@@ -1453,6 +1454,13 @@ fetch_specified_part(Shader::ShaderMatInput part, InternalName *name,
+     }
+     return;
+   }
++  case Shader::SMO_attr_alpha_test: {
++    const AlphaTestAttrib *target_alpha_test;
++    _target_rs->get_attrib_def(target_alpha_test);
++    into[0].set((PN_stdfloat)target_alpha_test->get_mode(),
++                target_alpha_test->get_reference_alpha(), 0, 0);
++    return;
++  }
+   case Shader::SMO_tex_is_alpha_i: {
+     // This is a hack so we can support both F_alpha and other formats in the
+     // default shader, to fix font rendering in GLES2
+diff --git a/panda/src/glstuff/glGraphicsStateGuardian_src.cxx b/panda/src/glstuff/glGraphicsStateGuardian_src.cxx
+index 0c59c4f..f7344e8 100644
+--- a/panda/src/glstuff/glGraphicsStateGuardian_src.cxx
++++ b/panda/src/glstuff/glGraphicsStateGuardian_src.cxx
+@@ -278,6 +278,7 @@ static const string default_fshader =
+   "out vec4 p3d_FragColor;\n"
+   "uniform sampler2D p3d_Texture0;\n"
+   "uniform vec4 p3d_TexAlphaOnly;\n"
++  "uniform vec4 p3d_AlphaTest;\n"
+ #else
+   "#version 100\n"
+   "precision mediump float;\n"
+@@ -289,16 +290,33 @@ static const string default_fshader =
+   "varying lowp vec4 color;\n"
+   "uniform lowp sampler2D p3d_Texture0;\n"
+   "uniform lowp vec4 p3d_TexAlphaOnly;\n"
+-#endif
++  "uniform mediump vec4 p3d_AlphaTest;\n"
++#endif
++  // There is no fixed-function alpha test here: x is the AlphaTestAttrib
++  // mode (M_none=0 .. M_always=8) and y its reference alpha.
++  "bool alpha_test(float a) {\n"
++  "  int mode = int(p3d_AlphaTest.x + 0.5);\n"
++  "  float ref = p3d_AlphaTest.y;\n"
++  "  if (mode == 1) return false;\n"
++  "  if (mode == 2) return a < ref;\n"
++  "  if (mode == 3) return a == ref;\n"
++  "  if (mode == 4) return a <= ref;\n"
++  "  if (mode == 5) return a > ref;\n"
++  "  if (mode == 6) return a != ref;\n"
++  "  if (mode == 7) return a >= ref;\n"
++  "  return true;\n"
++  "}\n"
+   "void main(void) {\n"
+ #ifndef OPENGLES
+   "  p3d_FragColor = textureProj(p3d_Texture0, texcoord);\n"
+   "  p3d_FragColor += p3d_TexAlphaOnly;\n" // Hack for text rendering
+   "  p3d_FragColor *= color;\n"
++  "  if (!alpha_test(p3d_FragColor.a)) discard;\n"
+ #else
+   "  gl_FragColor = texture2DProj(p3d_Texture0, texcoord);\n"
+   "  gl_FragColor += p3d_TexAlphaOnly;\n" // Hack for text rendering
+   "  gl_FragColor *= color;\n"
++  "  if (!alpha_test(gl_FragColor.a)) discard;\n"
+ #endif
+   "}\n";
+ #endif
+diff --git a/panda/src/glstuff/glShaderContext_src.cxx b/panda/src/glstuff/glShaderContext_src.cxx
+index 54ce8fc..1515c56 100644
+--- a/panda/src/glstuff/glShaderContext_src.cxx
++++ b/panda/src/glstuff/glShaderContext_src.cxx
+@@ -16,6 +16,7 @@
+ 
+ #ifndef OPENGLES_1
+ 
++#include "alphaTestAttrib.h"
+ #include "pStatGPUTimer.h"
+ 
+ #include "colorAttrib.h"
+@@ -1477,6 +1478,18 @@ reflect_uniform(int i, char *name_buffer, GLsizei name_buflen) {
+       _slider_table_size = param_size;
+       return;
+     }
++    if (noprefix == "AlphaTest") {
++      Shader::ShaderMatSpec bind;
++      bind._id = arg_id;
++      bind._func = Shader::SMF_first;
++      bind._part[0] = Shader::SMO_attr_alpha_test;
++      bind._arg[0] = nullptr;
++      bind._part[1] = Shader::SMO_identity;
++      bind._arg[1] = nullptr;
++      bind._piece = Shader::SMP_vec4;
++      _shader->cp_add_mat_spec(bind);
++      return;
++    }
+     if (noprefix == "TexAlphaOnly") {
+       Shader::ShaderMatSpec bind;
+       bind._id = arg_id;
+@@ -2309,7 +2322,9 @@ set_state_and_transform(const RenderState *target_rs,
+       altered |= Shader::SSD_tex_gen;
+     }
+     if (state_rs->get_attrib(RenderModeAttrib::get_class_slot()) !=
+-        target_rs->get_attrib(RenderModeAttrib::get_class_slot())) {
++        target_rs->get_attrib(RenderModeAttrib::get_class_slot()) ||
++        state_rs->get_attrib(AlphaTestAttrib::get_class_slot()) !=
++        target_rs->get_attrib(AlphaTestAttrib::get_class_slot())) {
+       altered |= Shader::SSD_render_mode;
+     }
+     _state_rs = target_rs;
+diff --git a/panda/src/gobj/shader.cxx b/panda/src/gobj/shader.cxx
+index 215046b..ca4601e 100644
+--- a/panda/src/gobj/shader.cxx
++++ b/panda/src/gobj/shader.cxx
+@@ -505,6 +505,9 @@ cp_dependency(ShaderMatInput inp) {
+   if (inp == SMO_texconst_i) {
+     dep |= SSD_tex_gen;
+   }
++  if (inp == SMO_attr_alpha_test) {
++    dep |= SSD_render_mode;
++  }
+   if (inp == SMO_attr_pointparams) {
+     dep |= SSD_render_mode | SSD_transform | SSD_frame;
+   }
+@@ -545,6 +548,7 @@ cp_size(ShaderMatInput inp) {
+   case SMO_texcolor_i:
+   case SMO_texconst_i:
+   case SMO_attr_pointparams:
++  case SMO_attr_alpha_test:
+     return 1;
+ 
+   case SMO_identity:
+diff --git a/panda/src/gobj/shader.h b/panda/src/gobj/shader.h
+index 6588a9c..5b0bf04 100644
+--- a/panda/src/gobj/shader.h
++++ b/panda/src/gobj/shader.h
+@@ -215,6 +215,11 @@ public:
+     // Point parameters
+     SMO_attr_pointparams,
+ 
++    // Mode and reference of the AlphaTestAttrib, for shaders that do the
++    // alpha test themselves (the default shader, where there is no
++    // fixed-function alpha test).
++    SMO_attr_alpha_test,
++
+     SMO_INVALID
+   };
+ 
