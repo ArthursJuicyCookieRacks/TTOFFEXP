@@ -4,8 +4,6 @@ from toontown.toonbase import ToontownGlobals
 from toontown.toonbase import TTLocalizer
 import random
 
-# How many times the background tile repeats across and down the screen.
-BACKGROUND_TILES = (20.0, 8.6)
 LOGO_POS = (0, 0, 0.6)
 LOGO_SCALE = 0.155
 
@@ -15,10 +13,6 @@ class ToontownLoadingScreen:
         self.__expectedCount = 0
         self.__count = 0
         self.gui = loader.loadModel('phase_3/models/gui/progress-background')
-        # The background picture is a small tile, repeated over the screen.
-        background = self.gui.find('**/+GeomNode')
-        if not background.isEmpty():
-            background.setTexScale(TextureStage.getDefault(), BACKGROUND_TILES[0], BACKGROUND_TILES[1])
         # The game's logo over the top, as the original loading screen had it.
         logo = loader.loadModel('phase_3/models/gui/toontown-logo', okMissing=True)
         self.logo = logo.find('**/logo') if logo else NodePath()

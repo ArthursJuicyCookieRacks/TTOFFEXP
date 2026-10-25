@@ -305,7 +305,7 @@ class OfflineLauncher(DirectObject):
         return self.panel
 
     def showSettings(self):
-        panel = self.openPanel('SETTINGS', titleZ=0.5, closeZ=-0.425, closeScale=0.75)
+        panel = self.openPanel('SETTINGS', titleZ=0.5, closeZ=-0.445, closeScale=0.75)
         self.touchButton = self.redButton(self.touchText(), (0, 0, 0.355), self.toggleTouch, textScale=0.05,
                                           imageScale=(2.9, 1, 1.8))
         self.touchButton.reparentTo(panel)
@@ -328,7 +328,7 @@ class OfflineLauncher(DirectObject):
         DirectLabel(parent=panel, relief=None, pos=(0, 0, -0.105), text_font=self.interfaceFont,
                     text_scale=0.04, text_fg=TEXT_DARK, text='Each one turned on makes the game take longer to start.')
         # How many NPC toons each place gets.
-        DirectLabel(parent=panel, relief=None, pos=(0, 0, -0.18), text_font=self.interfaceFont,
+        DirectLabel(parent=panel, relief=None, pos=(0, 0, -0.165), text_font=self.interfaceFont,
                     text_scale=0.045, text_fg=TEXT_DARK, text='NPC toons in each place')
         self.npcLabel = DirectLabel(parent=panel, relief=None, pos=(0, 0, -0.28), text_font=self.minnieFont,
                                     text_scale=0.08, text_fg=RED, text=str(npcsPerArea(self.settings)))

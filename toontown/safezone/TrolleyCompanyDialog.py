@@ -41,8 +41,8 @@ class TrolleyCompanyDialog(DirectFrame):
             DirectButton(parent=self, relief=None, image=images, image_scale=(1.0, 1, 1.4), pos=(-0.25 + i * 0.5, 0, -0.04),
                          text=text, text_scale=0.055, text_pos=(0, -0.018), text_font=font,
                          command=self.choose, extraArgs=[company])
-        DirectButton(parent=self, relief=None, image=images, image_scale=(0.7, 1, 1.1), pos=(0, 0, -0.24),
-                     text='Cancel', text_scale=0.045, text_pos=(0, -0.014), text_font=font,
+        DirectButton(parent=self, relief=None, image=images, image_scale=(1.0, 1, 1.4), pos=(0, 0, -0.25),
+                     text='Cancel', text_scale=0.055, text_pos=(0, -0.018), text_font=font,
                      command=self.cancel)
         buttons.removeNode()
 
