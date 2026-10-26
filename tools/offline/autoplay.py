@@ -3117,10 +3117,47 @@ def scenarioDisplaySettings():
     yield until(walking, 30, 'still walking after the display changes')
 
 
+def scenarioNPCStairs():
+    # No NPC toon starts or ends up under stairs (Toontown Central has some).
+    from toontown.npcplayers.NPCNav import getNav
+    hoodId = ToontownGlobals.ToontownCentral
+    if ZoneUtil.getHoodId(localAvatar.zoneId) == hoodId:
+        yield from teleport(ToontownGlobals.DonaldsDock)
+    yield from teleport(hoodId)
+
+    def positions(air):
+        area = air.npcPlayerManager.areas.get(hoodId)
+        return [(npc.doId, Point3(npc.getPos())) for npc in (area.npcs if area else ()) if not npc.isDeleted()]
+
+    def anchors(air):
+        area = air.npcPlayerManager.areas.get(hoodId)
+        return [p for p, z in area.anchors] if area else []
+
+    nav = getNav()
+    covered = [p for p in onDistrict(anchors) if nav.groundZ(*p) is not None and
+               nav.covered(p[0], p[1], nav.groundZ(*p))]
+    log('Toontown Central spots under stairs: %d %s' % (len(covered), [tuple(round(c, 1) for c in p) for p in covered]))
+    stuck = set()
+    end = time.time() + 45
+    while time.time() < end:
+        for doId, pos in onDistrict(positions):
+            ground = nav.groundZ(pos[0], pos[1], pos[2])
+            if (ground is None or abs(ground - pos[2]) > 1.0) and doId not in stuck:
+                log('NPC %d off the ground at %s (ground %s)' % (doId, tuple(round(c, 1) for c in pos), ground))
+            if nav.covered(pos[0], pos[1], pos[2]):
+                if doId not in stuck:
+                    log('NPC %d under stairs at %s' % (doId, tuple(round(c, 1) for c in pos)))
+                stuck.add(doId)
+        yield sleep(0.5)
+    if stuck:
+        raise AssertionError('%d NPC toons went under stairs' % len(stuck))
+
+
 SCENARIOS = [
     ('login', scenarioLogin),
     ('exittoontown', scenarioExitToontown),
     ('displaysettings', scenarioDisplaySettings),
+    ('npcstairs', scenarioNPCStairs),
     ('npcs', scenarioNPCs),
     ('npcbuilding', withNPCs(scenarioBuilding, ['DistributedBattleBldgAI'])),
     ('npcfactory', withNPCs(scenarioFactory, ['DistributedBattleFactoryAI'])),

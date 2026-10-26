@@ -53,3 +53,6 @@ class TTSCToolsMenu(SCMenu):
         self.append(TTSCMaxToonTerminal())
         self.append(TTSCToolsTerminal('sostoons', '~sostoons'))
         self.append(TTSCToolsTerminal('unites', '~unites'))
+        self.append(TTSCToolsTerminal('Unlimited Gags', '~unlimitedGags'))
+        self.append(TTSCToolsTerminal('Summons', '~summons'))
+        self.append(TTSCToolsTerminal('Restock Fires', '~pinkslips'))

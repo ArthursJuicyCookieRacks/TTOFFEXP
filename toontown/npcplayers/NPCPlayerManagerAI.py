@@ -311,7 +311,7 @@ class NPCPlayerManagerAI:
                     if npc.crew is not None or npc.busy or npc.isDeleted():
                         continue
                     pos = npc.getPos()
-                    ground = nav.groundZ(pos[0], pos[1], pos[2])
+                    ground = nav.standZ(pos[0], pos[1], pos[2])
                     if ground is None:
                         self.despawn(npc, quietly=True)
                     elif abs(ground - pos[2]) > 0.01:
@@ -329,7 +329,7 @@ class NPCPlayerManagerAI:
                 spots.remove(spot)
                 point = Point3(spot[0])
                 if scene is not None:
-                    ground = nav.groundZ(point[0], point[1], point[2])
+                    ground = nav.standZ(point[0], point[1], point[2])
                     if ground is None:
                         continue
                     point[2] = ground
@@ -371,6 +371,23 @@ class NPCPlayerManagerAI:
             area.readySince = now
         return now - area.readySince >= PLACE_SETTLE
 
+    def clientIn(self, area):
+        """Whether the scene the walks are checked against is this area's.
+
+        Offline, the ground and walls come from whatever place the player's
+        game shows. While it still shows the place being left (or is loading
+        the next), a walk worked out for another area would follow that
+        place's ground, and the toon would end up in the air or under the
+        floor, e.g. under Toontown Central's steps.
+        """
+        base = getClientBuiltin('base')
+        if base is None or getClientBuiltin('localAvatar') is None:
+            return True
+        cr = getattr(base, 'cr', None)
+        place = cr.playGame.getPlace() if cr is not None and cr.playGame else None
+        zoneId = getattr(place, 'zoneId', None)
+        return zoneId is not None and getAreaId(zoneId) == area.areaId
+
     def populate(self, area, player, playerPos):
         if not self.placeReady(area, player):
             return
@@ -396,7 +413,7 @@ class NPCPlayerManagerAI:
         points = area.points()
         random.shuffle(points)
         for point, zoneId in sorted(points[:12], key=lambda p: self.crowding(area, p[0])):
-            ground = nav.groundZ(point[0], point[1], point[2])
+            ground = nav.standZ(point[0], point[1], point[2])
             if ground is not None:
                 return Point3(point[0], point[1], ground), zoneId
         # Somewhere near the player, in sight of them.
@@ -470,7 +487,7 @@ class NPCPlayerManagerAI:
             if getattr(npc, 'faceH', None) is not None:
                 self.turnNPC(npc, dt)
                 return
-            if area is None or now < npc.idleUntil:
+            if area is None or now < npc.idleUntil or not self.clientIn(area):
                 return
             # Mostly on the move, the way players run about; now and then
             # they stop for something.

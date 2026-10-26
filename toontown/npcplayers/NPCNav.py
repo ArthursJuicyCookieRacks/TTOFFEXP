@@ -17,6 +17,8 @@ STEP_UP = 3.0
 # A walk may not drop the toon further than this in one step.
 MAX_DROP = 4.0
 CHEST = 2.0
+# Floor this close over a spot means it is under stairs or a ramp.
+HEADROOM = 12.0
 
 
 class NPCNav:
@@ -80,6 +82,30 @@ class NPCNav:
             return None
         return best
 
+    def covered(self, x, y, z):
+        """Whether there is floor overhead at (x, y), as under a staircase."""
+        scene = self.getScene()
+        if scene is None:
+            return False
+        self.ray.setOrigin(x, y, z + HEADROOM)
+        self.ray.setDirection(0, 0, -1)
+        self.traverser.clearColliders()
+        self.traverser.addCollider(self.rayPath, self.queue)
+        self.traverse(scene)
+        for i in range(self.queue.getNumEntries()):
+            hitZ = self.queue.getEntry(i).getSurfacePoint(scene).getZ()
+            if z + STEP_UP < hitZ <= z + HEADROOM:
+                return True
+        return False
+
+    def standZ(self, x, y, z):
+        """The ground a toon can stand on at (x, y) near height z: groundZ,
+        but None under stairs, where the toon would be stuck."""
+        ground = self.groundZ(x, y, z)
+        if ground is None or self.covered(x, y, ground):
+            return None
+        return ground
+
     def clearLine(self, a, b):
         """Whether a toon can walk straight from a to b without hitting a wall."""
         scene = self.getScene()
@@ -115,6 +141,9 @@ class NPCNav:
                 return None
             z = ground
             points.append(Point3(p[0], p[1], z))
+        # Never stop under stairs; a toon there can't find its way out.
+        if self.covered(points[-1][0], points[-1][1], points[-1][2]):
+            return None
         return points
 
 
