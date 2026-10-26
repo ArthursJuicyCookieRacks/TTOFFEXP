@@ -1,7 +1,8 @@
 """Who an NPC player is: a name, a look, laff and gags that fit the place.
 
-A toon met on the Toontown Central streets is new to the game, and one in a
-boss lobby has maxed gags and laff, the way the players met there online were.
+A toon met on the Toontown Central streets is new to the game. At the Cog HQs
+and in the boss lobbies the toons are all sorts, from ones fresh out of The
+Brrrgh to maxed ones, the way the players met there online were.
 """
 
 import random
@@ -17,7 +18,7 @@ from toontown.toonbase.ToontownBattleGlobals import (
     Levels, HEAL_TRACK, TRAP_TRACK, LURE_TRACK, SOUND_TRACK, THROW_TRACK, SQUIRT_TRACK, DROP_TRACK)
 
 # For each place: the laff range, and the highest gag level (0 to 6) the
-# toons there have.
+# toons there have, or a range of them for places toons of all sorts visit.
 TIERS = {
     ToontownGlobals.ToontownCentral: ((20, 35), 2),
     ToontownGlobals.DonaldsDock: ((35, 50), 3),
@@ -25,23 +26,23 @@ TIERS = {
     ToontownGlobals.MinniesMelodyland: ((55, 75), 4),
     ToontownGlobals.TheBrrrgh: ((70, 90), 5),
     ToontownGlobals.DonaldsDreamland: ((85, 105), 5),
-    ToontownGlobals.SellbotHQ: ((90, 115), 5),
-    ToontownGlobals.CashbotHQ: ((105, 125), 6),
-    ToontownGlobals.LawbotHQ: ((115, 135), 6),
-    ToontownGlobals.BossbotHQ: ((125, 137), 6),
+    ToontownGlobals.SellbotHQ: ((70, 137), (5, 6)),
+    ToontownGlobals.CashbotHQ: ((75, 137), (5, 6)),
+    ToontownGlobals.LawbotHQ: ((80, 137), (5, 6)),
+    ToontownGlobals.BossbotHQ: ((85, 137), (5, 6)),
 }
-# The boss lobbies and the facilities are where the maxed toons are.
+# The boss lobbies: Brrrgh-level toons and up, a mix (Arthur asked).
 LOBBY_TIERS = {
-    ToontownGlobals.SellbotHQ: ((105, 137), 6),
-    ToontownGlobals.CashbotHQ: ((115, 137), 6),
-    ToontownGlobals.LawbotHQ: ((125, 137), 6),
-    ToontownGlobals.BossbotHQ: ((130, 137), 6),
+    ToontownGlobals.SellbotHQ: ((70, 137), (5, 6)),
+    ToontownGlobals.CashbotHQ: ((75, 137), (5, 6)),
+    ToontownGlobals.LawbotHQ: ((80, 137), (5, 6)),
+    ToontownGlobals.BossbotHQ: ((85, 137), (5, 6)),
 }
 LOBBIES = (ToontownGlobals.SellbotLobby, ToontownGlobals.CashbotLobby,
            ToontownGlobals.LawbotLobby, ToontownGlobals.BossbotLobby)
 COG_HQS = (ToontownGlobals.SellbotHQ, ToontownGlobals.CashbotHQ, ToontownGlobals.LawbotHQ, ToontownGlobals.BossbotHQ)
 # Places every kind of toon visits.
-MIXED_TIER = ((25, 137), 6)
+MIXED_TIER = ((25, 137), (2, 6))
 
 # Online, nearly everyone with a choice took these.
 CORE_TRACKS = (HEAL_TRACK, LURE_TRACK, THROW_TRACK, SQUIRT_TRACK)
@@ -74,13 +75,16 @@ def getTier(zoneId, player=None):
         tier = TIERS[hoodId]
     else:
         tier = MIXED_TIER
-    if player is not None:
-        # Nobody tags along with a toon much stronger than themselves.
-        (low, high), level = tier
+    (low, high), level = tier
+    if player is not None and hoodId not in COG_HQS:
+        # Out in the playgrounds nobody tags along with a toon much stronger
+        # than themselves. (The Cog HQs keep their mix of toons.)
         low = max(low, min(player.getMaxHp() - 10, 137))
         high = max(high, low)
-        tier = ((low, high), max(level, highestGagLevel(player)))
-    return tier
+        level = max(level if isinstance(level, int) else level[1], highestGagLevel(player))
+    if isinstance(level, int):
+        level = (level, level)
+    return ((low, high), level)
 
 
 def highestGagLevel(toon):
@@ -150,16 +154,22 @@ def pickAccessories(gender):
 
 
 def makeProfile(zoneId, player=None):
-    (laffLow, laffHigh), gagLevel = getTier(zoneId, player)
+    (laffLow, laffHigh), (gagLow, gagHigh) = getTier(zoneId, player)
     gender = random.choice(('m', 'f'))
     dna = ToonDNA.ToonDNA()
     dna.newToonRandom(gender=gender)
     dressFromCatalog(dna)
     maxHp = random.randint(laffLow, laffHigh)
+    # The more laff, the further along: the top gags come with the top laff.
+    along = float(maxHp - laffLow) / max(1, laffHigh - laffLow)
+    gagLevel = min(gagHigh, gagLow + int(along * (gagHigh - gagLow + 1) + random.uniform(-0.3, 0.3)))
+    gagLevel = max(gagLow, gagLevel)
 
     tracks = list(CORE_TRACKS)
-    numExtra = 2 if gagLevel >= 3 else 1
-    tracks += random.sample(EXTRA_TRACKS, numExtra)
+    numExtra = 1 if gagLevel < 3 else (2 if along < 0.6 or gagLevel < 6 else random.choice((2, 2, 3)))
+    numExtra = min(numExtra, len(EXTRA_TRACKS))
+    # Sound first: online nearly everyone past the first playgrounds had it.
+    tracks += [SOUND_TRACK] + random.sample((TRAP_TRACK, DROP_TRACK), numExtra - 1)
 
     trackAccess = [0] * len(Levels)
     experience = [0] * len(Levels)

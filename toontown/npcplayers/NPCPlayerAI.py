@@ -27,6 +27,9 @@ from toontown.toonbase import ToontownGlobals
 
 # How full an NPC keeps its gag bag: a share of a full one, picked once per
 # NPC.
+# The cog suits NPCs wear, from the lowest cog (0) to the top one (7); the
+# middle ones most often.
+SUIT_TYPES = (0, 1, 2, 2, 3, 3, 4, 4, 4, 5, 5, 5, 6, 6, 7)
 GAG_FILL = (0.45, 1.0)
 
 
@@ -68,13 +71,14 @@ class NPCPlayerAI(DistributedToonAI):
         self.fillBag()
 
     def giveCogSuits(self):
-        # The top cog of each department, with every part and the merits
-        # for the next promotion.
-        types = [SuitDNA.suitsPerDept - 1] * len(SuitDNA.suitDepts)
+        # Every part, so the toon can see the boss, but each suit a cog of
+        # its own somewhere up the department's ladder: players met in the
+        # lobbies were all sorts, not all the top cog.
+        types = [random.choice(SUIT_TYPES) for dept in SuitDNA.suitDepts]
         levels = []
         for dept in range(len(SuitDNA.suitDepts)):
             head = SuitDNA.suitHeadTypes[types[dept] + SuitDNA.suitsPerDept * dept]
-            levels.append(SuitBattleGlobals.SuitAttributes[head]['level'] + random.randint(0, 3))
+            levels.append(SuitBattleGlobals.SuitAttributes[head]['level'] + random.randint(0, 4))
         self.setCogTypes(types)
         self.setCogLevels(levels)
         self.setCogParts(list(CogDisguiseGlobals.PartsPerSuitBitmasks))

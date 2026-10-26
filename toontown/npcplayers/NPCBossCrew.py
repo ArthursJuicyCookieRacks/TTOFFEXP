@@ -70,11 +70,27 @@ ROAM_RANGE = (14.0, 40.0)
 BOSS_CLEAR = 11.0
 # Now and then an NPC stops to emote instead of walking.
 ROAM_EMOTE_CHANCE = 0.3
-ROAM_STATES = (('s', 'BattleThree'), ('m', 'BattleThree'), ('l', 'BattleThree'), ('c', 'BattleTwo'),
-               ('c', 'BattleFour'))
-# Chances an NPC is caught by the boss's attacks.
-AREA_HIT_CHANCE = 0.25
-DIRECTED_HIT_CHANCE = 0.6
+# Every stretch where the player's toon is let loose: the goes against the
+# boss, and the breaks after each cog fight and after the win.
+ROAM_STATES = (('s', 'RollToBattleTwo'), ('s', 'BattleTwo'), ('s', 'BattleThree'), ('s', 'NearVictory'),
+               ('s', 'Victory'), ('s', 'Reward'),
+               ('m', 'PrepareBattleThree'), ('m', 'BattleThree'), ('m', 'Victory'), ('m', 'Reward'),
+               ('l', 'RollToBattleTwo'), ('l', 'BattleTwo'), ('l', 'BattleThree'), ('l', 'NearVictory'),
+               ('l', 'Victory'), ('l', 'Reward'),
+               ('c', 'BattleTwo'), ('c', 'PrepareBattleFour'), ('c', 'BattleFour'), ('c', 'Victory'),
+               ('c', 'Reward'))
+# The boss's attacks on the NPCs: how close to his middle counts as touching
+# him, how often a jump clears an attack that can be jumped, how often a toon
+# in reach gets out of the way of a swat, and how long a hit toon is left alone
+# (as a stunned player is).
+BOSS_BODY = 9.0
+JUMP_CHANCE = 0.55
+DODGE_CHANCE = 0.3
+HIT_REST = 3.0
+JUMPABLE = (ToontownGlobals.BossCogAreaAttack, ToontownGlobals.BossCogDirectedAttack,
+            ToontownGlobals.BossCogSlowDirectedAttack, ToontownGlobals.BossCogGearDirectedAttack,
+            ToontownGlobals.BossCogGavelStomp, ToontownGlobals.BossCogGolfAreaAttack)
+HIT_STATES = ('BattleThree', 'BattleFour', 'RollToBattleTwo')
 HEAL_PLAYER_BELOW = 0.4
 HEAL_HIT_CHANCE = 0.7
 # A pie that misses lands on the floor this far from what it was thrown at.
@@ -96,6 +112,7 @@ class NPCBossCrew:
         self.dept = boss.dna.dept
         self.nextAction = {}
         self.lastAttack = None
+        self.safeUntil = {}
         self.pieSequence = {}
         self.foodNum = 1000
         self.stateSince = (None, 0)
@@ -177,7 +194,8 @@ class NPCBossCrew:
         if npc.walk is not None or npc.busy or now < self.nextRoam.get(npc.doId, 0):
             return
         self.nextRoam[npc.doId] = now + random.uniform(*ROAM_TIME)
-        if self.isStationed(npc):
+        if self.isStationed(npc) or npc.getBattleId() > 0 or getattr(npc, 'crew', None) is not None:
+            # Held by the game, or fighting the cogs.
             return
         center = self.bossPos()
         if center is None:
@@ -207,27 +225,61 @@ class NPCBossCrew:
     # --- Being hit ---
 
     def takeHits(self, members):
+        """The boss's attacks on the NPCs, where the player's game shows them:
+        an NPC that touches him (or that he rolls over) is zapped as a
+        player is; one in reach of a swat or his front is hit; and for an
+        attack that can be jumped, the NPCs try to jump it, not always in
+        time."""
         boss = self.boss
-        attack = (boss.attackCode, boss.attackAvId)
-        if attack == self.lastAttack:
+        if boss.getCurrentOrNextState() not in HIT_STATES:
             return
+        base = getClientBuiltin('base')
+        bossClient = base.cr.doId2do.get(boss.doId) if base is not None and getattr(base, 'cr', None) else None
+        if bossClient is None or bossClient.isEmpty():
+            return
+        now = globalClock.getFrameTime()
+        attack = (boss.attackCode, boss.attackAvId)
+        newAttack = attack != self.lastAttack
         self.lastAttack = attack
         code, target = attack
-        damage = ToontownGlobals.BossCogDamageLevels.get(code)
-        if not damage or boss.getCurrentOrNextState() not in ('BattleThree', 'BattleFour', 'RollToBattleTwo'):
-            return
         for npc in members:
-            chance = DIRECTED_HIT_CHANCE if target == npc.doId else AREA_HIT_CHANCE
-            if target and target != npc.doId:
+            client = base.cr.doId2do.get(npc.doId)
+            if client is None or client.isEmpty() or now < self.safeUntil.get(npc.doId, 0):
                 continue
-            if random.random() < chance:
-                pos = npc.getPos()
-                npc.asSender(boss.zapToon, pos[0], pos[1], pos[2], npc.getH(), 0, 0, 0, 0, code,
-                             globalClockDelta.getFrameNetworkTime(bits=16))
-                if npc.hp <= 0:
-                    # Gone sad, out of the fight.
-                    npc.asSender(boss.avatarExit)
-                    self.manager.party.disband(npc)
+            rel = client.getPos(bossClient.rotateNode)
+            flat = math.hypot(rel[0], rel[1])
+            hit = None
+            if flat < BOSS_BODY:
+                # Walked into him, or he rolled over it.
+                hit = ToontownGlobals.BossCogElectricFence
+            elif newAttack and code in (ToontownGlobals.BossCogSwatLeft, ToontownGlobals.BossCogSwatRight):
+                side = 10 if code == ToontownGlobals.BossCogSwatLeft else -10
+                if math.hypot(rel[0] - side, rel[1] + 5) < 12 and random.random() > DODGE_CHANCE:
+                    hit = code
+            elif newAttack and code == ToontownGlobals.BossCogFrontAttack:
+                if math.hypot(rel[0], rel[1] + 25) < 14 and random.random() > DODGE_CHANCE:
+                    hit = code
+            elif newAttack and code in JUMPABLE and (not target or target == npc.doId):
+                # Everyone in reach tries to jump it.
+                self.jump(npc)
+                if random.random() > JUMP_CHANCE:
+                    hit = code
+            if hit is None:
+                continue
+            self.safeUntil[npc.doId] = now + HIT_REST
+            pos = npc.getPos()
+            npc.asSender(boss.zapToon, pos[0], pos[1], pos[2], npc.getH(), 0, 0, 0, 0, hit,
+                         globalClockDelta.getFrameNetworkTime(bits=16))
+            self.count('boss hits on npcs')
+            if npc.hp <= 0:
+                # Gone sad, out of the fight.
+                npc.asSender(boss.avatarExit)
+                self.manager.party.disband(npc)
+
+    def jump(self, npc):
+        npc.b_setAnimState('jump', 1.0)
+        taskMgr.doMethodLater(1.2, lambda task: (not npc.isDeleted() and npc.b_setAnimState('neutral', 1.0)) and None,
+                              'npcBossJump-%d' % npc.doId)
 
     # --- Pies, for the look of it ---
 
