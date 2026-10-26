@@ -161,6 +161,22 @@ class DistributedBoardingPartyAI(DistributedObjectAI.DistributedObjectAI, Boardi
             self.groupListDict[leaderId] = [[leaderId], [inviteeId], []]
             self.addWacthAvStatus(leaderId)
             self.sendUpdateToAvatarId(inviteeId, 'postInvite', [leaderId, inviterId])
+        self.__npcAnswers(inviteeId, inviterId)
+
+    def __npcAnswers(self, inviteeId, inviterId):
+        # Offline, an NPC toon invited to a group says yes at once, and
+        # comes along with the inviter (see NPCPlayerManagerAI.joinGroup).
+        invitee = self.air.doId2do.get(inviteeId)
+        if not getattr(invitee, 'isNPCPlayer', lambda: False)() or inviteeId not in self.avIdDict:
+            return
+        leaderId = self.avIdDict[inviteeId]
+        if inviteeId in self.getGroupMemberList(leaderId):
+            return
+        self.air.callAsSender(inviteeId, self.requestAcceptInvite, leaderId, inviterId)
+        manager = getattr(self.air, 'npcPlayerManager', None)
+        inviter = self.air.doId2do.get(inviterId)
+        if manager is not None and inviter is not None and inviteeId in self.getGroupMemberList(leaderId):
+            manager.joinGroup(inviter, invitee)
 
     def requestCancelInvite(self, inviteeId):
         inviterId = self.air.getAvatarIdFromSender()

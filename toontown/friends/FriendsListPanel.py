@@ -571,6 +571,10 @@ class FriendsListPanel(DirectFrame, StateData.StateData):
                 newFriends.append((ignored, 0))
 
         if self.panelType == FLPAll or self.panelType == FLPOnline:
+            # Offline, the NPC toons around are friends too (see NPCFriends).
+            from toontown.npcplayers import NPCFriends
+            for avId in NPCFriends.npcFriends():
+                freeChatOneRef.append((avId, ToontownGlobals.FriendChat, 0, 0))
             if base.wantPets and base.localAvatar.hasPet():
                 petFriends.insert(0, (base.localAvatar.getPetId(), 0))
         for friendPair in list(self.friends.keys()):

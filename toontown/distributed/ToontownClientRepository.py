@@ -754,7 +754,7 @@ class ToontownClientRepository(OTPClientRepository.OTPClientRepository):
                 self.identifyFriend(doId)
                 return 1
 
-        return 0
+        return int(self.isNPCFriend(doId))
 
     def isAvatarFriend(self, doId):
         for friendId, flags in base.localAvatar.friendsList:
@@ -762,17 +762,23 @@ class ToontownClientRepository(OTPClientRepository.OTPClientRepository):
                 self.identifyFriend(doId)
                 return 1
 
-        return 0
+        return int(self.isNPCFriend(doId))
 
     def getFriendFlags(self, doId):
         for friendId, flags in base.localAvatar.friendsList:
             if friendId == doId:
                 return flags
 
-        return 0
+        return FriendChat if self.isNPCFriend(doId) else 0
 
     def isFriendOnline(self, doId):
-        return doId in self.friendsOnline
+        return doId in self.friendsOnline or self.isNPCFriend(doId)
+
+    def isNPCFriend(self, doId):
+        # Offline, the NPC toons around the player are friends (see
+        # NPCFriends).
+        from toontown.npcplayers import NPCFriends
+        return NPCFriends.isNPCFriend(doId)
 
     def addAvatarToFriendsList(self, avatar):
         self.friendsMap[avatar.doId] = avatar

@@ -624,6 +624,7 @@ class TalkAssistant(DirectObject.DirectObject):
         return error
 
     def sendWhisperTalk(self, message, receiverAvId):
+        self.whisperedNPC(receiverAvId)
         # Check if we are a true friend
         if (receiverAvId, True) in base.localAvatar.friendsList:
             base.cr.chatAgent.sendSFWhisperMessage(receiverAvId, message)
@@ -631,6 +632,14 @@ class TalkAssistant(DirectObject.DirectObject):
 
         base.cr.chatAgent.sendWhisperMessage(receiverAvId, message)
         return None
+
+    def whisperedNPC(self, receiverAvId):
+        # Offline, a whisper to an NPC toon asks it for help (see NPCFriends).
+        try:
+            from toontown.npcplayers import NPCFriends
+        except ImportError:
+            return
+        NPCFriends.whispered(receiverAvId)
 
     def sendAccountTalk(self, message, receiverAccount):
         base.cr.playerFriendsManager.sendUpdate('setTalkAccount', [receiverAccount, 0, '', message, [], 0])
@@ -666,6 +675,7 @@ class TalkAssistant(DirectObject.DirectObject):
 
     def sendAvatarWhisperSpeedChat(self, type, messageIndex, receiverId):
         error = None
+        self.whisperedNPC(receiverId)
         if type == SPEEDCHAT_NORMAL:
             base.localAvatar.whisperSCTo(messageIndex, receiverId, 0)
             message = self.SCDecoder.decodeSCStaticTextMsg(messageIndex)
