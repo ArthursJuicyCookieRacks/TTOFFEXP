@@ -16,6 +16,8 @@ from direct.task import Task
 from panda3d.core import Point3
 
 from toontown.building.DistributedElevatorAI import DistributedElevatorAI
+from toontown.building.DistributedElevatorExtAI import DistributedElevatorExtAI
+from otp.local.ExecutionContext import getClientBuiltin
 from toontown.building.DistributedElevatorFSMAI import DistributedElevatorFSMAI
 from toontown.cogdominium.DistCogdoGameAI import DistCogdoGameAI
 from toontown.golf.DistributedGolfCourseAI import DistributedGolfCourseAI
@@ -33,6 +35,11 @@ TELEPORT_TIME = 2.6
 RUN_SPEED = ToontownGlobals.ToonForwardSpeed
 FOLLOW_DISTANCE = 10.0
 CATCH_UP_DISTANCE = 45.0
+# An NPC this close to the player gets on an elevator from where it is,
+# after a moment; one further off teleports in this far from the player.
+WALK_ON_DISTANCE = 70.0
+WALK_ON_DELAY = (0.4, 1.5)
+TELEPORT_IN_DISTANCE = (9.0, 14.0)
 
 # For each place that waits on every toon in it: the state it waits in, and
 # what the toon's client sends there. A place is matched by its class or the
@@ -132,7 +139,15 @@ class NPCParty:
                     npc.asSender(elevator.requestExit)
                     npc.busy = False
                 continue
-            if not players or None not in seats:
+            if not players:
+                elevator.npcDeclined = None
+                continue
+            if getattr(elevator, 'npcDeclined', None) == players[0].doId:
+                # The player sent them out (see readyAnswer); they stay out
+                # until the player gets off and on again.
+                continue
+            if None not in seats:
+                self.askReady(elevator, players[0])
                 continue
             if getattr(elevator, 'npcBoarding', 0) > globalClock.getFrameTime():
                 continue
@@ -150,6 +165,52 @@ class NPCParty:
                     elevator.npcOnTheWay = set()
                 elevator.npcOnTheWay.add(npc.doId)
                 self.board(npc, elevator, player)
+
+    # --- Ready to go? ---
+
+    def askReady(self, elevator, player):
+        """Every seat is taken, by the player and NPCs: the countdown stops
+        and the player is asked whether to go now (see NPCReadyPrompt)."""
+        if not isinstance(elevator, DistributedElevatorExtAI) or getattr(elevator, 'npcReadyAsked', False):
+            return
+        if elevator.fsm.getCurrentState().getName() != 'waitCountdown':
+            return
+        tasks = taskMgr.getTasksNamed(elevator.uniqueName('countdown-timer'))
+        if not tasks:
+            return
+        elevator.npcReadyAsked = True
+        elevator.npcTimeLeft = max(1.0, tasks[0].wakeTime - globalClock.getFrameTime())
+        taskMgr.remove(elevator.uniqueName('countdown-timer'))
+        base = getClientBuiltin('base')
+        client = base.cr.doId2do.get(elevator.doId) if base is not None and getattr(base, 'cr', None) else None
+        if client is not None:
+            # The client's elevator shows the question on its next frame.
+            client.npcReadyQuestion = True
+        self.notify.info('elevator %d is full; asking %d to start' % (elevator.doId, player.doId))
+
+    def readyAnswer(self, player, elevatorId, start):
+        elevator = self.air.doId2do.get(elevatorId)
+        if elevator is None or not getattr(elevator, 'npcReadyAsked', False):
+            return False
+        elevator.npcReadyAsked = False
+        if elevator.fsm.getCurrentState().getName() != 'waitCountdown':
+            return False
+        if start:
+            elevator.fsm.request('allAboard')
+            return True
+        # Everyone else walks out, and the countdown goes on.
+        elevator.npcDeclined = player.doId
+        for avId in list(seatsOf(elevator)):
+            npc = self.air.doId2do.get(avId) if avId else None
+            if isNPC(npc):
+                npc.asSender(elevator.requestExit)
+                npc.busy = False
+                # Back to wandering the lobby, not the player's party.
+                if npc in self.members:
+                    self.members.remove(npc)
+                npc.party = None
+        elevator.setCountdown(elevator.npcTimeLeft)
+        return True
 
     def pickBoarder(self, elevator, player):
         from toontown.npcplayers.NPCPlayerManagerAI import getAreaId
@@ -186,11 +247,19 @@ class NPCParty:
         npc.walk = None
         npc.busy = True
         playerPos = self.manager.getPlayerPos(player)
-        spot = self.spotNear(playerPos, 6.0)
-        if npc.zoneId != elevator.zoneId:
-            npc.b_setLocation(self.air.districtId, elevator.zoneId)
-        npc.placeAt(spot[0], spot[1], spot[2], random.uniform(-180, 180))
-        npc.b_setAnimState('TeleportIn', 1.0)
+        delay = TELEPORT_TIME
+        if npc.zoneId == elevator.zoneId and (npc.getPos() - Point3(playerPos)).length() < WALK_ON_DISTANCE:
+            # Close by: it just gets on, and the elevator walks it to its
+            # seat from where it stands.
+            delay = random.uniform(*WALK_ON_DELAY)
+        else:
+            # From elsewhere: it teleports in a little way off, never on top
+            # of the player (who is inside the elevator).
+            spot = self.spotNear(playerPos, random.uniform(*TELEPORT_IN_DISTANCE), avoid=playerPos)
+            if npc.zoneId != elevator.zoneId:
+                npc.b_setLocation(self.air.districtId, elevator.zoneId)
+            npc.placeAt(spot[0], spot[1], spot[2], random.uniform(-180, 180))
+            npc.b_setAnimState('TeleportIn', 1.0)
 
         def getOn(task):
             getattr(elevator, 'npcOnTheWay', set()).discard(npc.doId)
@@ -207,9 +276,9 @@ class NPCParty:
                 self.disband(npc)
             return Task.done
 
-        taskMgr.doMethodLater(TELEPORT_TIME, getOn, 'npcBoard-%d' % npc.doId)
+        taskMgr.doMethodLater(delay, getOn, 'npcBoard-%d' % npc.doId)
 
-    def spotNear(self, pos, distance):
+    def spotNear(self, pos, distance, avoid=None):
         nav = getNav()
         for i in range(8):
             angle = random.uniform(0, 2 * math.pi)
@@ -217,6 +286,16 @@ class NPCParty:
             ground = nav.groundZ(spot[0], spot[1], spot[2])
             if ground is not None and nav.clearLine(Point3(pos), Point3(spot[0], spot[1], ground)):
                 return Point3(spot[0], spot[1], ground)
+        if avoid is not None:
+            # From inside an elevator every line out hits its walls: any spot
+            # with ground under it that far off will do.
+            for i in range(8):
+                angle = random.uniform(0, 2 * math.pi)
+                spot = Point3(pos[0] + distance * math.cos(angle), pos[1] + distance * math.sin(angle), pos[2])
+                ground = nav.groundZ(spot[0], spot[1], spot[2])
+                if ground is not None:
+                    return Point3(spot[0], spot[1], ground)
+            return Point3(pos[0] + distance, pos[1], pos[2])
         return Point3(pos)
 
     # --- Going along ---

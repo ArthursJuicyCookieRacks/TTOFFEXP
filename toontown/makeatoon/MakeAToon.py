@@ -743,10 +743,18 @@ class MakeAToon(StateData.StateData):
         index = random.randint(0, len(self.crashSounds) - 1)
         base.playSfx(self.crashSounds[index], volume=self.sfxVolume)
 
+    def __rotateHeld(self):
+        watcher = base.mouseWatcherNode
+        return watcher is None or watcher.isButtonDown(MouseButton.one())
+
     def rotateToonLeft(self, event):
         taskMgr.add(self.rotateToonLeftTask, 'rotateToonLeftTask')
 
     def rotateToonLeftTask(self, task):
+        if not self.__rotateHeld():
+            # The release was missed (a controller click, a touch that left
+            # the window): stop rather than spin forever.
+            return task.done
         self.toon.setH(self.toon.getH() + self.hprDelta)
         return task.cont
 
@@ -757,6 +765,10 @@ class MakeAToon(StateData.StateData):
         taskMgr.add(self.rotateToonRightTask, 'rotateToonRightTask')
 
     def rotateToonRightTask(self, task):
+        if not self.__rotateHeld():
+            # The release was missed (a controller click, a touch that left
+            # the window): stop rather than spin forever.
+            return task.done
         self.toon.setH(self.toon.getH() - self.hprDelta)
         return task.cont
 

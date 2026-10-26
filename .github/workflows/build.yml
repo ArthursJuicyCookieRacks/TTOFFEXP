@@ -565,12 +565,14 @@ jobs:
         fi
         aab=$(ls dist/*.aab)
         python tools/offline/store_multifiles_uncompressed.py "$aab"
+        python tools/offline/add_adaptive_icon.py "$aab"
         java -jar bundletool.jar build-apks --bundle="$aab" --output=game.apks --mode=universal \
           --ks=game.keystore --ks-pass=pass:$ANDROID_KEYSTORE_PASSWORD --ks-key-alias=$ANDROID_KEY_ALIAS \
           --key-pass=pass:$ANDROID_KEYSTORE_PASSWORD
         python -m zipfile -e game.apks apks
         mv apks/universal.apk "${aab%.aab}.apk"
         python -m zipfile -l "${aab%.aab}.apk" > apk-contents.txt
+        grep -q 'res/mipmap-anydpi-v26/ic_launcher.xml' apk-contents.txt
         echo "::notice title=APK contents::$(grep -c 'lib/x86_64/libpy\.' apk-contents.txt) Python modules for x86_64; $(grep -E 'assets/phase_3\.mf|lib/x86_64/libpy\.math' apk-contents.txt | tr -s ' ' | tr '\n' ';')"
         ls -l dist
       env:

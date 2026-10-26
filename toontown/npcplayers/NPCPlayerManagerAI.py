@@ -86,6 +86,14 @@ CHEER_PHRASES = (300, 302, 303, 304, 306, 307, 308, 309, 311)
 GREET_RANGE = 18.0
 GREET_EVERY = 90.0
 
+# The boss lobbies: toons wear their cog suits there, as the player does.
+LOBBIES = (ToontownGlobals.SellbotLobby, ToontownGlobals.CashbotLobby,
+           ToontownGlobals.LawbotLobby, ToontownGlobals.BossbotLobby)
+# A lobby has no known spots to stand on; its floor is sampled this far apart.
+FLOOR_SAMPLE = 6.0
+# A walk in a lobby keeps to the floor it starts on (not up or along the
+# stairs) within this much.
+LOBBY_FLOOR_RISE = 1.0
 COG_HQ_AREAS = (
     ToontownGlobals.BossbotHQ, ToontownGlobals.BossbotLobby,
     ToontownGlobals.SellbotHQ, ToontownGlobals.SellbotLobby, ToontownGlobals.SellbotFactoryExt,
@@ -175,6 +183,7 @@ class NPCArea:
         self.anchors = []
         self.trail = []
         self.isStreet = areaId != ZoneUtil.getHoodId(areaId) and areaId not in COG_HQ_AREAS
+        self.isLobby = areaId in LOBBIES
         # The sidewalk spots, found from the cogs' paths once the place's
         # ground is there to look at (see NPCPlayerManagerAI.findSidewalks).
         self.sidewalks = []
@@ -368,6 +377,8 @@ class NPCPlayerManagerAI:
             if scene is not None:
                 # Behind the loading screen, so all of them at once.
                 self.findSidewalks(area, len(area.sidewalkQueue))
+                if not area.anchors:
+                    self.sampleFloor(area, scene)
             spots = list(area.anchors)
             random.shuffle(spots)
             sidewalks = list(area.sidewalks)
@@ -466,6 +477,31 @@ class NPCPlayerManagerAI:
         if spot is not None:
             self.spawn(area, spot[0], spot[1], player, inRoad)
 
+    def sampleFloor(self, area, scene):
+        """Spots to stand on for a place with none known (a boss lobby): its
+        main floor, every FLOOR_SAMPLE feet, not the stairs or what's under
+        them."""
+        nav = getNav()
+        bounds = scene.getTightBounds()
+        if not bounds:
+            return
+        low, high = bounds
+        found = []
+        x = low[0]
+        while x <= high[0]:
+            y = low[1]
+            while y <= high[1]:
+                ground = nav.standZ(x, y, 1.0)
+                if ground is not None:
+                    found.append(Point3(x, y, ground))
+                y += FLOOR_SAMPLE
+            x += FLOOR_SAMPLE
+        if not found:
+            return
+        floor = sorted(p[2] for p in found)[len(found) // 2]
+        area.anchors = [(p, area.areaId) for p in found if abs(p[2] - floor) <= LOBBY_FLOOR_RISE]
+        self.notify.info('area %d: %d floor spots sampled' % (area.areaId, len(area.anchors)))
+
     def nextRole(self, area):
         """Whether the next toon made for the area walks in the road."""
         if not area.isStreet:
@@ -536,6 +572,9 @@ class NPCPlayerManagerAI:
         npc.busy = False
         npc.generateInZone(zoneId, pos[0], pos[1], pos[2], random.uniform(-180, 180))
         npc.b_setAnimState('Happy', 1.0)
+        if area.isLobby and npc.cogTypes and npc.cogTypes[0] >= 0 and any(npc.cogLevels):
+            # In the boss lobby in a cog suit, like the player.
+            npc.b_setCogIndex(ToontownGlobals.cogHQZoneId2deptIndex(area.areaId))
         area.npcs.append(npc)
         return npc
 
@@ -752,6 +791,9 @@ class NPCPlayerManagerAI:
         for target, zoneId, friend in candidates:
             path = nav.walkable(pos, target)
             if path and sidewalk and not self.keepsToSidewalk(area, path, area.isSidewalk(pos)):
+                continue
+            if path and area.isLobby and max(abs(p[2] - pos[2]) for p in path) > LOBBY_FLOOR_RISE:
+                # Not up the stairs, nor through them.
                 continue
             if path:
                 # Players mostly run, and walk now and then.
@@ -1032,6 +1074,10 @@ class NPCPlayerManagerAI:
         taskMgr.doMethodLater(TELEPORT_TIME, landed, 'npcTeleportIn-%d' % npc.doId)
         self.stats['summons'] = self.stats.get('summons', 0) + 1
         return True
+
+    def readyAnswer(self, player, elevatorId, start):
+        # From the player's answer to the full elevator's question.
+        return self.party.readyAnswer(player, elevatorId, start)
 
     def joinGroup(self, player, npc):
         """An NPC toon in the player's boarding group goes where they go."""

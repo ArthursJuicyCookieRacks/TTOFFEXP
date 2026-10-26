@@ -58,6 +58,9 @@ TRIGGER_PRESS = 0.5
 # How long after the controller was last used a touch on the screen counts
 # as going back to touch.
 TOUCH_AFTER = 2.0
+# How long the game may think the left button is held, with no trigger held,
+# before the controller lets it go.
+STUCK_CLICK = 0.4
 
 
 def isActive():
@@ -75,6 +78,8 @@ class Gamepad(DirectObject):
         self.pressed = set()
         self.directions = set()
         self.clicking = False
+        self.stuckSince = None
+        self.analogTriggers = set()
         self.running = False
         self.pointer = None
         self.cursor = None
@@ -113,7 +118,10 @@ class Gamepad(DirectObject):
     # --- Reading the controller ---
 
     def __poll(self, task):
-        if not self.devices or base.win is None:
+        if base.win is None:
+            return task.cont
+        self.__checkStuckClick()
+        if not self.devices:
             return task.cont
         buttons = set()
         axes = {}
@@ -126,10 +134,16 @@ class Gamepad(DirectObject):
                 state = device.findAxis(getattr(InputDevice.Axis, axis))
                 if state is not None and abs(state.value) > abs(axes.get(axis, 0)):
                     axes[axis] = state.value
-        if axes.get('left_trigger', 0) > TRIGGER_PRESS:
-            buttons.add('ltrigger')
-        if axes.get('right_trigger', 0) > TRIGGER_PRESS:
-            buttons.add('rtrigger')
+        # A controller with analog triggers also reports them as buttons,
+        # and a phone can miss that button's release; once a trigger has
+        # moved, its analog value is the one to trust.
+        for axis, name in (('left_trigger', 'ltrigger'), ('right_trigger', 'rtrigger')):
+            if axes.get(axis, 0) > 0.1:
+                self.analogTriggers.add(axis)
+            if axis in self.analogTriggers:
+                buttons.discard(name)
+                if axes.get(axis, 0) > TRIGGER_PRESS:
+                    buttons.add(name)
 
         used = buttons or any(abs(axes.get(a, 0)) > STICK_DEAD_ZONE for a in ('left_x', 'left_y', 'right_x', 'right_y'))
         if used:
@@ -141,6 +155,22 @@ class Gamepad(DirectObject):
         self.__walk(axes.get('left_x', 0), axes.get('left_y', 0))
         self.__point(axes.get('right_x', 0), axes.get('right_y', 0), globalClock.getDt())
         return task.cont
+
+    def __checkStuckClick(self):
+        # A held button whose release never reached the game (Make-A-Toon's
+        # rotate arrows spun forever and nothing else could be pressed until
+        # the screen was tapped): let it go once no trigger holds it.
+        watcher = base.mouseWatcherNode
+        if not self.active or self.clicking or watcher is None or not watcher.isButtonDown(MouseButton.one()):
+            self.stuckSince = None
+            return
+        now = globalClock.getFrameTime()
+        if self.stuckSince is None:
+            self.stuckSince = now
+        elif now - self.stuckSince > STUCK_CLICK:
+            self.notify.info('letting go of a click that was never released')
+            base.win.getInputDevice(0).buttonUp(MouseButton.one())
+            self.stuckSince = None
 
     def __sprintStopped(self):
         # The toon stopped sprinting (a battle, a door...): the next press of

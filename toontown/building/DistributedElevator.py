@@ -382,10 +382,44 @@ class DistributedElevator(DistributedObject.DistributedObject):
         timeStr = str(countdownTime)
         if self.clockNode.getText() != timeStr:
             self.clockNode.setText(timeStr)
+        if getattr(self, 'npcReadyQuestion', False):
+            # Every seat is full with NPC toons (see NPCParty.askReady): the
+            # clock stops while the player is asked whether to start, once
+            # the last of them has finished running into its seat.
+            self.npcReadyQuestion = False
+            waitTask = Task(self.__waitSeated)
+            waitTask.timeLeft = max(1.0, task.duration - task.time)
+            waitTask.settledSince = None
+            taskMgr.add(waitTask, self.uniqueName('npcReadyWait'))
+            return Task.done
         if task.time >= task.duration:
             return Task.done
         else:
             return Task.cont
+
+    def __waitSeated(self, task):
+        if self.__toonTracks:
+            task.settledSince = None
+            return Task.cont
+        if task.settledSince is None:
+            task.settledSince = task.time
+        if task.time - task.settledSince < 0.5:
+            return Task.cont
+        self.__askReady(task.timeLeft)
+        return Task.done
+
+    def __askReady(self, timeLeft):
+        from toontown.npcplayers import NPCReadyPrompt
+
+        def answered(start):
+            self.npcReadyPrompt = None
+            if not start and hasattr(self, 'clockNode'):
+                self.countdown(timeLeft)
+
+        if not NPCReadyPrompt.wantAsk():
+            NPCReadyPrompt._call('readyAnswer', self.doId, True)
+            return
+        self.npcReadyPrompt = NPCReadyPrompt.NPCReadyPrompt(self.doId, answered)
 
     def countdown(self, duration):
         countdownTask = Task(self.timerTask)
@@ -403,6 +437,11 @@ class DistributedElevator(DistributedObject.DistributedObject):
         self.accept('elevatorExitButton', self.handleExitButton)
 
     def exitWaitCountdown(self):
+        taskMgr.remove(self.uniqueName('npcReadyWait'))
+        if getattr(self, 'npcReadyPrompt', None) is not None:
+            self.npcReadyPrompt.done = None
+            self.npcReadyPrompt.destroy()
+            self.npcReadyPrompt = None
         self.elevatorSphereNodePath.stash()
         self.ignore(self.uniqueName('enterelevatorSphere'))
         self.ignore('elevatorExitButton')

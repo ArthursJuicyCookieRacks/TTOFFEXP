@@ -2551,6 +2551,9 @@ for models, styles, prefix, extra in ((HatModels, HatStyles, 'mat_h', ExtraHatMo
     for n, model in enumerate(extra):
         styles['%s%d' % (prefix, n + 1)] = [len(models), 0, 0]
         models.append(model)
+# The scarf stays loadable for toons that wear one, but isn't offered (Arthur
+# asked to take it out of the backpacks).
+del BackpackStyles['mat_b%d' % (ExtraBackpackModels.index('phase_4/models/accessories/tt_m_chr_avt_acc_pac_scarf') + 1)]
 
 def isValidHat(itemIdx, textureIdx, colorIdx):
     for style in list(HatStyles.values()):
