@@ -17,8 +17,9 @@ Gag choices follow how good players played together online:
   * No drops on lured cogs, which they would miss.
   * Level 7 gags are kept for the big fights: three or more cogs of level 10
     and up, or a level 12 cog.
-  * On the streets and in the Cog HQs they choose at the last moment, as the
-    timer runs out, the way many players did.
+  * In a battle of NPCs alone they choose at the last moment, as the timer
+    runs out, the way many players did; with a player they choose straight
+    after the player.
 
 The NPCs fight on their own too, when they walk into a cog.
 """
@@ -46,7 +47,7 @@ TICK = 0.3
 CHOOSE_DELAY = 1.0
 # When no player has a choice to wait for.
 ALONE_DELAY = 3.0
-# On the street the NPCs choose when the player's timer shows this many
+# In a battle of NPCs alone they choose when the timer shows this many
 # seconds (a new pick each round).
 LAST_SECOND = (1.0, 2.5)
 # With no player in the battle, how long the NPCs give a movie when the
@@ -261,9 +262,10 @@ class NPCBattleCrew:
         self.notify.debug('waiting %s players %s responses %s' % ([n.doId for n in waiting], players, battle.responses))
         now = globalClock.getFrameTime()
         delay = CHOOSE_DELAY if players else ALONE_DELAY
-        if isinstance(battle, DistributedBattleAI) and battle.timer.isStarted():
-            # The last moment: what the player's timer shows, less a tick
-            # for each NPC still to choose after this one.
+        if not players and isinstance(battle, DistributedBattleAI) and battle.timer.isStarted():
+            # NPCs alone choose at the last moment: what the timer shows,
+            # less a tick for each NPC still to choose after this one. With
+            # a player in the battle they choose as soon as the player has.
             shown = battle.timer.getT() - SERVER_BUFFER_TIME
             if shown > self.lastSecond + TICK * (len(waiting) - 1):
                 return

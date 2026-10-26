@@ -1338,11 +1338,15 @@ def scenarioPets():
         magicWord('~spawn f 1')
         yield until(suitsNearby, 120, 'a cog on the street')
         suit = min(suitsNearby(), key=lambda s: (s.getPos(render) - localAvatar.getPos(render)).length())
-        while placeState() == 'walk' and not suit.isEmpty():
+        chaseUntil = time.time() + 20
+        while placeState() == 'walk' and not suit.isEmpty() and time.time() < chaseUntil:
             localAvatar.setPos(render, suit.getPos(render))
             yield sleep(0.1)
         if placeState() != 'walk':
             break
+        if time.time() >= chaseUntil:
+            # Caught up in an NPC battle that can't be joined: another cog.
+            magicWord('~spawn mh 12')
     yield until(lambda: townBattleState() == 'Attack', 120, 'the first gag choice')
     log('calling the doodle for help')
     townBattle().fsm.request('SOS')
@@ -3053,14 +3057,27 @@ def scenarioNPCs():
                 return len(battle.activeToons)
         return 0
     yield until(lambda: onDistrict(activeToons, localAvatar.doId) >= 3, 60, 'NPC players to stand in the battle')
+    # With the player in it, the battle fills all four spots.
+    yield until(lambda: onDistrict(battleToons, localAvatar.doId) >= 4, 90, 'the battle to fill with four toons')
     # Throw (they hit the same cog), trap (someone has to lure), sound
     # (nobody may lure), then throw again.
     plan = [THROW_TRACK, TRAP_TRACK, SOUND_TRACK, THROW_TRACK]
     rounds = 0
     deadline = time.time() + 900
+
+    def ownHistory(air, avId):
+        # The rounds of the player's own battle; NPC battles nearby keep
+        # their own.
+        for battle in air.npcPlayerManager.getBattles():
+            crew = air.npcPlayerManager.crews.get(battle.doId)
+            if avId in battle.toons and crew is not None:
+                return list(crew.history)
+        return None
+    history = []
     while placeState() == 'battle':
         if time.time() > deadline:
             raise StepFailed('the battle with NPC players did not end')
+        history = onDistrict(ownHistory, localAvatar.doId) or history
         if townBattleState() == 'Attack':
             track = plan[min(rounds, len(plan) - 1)]
             rounds += 1
@@ -3070,7 +3087,6 @@ def scenarioNPCs():
             yield until(lambda: townBattleState() != 'Attack', 30, 'gag choice to register')
         else:
             yield sleep(0.2)
-    history = onDistrict(lambda air: list(getattr(air.npcPlayerManager, 'lastHistory', [])))
     log('battle with NPC players won after %d rounds' % rounds)
     if not [r for r in history if [a for a in r[1] if a[1]]]:
         raise StepFailed('no NPC player chose a gag')
