@@ -41,6 +41,7 @@ sync-video 0
 want-magic-words 1
 trolley-ask-company 0
 npc-specials 0
+npc-elevator-ask 0
 ''' % {'db': DB})
 os.environ.setdefault('TTR_PLAYCOOKIE', 'autoplay')
 os.environ.setdefault('TTR_GAMESERVER', '127.0.0.1')
@@ -891,6 +892,11 @@ def fightBoss(interior, bossClass, actions, timeout=2400, prelude={}):
     while placeName() == interior:
         if time.time() > deadline:
             raise StepFailed('the %s did not end in %d seconds (boss state %s)' % (bossClass, timeout, boss.state))
+        shotEvery = float(os.environ.get('AUTOPLAY_BOSS_SHOTS', 0))
+        if shotEvery and time.time() >= getattr(boss, 'autoplayNextShot', 0):
+            boss.autoplayNextShot = time.time() + shotEvery
+            base.screenshot(os.path.join(os.environ.get('AUTOPLAY_SHOTS', '/tmp'), 'boss-%s-%s-%d.png' % (
+                bossClass, boss.state, int(time.time()))), defaultFilename=0)
         if boss.state != lastState:
             if lastState is not None:
                 log('boss state %s lasted %.0f s; %s' % (lastState, time.time() - stateStart, onDistrict(bossStatus, boss.doId)))
@@ -3004,6 +3010,13 @@ def checkGagRules(history):
         for a in npcs:
             if a[2] == DROP_TRACK and (a[4] in luredBefore or LURE_TRACK in tracks):
                 raise StepFailed('round %d: an NPC dropped on a lured cog' % number)
+        if SOUND_TRACK in [a[2] for a in players]:
+            def soundless(air, ids):
+                return [i for i in ids if i in air.doId2do and not air.doId2do[i].hasTrackAccess(SOUND_TRACK)]
+            skip = onDistrict(soundless, [a[0] for a in npcs])
+            for a in npcs:
+                if a[2] != SOUND_TRACK and a[0] not in skip:
+                    raise StepFailed('round %d: the player sounded and NPC %d did not' % (number, a[0]))
 
 
 def scenarioNPCs():
@@ -3063,6 +3076,117 @@ def scenarioNPCs():
         raise StepFailed('no NPC player chose a gag')
     checkGagRules(history)
     yield until(walking, 120, 'walking after the battle')
+
+
+def scenarioNPCToonUp():
+    # Sound first: every NPC sounds with the player. Then the player is badly
+    # hurt, and an NPC tooned them up.
+    from toontown.toonbase.ToontownBattleGlobals import SOUND_TRACK, THROW_TRACK, HEAL_TRACK
+    street = ToontownGlobals.SillyStreet
+    yield from teleport(street - street % 1000, firstVisgroup(street))
+    spot = onDistrict(lambda air: tuple(air.npcPlayerManager.areas[street].sidewalks[0][0]))
+    localAvatar.setPos(*spot)
+    yield sleep(10)
+    magicWord('~spawn tbc 12')
+    yield until(suitsNearby, 120, 'a cog on the street')
+    for attempt in range(5):
+        suit = min(suitsNearby(), key=lambda s: (s.getPos(render) - localAvatar.getPos(render)).length())
+        while placeState() == 'walk' and not suit.isEmpty():
+            localAvatar.setPos(render, suit.getPos(render))
+            yield sleep(0.1)
+        if placeState() != 'walk':
+            break
+        yield until(suitsNearby, 120, 'another cog on the street')
+    yield until(lambda: placeState() == 'battle', 60, 'battle to start')
+
+    def activeToons(air, avId):
+        for battle in air.npcPlayerManager.getBattles():
+            if avId in battle.toons:
+                return len(battle.activeToons)
+        return 0
+    yield until(lambda: onDistrict(activeToons, localAvatar.doId) >= 3, 90, 'NPC players to stand in the battle')
+    def playerHistory(air, avId):
+        # The rounds of the player's own battle (other battles nearby have
+        # their own).
+        for battle in air.npcPlayerManager.getBattles():
+            if avId in battle.toons and battle.doId in air.npcPlayerManager.crews:
+                return list(air.npcPlayerManager.crews[battle.doId].history)
+        return seen[0]
+    seen = [[]]
+
+    plan = [SOUND_TRACK, THROW_TRACK, THROW_TRACK]
+    rounds = 0
+    deadline = time.time() + 600
+    while placeState() == 'battle' and rounds < len(plan):
+        if time.time() > deadline:
+            raise StepFailed('the battle did not get through its rounds')
+        seen[0] = onDistrict(playerHistory, localAvatar.doId)
+        if townBattleState() == 'Attack':
+            track = plan[rounds]
+            rounds += 1
+            if rounds == 2:
+                onDistrict(lambda air, avId: air.doId2do[avId].b_setHp(air.doId2do[avId].getMaxHp() * 3 // 10), localAvatar.doId)
+            messenger.send(townBattle().battleEvent, [{'mode': 'Attack', 'track': track, 'level': 0, 'target': 0}])
+            yield until(lambda: townBattleState() != 'Attack', 30, 'gag choice to register')
+        else:
+            yield sleep(0.2)
+    def secondRound():
+        seen[0] = onDistrict(playerHistory, localAvatar.doId)
+        return len(seen[0]) >= 2 or placeState() != 'battle'
+    yield until(secondRound, 120, 'the second round to play')
+    yield sleep(4)
+    base.screenshot(os.path.join(os.environ.get('AUTOPLAY_SHOTS', '/tmp'), 'npc-toonup.png'), defaultFilename=0)
+    history = seen[0]
+    checkGagRules(history)
+    if len(history) < 2:
+        raise StepFailed('the battle ended before the toon-up round')
+    healed = [a for a in history[1][1] if a[1] and a[2] == HEAL_TRACK and a[4] in (localAvatar.doId, -1)]
+    log('round 2 toon-ups for the player at 30%% laff: %s' % healed)
+    if not healed:
+        raise StepFailed('nobody tooned up the player at 30% laff')
+
+
+def scenarioNPCReady():
+    # The VP elevator fills with NPC toons and asks whether to start: Cancel
+    # sends them out (and they stay out), then on again and Start goes.
+    from panda3d.core import ConfigVariableBool
+    ConfigVariableBool('npc-elevator-ask').setValue(True)
+    shots = os.environ.get('AUTOPLAY_SHOTS', '/tmp')
+    try:
+        yield from teleport(ToontownGlobals.SellbotHQ, ToontownGlobals.SellbotLobby)
+        yield sleep(3)
+        test = lambda do: True
+        yield from boardElevator('DistributedVPElevator')
+        elevator = findObject('DistributedVPElevator')
+        yield until(lambda: getattr(elevator, 'npcReadyPrompt', None) is not None, 90, 'the are you ready question')
+        clock = elevator.clockNode.getText()
+        yield sleep(3)
+        base.screenshot(os.path.join(shots, 'elevator-ready.png'), defaultFilename=0)
+        state = onDistrict(lambda air, d: air.doId2do[d].fsm.getCurrentState().getName(), elevator.doId)
+        log('asked with the clock at %s; 3 s later it shows %s and the elevator is %s' % (clock, elevator.clockNode.getText(), state))
+        if elevator.clockNode.getText() != clock or state != 'waitCountdown':
+            raise StepFailed('the clock did not stop for the question')
+        elevator.npcReadyPrompt.answer(False)
+        yield sleep(6)
+        seats = onDistrict(lambda air, d: list(air.doId2do[d].seats), elevator.doId)
+        base.screenshot(os.path.join(shots, 'elevator-cancel.png'), defaultFilename=0)
+        log('after Cancel the seats are %s' % seats)
+        if [s for s in seats if s and s != localAvatar.doId]:
+            raise StepFailed('NPC toons stayed on after Cancel')
+        # Off and on again: they come back, and Start goes.
+        messenger.send('elevatorExitButton')
+        yield until(walking, 60, 'off the elevator')
+        yield sleep(2)
+        yield from boardElevator('DistributedVPElevator')
+        yield until(lambda: getattr(elevator, 'npcReadyPrompt', None) is not None, 90, 'the question again')
+        elevator.npcReadyPrompt.answer(True)
+        yield until(lambda: placeName() != 'cogHQLobby' and 'Boss' in str(placeName()) or
+                    onDistrict(lambda air, d: air.doId2do[d].fsm.getCurrentState().getName()
+                               if d in air.doId2do else 'gone', elevator.doId) in ('allAboard', 'closing', 'closed'),
+                    30, 'the elevator to go')
+        log('Start: the elevator goes')
+    finally:
+        ConfigVariableBool('npc-elevator-ask').setValue(False)
 
 
 def npcStats():
@@ -3318,6 +3442,8 @@ SCENARIOS = [
     ('tutorial', scenarioTutorial),
     ('touch', scenarioTouchControls),
     ('maxtoon', scenarioMaxToon),
+    ('npctoonup', scenarioNPCToonUp),
+    ('npcready', scenarioNPCReady),
     ('playgrounds', scenarioPlaygrounds),
     ('streets', scenarioStreets),
     ('battle', scenarioBattle),

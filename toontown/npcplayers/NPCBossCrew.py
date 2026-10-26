@@ -22,55 +22,63 @@ from toontown.toonbase import ToontownGlobals
 
 TICK = 0.5
 # Seconds between one NPC's throws.
-THROW_TIME = (1.2, 2.6)
+THROW_TIME = (1.6, 3.2)
 # Seconds between one NPC's goes at slower jobs: a safe swung on a crane, a
 # toon fired from a cannon, a plate carried, a golf swing.
 SLOW_TIME = (3.0, 6.0)
 SLOW_JOBS = (('l', 'BattleTwo'), ('c', 'BattleTwo'))
 # Swinging a crane over to a safe or a goon, and from there to the CFO.
-CRANE_TIME = (8.0, 14.0)
+CRANE_TIME = (10.0, 18.0)
 # Aiming a banquet table's water pitcher at the CEO.
 PITCHER_TIME = (4.0, 6.0)
-PITCHER_HIT_CHANCE = 0.6
+PITCHER_HIT_CHANCE = 0.45
 # How many NPCs take a pitcher; the rest golf, fetch toon-up food or keep
 # out of his way.
 PITCHERS = 3
 GOLF_TIME = (5.0, 9.0)
 # Chances a pie does what it was thrown for.
-STUN_CHANCE = 0.25
-HIT_CHANCE = 0.6
+STUN_CHANCE = 0.15
+HIT_CHANCE = 0.4
 # Seconds between one NPC's throws at a dizzy VP: a player has to get in
 # front of him and aim.
-DIZZY_THROW_TIME = (1.2, 2.8)
+DIZZY_THROW_TIME = (1.8, 3.5)
 # A run to the witness stand for more evidence, and back.
 EVIDENCE_TRIP = (3.0, 6.0)
 # Evidence on the CJ's scale pan, a big target.
-EVIDENCE_HIT_CHANCE = 0.75
+EVIDENCE_HIT_CHANCE = 0.55
 # How often a throw goes at one of the lawyers instead.
 LAWYER_CHANCE = 0.2
+LAWYER_HIT_CHANCE = 0.5
 # The VP: only a few toons go for his stun (the rest wait to hit him while
 # he is dizzy), and they give him a while on his feet before trying again.
 STUNNERS = (2, 3)
 STUN_REST = (4.0, 8.0)
 # The CFO: how likely a safe swung at him lands, and how long one crane is
 # kept free for the player at the start.
-CRANE_HIT_CHANCE = 0.6
+CRANE_HIT_CHANCE = 0.4
 CRANE_FOR_PLAYER = 30.0
 # The CJ: how likely a toon fired from a cannon lands in a chair.
-CANNON_HIT_CHANCE = 0.4
+CANNON_HIT_CHANCE = 0.3
 # The CEO: how many NPCs take a golf spot, and how likely a ball hits him.
 GOLFERS = 2
-GOLF_HIT_CHANCE = 0.65
+GOLF_HIT_CHANCE = 0.45
 # Between goes the NPCs move about the arena on their own, as players do,
 # rather than following the player: how often, and how far from the boss.
 ROAM_TIME = (3.0, 9.0)
 ROAM_RANGE = (14.0, 40.0)
+# No roaming path passes nearer the boss than this.
+BOSS_CLEAR = 11.0
+# Now and then an NPC stops to emote instead of walking.
+ROAM_EMOTE_CHANCE = 0.3
 ROAM_STATES = (('s', 'BattleThree'), ('m', 'BattleThree'), ('l', 'BattleThree'), ('c', 'BattleTwo'),
                ('c', 'BattleFour'))
 # Chances an NPC is caught by the boss's attacks.
 AREA_HIT_CHANCE = 0.25
 DIRECTED_HIT_CHANCE = 0.6
 HEAL_PLAYER_BELOW = 0.4
+HEAL_HIT_CHANCE = 0.7
+# A pie that misses lands on the floor this far from what it was thrown at.
+MISS_BY = (4.0, 9.0)
 
 
 def isNPCId(air, avId):
@@ -174,16 +182,27 @@ class NPCBossCrew:
         center = self.bossPos()
         if center is None:
             return
+        self.syncPos(npc)
+        if random.random() < ROAM_EMOTE_CHANCE:
+            from toontown.npcplayers.NPCPlayerManagerAI import IDLE_EMOTES
+            npc.b_setEmoteState(random.choice(IDLE_EMOTES), 1.0)
+            return
         nav = getNav()
         pos = npc.getPos()
-        for i in range(4):
+        for i in range(6):
             angle = random.uniform(0, 2 * math.pi)
             dist = random.uniform(*ROAM_RANGE)
             target = Point3(center[0] + dist * math.cos(angle), center[1] + dist * math.sin(angle), pos[2])
             path = nav.walkable(pos, target)
-            if path:
+            if path and not self.nearBoss(path, center):
                 npc.walk = [path, ToontownGlobals.ToonForwardSpeed, None, None]
                 return
+
+    def nearBoss(self, path, center):
+        for point in path:
+            if (Point3(point[0], point[1], 0) - Point3(center[0], center[1], 0)).length() < BOSS_CLEAR:
+                return True
+        return False
 
     # --- Being hit ---
 
@@ -219,10 +238,19 @@ class NPCBossCrew:
             return None
         return boss.getPos(base.render) + Point3(0, 0, 8)
 
-    def throwAt(self, npc, target, pieCode):
-        # The toss and the splat, as the thrower's client would send them.
+    def throwAt(self, npc, target, pieCode, hit=True):
+        # The toss and the splat, as the thrower's client would send them. A
+        # miss splats on the floor beside the target, so only the pies that
+        # count are seen to land.
         if target is None:
             return
+        self.syncPos(npc)
+        if not hit:
+            angle = random.uniform(0, 2 * math.pi)
+            miss = random.uniform(*MISS_BY)
+            floor = npc.getPos()[2]
+            target = Point3(target[0] + miss * math.cos(angle), target[1] + miss * math.sin(angle), floor)
+            pieCode = ToontownGlobals.PieCodeNotBossCog
         pos = npc.getPos()
         direction = target - pos
         h = -math.degrees(math.atan2(direction[0], direction[1]))
@@ -231,6 +259,20 @@ class NPCBossCrew:
         now = globalClockDelta.getFrameNetworkTime(bits=32)
         npc.sendUpdate('tossPie', [pos[0], pos[1], pos[2], h, sequence, 60, 0, now])
         npc.sendUpdate('pieSplat', [target[0], target[1], target[2], sequence, pieCode, now + 30])
+
+    def syncPos(self, npc):
+        """Where the player's game shows the NPC. The boss fight's scenes move
+        every toon about on the clients (into the elevator, onto the
+        battle spots, down off the boss's platform); a walk or a throw from
+        where the district last put the toon would start from somewhere
+        else, high over the arena."""
+        base = getClientBuiltin('base')
+        client = base.cr.doId2do.get(npc.doId) if base is not None and getattr(base, 'cr', None) else None
+        if client is None or client.isEmpty():
+            return
+        pos = client.getPos(base.render)
+        if (pos - npc.getPos()).length() > 0.5:
+            npc.setPosHpr(pos[0], pos[1], pos[2], client.getH(base.render), 0, 0)
 
     def makePieThrower(self, npc):
         if npc.numPies <= 0:
@@ -244,8 +286,10 @@ class NPCBossCrew:
                 base = getClientBuiltin('base')
                 client = base.cr.doId2do.get(player.doId) if base else None
                 target = client.getPos(base.render) + Point3(0, 0, 3) if client is not None else None
-                self.throwAt(npc, target, ToontownGlobals.PieCodeToon)
-                npc.asSender(self.boss.hitToon, player.doId)
+                hit = random.random() < HEAL_HIT_CHANCE
+                self.throwAt(npc, target, ToontownGlobals.PieCodeToon, hit)
+                if hit:
+                    npc.asSender(self.boss.hitToon, player.doId)
                 return True
         return False
 
@@ -273,15 +317,17 @@ class NPCBossCrew:
             return
         target = self.bossPos()
         if dizzy:
-            self.throwAt(npc, target, ToontownGlobals.PieCodeBossCog)
-            if random.random() < HIT_CHANCE:
+            hit = random.random() < HIT_CHANCE
+            self.throwAt(npc, target, ToontownGlobals.PieCodeBossCog, hit)
+            if hit:
                 npc.asSender(boss.hitBoss, 1)
         elif self.isStunner(npc) and now >= self.stunRestUntil:
             # A pie under his front, while he faces the toon, stuns him;
             # most miss.
-            self.throwAt(npc, target, ToontownGlobals.PieCodeBossInsides)
+            stun = random.random() < STUN_CHANCE
+            self.throwAt(npc, target, ToontownGlobals.PieCodeBossInsides, stun)
             self.count('vp stun tries')
-            if random.random() < STUN_CHANCE:
+            if stun:
                 npc.asSender(boss.hitBossInsides)
                 self.count('vp stuns')
                 self.manager.stats['vp stunners'] = len(self.stunners)
@@ -322,7 +368,7 @@ class NPCBossCrew:
                 held = obj
         if held is not None:
             if random.random() < CRANE_HIT_CHANCE:
-                npc.asSender(held.hitBoss, random.uniform(0.4, 0.9))
+                npc.asSender(held.hitBoss, random.uniform(0.3, 0.8))
                 self.count('cfo crane hits')
             else:
                 npc.asSender(held.requestDrop)
@@ -376,17 +422,19 @@ class NPCBossCrew:
         if lawyers and random.random() < LAWYER_CHANCE:
             # A pie at a lawyer stops its evidence landing on the cogs' pan,
             # and with every lawyer stunned the toons' evidence weighs more.
-            npc.asSender(random.choice(lawyers).hitByToon)
+            if random.random() < LAWYER_HIT_CHANCE:
+                npc.asSender(random.choice(lawyers).hitByToon)
+                self.count('cj lawyer stuns')
             if npc.numPies != ToontownGlobals.FullPies:
                 npc.setNumPies(npc.numPies - 1)
-            self.count('cj lawyer stuns')
             return
         target = self.bossPos()
         # Evidence on the scale's pan. (Nobody stuns the CJ.)
-        self.throwAt(npc, target, ToontownGlobals.PieCodeDefensePan)
+        hit = random.random() < EVIDENCE_HIT_CHANCE
+        self.throwAt(npc, target, ToontownGlobals.PieCodeDefensePan, hit)
         if npc.numPies != ToontownGlobals.FullPies:
             npc.setNumPies(npc.numPies - 1)
-        if random.random() < EVIDENCE_HIT_CHANCE:
+        if hit:
             npc.asSender(boss.hitBoss, 1)
             self.count('cj evidence hits')
 

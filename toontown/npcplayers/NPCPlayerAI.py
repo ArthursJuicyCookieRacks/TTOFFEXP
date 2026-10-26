@@ -25,6 +25,11 @@ from toontown.toon.DistributedToonAI import DistributedToonAI
 from toontown.toonbase import ToontownGlobals
 
 
+# How full an NPC keeps its gag bag: a share of a full one, picked once per
+# NPC.
+GAG_FILL = (0.45, 1.0)
+
+
 class NPCPlayerAI(DistributedToonAI):
     notify = DirectNotifyGlobal.directNotify.newCategory('NPCPlayerAI')
 
@@ -60,8 +65,7 @@ class NPCPlayerAI(DistributedToonAI):
         if 'kart' in profile:
             self.setKartBodyType(profile['kart'])
             self.setTickets(profile['tickets'])
-        self.inventory.zeroInv()
-        self.inventory.maxOutInv()
+        self.fillBag()
 
     def giveCogSuits(self):
         # The top cog of each department, with every part and the merits
@@ -80,10 +84,24 @@ class NPCPlayerAI(DistributedToonAI):
         self.setCogMerits([CogDisguiseGlobals.getTotalMerits(self, dept) for dept in range(len(SuitDNA.suitDepts))])
 
     def restock(self):
-        # A full set again, as after a trip to the gag shop.
+        # A set again, as after a trip to the gag shop.
+        self.fillBag()
+        self.d_setInventory(self.inventory.makeNetString())
+
+    def fillBag(self):
+        # Like players, some carry a full bag and some only part of one.
         self.inventory.zeroInv()
         self.inventory.maxOutInv()
-        self.d_setInventory(self.inventory.makeNetString())
+        if getattr(self, 'gagFill', None) is None:
+            self.gagFill = random.uniform(*GAG_FILL)
+        target = int(self.inventory.totalProps * self.gagFill)
+        stocked = [(track, level) for track in range(len(self.inventory.inventory))
+                   for level in range(len(self.inventory.inventory[track]))
+                   for n in range(self.inventory.inventory[track][level])]
+        random.shuffle(stocked)
+        for track, level in stocked[:max(0, len(stocked) - target)]:
+            self.inventory.inventory[track][level] -= 1
+        self.inventory.calcTotalProps()
 
     def generateInZone(self, zoneId, x=0, y=0, z=0, h=0):
         self.setPosHpr(x, y, z, h, 0, 0)
