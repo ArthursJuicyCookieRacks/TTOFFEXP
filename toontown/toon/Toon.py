@@ -1071,8 +1071,8 @@ class Toon(Avatar.Avatar, ToonHead):
     # cat's. Per head: the cat head borrowed, then for hats and for glasses
     # the (y, z) shift and the scale.
     ACCESSORY_HEAD_STAND_INS = {
-        'xl': ('cs', {'hat': (0.06, 0.109, 0.85), 'glasses': (-0.076, 0.017, 1.0)}),
-        'xs': ('cs', {'hat': (0.08, 0.006, 0.85), 'glasses': (-0.076, 0.0, 1.0)}),
+        'xl': ('cs', {'hat': (0.16, 0.08, 0.85), 'glasses': (-0.076, 0.017, 1.0)}),
+        'xs': ('cs', {'hat': (0.12, 0.0, 0.85), 'glasses': (-0.076, 0.0, 1.0)}),
         'zl': ('cs', {'hat': (0.0, 0.2, 0.85), 'glasses': (0.0, 0.03, 1.0)}),
         'zs': ('cs', {'hat': (0.0, 0.2, 0.85), 'glasses': (0.0, 0.03, 1.0)}),
     }
@@ -1081,8 +1081,11 @@ class Toon(Avatar.Avatar, ToonHead):
     # heads they are taken in further (width, depth), or they float.
     HEADBAND_HATS = {22: (0.8, 0.95), 30: (0.72, 0.9), 35: (0.8, 0.95), 53: (0.75, 0.9)}
 
-    # Hats that still sat wrong after that, by species: extra (y, z) shift.
-    HAT_FITS = {(6, 'x'): (0.0, -0.1), (6, 'z'): (0.0, -0.15), (3, 'z'): (0.12, 0.02)}
+    # Hats that still sat wrong after that, by hat and head: extra (y, z)
+    # shift and scale. The deer's long antlers poke through a full-size top
+    # hat, so on them it is smaller and sits up between them.
+    HAT_FITS = {(6, 'x'): (0.0, -0.1, 1.0), (6, 'z'): (0.0, -0.15, 1.0), (3, 'z'): (0.12, 0.02, 1.0),
+                (5, 'zl'): (-0.04, 0.06, 0.8), (1, 'z'): (0.05, -0.05, 1.0)}
 
     def accessoryHead(self, table):
         head = self.style.head[:2]
@@ -1096,9 +1099,12 @@ class Toon(Avatar.Avatar, ToonHead):
             return
         dy, dz, scale = standIn[1][kind]
         if kind == 'hat':
-            fy, fz = self.HAT_FITS.get((self.getHat()[0], self.style.head[0]), (0.0, 0.0))
+            hat = self.getHat()[0]
+            fy, fz, fs = self.HAT_FITS.get((hat, self.style.head[:2]),
+                                           self.HAT_FITS.get((hat, self.style.head[0]), (0.0, 0.0, 1.0)))
             dy += fy
             dz += fz
+            scale *= fs
         geom.setPos(geom.getX(), geom.getY() + dy, geom.getZ() + dz)
         sx, sy = (1.0, 1.0)
         if kind == 'hat':
