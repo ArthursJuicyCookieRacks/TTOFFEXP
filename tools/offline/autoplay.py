@@ -214,7 +214,7 @@ listener.accept('localServerReady', lambda: ready.append(1))
 
 
 def checkHoldRepeat(mat):
-    # Holding a colour arrow for two seconds steps through several colours,
+    # Holding a colour arrow for two seconds steps through three colours (Arthur),
     # at a pace that can still be followed.
     from direct.gui import DirectGuiGlobals as DGG
     from toontown.makeatoon import HoldRepeat
@@ -230,7 +230,7 @@ def checkHoldRepeat(mat):
     steps = (mat.cos.headChoice - before) % length
     log('holding the colour arrow for 2 s stepped %d colours' % steps)
     base.screenshot(os.path.join(os.environ.get('AUTOPLAY_SHOTS', '/tmp'), 'mat-hold.png'), defaultFilename=0)
-    if not 3 <= steps <= 7:
+    if steps != 3:
         raise StepFailed('holding the arrow stepped %d colours' % steps)
 
 
@@ -3529,6 +3529,55 @@ SCENARIOS = [
 
 # --- Runner ---
 
+HITCH_MS = float(os.environ.get('AUTOPLAY_HITCH_MS', 0))
+
+
+def watchGc():
+    """With AUTOPLAY_HITCH_MS set, logs the garbage collections that take
+    longer than a tenth of it."""
+    import gc
+    started = {}
+
+    def callback(phase, info):
+        if phase == 'start':
+            started['t'] = time.perf_counter()
+        elif 't' in started:
+            ms = (time.perf_counter() - started.pop('t')) * 1000
+            if ms > HITCH_MS / 10:
+                log('gc generation %d took %.0f ms (%d objects tracked)' % (info['generation'], ms, len(gc.get_objects())))
+    gc.callbacks.append(callback)
+
+
+if HITCH_MS:
+    watchGc()
+
+
+def stepFrame():
+    """One frame. With AUTOPLAY_HITCH_MS set, every frame is profiled and
+    the ones longer than that are logged with where the time went."""
+    if not HITCH_MS:
+        taskMgr.step()
+        return
+    import cProfile
+    import io
+    import pstats
+    profile = cProfile.Profile()
+    start = time.perf_counter()
+    profile.enable()
+    taskMgr.step()
+    profile.disable()
+    ms = (time.perf_counter() - start) * 1000
+    if ms < HITCH_MS:
+        return
+    where = loginState()
+    mat = getattr(base.cr, 'avCreate', None) if hasattr(base, 'cr') else None
+    if mat is not None and getattr(mat, 'fsm', None) is not None:
+        where += '/' + mat.fsm.getCurrentState().getName()
+    out = io.StringIO()
+    pstats.Stats(profile, stream=out).sort_stats('cumulative').print_stats(25)
+    lines = [l for l in out.getvalue().splitlines() if l.strip()[:1].isdigit()]
+    log('hitch %.0f ms in %s:\n    %s' % (ms, where, '\n    '.join(lines[:25])))
+
 def run(names):
     selected = [s for s in SCENARIOS if not names or s[0] in names or s[0] == 'login']
     for name, scenario in selected:
@@ -3546,7 +3595,7 @@ def run(names):
             if time.time() > waiting.deadline:
                 raise StepFailed('%s: timed out waiting for %s (login state %s, hood state %s, place %s in state %s, toon anim state %s)' % (
                     name, waiting.what, loginState(), hoodState(), place().__class__.__name__, placeState(), toonAnimState()))
-            taskMgr.step()
+            stepFrame()
             if errors:
                 raise StepFailed('%s: server exception:\n%s' % (name, errors[0]))
         log('=== %s passed in %.1fs ===' % (name, time.time() - start))

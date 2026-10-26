@@ -20,7 +20,7 @@ index 7f625a1..daa4d75 100644
  import android.database.Cursor;
  import android.net.Uri;
  import android.provider.OpenableColumns;
-@@ -114,6 +124,105 @@ public class PythonActivity extends PandaActivity {
+@@ -114,6 +124,118 @@ public class PythonActivity extends PandaActivity {
          }
      }
  
@@ -52,6 +52,19 @@ index 7f625a1..daa4d75 100644
 +                            return true;
 +                        }
 +                        return super.onKeyPreIme(keyCode, event);
++                    }
++
++                    // The game shows the text with no cursor, so the cursor
++                    // stays at the end: a controller's d-pad could move it
++                    // to the front, and then backspace deleted nothing.
++                    @Override
++                    protected void onSelectionChanged(int selStart, int selEnd) {
++                        int end = getText() != null ? getText().length() : 0;
++                        if (selStart != end || selEnd != end) {
++                            setSelection(end);
++                            return;
++                        }
++                        super.onSelectionChanged(selStart, selEnd);
 +                    }
 +                };
 +                hiddenEdit.setSingleLine(true);

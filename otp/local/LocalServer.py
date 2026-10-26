@@ -1,4 +1,5 @@
 import atexit
+import gc
 import builtins
 import json
 import os
@@ -155,6 +156,14 @@ class LocalServer:
             self.districts.append(self.startDistrict(index, name))
 
         self.flush()
+        # Client, UberDOG and districts share one Python heap of some 700,000
+        # objects that stay for the whole game (the dc classes, street maps,
+        # cog paths, buildings). Every garbage collection walked them all, a
+        # pause of over 100 ms on a PC and several times that on a phone, at
+        # random moments such as Make-A-Toon. Moving them out of the
+        # collector's sight leaves it only the objects made since.
+        gc.collect()
+        gc.freeze()
         self.ready = True
         self.notify.info('Server now ready. Have fun on Toontown Rewritten Offline!')
         messenger.send('localServerReady')
