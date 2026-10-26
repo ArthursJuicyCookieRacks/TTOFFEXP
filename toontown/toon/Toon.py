@@ -1081,6 +1081,9 @@ class Toon(Avatar.Avatar, ToonHead):
     # heads they are taken in further (width, depth), or they float.
     HEADBAND_HATS = {22: (0.8, 0.95), 30: (0.72, 0.9), 35: (0.8, 0.95), 53: (0.75, 0.9)}
 
+    # Hats that still sat wrong after that, by species: extra (y, z) shift.
+    HAT_FITS = {(6, 'x'): (0.0, -0.1), (6, 'z'): (0.0, -0.15), (3, 'z'): (0.12, 0.02)}
+
     def accessoryHead(self, table):
         head = self.style.head[:2]
         if head not in table and head in self.ACCESSORY_HEAD_STAND_INS:
@@ -1092,6 +1095,10 @@ class Toon(Avatar.Avatar, ToonHead):
         if standIn is None:
             return
         dy, dz, scale = standIn[1][kind]
+        if kind == 'hat':
+            fy, fz = self.HAT_FITS.get((self.getHat()[0], self.style.head[0]), (0.0, 0.0))
+            dy += fy
+            dz += fz
         geom.setPos(geom.getX(), geom.getY() + dy, geom.getZ() + dz)
         sx, sy = (1.0, 1.0)
         if kind == 'hat':
