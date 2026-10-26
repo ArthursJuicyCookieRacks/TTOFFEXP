@@ -1065,14 +1065,39 @@ class Toon(Avatar.Avatar, ToonHead):
         return swappedTorso
 
     # Crocodiles and deer came without places for hats and glasses, so they
-    # showed none; they borrow the cat's, which fit them best.
-    ACCESSORY_HEAD_STAND_INS = {'x': 'c', 'z': 'c'}
+    # borrow the short-headed cat's, moved to fit their own heads (measured
+    # from the head models): a deer's head is always the short shape, and a
+    # long crocodile head is taller than a short one but lower than a long
+    # cat's. Per head: the cat head borrowed, then for hats and for glasses
+    # the (y, z) shift and the scale.
+    ACCESSORY_HEAD_STAND_INS = {
+        'xl': ('cs', {'hat': (0.06, 0.109, 0.85), 'glasses': (-0.076, 0.017, 1.0)}),
+        'xs': ('cs', {'hat': (0.08, 0.006, 0.85), 'glasses': (-0.076, 0.0, 1.0)}),
+        'zl': ('cs', {'hat': (0.0, 0.2, 0.85), 'glasses': (0.0, 0.03, 1.0)}),
+        'zs': ('cs', {'hat': (0.0, 0.2, 0.85), 'glasses': (0.0, 0.03, 1.0)}),
+    }
+
+    # Headbands go round the head, so on the narrower crocodile and deer
+    # heads they are taken in further (width, depth), or they float.
+    HEADBAND_HATS = {22: (0.8, 0.95), 30: (0.72, 0.9), 35: (0.8, 0.95), 53: (0.75, 0.9)}
 
     def accessoryHead(self, table):
         head = self.style.head[:2]
-        if head not in table and head[0] in self.ACCESSORY_HEAD_STAND_INS:
-            head = self.ACCESSORY_HEAD_STAND_INS[head[0]] + head[1]
+        if head not in table and head in self.ACCESSORY_HEAD_STAND_INS:
+            head = self.ACCESSORY_HEAD_STAND_INS[head][0]
         return head
+
+    def fitAccessory(self, geom, kind):
+        standIn = self.ACCESSORY_HEAD_STAND_INS.get(self.style.head[:2])
+        if standIn is None:
+            return
+        dy, dz, scale = standIn[1][kind]
+        geom.setPos(geom.getX(), geom.getY() + dy, geom.getZ() + dz)
+        sx, sy = (1.0, 1.0)
+        if kind == 'hat':
+            sx, sy = self.HEADBAND_HATS.get(self.getHat()[0], (1.0, 1.0))
+        old = geom.getScale()
+        geom.setScale(old[0] * scale * sx, old[1] * scale * sy, old[2] * scale)
 
     def generateHat(self, fromRTM = False):
         hat = self.getHat()
@@ -1111,6 +1136,7 @@ class Toon(Avatar.Avatar, ToonHead):
                 hatGeom.setPos(transOffset[0][0], transOffset[0][1], transOffset[0][2])
                 hatGeom.setHpr(transOffset[1][0], transOffset[1][1], transOffset[1][2])
                 hatGeom.setScale(transOffset[2][0], transOffset[2][1], transOffset[2][2])
+                self.fitAccessory(hatGeom, 'hat')
                 headNodes = self.findAllMatches('**/__Actor_head')
                 for headNode in headNodes:
                     hatNode = headNode.attachNewNode('hatNode')
@@ -1156,6 +1182,7 @@ class Toon(Avatar.Avatar, ToonHead):
                 glassesGeom.setPos(transOffset[0][0], transOffset[0][1], transOffset[0][2])
                 glassesGeom.setHpr(transOffset[1][0], transOffset[1][1], transOffset[1][2])
                 glassesGeom.setScale(transOffset[2][0], transOffset[2][1], transOffset[2][2])
+                self.fitAccessory(glassesGeom, 'glasses')
                 headNodes = self.findAllMatches('**/__Actor_head')
                 for headNode in headNodes:
                     glassesNode = headNode.attachNewNode('glassesNode')
