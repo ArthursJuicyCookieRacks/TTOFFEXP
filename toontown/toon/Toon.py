@@ -1082,10 +1082,14 @@ class Toon(Avatar.Avatar, ToonHead):
     HEADBAND_HATS = {22: (0.8, 0.95), 30: (0.72, 0.9), 35: (0.8, 0.95), 53: (0.75, 0.9)}
 
     # Hats that still sat wrong after that, by hat and head: extra (y, z)
-    # shift and scale. The deer's long antlers poke through a full-size top
-    # hat, so on them it is smaller and sits up between them.
+    # shift and scale.
     HAT_FITS = {(6, 'x'): (0.0, -0.1, 1.0), (6, 'z'): (0.0, -0.15, 1.0), (3, 'z'): (0.12, 0.02, 1.0),
-                (5, 'zl'): (-0.04, 0.06, 0.8), (1, 'z'): (0.05, -0.05, 1.0)}
+                (1, 'z'): (0.05, -0.05, 1.0),
+                (1, 'xs'): (0.03, -0.06, 1.0), (6, 'xs'): (0.03, -0.05, 1.0), (2, 'xl'): (0.0, 0.03, 1.1),
+                (3, 'zl'): (0.1, -0.04, 1.0), (4, 'zl'): (0.08, 0.0, 1.0)}
+    # Long deer antlers stand through these, so they fold down under them.
+    ANTLER_SQUASH_HATS = {3, 4, 5}
+    ANTLER_SQUASH = 0.6
 
     def accessoryHead(self, table):
         head = self.style.head[:2]
@@ -1123,6 +1127,9 @@ class Toon(Avatar.Avatar, ToonHead):
 
             self.hatNodes = []
         self.showEars()
+        squash = self.ANTLER_SQUASH if hat[0] in self.ANTLER_SQUASH_HATS else 1.0
+        for antlers in self.findAllMatches('**/antlers-long'):
+            antlers.setSz(squash)
         if hat[0] != 0:
             hatGeom = loader.loadModel(ToonDNA.HatModels[hat[0]], okMissing=True)
             if hatGeom:

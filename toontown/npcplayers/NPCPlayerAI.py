@@ -80,7 +80,7 @@ class NPCPlayerAI(DistributedToonAI):
         self.setCogMerits([CogDisguiseGlobals.getTotalMerits(self, dept) for dept in range(len(SuitDNA.suitDepts))])
 
     def restock(self):
-        # NPC players never run out of gags.
+        # A full set again, as after a trip to the gag shop.
         self.inventory.zeroInv()
         self.inventory.maxOutInv()
         self.d_setInventory(self.inventory.makeNetString())

@@ -103,6 +103,34 @@ PLAYGROUND_CHARS = {
     ToontownGlobals.OutdoorZone: (TTLocalizer.Chip, 0),
 }
 STREET_BATTLES = ('DistributedBattleAI',)
+# On a street most toons keep to the sidewalks, out of the cogs' way; this
+# share of a street's toons walks in the road, where the cogs walk.
+ROAD_SHARE = 0.35
+# And never more than this many in the road at once, however many toons
+# the place has; the rest keep to the sidewalks.
+MAX_IN_ROAD = 8
+# How much higher than the road the sidewalk is, at least.
+CURB = 0.3
+# How far from a cog's path to look for the sidewalk, and how far onto it a
+# sidewalk spot is.
+CURB_SEARCH = 24.0
+ONTO_SIDEWALK = 4.0
+# Street spots looked at for the sidewalk each walk tick (each costs a few
+# rays against the scene).
+SIDEWALK_CHECKS_PER_TICK = 4
+# How likely a sidewalk toon is to cross the road on one walk.
+CROSS_CHANCE = 0.15
+# How close a toon must come to a walking cog to walk into it, and to a
+# battle to join it, as a player's toon does.
+BUMP_RANGE = 3.5
+JOIN_RANGE = 9.0
+# Battles of NPCs alone in one area at once, so the player still finds cogs.
+MAX_NPC_BATTLES = 2
+# How many NPCs a battle of NPCs alone takes, leaving the last place for
+# the player to join.
+NPC_BATTLE_SIZE = 3
+# The SpeedChat "OK" a toon whispers back when asked for help.
+SC_OK = 3
 
 
 def getAreaId(zoneId):
@@ -111,6 +139,9 @@ def getAreaId(zoneId):
         return None
     if zoneId in COG_HQ_AREAS:
         return zoneId
+    if zoneId - zoneId % 100 in COG_HQ_AREAS and not ZoneUtil.isInterior(zoneId):
+        # A visgroup of a Cog HQ courtyard, where the cogs walk and fight.
+        return zoneId - zoneId % 100
     hoodId = ZoneUtil.getHoodId(zoneId)
     if hoodId in (ToontownGlobals.Tutorial, ToontownGlobals.MyEstate):
         return None
@@ -143,7 +174,13 @@ class NPCArea:
         self.lastSeen = globalClock.getFrameTime()
         self.anchors = []
         self.trail = []
+        self.isStreet = areaId != ZoneUtil.getHoodId(areaId) and areaId not in COG_HQ_AREAS
+        # The sidewalk spots, found from the cogs' paths once the place's
+        # ground is there to look at (see NPCPlayerManagerAI.findSidewalks).
+        self.sidewalks = []
+        self.roadZ = None
         self.loadAnchors()
+        self.sidewalkQueue = list(self.anchors) if self.isStreet else []
 
     def loadAnchors(self):
         from toontown.distributed.HoodMgr import HoodMgr
@@ -169,6 +206,9 @@ class NPCArea:
                     continue
                 zoneId = ZoneUtil.getTrueZoneId(int(zoneId), areaId)
                 self.anchors.append((Point3(point.getPos()), zoneId))
+            heights = sorted(p[2] for p, z in self.anchors)
+            if heights:
+                self.roadZ = heights[len(heights) // 2]
 
     def addTrail(self, pos, zoneId):
         for point, z in self.trail[-10:]:
@@ -178,8 +218,17 @@ class NPCArea:
         if len(self.trail) > MAX_TRAIL:
             del self.trail[0]
 
-    def points(self):
+    def points(self, npc=None):
+        if npc is not None and self.onSidewalk(npc):
+            return self.sidewalks + [p for p in self.trail if self.isSidewalk(p[0])]
         return self.anchors + self.trail
+
+    def onSidewalk(self, npc):
+        # Whether the toon keeps to the sidewalks (and there are some yet).
+        return self.isStreet and not getattr(npc, 'inRoad', True) and bool(self.sidewalks)
+
+    def isSidewalk(self, point):
+        return self.roadZ is not None and point[2] > self.roadZ + CURB
 
     def seen(self):
         self.lastSeen = globalClock.getFrameTime()
@@ -286,6 +335,7 @@ class NPCPlayerManagerAI:
         zoneIndex = {}
         for obj in list(self.air.doId2do.values()):
             zoneIndex.setdefault(getattr(obj, 'zoneId', None), []).append(obj)
+        self.refill()
         self.party.fillSeats()
         self.party.answerHandshakes(zoneIndex)
         self.joinBattles()
@@ -316,24 +366,32 @@ class NPCPlayerManagerAI:
                         self.despawn(npc, quietly=True)
                     elif abs(ground - pos[2]) > 0.01:
                         npc.placeAt(pos[0], pos[1], ground, npc.getH())
+            if scene is not None:
+                # Behind the loading screen, so all of them at once.
+                self.findSidewalks(area, len(area.sidewalkQueue))
             spots = list(area.anchors)
             random.shuffle(spots)
+            sidewalks = list(area.sidewalks)
+            random.shuffle(sidewalks)
             if nearZone is not None and nearZone != areaId:
                 # On a street the player's game only sees the zones around
                 # the one it arrives in (they are numbered along the street).
-                spots.sort(key=lambda p: abs(p[1] - nearZone))
-                del spots[max(24, 2 * self.npcsPerArea):]
-                random.shuffle(spots)
+                for some in (spots, sidewalks):
+                    some.sort(key=lambda p: abs(p[1] - nearZone))
+                    del some[max(24, 2 * self.npcsPerArea):]
+                    random.shuffle(some)
             while len(area.npcs) < self.npcsPerArea and spots:
-                spot = min(spots[:12], key=lambda p: self.crowding(area, p[0]))
-                spots.remove(spot)
+                inRoad = self.nextRole(area)
+                some = spots if inRoad or not sidewalks else sidewalks
+                spot = min(some[:12], key=lambda p: self.crowding(area, p[0]))
+                some.remove(spot)
                 point = Point3(spot[0])
                 if scene is not None:
                     ground = nav.standZ(point[0], point[1], point[2])
                     if ground is None:
                         continue
                     point[2] = ground
-                self.spawn(area, point, spot[1], player)
+                self.spawn(area, point, spot[1], player, inRoad)
             if scene is not None:
                 for npc in area.npcs:
                     if npc.crew is None and not npc.busy and npc.walk is None and not npc.isDeleted():
@@ -404,13 +462,54 @@ class NPCPlayerManagerAI:
             return
         if not self.placeReady(area, player):
             return
-        spot = self.pickSpawnSpot(area, playerPos, player.zoneId)
+        inRoad = self.nextRole(area)
+        spot = self.pickSpawnSpot(area, playerPos, player.zoneId, inRoad)
         if spot is not None:
-            self.spawn(area, spot[0], spot[1], player)
+            self.spawn(area, spot[0], spot[1], player, inRoad)
 
-    def pickSpawnSpot(self, area, playerPos, playerZone):
+    def nextRole(self, area):
+        """Whether the next toon made for the area walks in the road."""
+        if not area.isStreet:
+            return True
+        wanted = min(MAX_IN_ROAD, int(round(ROAD_SHARE * self.npcsPerArea)))
+        have = len([npc for npc in area.npcs if getattr(npc, 'inRoad', True)])
+        left = self.npcsPerArea - len(area.npcs)
+        return have < wanted and (random.random() < ROAD_SHARE or left <= wanted - have)
+
+    def findSidewalks(self, area, budget=SIDEWALK_CHECKS_PER_TICK):
+        """Finds sidewalk spots beside the cogs' paths, a few at a time.
+
+        The cogs walk down the middle of the road; the sidewalk is the
+        raised ground on either side, between the road and the buildings.
+        """
         nav = getNav()
-        points = area.points()
+        if not area.sidewalkQueue or area.roadZ is None or not nav.available():
+            return
+        roadZ = area.roadZ
+        for i in range(min(budget, len(area.sidewalkQueue))):
+            point, zoneId = area.sidewalkQueue.pop()
+            for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                d = 1.5
+                while d <= CURB_SEARCH:
+                    x, y = point[0] + dx * d, point[1] + dy * d
+                    ground = nav.groundZ(x, y, roadZ)
+                    if ground is None:
+                        break
+                    if ground > roadZ + CURB:
+                        spot = Point3(x + dx * ONTO_SIDEWALK, y + dy * ONTO_SIDEWALK, ground)
+                        stand = nav.standZ(spot[0], spot[1], ground)
+                        if stand is not None and stand > roadZ + CURB and \
+                                nav.clearLine(Point3(x, y, ground), spot):
+                            spot[2] = stand
+                            if not [p for p, z in area.sidewalks if (p - spot).length() < 5.0]:
+                                area.sidewalks.append((spot, zoneId))
+                        break
+                    d += 1.5
+
+    def pickSpawnSpot(self, area, playerPos, playerZone, inRoad=True):
+        nav = getNav()
+        points = area.anchors + area.trail if inRoad or not area.sidewalks else area.sidewalks
+        points = list(points)
         random.shuffle(points)
         for point, zoneId in sorted(points[:12], key=lambda p: self.crowding(area, p[0])):
             ground = nav.standZ(point[0], point[1], point[2])
@@ -426,11 +525,11 @@ class NPCPlayerManagerAI:
                 return path[-1], playerZone
         return None
 
-    def spawn(self, area, pos, zoneId, player=None):
+    def spawn(self, area, pos, zoneId, player=None, inRoad=True):
         npc = NPCPlayerAI(self.air, self)
         npc.applyProfile(NPCProfiles.makeProfile(zoneId, player))
-        npc.unlimitedGags = 1
         npc.area = area
+        npc.inRoad = inRoad
         npc.crew = None
         npc.party = None
         npc.walk = None
@@ -468,9 +567,14 @@ class NPCPlayerManagerAI:
             for area in list(self.areas.values()):
                 if not area.isActive():
                     continue
+                if area.sidewalkQueue and self.clientIn(area):
+                    self.findSidewalks(area)
+                suits = self.walkingSuits(area)
                 for npc in area.npcs[:]:
                     if npc.crew is None and not npc.busy:
                         self.walkNPC(area, npc, dt)
+                        if npc.walk is not None and not npc.isDeleted():
+                            self.bump(area, npc, suits)
             self.party.follow()
             for npc in self.party.members[:]:
                 if npc.crew is None and not npc.busy and not npc.isDeleted():
@@ -633,7 +737,7 @@ class NPCPlayerManagerAI:
                 dist = random.uniform(*SOCIAL_RANGE)
                 spot = Point3(otherPos[0] + dist * math.cos(angle), otherPos[1] + dist * math.sin(angle), otherPos[2])
                 candidates.append((spot, other.zoneId, other))
-        far = [p for p in area.points() if WANDER_RANGE[0] <= (p[0] - pos).length() <= WANDER_RANGE[1]]
+        far = [p for p in area.points(npc) if WANDER_RANGE[0] <= (p[0] - pos).length() <= WANDER_RANGE[1]]
         random.shuffle(far)
         wander = [(p, zoneId, None) for p, zoneId in far[:6]]
         # And a look around close by, which is mostly clear where the far
@@ -645,8 +749,11 @@ class NPCPlayerManagerAI:
         # The emptier places first.
         wander.sort(key=lambda c: self.crowding(area, c[0], npc))
         candidates += wander
+        sidewalk = area.onSidewalk(npc) and (random.random() >= CROSS_CHANCE or self.inRoad(area) >= MAX_IN_ROAD)
         for target, zoneId, friend in candidates:
             path = nav.walkable(pos, target)
+            if path and sidewalk and not self.keepsToSidewalk(area, path, area.isSidewalk(pos)):
+                continue
             if path:
                 # Players mostly run, and walk now and then.
                 speed = RUN_SPEED if random.random() < 0.65 else WALK_SPEED
@@ -655,6 +762,83 @@ class NPCPlayerManagerAI:
                 npc.faceH = None
                 return True
         return False
+
+    def inRoad(self, area):
+        # The toons in the road now: those that walk there, and any crossing.
+        return len([npc for npc in area.npcs if not npc.isDeleted() and
+                    (getattr(npc, 'inRoad', True) or not area.isSidewalk(npc.getPos()))])
+
+    def keepsToSidewalk(self, area, path, fromSidewalk=True):
+        # Ends on the sidewalk, and steps off it no more than a stride or
+        # two, where the curb dips. (A toon in the road just gets out of it.)
+        if not area.isSidewalk(path[-1]):
+            return False
+        return not fromSidewalk or len([p for p in path if not area.isSidewalk(p)]) <= 2
+
+    # --- Walking into cogs ---
+
+    def walkingSuits(self, area):
+        """The cogs walking about the area now, with where each is."""
+        planner = self.air.suitPlanners.get(area.areaId)
+        if planner is None or not getattr(planner, 'suitList', None):
+            return []
+        from toontown.suit.SuitLegList import SuitLeg
+        now = globalClock.getFrameTime()
+        suits = []
+        for suit in planner.suitList:
+            if suit.isDeleted() or suit.pathState != 1 or suit.legType != SuitLeg.TWalk:
+                continue
+            legs = suit.legList
+            elapsed = now - suit.pathStartTime
+            index = legs.getLegIndexAtTime(elapsed, suit.currentLeg)
+            leg = legs[index]
+            if leg.getType() != SuitLeg.TWalk:
+                continue
+            suits.append((suit, Point3(leg.getPosAtTime(elapsed - legs.getStartTime(index)))))
+        return suits
+
+    def bump(self, area, npc, suits):
+        """A toon that walks into a cog starts a battle with it, and one that
+        walks into a battle joins it, the way a player's toon does."""
+        if npc.walk[3] is not None:
+            # On its way somewhere that matters (a battle already).
+            return
+        pos = npc.getPos()
+        flat = Point3(pos[0], pos[1], 0)
+        for battle in self.getBattles(streetOnly=True):
+            if battle.zoneId != npc.zoneId and getAreaId(battle.zoneId) != area.areaId:
+                continue
+            if battle.isDeleted() or battle.fsm is None or not battle.toonCanJoin():
+                continue
+            players = [t for t in battle.toons if not isNPC(self.air.doId2do.get(t))]
+            if len(battle.toons) >= (4 if players else NPC_BATTLE_SIZE):
+                # A battle of NPCs alone keeps a place for the player.
+                continue
+            center = Point3(battle.pos[0], battle.pos[1], 0)
+            if (center - flat).length() < JOIN_RANGE:
+                npc.walk = None
+                npc.stopMoving()
+                self.crewFor(battle).join(npc, pos[0], pos[1], pos[2])
+                return
+        if not suits or npc.getBattleId() > 0:
+            return
+        alone = [b for b in self.getBattles(streetOnly=True) if getAreaId(b.zoneId) == area.areaId and
+                 not [t for t in b.toons if not isNPC(self.air.doId2do.get(t))]]
+        if len(alone) >= MAX_NPC_BATTLES:
+            return
+        for suit, suitPos in suits:
+            if (Point3(suitPos[0], suitPos[1], 0) - flat).length() < BUMP_RANGE:
+                npc.walk = None
+                npc.stopMoving()
+                if npc.zoneId != suit.zoneId:
+                    npc.b_setLocation(self.air.districtId, suit.zoneId)
+                self.notify.info('NPC %s walks into cog %s in zone %s' % (npc.doId, suit.doId, suit.zoneId))
+                npc.asSender(suit.requestBattle, pos[0], pos[1], pos[2], npc.getH(), 0, 0)
+                battle = self.air.doId2do.get(npc.getBattleId())
+                if isinstance(battle, DistributedBattleBaseAI):
+                    self.crewFor(battle).add(npc)
+                    self.stats['npc battles'] = self.stats.get('npc battles', 0) + 1
+                return
 
     def crowding(self, area, point, exclude=None):
         """How many of the area's toons are at or on their way to near point."""
@@ -739,7 +923,7 @@ class NPCPlayerManagerAI:
                 return Point3(spot[0], spot[1], ground)
         return Point3(center[0], center[1] - 12, center[2])
 
-    def sendToBattle(self, npc, battle, crew):
+    def sendToBattle(self, npc, battle, crew, teleport=False):
         spot = self.battleSpot(battle)
         npc.headingTo = battle
         npc.busy = True
@@ -753,7 +937,7 @@ class NPCPlayerManagerAI:
                 npc.idleUntil = globalClock.getFrameTime() + 3
 
         path = None
-        if (npc.getPos() - spot).length() <= RUN_TO_BATTLE and npc.zoneId == battle.zoneId:
+        if not teleport and (npc.getPos() - spot).length() <= RUN_TO_BATTLE and npc.zoneId == battle.zoneId:
             path = getNav().walkable(npc.getPos(), spot)
         if path:
             npc.busy = False
@@ -785,11 +969,77 @@ class NPCPlayerManagerAI:
             if npc.hp <= 0:
                 self.party.disband(npc)
             return
-        if npc.hp <= 0 or npc.hp < npc.maxHp * 0.3:
-            # Off to the playground, as a toon would; a fresh one comes later.
+        if npc.hp <= 0:
+            # Gone sad: off to the playground, as a toon would; a fresh one
+            # comes later.
             self.despawn(npc)
             return
         npc.b_setAnimState('Happy', 1.0)
+
+    def refill(self):
+        """Fills up the laff and gags of the NPCs back from a fight.
+
+        They run low in a fight the way a player does, and fill up once out
+        of it: off the street battle, or out of the building, factory or
+        boss fight altogether (never between its floors or rounds).
+        """
+        npcs = [npc for area in self.areas.values() for npc in area.npcs] + self.party.members
+        for npc in npcs:
+            if not getattr(npc, 'needsRefill', False) or npc.isDeleted() or npc.crew is not None:
+                continue
+            if getAreaId(npc.zoneId) is None or npc.getBattleId() > 0:
+                continue
+            npc.needsRefill = False
+            if npc.hp < npc.maxHp:
+                npc.b_setHp(npc.maxHp)
+            npc.restock()
+
+    # --- Friends ---
+
+    def friendsFor(self, player):
+        """The NPC toons that count as the player's friends: those in the
+        place the player is in, and those with the player (see NPCFriends)."""
+        area = self.areas.get(getAreaId(player.zoneId)) or self.areas.get(getOutsideAreaId(player.zoneId))
+        npcs = list(area.npcs) if area is not None else []
+        npcs += self.party.partyOf(player)
+        return [npc.doId for npc in npcs if not npc.isDeleted()]
+
+    def summon(self, player, doId):
+        """Whispered for help: the toon says OK and teleports to the player,
+        into the player's battle if there is one, and stays with them."""
+        npc = self.air.doId2do.get(doId)
+        if not isNPC(npc) or npc.isDeleted() or npc.crew is not None:
+            return False
+        player.sendUpdateToAvatarId(player.doId, 'setWhisperSCFrom', [npc.doId, SC_OK])
+        self.party.take(npc, player)
+        npc.helper = True
+        npc.walk = None
+        battle = self.air.doId2do.get(player.getBattleId())
+        if isinstance(battle, DistributedBattleBaseAI) and battle.toonCanJoin() and len(battle.toons) < 4:
+            self.sendToBattle(npc, battle, self.crewFor(battle), teleport=True)
+            return True
+        npc.busy = True
+        spot = self.party.spotNear(self.getPlayerPos(player), 5.0)
+        if npc.zoneId != player.zoneId:
+            npc.b_setLocation(self.air.districtId, player.zoneId)
+        npc.placeAt(spot[0], spot[1], spot[2], random.uniform(-180, 180))
+        npc.b_setAnimState('TeleportIn', 1.0)
+
+        def landed(task):
+            npc.busy = False
+            if not npc.isDeleted():
+                npc.b_setAnimState('Happy', 1.0)
+            return Task.done
+        taskMgr.doMethodLater(TELEPORT_TIME, landed, 'npcTeleportIn-%d' % npc.doId)
+        self.stats['summons'] = self.stats.get('summons', 0) + 1
+        return True
+
+    def joinGroup(self, player, npc):
+        """An NPC toon in the player's boarding group goes where they go."""
+        if npc.crew is not None or npc.isDeleted():
+            return
+        self.party.take(npc, player)
+        npc.helper = True
 
     def joinBosses(self):
         for obj in list(self.air.doId2do.values()):

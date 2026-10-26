@@ -17,18 +17,65 @@ from direct.task import Task
 from panda3d.core import Point3
 
 from otp.local.ExecutionContext import getClientBuiltin
+from toontown.npcplayers.NPCNav import getNav
 from toontown.toonbase import ToontownGlobals
 
 TICK = 0.5
 # Seconds between one NPC's throws.
 THROW_TIME = (1.2, 2.6)
+# Seconds between one NPC's goes at slower jobs: a safe swung on a crane, a
+# toon fired from a cannon, a plate carried, a golf swing.
+SLOW_TIME = (3.0, 6.0)
+SLOW_JOBS = (('l', 'BattleTwo'), ('c', 'BattleTwo'))
+# Swinging a crane over to a safe or a goon, and from there to the CFO.
+CRANE_TIME = (8.0, 14.0)
+# Aiming a banquet table's water pitcher at the CEO.
+PITCHER_TIME = (4.0, 6.0)
+PITCHER_HIT_CHANCE = 0.6
+# How many NPCs take a pitcher; the rest golf, fetch toon-up food or keep
+# out of his way.
+PITCHERS = 3
+GOLF_TIME = (5.0, 9.0)
 # Chances a pie does what it was thrown for.
-STUN_CHANCE = 0.3
-HIT_CHANCE = 0.8
+STUN_CHANCE = 0.25
+HIT_CHANCE = 0.6
+# Seconds between one NPC's throws at a dizzy VP: a player has to get in
+# front of him and aim.
+DIZZY_THROW_TIME = (1.2, 2.8)
+# A run to the witness stand for more evidence, and back.
+EVIDENCE_TRIP = (3.0, 6.0)
+# Evidence on the CJ's scale pan, a big target.
+EVIDENCE_HIT_CHANCE = 0.75
+# How often a throw goes at one of the lawyers instead.
+LAWYER_CHANCE = 0.2
+# The VP: only a few toons go for his stun (the rest wait to hit him while
+# he is dizzy), and they give him a while on his feet before trying again.
+STUNNERS = (2, 3)
+STUN_REST = (4.0, 8.0)
+# The CFO: how likely a safe swung at him lands, and how long one crane is
+# kept free for the player at the start.
+CRANE_HIT_CHANCE = 0.6
+CRANE_FOR_PLAYER = 30.0
+# The CJ: how likely a toon fired from a cannon lands in a chair.
+CANNON_HIT_CHANCE = 0.4
+# The CEO: how many NPCs take a golf spot, and how likely a ball hits him.
+GOLFERS = 2
+GOLF_HIT_CHANCE = 0.65
+# Between goes the NPCs move about the arena on their own, as players do,
+# rather than following the player: how often, and how far from the boss.
+ROAM_TIME = (3.0, 9.0)
+ROAM_RANGE = (14.0, 40.0)
+ROAM_STATES = (('s', 'BattleThree'), ('m', 'BattleThree'), ('l', 'BattleThree'), ('c', 'BattleTwo'),
+               ('c', 'BattleFour'))
 # Chances an NPC is caught by the boss's attacks.
 AREA_HIT_CHANCE = 0.25
 DIRECTED_HIT_CHANCE = 0.6
 HEAL_PLAYER_BELOW = 0.4
+
+
+def isNPCId(air, avId):
+    toon = air.doId2do.get(avId) if avId else None
+    return toon is not None and getattr(toon, 'isNPCPlayer', lambda: False)()
 
 
 class NPCBossCrew:
@@ -44,6 +91,10 @@ class NPCBossCrew:
         self.pieSequence = {}
         self.foodNum = 1000
         self.stateSince = (None, 0)
+        self.stunners = None
+        self.dizzy = False
+        self.stunRestUntil = 0
+        self.nextRoam = {}
         self.taskName = 'npcBossCrew-%d' % boss.doId
         taskMgr.doMethodLater(TICK, self.__tick, self.taskName)
 
@@ -51,10 +102,17 @@ class NPCBossCrew:
         taskMgr.remove(self.taskName)
         self.boss = None
 
+    def count(self, key):
+        self.manager.stats[key] = self.manager.stats.get(key, 0) + 1
+
     def members(self):
         boss = self.boss
-        return [npc for npc in self.manager.party.members
-                if not npc.isDeleted() and npc.doId in boss.involvedToons and npc.crew is None]
+        members = [npc for npc in self.manager.party.members
+                   if not npc.isDeleted() and npc.doId in boss.involvedToons and npc.crew is None]
+        for npc in members:
+            # Laff and gags fill up once out of the boss fight altogether.
+            npc.needsRefill = True
+        return members
 
     def players(self):
         return [self.air.doId2do[t] for t in self.boss.involvedToons
@@ -72,11 +130,19 @@ class NPCBossCrew:
         try:
             members = self.members()
             self.takeHits(members)
+            if (self.dept, state) in ROAM_STATES:
+                for npc in members:
+                    self.roam(npc, now)
             play = getattr(self, 'play%s%s' % (self.dept.upper(), state), None)
             if play is not None:
+                pace = SLOW_TIME if (self.dept, state) in SLOW_JOBS else THROW_TIME
+                if (self.dept, state) == ('m', 'BattleThree'):
+                    pace = CRANE_TIME
+                elif self.dept == 's' and boss.attackCode == ToontownGlobals.BossCogDizzyNow:
+                    pace = DIZZY_THROW_TIME
                 for npc in members:
                     if now >= self.nextAction.get(npc.doId, 0):
-                        self.nextAction[npc.doId] = now + random.uniform(*THROW_TIME)
+                        self.nextAction[npc.doId] = now + random.uniform(*pace)
                         play(npc)
                         key = 'boss %s' % self.dept
                         self.manager.stats[key] = self.manager.stats.get(key, 0) + 1
@@ -85,6 +151,39 @@ class NPCBossCrew:
             import traceback
             traceback.print_exc()
         return Task.again
+
+    # --- Moving about ---
+
+    def isStationed(self, npc):
+        # On a crane, in a cannon, at a golf spot or a table's pitcher, where the
+        # game holds it.
+        boss = self.boss
+        for objects in (getattr(boss, 'cranes', None), getattr(boss, 'cannons', None),
+                        getattr(boss, 'golfSpots', None), getattr(boss, 'tables', None)):
+            for obj in objects or []:
+                if getattr(obj, 'avId', 0) == npc.doId:
+                    return True
+        return False
+
+    def roam(self, npc, now):
+        if npc.walk is not None or npc.busy or now < self.nextRoam.get(npc.doId, 0):
+            return
+        self.nextRoam[npc.doId] = now + random.uniform(*ROAM_TIME)
+        if self.isStationed(npc):
+            return
+        center = self.bossPos()
+        if center is None:
+            return
+        nav = getNav()
+        pos = npc.getPos()
+        for i in range(4):
+            angle = random.uniform(0, 2 * math.pi)
+            dist = random.uniform(*ROAM_RANGE)
+            target = Point3(center[0] + dist * math.cos(angle), center[1] + dist * math.sin(angle), pos[2])
+            path = nav.walkable(pos, target)
+            if path:
+                npc.walk = [path, ToontownGlobals.ToonForwardSpeed, None, None]
+                return
 
     # --- Being hit ---
 
@@ -152,23 +251,40 @@ class NPCBossCrew:
 
     # --- The VP ---
 
+    def isStunner(self, npc):
+        if self.stunners is None:
+            members = self.members()
+            count = min(len(members), random.randint(*STUNNERS))
+            self.stunners = set(n.doId for n in random.sample(members, count))
+        return npc.doId in self.stunners
+
     def playSBattleThree(self, npc):
         boss = self.boss
+        now = globalClock.getFrameTime()
+        dizzy = boss.attackCode == ToontownGlobals.BossCogDizzyNow
+        if self.dizzy and not dizzy:
+            # Back on his feet; the stunners give him a moment.
+            self.stunRestUntil = now + random.uniform(*STUN_REST)
+        self.dizzy = dizzy
         if npc.numPies <= 0:
             npc.asSender(boss.touchCage)
             return
         if self.healPlayer(npc):
             return
         target = self.bossPos()
-        if boss.attackCode == ToontownGlobals.BossCogDizzyNow:
+        if dizzy:
             self.throwAt(npc, target, ToontownGlobals.PieCodeBossCog)
             if random.random() < HIT_CHANCE:
                 npc.asSender(boss.hitBoss, 1)
-        else:
-            # A pie under his front, while he faces the toon, stuns him.
+        elif self.isStunner(npc) and now >= self.stunRestUntil:
+            # A pie under his front, while he faces the toon, stuns him;
+            # most miss.
             self.throwAt(npc, target, ToontownGlobals.PieCodeBossInsides)
+            self.count('vp stun tries')
             if random.random() < STUN_CHANCE:
                 npc.asSender(boss.hitBossInsides)
+                self.count('vp stuns')
+                self.manager.stats['vp stunners'] = len(self.stunners)
 
     def playSNearVictory(self, npc):
         self.throwAt(npc, self.bossPos(), ToontownGlobals.PieCodeBossCog)
@@ -184,17 +300,30 @@ class NPCBossCrew:
             if c.avId == npc.doId:
                 crane = c
         if crane is None:
-            free = [c for c in boss.cranes or [] if c.avId == 0]
+            cranes = list(boss.cranes or [])
+            free = [c for c in cranes if c.avId == 0]
+            players = set(p.doId for p in self.players())
+            playerOnCrane = [c for c in cranes if c.avId in players]
+            if not playerOnCrane and globalClock.getFrameTime() - self.stateSince[1] < CRANE_FOR_PLAYER:
+                # One crane stays free for the player a while; after that
+                # an NPC takes it.
+                free = free[:-1]
             if free:
-                npc.asSender(free[0].requestControl)
+                npc.asSender(random.choice(free).requestControl)
+                onCranes = len([c for c in cranes if isNPCId(self.air, c.avId)])
+                self.manager.stats['cfo npc cranes'] = max(self.manager.stats.get('cfo npc cranes', 0), onCranes)
+                if globalClock.getFrameTime() - self.stateSince[1] < CRANE_FOR_PLAYER:
+                    self.manager.stats['cfo npc cranes early'] = max(
+                        self.manager.stats.get('cfo npc cranes early', 0), onCranes)
             return
         held = None
         for obj in list(boss.safes or []) + list(boss.goons or []):
             if getattr(obj, 'avId', 0) == npc.doId and obj.state in ('Grabbed',):
                 held = obj
         if held is not None:
-            if random.random() < HIT_CHANCE:
-                npc.asSender(held.hitBoss, random.uniform(0.6, 1.0))
+            if random.random() < CRANE_HIT_CHANCE:
+                npc.asSender(held.hitBoss, random.uniform(0.4, 0.9))
+                self.count('cfo crane hits')
             else:
                 npc.asSender(held.requestDrop)
             return
@@ -218,31 +347,48 @@ class NPCBossCrew:
         cannons = list(getattr(boss, 'cannons', None) or [])
         if not cannons:
             return
-        cannon = cannons[hash(npc.doId) % len(cannons)]
-        if getattr(cannon, 'avId', 0) in (0, None):
-            npc.asSender(cannon.requestEnter)
-        for chair in boss.chairs or []:
-            if chair.state != 'ToonJuror' and random.random() < 0.5:
-                npc.asSender(boss.hitChair, chair.index, cannon.index)
-                return
+        mine = [c for c in cannons if getattr(c, 'avId', 0) == npc.doId]
+        if not mine:
+            free = [c for c in cannons if getattr(c, 'avId', 0) in (0, None)]
+            if free:
+                npc.asSender(random.choice(free).requestEnter)
+            return
+        cannon = mine[0]
+        chairs = [chair for chair in boss.chairs or [] if chair.state != 'ToonJuror']
+        self.count('cj cannon shots')
+        if chairs and random.random() < CANNON_HIT_CHANCE:
+            npc.asSender(boss.hitChair, random.choice(chairs).index, cannon.index)
 
     def playLBattleThree(self, npc):
         boss = self.boss
         if npc.numPies <= 0:
+            if not getattr(npc, 'fetchingEvidence', False):
+                # Off to the witness stand for more.
+                npc.fetchingEvidence = True
+                self.nextAction[npc.doId] = globalClock.getFrameTime() + random.uniform(*EVIDENCE_TRIP)
+                return
+            npc.fetchingEvidence = False
             npc.asSender(boss.touchWitnessStand)
             return
         if self.healPlayer(npc):
             return
-        target = self.bossPos()
-        if boss.attackCode != ToontownGlobals.BossCogDizzyNow and random.random() < 0.15:
-            self.throwAt(npc, target, ToontownGlobals.PieCodeBossInsides)
-            if random.random() < STUN_CHANCE:
-                npc.asSender(boss.hitBossInsides)
+        lawyers = [l for l in getattr(boss, 'lawyers', None) or [] if not l.isDeleted() and not l.stunned]
+        if lawyers and random.random() < LAWYER_CHANCE:
+            # A pie at a lawyer stops its evidence landing on the cogs' pan,
+            # and with every lawyer stunned the toons' evidence weighs more.
+            npc.asSender(random.choice(lawyers).hitByToon)
+            if npc.numPies != ToontownGlobals.FullPies:
+                npc.setNumPies(npc.numPies - 1)
+            self.count('cj lawyer stuns')
             return
-        # Evidence on the scale's pan.
+        target = self.bossPos()
+        # Evidence on the scale's pan. (Nobody stuns the CJ.)
         self.throwAt(npc, target, ToontownGlobals.PieCodeDefensePan)
-        if random.random() < HIT_CHANCE:
+        if npc.numPies != ToontownGlobals.FullPies:
+            npc.setNumPies(npc.numPies - 1)
+        if random.random() < EVIDENCE_HIT_CHANCE:
             npc.asSender(boss.hitBoss, 1)
+            self.count('cj evidence hits')
 
     def playLNearVictory(self, npc):
         self.playSNearVictory(npc)
@@ -270,11 +416,47 @@ class NPCBossCrew:
             self.foodNum += 1
             npc.asSender(boss.requestGetToonup, random.randrange(2), random.randrange(3), self.foodNum)
             return
-        roll = random.random()
-        if roll < 0.25 and getattr(boss, 'golfSpots', None):
-            # A golf ball slows him down.
-            npc.asSender(boss.ballHitBoss, random.randint(2, 6))
+        if self.playGolf(npc):
             return
-        self.throwAt(npc, self.bossPos(), ToontownGlobals.PieCodeBossCog)
-        if roll < 0.25 + HIT_CHANCE * 0.75:
-            npc.asSender(boss.hitBoss, 1)
+        self.playPitcher(npc)
+
+    def playPitcher(self, npc):
+        # The banquet tables' water pitchers are what hurt him; one toon to
+        # a table. One stays free for the player a while.
+        boss = self.boss
+        tables = list(boss.tables or [])
+        mine = [t for t in tables if t.avId == npc.doId]
+        if not mine:
+            if len([t for t in tables if isNPCId(self.air, t.avId)]) >= PITCHERS:
+                return
+            free = [t for t in tables if t.avId == 0 and t.state == 'Free']
+            players = set(p.doId for p in self.players())
+            if not [t for t in tables if t.avId in players] and \
+                    globalClock.getFrameTime() - self.stateSince[1] < CRANE_FOR_PLAYER:
+                free = free[:-1]
+            if free:
+                npc.asSender(random.choice(free).requestControl)
+            return
+        self.nextAction[npc.doId] = globalClock.getFrameTime() + random.uniform(*PITCHER_TIME)
+        self.count('ceo pitcher shots')
+        if random.random() < PITCHER_HIT_CHANCE:
+            npc.asSender(boss.hitBoss, random.randint(1, 3))
+
+    def playGolf(self, npc):
+        # A few take a golf spot, and slow him down with golf balls.
+        boss = self.boss
+        spots = list(getattr(boss, 'golfSpots', None) or [])
+        mine = [spot for spot in spots if spot.avId == npc.doId]
+        if not mine:
+            golfers = [spot for spot in spots if isNPCId(self.air, spot.avId)]
+            free = [spot for spot in spots if spot.avId == 0 and spot.state != 'Off']
+            if len(golfers) < GOLFERS and free and random.random() < 0.5:
+                npc.asSender(random.choice(free).requestControl)
+                return bool([spot for spot in spots if spot.avId == npc.doId])
+            return False
+        now = globalClock.getFrameTime()
+        self.nextAction[npc.doId] = now + random.uniform(*GOLF_TIME)
+        self.count('ceo golf swings')
+        if random.random() < GOLF_HIT_CHANCE:
+            npc.asSender(boss.ballHitBoss, random.randint(2, 5))
+        return True

@@ -236,8 +236,15 @@ class NPCParty:
             seated = [e for e in self.getElevators() if npc.doId in seatsOf(e)]
             if seated:
                 continue
+            helper = getattr(npc, 'helper', False)
+            if player.zoneId != npc.zoneId and helper and not npc.busy and \
+                    getAreaId(player.zoneId) is not None and getAreaId(player.zoneId) == getAreaId(npc.zoneId) and \
+                    (npc.getPos() - self.manager.getPlayerPos(player)).length() < CATCH_UP_DISTANCE:
+                # Asked along (see NPCFriends): it walks with the player
+                # from one part of the place to the next.
+                npc.b_setLocation(self.air.districtId, player.zoneId)
             if player.zoneId != npc.zoneId:
-                if getAreaId(player.zoneId) is not None:
+                if getAreaId(player.zoneId) is not None and not helper:
                     # Back out in town: the trip is over.
                     self.disband(npc)
                     continue
@@ -251,6 +258,10 @@ class NPCParty:
                 npc.walk = None
                 continue
             if npc.busy:
+                continue
+            if self.inBossFight(npc):
+                # In a boss fight each toon does its own job (see
+                # NPCBossCrew), rather than tagging along.
                 continue
             if self.isPlaying(npc):
                 # A golf course, a trolley game, a field office game or a
@@ -293,6 +304,14 @@ class NPCParty:
                     continue
                 if responses.get(npc.doId) == 0:
                     npc.asSender(getattr(obj, method))
+
+    def inBossFight(self, npc):
+        for crew in self.manager.bossCrews.values():
+            boss = crew.boss
+            if boss is not None and not boss.isDeleted() and boss.zoneId == npc.zoneId and \
+                    npc.doId in boss.involvedToons:
+                return True
+        return False
 
     def isPlaying(self, npc):
         for obj in list(self.air.doId2do.values()):

@@ -892,6 +892,8 @@ def fightBoss(interior, bossClass, actions, timeout=2400, prelude={}):
         if time.time() > deadline:
             raise StepFailed('the %s did not end in %d seconds (boss state %s)' % (bossClass, timeout, boss.state))
         if boss.state != lastState:
+            if lastState is not None:
+                log('boss state %s lasted %.0f s; %s' % (lastState, time.time() - stateStart, onDistrict(bossStatus, boss.doId)))
             lastState = boss.state
             stateStart = time.time()
             log('boss state', lastState)
@@ -907,6 +909,9 @@ def fightBoss(interior, bossClass, actions, timeout=2400, prelude={}):
         # In the epilogue a rescued toon talks; clicking through the speech
         # balloon's pages ends it.
         action = actions.get(boss.state) or {'Epilogue': finishEpilogue}.get(boss.state)
+        if os.environ.get('AUTOPLAY_BOSS_PASSIVE') and boss.state in ('BattleThree', 'BattleFour'):
+            # The player stands back, to see how the NPCs alone do.
+            action = None
         if action is not None:
             action(boss)
         yield sleep(0.5)
@@ -3153,12 +3158,146 @@ def scenarioNPCStairs():
         raise AssertionError('%d NPC toons went under stairs' % len(stuck))
 
 
+def npcBattleWatch(areaId, what, timeout=240):
+    # NPC toons walking into cogs start battles of their own and fight them
+    # out, with no player in them; afterwards they fill up again.
+    def alone(air):
+        from toontown.npcplayers.NPCPlayerManagerAI import getAreaId
+        from toontown.npcplayers.NPCBattleCrew import isNPC
+        out = []
+        for battle in air.npcPlayerManager.getBattles(streetOnly=True):
+            toons = [air.doId2do.get(t) for t in battle.toons]
+            if getAreaId(battle.zoneId) == areaId and toons and all(isNPC(t) for t in toons):
+                out.append((battle.doId, [t.doId for t in toons], battle.fsm.getCurrentState().getName()))
+        return out
+
+    def stats(air):
+        return dict(air.npcPlayerManager.stats)
+    deadline = time.time() + timeout
+    watched = None
+    while time.time() < deadline:
+        battles = onDistrict(alone)
+        if battles:
+            watched = battles[0]
+            break
+        # Keep the cogs coming.
+        if len(suitsNearby()) < 4:
+            magicWord('~spawn f 3')
+        yield sleep(3)
+    if watched is None:
+        raise StepFailed('no NPC toon walked into a cog in %s' % what)
+    log('%s: NPC toons %s started battle %d (%s)' % (what, watched[1], watched[0], watched[2]))
+    shot = os.path.join(os.environ.get('AUTOPLAY_SHOTS', '/tmp'), 'npc-battle-%d.png' % areaId)
+    yield sleep(6)
+    # Walk the player over to watch it.
+    pos = onDistrict(lambda air: tuple(air.doId2do[watched[0]].pos) if watched[0] in air.doId2do else None)
+    if pos is not None:
+        base.localAvatar.setPos(pos[0] + 14, pos[1] + 14, pos[2] + 0.5)
+        base.localAvatar.headsUp(Point3(*pos))
+        yield sleep(4)
+    base.screenshot(shot, defaultFilename=0)
+    yield until(lambda: watched[0] not in [b[0] for b in onDistrict(alone)], 400, 'the NPC battle to end')
+
+    def after(air, ids):
+        out = []
+        for doId in ids:
+            npc = air.doId2do.get(doId)
+            if npc is not None:
+                out.append((doId, npc.hp, npc.maxHp, npc.inventory.totalProps, getattr(npc, 'needsRefill', None)))
+        return out
+    yield sleep(3)
+    log('%s: after the battle %s; stats %s' % (what, onDistrict(after, watched[1]), onDistrict(stats)))
+    for doId, hp, maxHp, props, needs in onDistrict(after, watched[1]):
+        if hp > 0 and (hp < maxHp or needs):
+            raise StepFailed('NPC %d did not fill up after its battle (%d/%d)' % (doId, hp, maxHp))
+
+
+def scenarioNPCStreets():
+    street = ToontownGlobals.SillyStreet
+    yield from teleport(street - street % 1000, firstVisgroup(street))
+    # With no friend to land next to, a street teleport drops the player at
+    # a playground spot, off the street; stand on a sidewalk instead.
+    spot = onDistrict(lambda air: tuple(air.npcPlayerManager.areas[street].sidewalks[0][0]))
+    base.localAvatar.setPos(*spot)
+    yield sleep(20)
+
+    def sidewalks(air):
+        area = air.npcPlayerManager.areas.get(street)
+        npcs = [npc for npc in area.npcs if not npc.isDeleted()]
+        road = [npc for npc in npcs if npc.inRoad]
+        onWalk = [npc for npc in npcs if not npc.inRoad and npc.crew is None and area.isSidewalk(npc.getPos())]
+        return len(area.sidewalks), len(area.sidewalkQueue), len(npcs), len(road), len(onWalk), area.roadZ
+    found, queued, count, road, onWalk, roadZ = onDistrict(sidewalks)
+    log('Silly Street: %d sidewalk spots (%d to check), road at %s; %d toons, %d in the road, %d of the rest on the sidewalk'
+        % (found, queued, roadZ, count, road, onWalk))
+    base.screenshot(os.path.join(os.environ.get('AUTOPLAY_SHOTS', '/tmp'), 'npc-sidewalks.png'), defaultFilename=0)
+    if not found:
+        raise StepFailed('no sidewalk found on Silly Street')
+    if road != min(8, int(round(0.35 * count))):
+        raise StepFailed('%d of %d toons walk in the road' % (road, count))
+    if onWalk < (count - road) * 0.6:
+        raise StepFailed('only %d of %d sidewalk toons are on the sidewalk' % (onWalk, count - road))
+    yield from npcBattleWatch(street, 'Silly Street')
+    # A Cog HQ courtyard: no sidewalks, the cogs walk where the toons do.
+    yield from teleport(ToontownGlobals.SellbotHQ, ToontownGlobals.SellbotHQ)
+    yield from npcBattleWatch(ToontownGlobals.SellbotHQ, 'Sellbot HQ')
+
+
+def scenarioNPCFriends():
+    # The NPC toons around are on the friends list; a whisper brings one
+    # over; one invited to a boarding group says yes at once.
+    from toontown.friends import FriendsListPanel
+    from toontown.npcplayers import NPCFriends
+    yield from teleport(ToontownGlobals.ToontownCentral)
+    yield until(lambda: len(NPCFriends.npcFriends()) >= 3, 60, 'NPC toons on the friends list')
+    FriendsListPanel.showFriendsList()
+    yield sleep(2)
+    panel = FriendsListPanel.globalFriendsList
+    log('friends list shows %d (%d NPC toons around)' % (len(panel.friends), len(NPCFriends.npcFriends())))
+    base.screenshot(os.path.join(os.environ.get('AUTOPLAY_SHOTS', '/tmp'), 'npc-friends.png'), defaultFilename=0)
+    if len(panel.friends) < 3:
+        raise StepFailed('the friends list does not show the NPC toons')
+    FriendsListPanel.hideFriendsList()
+    me = localAvatar.getPos(render)
+    far = max(NPCFriends.npcFriends(), key=lambda doId: (base.cr.doId2do[doId].getPos(render) - me).length())
+    log('whispering NPC %d, %.0f away' % (far, (base.cr.doId2do[far].getPos(render) - me).length()))
+    base.talkAssistant.sendAvatarWhisperSpeedChat(1, 101, far)
+    yield sleep(4)
+    distance = (base.cr.doId2do[far].getPos(render) - localAvatar.getPos(render)).length()
+
+    def where(air, doId):
+        npc = air.doId2do.get(doId)
+        return npc and (tuple(round(c, 1) for c in npc.getPos()), npc.zoneId, npc.crew, npc.busy, npc.party,
+                        air.npcPlayerManager.stats.get('summons'))
+    log('the NPC is now %.1f away; on the district %s' % (distance, onDistrict(where, far)))
+    base.screenshot(os.path.join(os.environ.get('AUTOPLAY_SHOTS', '/tmp'), 'npc-summoned.png'), defaultFilename=0)
+    if distance > 10:
+        raise StepFailed('the whispered NPC did not come')
+
+    # The player needs the VP's promotion to lead a group to him.
+    magicWord('~maxToon CONFIRM')
+    yield sleep(2)
+    yield from teleport(ToontownGlobals.SellbotHQ, ToontownGlobals.SellbotLobby)
+    yield until(lambda: findObject('DistributedBoardingParty'), 60, 'the boarding group')
+    yield until(lambda: len(NPCFriends.npcFriends()) >= 2, 60, 'NPC toons in the lobby')
+    party = findObject('DistributedBoardingParty')
+    invitee = NPCFriends.npcFriends()[0]
+    party.sendUpdate('requestInvite', [invitee])
+    yield sleep(2)
+    members = onDistrict(lambda air, doId, me: air.doId2do[doId].getGroupMemberList(me), party.doId, localAvatar.doId)
+    log('boarding group: %s' % members)
+    if invitee not in members:
+        raise StepFailed('the invited NPC did not join the boarding group')
+
+
 SCENARIOS = [
     ('login', scenarioLogin),
     ('exittoontown', scenarioExitToontown),
     ('displaysettings', scenarioDisplaySettings),
     ('npcstairs', scenarioNPCStairs),
     ('npcs', scenarioNPCs),
+    ('npcstreets', scenarioNPCStreets),
+    ('npcfriends', scenarioNPCFriends),
     ('npcbuilding', withNPCs(scenarioBuilding, ['DistributedBattleBldgAI'])),
     ('npcfactory', withNPCs(scenarioFactory, ['DistributedBattleFactoryAI'])),
     ('npcmint', withNPCs(scenarioMint, ['DistributedMintBattleAI'])),

@@ -15,6 +15,12 @@ Gag choices follow how good players played together online:
     is going down already; then they take the next one, just as hard as it
     needs.
   * No drops on lured cogs, which they would miss.
+  * Level 7 gags are kept for the big fights: three or more cogs of level 10
+    and up, or a level 12 cog.
+  * On the streets and in the Cog HQs they choose at the last moment, as the
+    timer runs out, the way many players did.
+
+The NPCs fight on their own too, when they walk into a cog.
 """
 
 import math
@@ -25,9 +31,11 @@ from direct.task import Task
 
 from panda3d.core import ConfigVariableBool
 
+from otp.local.ExecutionContext import getClientBuiltin
+
 from toontown.battle.BattleBase import (attackAffectsGroup, HEAL, TRAP, LURE, SOUND, THROW, SQUIRT, DROP,
                                         NO_TRAP, PASS, NPCSOS, FIRE, TOON_ID_COL, TOON_TRACK_COL, TOON_LVL_COL,
-                                        TOON_TGT_COL)
+                                        TOON_TGT_COL, SERVER_BUFFER_TIME)
 from toontown.chat import ResistanceChat
 from toontown.toon import NPCToons
 from toontown.battle.DistributedBattleAI import DistributedBattleAI
@@ -38,6 +46,18 @@ TICK = 0.3
 CHOOSE_DELAY = 1.0
 # When no player has a choice to wait for.
 ALONE_DELAY = 3.0
+# On the street the NPCs choose when the player's timer shows this many
+# seconds (a new pick each round).
+LAST_SECOND = (1.0, 2.5)
+# With no player in the battle, how long the NPCs give a movie when the
+# player's game isn't playing it: per gag, per cog attack, and the reward.
+MOVIE_PER_ATTACK = 3.0
+MOVIE_PER_SUIT = 3.0
+REWARD_TIME = 4.0
+# Level 7 gags: for three cogs of this level or more, or one of UBER_ONE.
+UBER_LEVEL = 10
+UBER_COUNT = 3
+UBER_ONE = 12
 HEAL_BELOW = 0.5
 CRITICAL_BELOW = 0.25
 DAMAGE_TRACKS = (THROW, SQUIRT, DROP, SOUND)
@@ -74,6 +94,8 @@ class NPCBattleCrew:
         self.specials = {}
         self.lastSpecialRound = -SPECIAL_GAP
         self.round = 0
+        self.stateAt = globalClock.getFrameTime()
+        self.lastSecond = LAST_SECOND[0]
         manager.lastHistory = self.history
         self.taskName = 'npcBattleCrew-%d' % battle.doId
         taskMgr.doMethodLater(TICK, self.__tick, self.taskName)
@@ -88,6 +110,7 @@ class NPCBattleCrew:
         if npc not in self.members:
             self.members.append(npc)
             npc.crew = self
+            npc.needsRefill = True
             if ConfigVariableBool('npc-specials', True).getValue():
                 self.specials[npc.doId] = set(kind for kind, chance in SPECIAL_CHANCES if random.random() < chance)
             self.notify.info('NPC %s fights in battle %d' % (npc.doId, self.battle.doId))
@@ -120,8 +143,10 @@ class NPCBattleCrew:
         state = battle.fsm.getCurrentState().getName()
         if state != self.lastState:
             self.lastState = state
+            self.stateAt = globalClock.getFrameTime()
             self.playersDoneAt = None
             if state == 'WaitForInput':
+                self.lastSecond = random.uniform(*LAST_SECOND)
                 self.roundLured = set(battle.battleCalc.currentlyLuredSuits.keys())
                 self.round += 1
                 self.__maybeUnite()
@@ -132,10 +157,6 @@ class NPCBattleCrew:
                 self.release(npc)
         if not self.members:
             return Task.again
-        if not [t for t in battle.toons if not isNPC(self.air.doId2do.get(t))]:
-            # The players are gone; the NPCs don't fight on alone.
-            self.__runAway()
-            return Task.again
         self.__answerJoins()
         self.__answerAdjust()
         if state == 'FaceOff' and not isinstance(battle, DistributedBattleAI):
@@ -145,10 +166,30 @@ class NPCBattleCrew:
         elif state == 'WaitForInput':
             self.__chooseAttacks()
         elif state == 'PlayMovie':
-            self.__answer(battle.movieDone, afterPlayers=True)
+            if self.__playersIn() or self.__movieOver():
+                self.__answer(battle.movieDone, afterPlayers=True)
         elif state in REWARD_STATES:
-            self.__answer(battle.rewardDone, afterPlayers=True)
+            if self.__playersIn() or globalClock.getFrameTime() - self.stateAt > REWARD_TIME:
+                self.__answer(battle.rewardDone, afterPlayers=True)
         return Task.again
+
+    def __playersIn(self):
+        return [t for t in self.battle.toons if not isNPC(self.air.doId2do.get(t))]
+
+    def __movieOver(self):
+        """For a battle of NPCs alone: whether its movie has played out on the
+        player's screen, or would have by now if the player isn't watching."""
+        battle = self.battle
+        since = globalClock.getFrameTime() - self.stateAt
+        base = getClientBuiltin('base')
+        cr = getattr(base, 'cr', None)
+        client = cr.doId2do.get(battle.doId) if cr is not None else None
+        if client is not None and getattr(client, 'movie', None) is not None:
+            if since < 1.0:
+                return False
+            playing = client.fsm.getCurrentState().getName() == 'PlayMovie' and client.movie.track is not None
+            return not playing
+        return since > MOVIE_PER_ATTACK * len(battle.activeToons) + MOVIE_PER_SUIT * len(battle.activeSuits)
 
     def recordRound(self):
         battle = self.battle
@@ -195,14 +236,6 @@ class NPCBattleCrew:
             if battle.responses.get(npc.doId) == 0 and not battle.ignoreResponses:
                 npc.asSender(method)
 
-    def __runAway(self):
-        battle = self.battle
-        if not battle.isRunable():
-            return
-        for npc in self.members[:]:
-            if npc.doId in battle.activeToons:
-                npc.asSender(battle.toonRequestRun)
-
     # --- Choosing gags ---
 
     def __chooseAttacks(self):
@@ -215,16 +248,23 @@ class NPCBattleCrew:
             return
         players = [t for t in battle.activeToons if not isNPC(self.air.doId2do.get(t))]
         self.notify.debug('waiting %s players %s responses %s' % ([n.doId for n in waiting], players, battle.responses))
-        playersDone = all(battle.responses.get(t, 0) > 0 for t in players)
         now = globalClock.getFrameTime()
-        if not playersDone:
-            self.playersDoneAt = None
-            return
-        if self.playersDoneAt is None:
-            self.playersDoneAt = now
         delay = CHOOSE_DELAY if players else ALONE_DELAY
-        if now - self.playersDoneAt < delay:
-            return
+        if isinstance(battle, DistributedBattleAI) and battle.timer.isStarted():
+            # The last moment: what the player's timer shows, less a tick
+            # for each NPC still to choose after this one.
+            shown = battle.timer.getT() - SERVER_BUFFER_TIME
+            if shown > self.lastSecond + TICK * (len(waiting) - 1):
+                return
+        else:
+            playersDone = all(battle.responses.get(t, 0) > 0 for t in players)
+            if not playersDone:
+                self.playersDoneAt = None
+                return
+            if self.playersDoneAt is None:
+                self.playersDoneAt = now
+            if now - self.playersDoneAt < delay:
+                return
         # One at a time, each seeing what the others chose.
         npc = waiting[0]
         planner = RoundPlanner(battle, self.air)
@@ -234,6 +274,8 @@ class NPCBattleCrew:
         else:
             track, level, target = planner.choose(npc)
         npc.asSender(battle.requestAttack, track, level, target)
+        if battle.timer.isStarted():
+            self.notify.info('NPC %s chooses with %.1f s on the timer' % (npc.doId, battle.timer.getT() - SERVER_BUFFER_TIME))
         self.playersDoneAt = now - delay + 0.3
 
 
@@ -335,6 +377,9 @@ class RoundPlanner:
         self.battle = battle
         self.air = air
         self.suits = [s for s in battle.activeSuits if s.getHP() > 0]
+        # Level 7 gags only in a big fight.
+        self.uberOk = (len([s for s in self.suits if s.getActualLevel() >= UBER_LEVEL]) >= UBER_COUNT or
+                       any(s.getActualLevel() >= UBER_ONE for s in self.suits))
         self.lured = set(battle.battleCalc.currentlyLuredSuits.keys())
         self.attacks = []
         for toonId in battle.activeToons:
@@ -354,6 +399,8 @@ class RoundPlanner:
 
     def levels(self, npc, track, group=None):
         levels = [l for l in range(MAX_LEVEL_INDEX + 1) if self.has(npc, track, l)]
+        if not self.uberOk:
+            levels = [l for l in levels if l < MAX_LEVEL_INDEX]
         if group is not None:
             levels = [l for l in levels if bool(attackAffectsGroup(track, l)) == group]
         return levels
@@ -397,6 +444,11 @@ class RoundPlanner:
     def choose(self, npc):
         track, level, target = (self.chooseHeal(npc) or self.chooseLure(npc) or self.chooseAttack(npc)
                                 or (PASS, -1, -1))
+        if track == PASS and not self.uberOk:
+            # Nothing else left: a level 7 gag, rather than nothing.
+            self.uberOk = True
+            track, level, target = (self.chooseHeal(npc) or self.chooseLure(npc) or self.chooseAttack(npc)
+                                    or (PASS, -1, -1))
         if track == PASS:
             self.notify.info('NPC %s passes: tracks %s, inventory %s, suits %s, attacks %s' % (
                 npc.doId, npc.trackArray, npc.inventory.inventory, [(s.doId, s.getHP()) for s in self.suits],
@@ -475,14 +527,14 @@ class RoundPlanner:
             return None
         groupLevels = self.levels(npc, LURE, group=True)
         if len(candidates) >= 2 and groupLevels and not dropTargets & set(unlured):
-            return (LURE, max(groupLevels), -1)
+            return (LURE, self.biggest(groupLevels), -1)
         singleLevels = self.levels(npc, LURE, group=False) or groupLevels
         if not singleLevels:
             return None
         playerTargets = [t for (toon, track, level, t) in self.attacks if not isNPC(toon) and track in DAMAGE_TRACKS]
         for choice in trapped + playerTargets + candidates:
             if choice in candidates:
-                level = max(singleLevels)
+                level = self.biggest(singleLevels)
                 if attackAffectsGroup(LURE, level) and dropTargets & set(unlured):
                     return None
                 return (LURE, level, choice if not attackAffectsGroup(LURE, level) else -1)
@@ -505,7 +557,7 @@ class RoundPlanner:
             # up between hits.
             levels = self.levels(npc, SOUND)
             if levels:
-                wanted = reference[1] if reference and reference[0] == SOUND else max(levels)
+                wanted = reference[1] if reference and reference[0] == SOUND else self.biggest(levels)
                 return (SOUND, self.closestLevel(levels, wanted), -1)
 
         alive = [s.doId for s in self.suits if hp.get(s.doId, 0) > 0]
@@ -551,6 +603,11 @@ class RoundPlanner:
         if not self.lureThisRound():
             tracks.insert(0, DROP)
         return tracks
+
+    def biggest(self, levels):
+        # The biggest gag, but a level 7 one only when nothing else is left.
+        lower = [l for l in levels if l < MAX_LEVEL_INDEX]
+        return max(lower or levels)
 
     def closestLevel(self, levels, wanted):
         below = [l for l in levels if l <= wanted]
