@@ -55,10 +55,8 @@ LAST_SECOND = (1.0, 2.5)
 MOVIE_PER_ATTACK = 3.0
 MOVIE_PER_SUIT = 3.0
 REWARD_TIME = 4.0
-# Level 7 gags: for three cogs of this level or more, or one of UBER_ONE.
-UBER_LEVEL = 10
-UBER_COUNT = 3
-UBER_ONE = 12
+# Level 7 gags: for this many cogs (or a desperate battle, see RoundPlanner).
+UBER_COUNT = 4
 HEAL_BELOW = 0.5
 # A real player gets a toon-up sooner.
 PLAYER_HEAL_BELOW = 0.6
@@ -69,14 +67,19 @@ DAMAGE_TRACKS = (THROW, SQUIRT, DROP, SOUND)
 # it has left from battle to battle, so a used one is gone. Each NPC uses each
 # it has at most once a battle, only one is used every SPECIAL_GAP rounds, and
 # only when there's a good reason (see __special and __maybeUnite).
-SPECIAL_CHANCES = (('fire', 0.15), ('sos', 0.2), ('unite', 0.25))
+# Extras are for extreme circumstances only (Arthur): few NPCs carry one,
+# and even then a turn that could use one usually doesn't.
+SPECIAL_CHANCES = (('fire', 0.06), ('sos', 0.08), ('unite', 0.1))
+SPECIAL_TRY = 0.35
 SPECIAL_GAP = 3
-# A big cog, for the extras: a battle wants one with two of these, or one of
-# BIG_ALONE or more among three cogs.
-BIG_COG = 9
-BIG_ALONE = 11
+# A big cog, for the extras: an extreme battle has three of these, or one of
+# BIG_ALONE or more among four cogs.
+BIG_COG = 10
+BIG_ALONE = 12
 # A player this low wants a toon-up SOS card or unite.
-EXTRA_HEAL_BELOW = 0.35
+EXTRA_HEAL_BELOW = 0.25
+# A player's gags this low (a share of what they can carry) wants a restock.
+EXTRA_RESTOCK_BELOW = 0.1
 # SOS cards up to this many stars; the five star ones were rare online.
 SOS_MAX_STARS = 4
 REWARD_STATES = ('Reward', 'BuildingReward', 'FactoryReward', 'MintReward', 'StageReward', 'CountryClubReward')
@@ -295,7 +298,8 @@ class NPCBattleCrew:
     # --- SOS cards, pink slips and unites ---
 
     def __canUseSpecial(self, npc, kind):
-        return kind in self.specials.get(npc.doId, ()) and self.round - self.lastSpecialRound >= SPECIAL_GAP
+        return (kind in self.specials.get(npc.doId, ()) and self.round - self.lastSpecialRound >= SPECIAL_GAP and
+                random.random() < SPECIAL_TRY)
 
     def __used(self, npc, kind):
         self.specials[npc.doId].discard(kind)
@@ -313,11 +317,11 @@ class NPCBattleCrew:
         return players
 
     def __hard(self, planner):
-        # A battle worth an extra: two big cogs, or a very big one in a
-        # crowd.
+        # A battle extreme enough for an extra: three big cogs, or a very big
+        # one in a full set of four.
         suits = planner.suits
         big = [s for s in suits if s.getActualLevel() >= BIG_COG]
-        return len(big) >= 2 or (len(suits) >= 3 and any(s.getActualLevel() >= BIG_ALONE for s in suits))
+        return len(big) >= 3 or (len(suits) >= 4 and any(s.getActualLevel() >= BIG_ALONE for s in suits))
 
     def __playerInTrouble(self):
         return any(p.getHp() < p.getMaxHp() * EXTRA_HEAL_BELOW for p in self.__players())
@@ -329,13 +333,13 @@ class NPCBattleCrew:
             # Everyone sounds with the player.
             return None
         hard = self.__hard(planner)
-        if self.__canUseSpecial(npc, 'sos') and (hard or self.__playerInTrouble()):
+        if (hard or self.__playerInTrouble()) and self.__canUseSpecial(npc, 'sos'):
             card = self.__pickCard(planner)
             if card is not None:
                 npc.NPCFriendsDict[card] = 1
                 self.__used(npc, 'sos')
                 return NPCSOS, -1, card
-        if self.__canUseSpecial(npc, 'fire') and hard:
+        if hard and self.__canUseSpecial(npc, 'fire'):
             hp = planner.predictedHp()
             # Never the player's cog, and only a big one that this round
             # won't take down already.
@@ -370,15 +374,19 @@ class NPCBattleCrew:
     def __maybeUnite(self):
         # A unite is said, not played as a turn: a toon-up when a player is
         # hurt, otherwise a gag restock when a player is running low.
+        players = self.__players()
+        if not players:
+            return
+        trouble = self.__playerInTrouble()
+        lowGags = any(p.inventory.totalProps < p.getMaxCarry() * EXTRA_RESTOCK_BELOW for p in players)
+        if not (trouble or lowGags):
+            return
         for npc in self.members:
-            if not self.__canUseSpecial(npc, 'unite') or npc.doId not in self.battle.activeToons:
+            if npc.doId not in self.battle.activeToons or not self.__canUseSpecial(npc, 'unite'):
                 continue
-            players = self.__players()
-            if not players:
-                return
-            if self.__playerInTrouble():
+            if trouble:
                 menu, items = ResistanceChat.RESISTANCE_TOONUP, (2, 3, 4)
-            elif any(p.inventory.totalProps < p.getMaxCarry() // 4 for p in players):
+            elif lowGags:
                 menu, items = ResistanceChat.RESISTANCE_RESTOCK, (7,)
             else:
                 continue
@@ -397,9 +405,6 @@ class RoundPlanner:
         self.battle = battle
         self.air = air
         self.suits = [s for s in battle.activeSuits if s.getHP() > 0]
-        # Level 7 gags only in a big fight.
-        self.uberOk = (len([s for s in self.suits if s.getActualLevel() >= UBER_LEVEL]) >= UBER_COUNT or
-                       any(s.getActualLevel() >= UBER_ONE for s in self.suits))
         self.lured = set(battle.battleCalc.currentlyLuredSuits.keys())
         self.attacks = []
         for toonId in battle.activeToons:
@@ -408,6 +413,15 @@ class RoundPlanner:
                 continue
             toon = self.air.doId2do.get(toonId)
             self.attacks.append((toon, attack[TOON_TRACK_COL], attack[TOON_LVL_COL], attack[TOON_TGT_COL]))
+        # Level 7 gags (Arthur): never on a single cog; for a full set of
+        # four, or when the battle desperately needs one (a player about to
+        # go sad or nearly out of gags). One a round at most.
+        players = [self.air.doId2do.get(t) for t in battle.activeToons]
+        players = [p for p in players if p is not None and not isNPC(p)]
+        desperate = any(p.getHp() < p.getMaxHp() * CRITICAL_BELOW or
+                        p.inventory.totalProps < p.getMaxCarry() * 0.1 for p in players)
+        ubers = [a for a in self.attacks if isNPC(a[0]) and a[2] == MAX_LEVEL_INDEX]
+        self.uberOk = (len(self.suits) >= UBER_COUNT or desperate) and not ubers
 
     def tracksUsed(self):
         return set(a[1] for a in self.attacks)
@@ -473,6 +487,12 @@ class RoundPlanner:
         return hp
 
     def choose(self, npc):
+        heal = self.chooseHeal(npc)
+        if heal is not None:
+            # A toon-up comes first when someone needs one, even in a sound
+            # round.
+            track, level, target = heal
+            return track, level, (-1 if attackAffectsGroup(track, level) else target)
         if SOUND in self.playerTracks():
             # The player sounds, so every NPC sounds with them.
             levels = self.levels(npc, SOUND) or self.levels(npc, SOUND, uber=True)
@@ -481,8 +501,9 @@ class RoundPlanner:
                 return (SOUND, self.closestLevel(levels, wanted), -1)
         track, level, target = (self.chooseHeal(npc) or self.chooseLure(npc) or self.chooseAttack(npc)
                                 or (PASS, -1, -1))
-        if track == PASS and not self.uberOk:
-            # Nothing else left: a level 7 gag, rather than nothing.
+        if track == PASS and not self.uberOk and len(self.suits) > 1:
+            # Nothing else left: a level 7 gag, rather than nothing (but
+            # never on a single cog).
             self.uberOk = True
             track, level, target = (self.chooseHeal(npc) or self.chooseLure(npc) or self.chooseAttack(npc)
                                     or (PASS, -1, -1))
@@ -555,8 +576,10 @@ class RoundPlanner:
         trapped = [t for (toon, track, level, t) in self.attacks if track == TRAP and t in unlured]
         trapped += [s.doId for s in self.suits if s.doId in unlured and s.battleTrap != NO_TRAP]
         hp = self.predictedHp()
-        if not trapped and all(hp.get(s, 1) <= 0 for s in unlured):
-            # Those cogs are going down anyway.
+        if not trapped and sum(max(0, hp.get(s, 0)) for s in unlured) <= self.stillToCome():
+            # Those cogs go down this round without a lure (counting the
+            # gags of the toons who haven't chosen yet, this one included),
+            # so nobody lures.
             return None
         dropTargets = set(t for (toon, track, level, t) in self.attacks if track == DROP)
         candidates = [s for s in unlured if s not in dropTargets]
@@ -576,6 +599,26 @@ class RoundPlanner:
                     return None
                 return (LURE, level, choice if not attackAffectsGroup(LURE, level) else -1)
         return None
+
+    def stillToCome(self):
+        """About how much damage the NPCs still to choose can do, each with
+        its biggest gag (not a level 7 one) of the player's track, or of a
+        hitting track if the player hasn't chosen one."""
+        reference = [a[1] for a in self.attacks if not isNPC(a[0]) and a[1] in (THROW, SQUIRT, DROP)]
+        tracks = reference[:1] or [THROW, SQUIRT, DROP]
+        chosen = set(a[0].doId for a in self.attacks if a[0] is not None)
+        total = 0
+        for toonId in self.battle.activeToons:
+            toon = self.air.doId2do.get(toonId)
+            if toon is None or not isNPC(toon) or toonId in chosen:
+                continue
+            best = 0
+            for track in tracks:
+                levels = [l for l in self.levels(toon, track) if l < MAX_LEVEL_INDEX]
+                if levels:
+                    best = max(best, self.damage(toon, track, max(levels)))
+            total += best
+        return total
 
     def chooseAttack(self, npc):
         if not self.suits:

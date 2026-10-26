@@ -184,6 +184,7 @@ class NPCArea:
         self.trail = []
         self.isStreet = areaId != ZoneUtil.getHoodId(areaId) and areaId not in COG_HQ_AREAS
         self.isLobby = areaId in LOBBIES
+        self.lobbyFloor = set()
         # The sidewalk spots, found from the cogs' paths once the place's
         # ground is there to look at (see NPCPlayerManagerAI.findSidewalks).
         self.sidewalks = []
@@ -487,9 +488,11 @@ class NPCPlayerManagerAI:
             return
         low, high = bounds
         found = []
-        x = low[0]
+        # On a grid of whole FLOOR_SAMPLE steps, so onLobbyFloor can find a
+        # point's square by rounding.
+        x = math.floor(low[0] / FLOOR_SAMPLE) * FLOOR_SAMPLE
         while x <= high[0]:
-            y = low[1]
+            y = math.floor(low[1] / FLOOR_SAMPLE) * FLOOR_SAMPLE
             while y <= high[1]:
                 ground = nav.standZ(x, y, 1.0)
                 if ground is not None:
@@ -499,8 +502,26 @@ class NPCPlayerManagerAI:
         if not found:
             return
         floor = sorted(p[2] for p in found)[len(found) // 2]
-        area.anchors = [(p, area.areaId) for p in found if abs(p[2] - floor) <= LOBBY_FLOOR_RISE]
+        area.anchors = [(p, area.areaId) for p in found
+                        if abs(p[2] - floor) <= LOBBY_FLOOR_RISE and not nav.covered(p[0], p[1], p[2])]
+        # The open floor, by grid square, for checking walks (onLobbyFloor).
+        area.lobbyFloor = set((int(round(p[0] / FLOOR_SAMPLE)), int(round(p[1] / FLOOR_SAMPLE)))
+                              for p, zoneId in area.anchors)
         self.notify.info('area %d: %d floor spots sampled' % (area.areaId, len(area.anchors)))
+
+    def onLobbyFloor(self, area, path):
+        """Whether every step of a path is on the lobby's open floor: near a
+        sampled spot (which are never under the stairs or past a wall) and
+        with nothing overhead."""
+        nav = getNav()
+        spots = area.lobbyFloor
+        for i, p in enumerate(path):
+            key = (int(round(p[0] / FLOOR_SAMPLE)), int(round(p[1] / FLOOR_SAMPLE)))
+            if key not in spots:
+                return False
+            if i % 2 == 0 and nav.covered(p[0], p[1], p[2]):
+                return False
+        return True
 
     def nextRole(self, area):
         """Whether the next toon made for the area walks in the road."""
@@ -792,8 +813,9 @@ class NPCPlayerManagerAI:
             path = nav.walkable(pos, target)
             if path and sidewalk and not self.keepsToSidewalk(area, path, area.isSidewalk(pos)):
                 continue
-            if path and area.isLobby and max(abs(p[2] - pos[2]) for p in path) > LOBBY_FLOOR_RISE:
-                # Not up the stairs, nor through them.
+            if path and area.isLobby and (max(abs(p[2] - pos[2]) for p in path) > LOBBY_FLOOR_RISE or
+                                          not self.onLobbyFloor(area, path)):
+                # Not up the stairs, nor through or under them.
                 continue
             if path:
                 # Players mostly run, and walk now and then.
