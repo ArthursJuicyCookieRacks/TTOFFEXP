@@ -213,6 +213,27 @@ ready = []
 listener.accept('localServerReady', lambda: ready.append(1))
 
 
+def checkHoldRepeat(mat):
+    # Holding a colour arrow for two seconds steps through several colours,
+    # at a pace that can still be followed.
+    from direct.gui import DirectGuiGlobals as DGG
+    from toontown.makeatoon import HoldRepeat
+    button = mat.cos.allRButton
+    before = mat.cos.headChoice
+    length = len(mat.cos.getGenderColorList(mat.cos.dna))
+    held = HoldRepeat.mouseHeld
+    HoldRepeat.mouseHeld = lambda: True
+    messenger.send(DGG.B1PRESS + button.guiId, [None])
+    yield sleep(2.0)
+    HoldRepeat.mouseHeld = held
+    messenger.send(DGG.B1RELEASE + button.guiId, [None])
+    steps = (mat.cos.headChoice - before) % length
+    log('holding the colour arrow for 2 s stepped %d colours' % steps)
+    base.screenshot(os.path.join(os.environ.get('AUTOPLAY_SHOTS', '/tmp'), 'mat-hold.png'), defaultFilename=0)
+    if not 3 <= steps <= 7:
+        raise StepFailed('holding the arrow stepped %d colours' % steps)
+
+
 def scenarioLogin():
     yield until(lambda: ready, 300, 'local server ready')
     yield until(lambda: loginState() == 'connect', 60, 'press a key screen')
@@ -233,6 +254,8 @@ def scenarioLogin():
             yield sleep(0.5)
             mat.goToNextShop()
             yield until(lambda: shop() == name, 30, name)
+            if name == 'ColorShop':
+                yield from checkHoldRepeat(mat)
         yield sleep(2)
         mat.ns._NameShop__createAvatar(skipTutorial=not TUTORIAL)
     else:
