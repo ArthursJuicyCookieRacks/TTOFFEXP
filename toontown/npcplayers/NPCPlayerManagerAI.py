@@ -937,17 +937,20 @@ class NPCPlayerManagerAI:
                 continue
             coming = len([npc for area in self.areas.values() for npc in area.npcs
                           if getattr(npc, 'headingTo', None) is battle])
-            if coming:
-                continue
-            npc = self.pickHelper(battle)
-            if npc is not None:
+            # With a player in it the battle fills all four spots; the
+            # helpers set off together rather than one after another.
+            for i in range(4 - len(battle.toons) - coming):
+                npc = self.pickHelper(battle)
+                if npc is None:
+                    break
                 self.sendToBattle(npc, battle, crew)
 
     def pickHelper(self, battle):
         area = self.areas.get(getAreaId(battle.zoneId))
         if area is None:
             return None
-        free = [npc for npc in area.npcs if npc.crew is None and not npc.busy and not npc.isDeleted()]
+        free = [npc for npc in area.npcs if npc.crew is None and not npc.busy and not npc.isDeleted() and
+                getattr(npc, 'headingTo', None) is None]
         if not free:
             return None
         battlePos = Point3(battle.pos)
