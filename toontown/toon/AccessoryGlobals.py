@@ -1142,12 +1142,12 @@ ExtendedBackpackTransTable = {1: {'m': ((0.227545, -1.05, 0.053624), (180.0, 6.0
 # The extra backpacks (see ToonDNA.ExtraBackpackModels) were modelled at
 # other sizes than the originals: the default spot, scaled to match, moved
 # out of the body, and turned: (scale, back, up, heading, pitch).
-EXTRA_BACKPACK_FITS = {25: (2.6, 0.3, 0.12, 180.0, 0.0),   # santa's sack
-                       26: (2.6, 0.75, 0.85, 0.0, 0.0),    # scarf, at the neck
-                       27: (1.5, -0.06, 0.0, 0.0, 0.0),    # bow
-                       32: (3.0, -0.2, 0.0, 0.0, 12.0)}    # trash can lid
-for _idx, (_grow, _back, _up, _turn, _tilt) in EXTRA_BACKPACK_FITS.items():
+EXTRA_BACKPACK_FITS = {25: (2.6, 0.3, 0.12, 180.0, 0.0, -0.06),   # santa's sack
+                       26: (2.6, 0.75, 0.85, 0.0, 0.0, 0.0),    # scarf, at the neck
+                       27: (1.5, -0.06, 0.0, 0.0, 0.0, 0.0),    # bow
+                       32: (3.0, -0.2, 0.0, 0.0, 18.0, 0.0)}    # trash can lid
+for _idx, (_grow, _back, _up, _turn, _tilt, _side) in EXTRA_BACKPACK_FITS.items():
     ExtendedBackpackTransTable[_idx] = dict(
-        (_torso, ((_pos[0], _pos[1] + _back, _pos[2] + _up), (_hpr[0] + _turn, _hpr[1] + _tilt, _hpr[2]),
+        (_torso, ((_pos[0] + _side, _pos[1] + _back, _pos[2] + _up), (_hpr[0] + _turn, _hpr[1] + _tilt, _hpr[2]),
                   tuple(_s * _grow for _s in _scale)))
         for _torso, (_pos, _hpr, _scale) in BackpackTransTable.items())
