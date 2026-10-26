@@ -22,6 +22,7 @@ from . import GenderShop
 from . import BodyShop
 from . import ColorShop
 from . import MakeClothesGUI
+from . import HoldRepeat
 from . import NameShop
 import random
 from otp.nametag.NametagConstants import CFSpeech
@@ -255,6 +256,7 @@ class MakeAToon(StateData.StateData):
         self.bs.load()
         self.cos.load()
         self.cls.load()
+        HoldRepeat.addToArrows(aspect2d)
         self.ns.load()
         self.music = base.loader.loadMusic('phase_3/audio/bgm/create_a_toon.ogg')
         self.musicVolume = config.GetFloat('makeatoon-music-volume', 1)
