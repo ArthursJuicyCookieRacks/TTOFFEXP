@@ -1,5 +1,5 @@
 diff --git a/panda/src/android/PythonActivity.java b/panda/src/android/PythonActivity.java
-index 0fa781b..a107799 100644
+index 0fa781b..7031f8a 100644
 --- a/panda/src/android/PythonActivity.java
 +++ b/panda/src/android/PythonActivity.java
 @@ -33,6 +33,7 @@ import android.database.Cursor;
@@ -10,12 +10,10 @@ index 0fa781b..a107799 100644
  import java.io.FileOutputStream;
  import java.io.InputStream;
  import java.io.OutputStream;
-@@ -293,8 +294,68 @@ public class PythonActivity extends PandaActivity {
+@@ -293,8 +294,70 @@ public class PythonActivity extends PandaActivity {
          return typedText;
      }
  
--    @Override
--    protected void onActivityResult(int requestCode, int resultCode, Intent intent) {
 +    // Saving one of the game's files somewhere the player picks with the
 +    // system's "save as" screen (for toon backups that must outlive the
 +    // app).  savedFile is null while that screen is open, "" if nothing was
@@ -69,6 +67,8 @@ index 0fa781b..a107799 100644
 +        }
 +    }
 +
+     @Override
+     protected void onActivityResult(int requestCode, int resultCode, Intent intent) {
 +        if (requestCode == SAVE_FILE_REQUEST) {
 +            if (resultCode == RESULT_OK && intent != null && intent.getData() != null) {
 +                Uri uri = intent.getData();
