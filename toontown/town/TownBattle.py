@@ -16,9 +16,9 @@ from direct.directnotify import DirectNotifyGlobal
 from toontown.battle import BattleBase
 from toontown.toonbase import ToontownTimer
 from direct.showbase import PythonUtil
-from toontown.toonbase import TTLocalizer
+from toontown.toonbase import TTLocalizer, ToontownGlobals
 from toontown.pets import PetConstants
-from direct.gui.DirectGui import DGG
+from direct.gui.DirectGui import DGG, DirectButton
 from toontown.battle import FireCogPanel
 
 class TownBattle(StateData.StateData):
@@ -139,7 +139,32 @@ class TownBattle(StateData.StateData):
         self.timer.setPos(-0.151, 0, -0.158)
         self.timer.setScale(0.4)
         self.timer.hide()
+        # Need Help! (offline Setup: Solo, or Solo at the turn based prompt):
+        # NPC toons join this battle after all. Bottom right, out of the way
+        # of the gag panels and the touch controls.
+        buttons = loader.loadModel('phase_3/models/gui/quit_button')
+        self.helpButton = DirectButton(parent=base.a2dBottomRight, relief=None,
+                                       image=(buttons.find('**/QuitBtn_UP'), buttons.find('**/QuitBtn_DN'), buttons.find('**/QuitBtn_RLVR')),
+                                       image_scale=(1.0, 1, 1.2), pos=(-0.2, 0, 0.09), scale=0.85,
+                                       text=TTLocalizer.TownBattleNeedHelp, text_scale=0.05, text_pos=(0, -0.016),
+                                       text_font=ToontownGlobals.getInterfaceFont(), command=self.__needHelp)
+        buttons.removeNode()
+        self.helpButton.hide()
+        self.helpTaskName = 'townBattleNeedHelp'
         return
+
+    def __watchHelp(self, task=None):
+        from toontown.npcplayers import NPCFriends
+        if NPCFriends.needHelpAvailable():
+            self.helpButton.show()
+        else:
+            self.helpButton.hide()
+        return task and task.again
+
+    def __needHelp(self):
+        from toontown.npcplayers import NPCFriends
+        self.helpButton.hide()
+        NPCFriends.needHelp()
 
     def cleanup(self):
         self.ignore(self.attackPanelDoneEvent)
@@ -165,6 +190,9 @@ class TownBattle(StateData.StateData):
         del self.cogPanels
         self.timer.destroy()
         del self.timer
+        taskMgr.remove(self.helpTaskName)
+        self.helpButton.destroy()
+        del self.helpButton
         del self.toons
 
     def enter(self, event, parentFSMState, bldg = 0, creditMultiplier = 1, tutorialFlag = 0):
@@ -353,6 +381,9 @@ class TownBattle(StateData.StateData):
         self.target = 0
         if hasattr(self, 'timer'):
             self.timer.hide()
+        if hasattr(self, 'helpButton'):
+            taskMgr.remove(self.helpTaskName)
+            self.helpButton.hide()
         return None
 
     def exitOff(self):
@@ -360,6 +391,9 @@ class TownBattle(StateData.StateData):
             self.__enterPanels(self.numToons, self.localNum)
             self.__cogPanels(self.numCogs)
         self.timer.show()
+        taskMgr.remove(self.helpTaskName)
+        self.__watchHelp()
+        taskMgr.doMethodLater(0.5, self.__watchHelp, self.helpTaskName)
         self.track = -1
         self.level = -1
         self.target = 0

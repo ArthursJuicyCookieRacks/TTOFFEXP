@@ -15,6 +15,7 @@ from . import CCharChatter
 from . import CCharPaths
 import string
 import copy
+from otp.nametag.NametagConstants import CFSpeech, CFThought, CFTimeout
 
 class DistributedCCharBase(DistributedChar.DistributedChar):
     notify = DirectNotifyGlobal.directNotify.newCategory('DistributedCCharBase')

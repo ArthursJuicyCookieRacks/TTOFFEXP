@@ -23,6 +23,7 @@ from . import SuitDialog
 from toontown.battle import BattleProps
 import math
 import copy
+from otp.nametag.NametagConstants import CFSpeech, CFTimeout
 
 class DistributedSuitBase(DistributedAvatar.DistributedAvatar, Suit.Suit, SuitBase.SuitBase):
     notify = DirectNotifyGlobal.directNotify.newCategory('DistributedSuitBase')

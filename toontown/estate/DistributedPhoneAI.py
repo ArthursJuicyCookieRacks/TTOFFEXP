@@ -125,12 +125,12 @@ class DistributedPhoneAI(DistributedFurnitureItemAI):
             return
 
         if item.getDeliveryTime():
-            if len(av.onOrder) > 3: #TODO correct number
+            # Everything on order has to fit in the mailbox when it comes.
+            if len(av.mailboxContents) + len(av.onOrder) >= ToontownGlobals.MaxMailboxContents:
                 self.sendUpdateToAvatarId(avId, 'requestPurchaseResponse', [context, ToontownGlobals.P_OnOrderListFull])
                 return
-            if len(av.mailboxContents) + len(av.onOrder) >= ToontownGlobals.MaxMailboxContents:
-                self.sendUpdateToAvatarId(avId, 'requestPurchaseResponse', [context, ToontownGlobals.P_MailboxFull])
             if not av.takeMoney(price):
+                self.sendUpdateToAvatarId(avId, 'requestPurchaseResponse', [context, ToontownGlobals.P_NotEnoughMoney])
                 return
             item.deliveryDate = int(time.time()/60) + item.getDeliveryTime()
             av.onOrder.append(item)
@@ -138,7 +138,7 @@ class DistributedPhoneAI(DistributedFurnitureItemAI):
             self.sendUpdateToAvatarId(avId, 'requestPurchaseResponse', [context, ToontownGlobals.P_ItemOnOrder])
         else:
             if not av.takeMoney(price):
-                #u wot m8
+                self.sendUpdateToAvatarId(avId, 'requestPurchaseResponse', [context, ToontownGlobals.P_NotEnoughMoney])
                 return
 
             resp = item.recordPurchase(av, optional)
@@ -151,8 +151,76 @@ class DistributedPhoneAI(DistributedFurnitureItemAI):
     def requestPurchaseResponse(self, todo0, todo1):
         pass
 
-    def requestGiftPurchaseMessage(self, todo0, todo1, todo2, todo3):
-        pass
+    def requestGiftPurchaseMessage(self, context, targetDoId, item, optional):
+        # A catalog item bought for a friend: it goes on their gift order,
+        # whether they are playing or not.
+        avId = self.air.getAvatarIdFromSender()
+        av = self.air.doId2do.get(avId)
+        if avId != self.avId or not av:
+            return
+
+        def respond(retcode):
+            self.sendUpdateToAvatarId(avId, 'requestGiftPurchaseResponse', [context, retcode])
+
+        item = CatalogItem.getItem(item)
+        if isinstance(item, CatalogInvalidItem) or item.loyaltyRequirement():
+            return
+        if item in av.backCatalog:
+            price = item.getPrice(CatalogItem.CatalogTypeBackorder)
+        elif item in av.weeklyCatalog or item in av.monthlyCatalog:
+            price = item.getPrice(0)
+        else:
+            return
+        if not item.isGift():
+            respond(ToontownGlobals.P_NotAGift)
+            return
+        if targetDoId not in [friendId for friendId, friendType in av.friendsList]:
+            respond(ToontownGlobals.P_NoPurchaseMethod)
+            return
+        if av.getMoney() + av.getBankMoney() < price:
+            respond(ToontownGlobals.P_NotEnoughMoney)
+            return
+        target = self.air.doId2do.get(targetDoId)
+        if target:
+            self.__giveGift(av, target.onGiftOrder, len(target.mailboxContents), item, price, target, respond,
+                            lambda onGiftOrder: target.b_setGiftSchedule(onGiftOrder))
+            return
+
+        def gotTarget(dclass, fields):
+            if dclass != self.air.dclassesByName['DistributedToonAI'] or self.isDeleted():
+                respond(ToontownGlobals.P_NoPurchaseMethod)
+                return
+            store = CatalogItem.Customization | CatalogItem.DeliveryDate
+            onGiftOrder = CatalogItemList(fields['setGiftSchedule'][0], store=store)
+            mailbox = CatalogItemList(fields['setMailboxContents'][0], store=CatalogItem.Customization)
+            self.__giveGift(av, onGiftOrder, len(mailbox), item, price, None, respond,
+                            lambda onGiftOrder: self.air.dbInterface.updateObject(
+                                self.air.dbId, targetDoId, dclass,
+                                {'setGiftSchedule': (onGiftOrder.getBlob(store=store),)}))
+
+        self.air.dbInterface.queryObject(self.air.dbId, targetDoId, gotTarget,
+                                         self.air.dclassesByName['DistributedToonAI'],
+                                         fieldNames=['setGiftSchedule', 'setMailboxContents'])
+
+    def __giveGift(self, av, onGiftOrder, inMailbox, item, price, target, respond, save):
+        if inMailbox + len(onGiftOrder) >= ToontownGlobals.MaxMailboxContents:
+            respond(ToontownGlobals.P_MailboxFull)
+            return
+        if target and (item.notOfferedTo(target) or item.reachedPurchaseLimit(target)):
+            respond(ToontownGlobals.P_ReachedPurchaseLimit)
+            return
+        if item in onGiftOrder:
+            respond(ToontownGlobals.P_ReachedPurchaseLimit)
+            return
+        if not av.takeMoney(price):
+            respond(ToontownGlobals.P_NotEnoughMoney)
+            return
+        item.giftTag = av.doId
+        item.deliveryDate = int(time.time() / 60) + item.getDeliveryTime()
+        onGiftOrder.append(item)
+        save(onGiftOrder)
+        self.air.writeServerEvent('gift-purchased', avId=av.doId, item=item.getName())
+        respond(ToontownGlobals.P_ItemOnOrder)
 
     def requestGiftPurchaseResponse(self, todo0, todo1):
         pass

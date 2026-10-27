@@ -1,4 +1,5 @@
 from enum import Enum
+from otp.otpbase.PythonEnum import IntEnum
 from direct.showbase import PythonUtil
 from panda3d.core import VBase4
 #GameActions = PythonUtil.Enum(('EnterDoor',
@@ -6,12 +7,12 @@ from panda3d.core import VBase4
 # 'OpenDoor',
 # 'Countdown',
 # 'TimeAlert'))
-class GameActions(Enum):
-    EnterDoor = 1
-    RevealDoor = 2
-    OpenDoor = 3
-    Countdown = 4
-    TimeAlert = 5
+class GameActions(IntEnum):
+    EnterDoor = 0
+    RevealDoor = 1
+    OpenDoor = 2
+    Countdown = 3
+    TimeAlert = 4
 SecondsUntilTimeout = 4.0 * 60.0
 SecondsUntilGameEnds = 60.0
 SecondsForTimeAlert = 60.0
@@ -91,10 +92,10 @@ class SuitCollisionName(Enum):
 SuitWalkSameDirectionProb = 1
 SuitWalkTurnAroundProb = 100
 #SuitTypes = PythonUtil.Enum(('Boss', 'FastMinion', 'SlowMinion'))
-class SuitTypes(Enum):
-    Boss = 1
-    FastMinion = 2
-    SlowMinion = 3
+class SuitTypes(IntEnum):
+    Boss = 0
+    FastMinion = 1
+    SlowMinion = 2
 SuitData = {}
 SuitData[SuitTypes.Boss] = {'dnaName': 'ms',
  'cellWalkPeriod': 192,

@@ -3,6 +3,7 @@ import types
 from toontown.toonbase import TTLocalizer
 from direct.showbase import PythonUtil
 from enum import Enum
+from otp.otpbase.PythonEnum import IntEnum
 from otp.otpbase import OTPGlobals
 PartsPerSuit = (17,
  14,
@@ -431,10 +432,10 @@ PartsQueryNames = ({1: PartNameStrings[0],
   32768: PartNameStrings[15],
   65536: PartNameStrings[15]})
 #suitTypes = PythonUtil.Enum(('NoSuit', 'NoMerits', 'FullSuit'))
-class suitTypes(Enum):
-    NoSuit = 1
-    NoMerits = 2
-    FullSuit = 3
+class suitTypes(IntEnum):
+    NoSuit = 0
+    NoMerits = 1
+    FullSuit = 2
 
 def getNextPart(parts, partIndex, dept):
     dept = dept2deptIndex(dept)

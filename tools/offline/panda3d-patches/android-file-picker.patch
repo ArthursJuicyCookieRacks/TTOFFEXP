@@ -1,0 +1,179 @@
+diff --git a/panda/src/android/PythonActivity.java b/panda/src/android/PythonActivity.java
+index 68b4720..7f625a1 100644
+--- a/panda/src/android/PythonActivity.java
++++ b/panda/src/android/PythonActivity.java
+@@ -16,6 +16,13 @@ package org.panda3d.android;
+ import org.panda3d.android.PandaActivity;
+ 
+ import android.content.Intent;
++import android.database.Cursor;
++import android.net.Uri;
++import android.provider.OpenableColumns;
++import java.io.File;
++import java.io.FileOutputStream;
++import java.io.InputStream;
++import java.io.OutputStream;
+ import java.util.ArrayList;
+ import java.util.Collections;
+ import java.util.Iterator;
+@@ -54,8 +61,70 @@ public class PythonActivity extends PandaActivity {
+         this.activityResultListeners.remove(listener);
+     }
+ 
++    // Picking a file with the system's file picker, for the game to copy
++    // into its own folder.  pickedFile is null while the picker is open, ""
++    // if nothing was picked, and otherwise the path of the copy.
++    private static final int PICK_FILE_REQUEST = 0x7d01;
++    private volatile String pickedFile = "";
++    private volatile String pickDir = null;
++
++    public void pickFile(String mimeType, String destDir) {
++        pickedFile = null;
++        pickDir = destDir;
++        runOnUiThread(() -> {
++            Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
++            intent.addCategory(Intent.CATEGORY_OPENABLE);
++            intent.setType(mimeType);
++            try {
++                startActivityForResult(intent, PICK_FILE_REQUEST);
++            } catch (Exception e) {
++                pickedFile = "";
++            }
++        });
++    }
++
++    public String getPickedFile() {
++        return pickedFile;
++    }
++
++    private void copyPickedFile(Uri uri) {
++        String name = "picked";
++        try (Cursor cursor = getContentResolver().query(uri, null, null, null, null)) {
++            if (cursor != null && cursor.moveToFirst()) {
++                int column = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
++                if (column >= 0 && cursor.getString(column) != null) {
++                    name = new File(cursor.getString(column)).getName();
++                }
++            }
++        } catch (Exception e) {
++        }
++        File dir = new File(pickDir);
++        dir.mkdirs();
++        File dest = new File(dir, name);
++        try (InputStream in = getContentResolver().openInputStream(uri);
++             OutputStream out = new FileOutputStream(dest)) {
++            byte[] buffer = new byte[65536];
++            int count;
++            while ((count = in.read(buffer)) > 0) {
++                out.write(buffer, 0, count);
++            }
++            pickedFile = dest.getAbsolutePath();
++        } catch (Exception e) {
++            pickedFile = "";
++        }
++    }
++
+     @Override
+     protected void onActivityResult(int requestCode, int resultCode, Intent intent) {
++        if (requestCode == PICK_FILE_REQUEST) {
++            if (resultCode == RESULT_OK && intent != null && intent.getData() != null) {
++                Uri uri = intent.getData();
++                new Thread(() -> copyPickedFile(uri)).start();
++            } else {
++                pickedFile = "";
++            }
++            return;
++        }
+         if (this.activityResultListeners == null) {
+             return;
+         }
+diff --git a/pandatool/src/deploy-stub/android_support.cxx b/pandatool/src/deploy-stub/android_support.cxx
+index bb13166..757e71f 100644
+--- a/pandatool/src/deploy-stub/android_support.cxx
++++ b/pandatool/src/deploy-stub/android_support.cxx
+@@ -53,9 +53,85 @@ _py_find_library(PyObject *self, PyObject *args) {
+   return NULL;
+ }
+ 
++/**
++ * Returns the JNI environment of this thread, and the activity.
++ */
++static JNIEnv *
++get_activity_env(jobject &activity, jclass &activity_class) {
++  JNIEnv *env = nullptr;
++  ANativeActivity *native = panda_android_app->activity;
++  if (native->vm->AttachCurrentThread(&env, nullptr) != 0 || env == nullptr) {
++    return nullptr;
++  }
++  activity = native->clazz;
++  activity_class = env->GetObjectClass(activity);
++  return env;
++}
++
++/**
++ * Opens the system's file picker.  The picked file is copied into the given
++ * folder; picked_file() says when it is there.
++ */
++static PyObject *
++_py_pick_file(PyObject *self, PyObject *args) {
++  char *mime_type;
++  char *dest_dir;
++  if (!PyArg_ParseTuple(args, "ss", &mime_type, &dest_dir)) {
++    return NULL;
++  }
++  jobject activity;
++  jclass activity_class;
++  JNIEnv *env = get_activity_env(activity, activity_class);
++  jmethodID method = env ? env->GetMethodID(activity_class, "pickFile", "(Ljava/lang/String;Ljava/lang/String;)V") : nullptr;
++  if (method == nullptr) {
++    if (env != nullptr) {
++      env->ExceptionClear();
++    }
++    PyErr_SetString(PyExc_NotImplementedError, "this activity has no file picker");
++    return NULL;
++  }
++  jstring jmime_type = env->NewStringUTF(mime_type);
++  jstring jdest_dir = env->NewStringUTF(dest_dir);
++  env->CallVoidMethod(activity, method, jmime_type, jdest_dir);
++  env->DeleteLocalRef(jmime_type);
++  env->DeleteLocalRef(jdest_dir);
++  env->DeleteLocalRef(activity_class);
++  Py_RETURN_NONE;
++}
++
++/**
++ * Returns None while the file picker is open, "" if nothing was picked, or
++ * else the path of the copy of the picked file.
++ */
++static PyObject *
++_py_picked_file(PyObject *self, PyObject *args) {
++  jobject activity;
++  jclass activity_class;
++  JNIEnv *env = get_activity_env(activity, activity_class);
++  jmethodID method = env ? env->GetMethodID(activity_class, "getPickedFile", "()Ljava/lang/String;") : nullptr;
++  if (method == nullptr) {
++    if (env != nullptr) {
++      env->ExceptionClear();
++    }
++    return PyUnicode_FromString("");
++  }
++  jstring result = (jstring)env->CallObjectMethod(activity, method);
++  env->DeleteLocalRef(activity_class);
++  if (result == nullptr) {
++    Py_RETURN_NONE;
++  }
++  const char *chars = env->GetStringUTFChars(result, nullptr);
++  PyObject *path = PyUnicode_FromString(chars);
++  env->ReleaseStringUTFChars(result, chars);
++  env->DeleteLocalRef(result);
++  return path;
++}
++
+ static PyMethodDef python_simple_funcs[] = {
+   { "log_write", &_py_log_write, METH_VARARGS },
+   { "find_library", &_py_find_library, METH_VARARGS },
++  { "pick_file", &_py_pick_file, METH_VARARGS },
++  { "picked_file", &_py_picked_file, METH_NOARGS },
+   { NULL, NULL }
+ };
+ 

@@ -1,4 +1,5 @@
 import os
+import sys
 
 class ModuleList:
     serverDataFolder = config.ConfigVariableString('server-data-folder', '').getValue()

@@ -28,13 +28,14 @@ from direct.controls.TwoDWalker import TwoDWalker
 from otp.nametag.Nametag import Nametag
 from otp.ai.MagicWordGlobal import *
 from toontown.toonbase import ToontownGlobals
+from toontown.toonbase import TouchControls
+from otp.margins.WhisperPopup import WhisperPopup
 
 class LocalAvatar(DistributedAvatar.DistributedAvatar, DistributedSmoothNode.DistributedSmoothNode):
     notify = DirectNotifyGlobal.directNotify.newCategory('LocalAvatar')
     wantDevCameraPositions = config.ConfigVariableBool('want-dev-camera-positions', 0).getValue()
     wantMouse = config.ConfigVariableBool('want-mouse', 0).getValue()
     sleepTimeout = config.ConfigVariableInt('sleep-timeout', 120).getValue()
-    swimTimeout = config.ConfigVariableInt('afk-timeout', 600).getValue()
     __enableMarkerPlacement = config.ConfigVariableBool('place-markers', 0).getValue()
     acceptingNewFriends = config.ConfigVariableBool('accepting-new-friends', 1).getValue()
     acceptingNonFriendWhispers = config.ConfigVariableBool('accepting-non-friend-whispers', 0).getValue()
@@ -419,14 +420,22 @@ class LocalAvatar(DistributedAvatar.DistributedAvatar, DistributedSmoothNode.Dis
     def enableAvatarControls(self):
         if self.avatarControlsEnabled:
             return
+        controls = self.controlManager.currentControls
+        if controls and not getattr(controls, 'collisionsActive', 1):
+            # The toon has left the place (an interval that ends by giving
+            # back the controls finished after a teleport began), so there
+            # is nothing to steer; Panda3D 1.11 asserts on this.
+            return
         self.avatarControlsEnabled = 1
         self.setupAnimationEvents()
         self.controlManager.enable()
+        TouchControls.request('walk')
 
     def disableAvatarControls(self):
         if not self.avatarControlsEnabled:
             return
         self.avatarControlsEnabled = 0
+        TouchControls.release('walk')
         self.ignoreAnimationEvents()
         self.controlManager.disable()
         self.clearPageUpDown()
@@ -628,7 +637,10 @@ class LocalAvatar(DistributedAvatar.DistributedAvatar, DistributedSmoothNode.Dis
             camera.setPos(savePos)
             camera.setHpr(saveHpr)
             taskMgr.remove('posCamera')
-            camera.lerpPosHpr(x, y, z, h, p, r, time, task='posCamera')
+            if getattr(self, 'posCameraIval', None):
+                self.posCameraIval.finish()
+            self.posCameraIval = camera.posHprInterval(time, Point3(x, y, z), VBase3(h, p, r), name='posCamera')
+            self.posCameraIval.start()
 
     def getClampedAvatarHeight(self):
         return max(self.getHeight(), 3.0)
@@ -661,6 +673,10 @@ class LocalAvatar(DistributedAvatar.DistributedAvatar, DistributedSmoothNode.Dis
         self.posCamera(1, 0.7)
 
     def unsetCameraPosForPetInteraction(self):
+        # Garden movies end on the new plant or plot, so an unset can come
+        # without its set.
+        if not hasattr(self, 'prevIdealPos'):
+            return
         self.setIdealCameraPos(self.prevIdealPos)
         del self.prevIdealPos
         self.posCamera(1, 0.7)
@@ -1066,7 +1082,8 @@ class LocalAvatar(DistributedAvatar.DistributedAvatar, DistributedSmoothNode.Dis
             self.wakeUp()
         elif not self.sleepFlag:
             now = globalClock.getFrameTime()
-            if now - self.lastMoved > self.swimTimeout:
+            swimTimeout = OTPGlobals.getAfkTimeout()
+            if swimTimeout > 0 and now - self.lastMoved > swimTimeout:
                 self.swimTimeoutAction()
                 return Task.done
         return Task.cont

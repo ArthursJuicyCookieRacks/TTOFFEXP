@@ -1,7 +1,9 @@
 import math
+import traceback
 from panda3d.core import CardMaker, TextNode, Point3
 from direct.gui.DirectGui import DirectFrame, DirectLabel, DirectButton
 from direct.task import Task
+from direct.directnotify import DirectNotifyGlobal
 from toontown.toon import NPCToons
 from toontown.hood import ZoneUtil
 from toontown.toonbase import ToontownGlobals
@@ -10,6 +12,7 @@ from toontown.suit import SuitPlannerBase
 from . import QuestMapGlobals
 
 class QuestMap(DirectFrame):
+    notify = DirectNotifyGlobal.directNotify.newCategory('QuestMap')
 
     def __init__(self, av, **kw):
         DirectFrame.__init__(self, relief=None, sortOrder=50)
@@ -183,7 +186,15 @@ class QuestMap(DirectFrame):
             try:
                 hoodId = ZoneUtil.getCanonicalHoodId(self.av.getLocation()[1])
                 zoneId = ZoneUtil.getCanonicalBranchZone(self.av.getLocation()[1])
-                mapsGeom = loader.loadModel('phase_4/models/questmap/%s_maps' % ToontownGlobals.dnaMap[hoodId])
+                # There are no maps for the Cog HQs, nor for the zones made
+                # up for facilities and boss battles.
+                if hoodId not in ToontownGlobals.dnaMap:
+                    self.stop()
+                    return
+                mapsGeom = loader.loadModel('phase_4/models/questmap/%s_maps' % ToontownGlobals.dnaMap[hoodId], okMissing=True)
+                if mapsGeom is None:
+                    self.stop()
+                    return
                 mapImage = mapsGeom.find('**/%s_%s_english' % (ToontownGlobals.dnaMap[hoodId], zoneId))
                 if not mapImage.isEmpty():
                     self.container['image'] = mapImage
@@ -202,7 +213,8 @@ class QuestMap(DirectFrame):
                 else:
                     self.stop()
                 mapsGeom.removeNode()
-            except:
+            except Exception:
+                self.notify.warning('could not show the map for zone %s:\n%s' % (self.av.getLocation()[1], traceback.format_exc()))
                 self.stop()
 
     def start(self):

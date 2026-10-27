@@ -27,6 +27,7 @@ class Hood(StateData.StateData):
         self.id = None
         self.hoodId = hoodId
         self.titleText = None
+        self.titleSeq = None
         self.titleColor = (1, 1, 1, 1)
         self.holidayStorageDNADict = {}
         self.spookySkyFile = None
@@ -59,8 +60,10 @@ class Hood(StateData.StateData):
         self.titleText.setColor(Vec4(*self.titleColor))
         self.titleText.clearColorScale()
         self.titleText.setFg(self.titleColor)
-        seq = Sequence(Wait(0.1), Wait(6.0), self.titleText.colorScaleInterval(0.5, Vec4(1.0, 1.0, 1.0, 0.0)), Func(self.titleText.hide))
-        seq.start()
+        if self.titleSeq:
+            self.titleSeq.finish()
+        self.titleSeq = Sequence(Wait(0.1), Wait(6.0), self.titleText.colorScaleInterval(0.5, Vec4(1.0, 1.0, 1.0, 0.0)), Func(self.titleText.hide))
+        self.titleSeq.start()
 
     def hideTitleText(self):
         if self.titleText:
@@ -68,6 +71,10 @@ class Hood(StateData.StateData):
 
     def exit(self):
         taskMgr.remove('titleText')
+        if self.titleSeq:
+            # Stop the fade before the text it fades goes away.
+            self.titleSeq.pause()
+            self.titleSeq = None
         if self.titleText:
             self.titleText.cleanup()
             self.titleText = None
@@ -99,6 +106,7 @@ class Hood(StateData.StateData):
             self.sky.setFogOff()
 
     def unload(self):
+        base.cr.flushToonCache()
         if hasattr(self, 'loader'):
             self.notify.info('Aggressively cleaning up loader: %s' % self.loader)
             self.loader.exit()

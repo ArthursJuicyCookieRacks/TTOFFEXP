@@ -35,6 +35,10 @@ def init():
      'camera': camera,
      'hidden': hidden,
      'aspect2d': aspect2d,
+     'bottomLeft': base.a2dBottomLeft,
+     'bottomRight': base.a2dBottomRight,
+     'topLeft': base.a2dTopLeft,
+     'topRight': base.a2dTopRight,
      'localToon': base.localAvatar,
      'laffMeter': base.localAvatar.laffMeter,
      'inventory': base.localAvatar.inventory,
@@ -46,7 +50,10 @@ def init():
      'bookCloseButton': base.localAvatar.book.bookCloseButton,
      'chatNormalButton': base.localAvatar.chatMgr.normalButton,
      'chatScButton': base.localAvatar.chatMgr.scButton,
-     'arrows': BlinkingArrows.BlinkingArrows()})
+     'arrows': BlinkingArrows.BlinkingArrows(),
+     # The scripts hide and show Toontown Rewritten's settings button, which
+     # this game does not have.
+     'settingsButton': NodePath('settingsButton')})
 
 def clear():
     globalVarDict.clear()
@@ -92,11 +99,14 @@ def getLineOfTokens(gen):
         elif token[0] == tokenize.OP and token[1] == '-':
             nextNeg = 1
         elif token[0] == tokenize.NUMBER:
+            # Whole numbers stay ints: the scripts use them as indices, such
+            # as a gag's track and level.
+            number = float(token[1]) if any(c in token[1] for c in '.eE') else int(token[1])
             if nextNeg:
-                tokens.append(-float(token[1]))
+                tokens.append(-number)
                 nextNeg = 0
             else:
-                tokens.append(float(token[1]))
+                tokens.append(number)
         elif token[0] == tokenize.STRING:
             tokens.append(eval(token[1]))
         elif token[0] == tokenize.NAME:
@@ -265,9 +275,9 @@ class NPCMoviePlayer(DirectObject.DirectObject):
                 chapterList = []
                 self.currentEvent = nextEvent
                 continue
-            elif command == 'LOCAL_CHAT_CONFIRM':
+            elif command in ('LOCAL_CHAT_CONFIRM', 'LOCAL_C_CHAT_CONFIRM'):
                 if uponTimeout:
-                    self.notify.error('LOCAL_CHAT_CONFIRM not allowed in an UPON_TIMEOUT')
+                    self.notify.error('%s not allowed in an UPON_TIMEOUT' % command)
                 avatarName = line[1]
                 avatar = self.getVar(avatarName)
                 nextEvent = avatar.uniqueName('doneChatPage')
@@ -431,8 +441,10 @@ class NPCMoviePlayer(DirectObject.DirectObject):
                     iList.append(self.parseToonHead(line))
                 elif command == 'SEND_EVENT':
                     iList.append(self.parseSendEvent(line))
-                elif command == 'FUNCTION':
+                elif command in ('FUNCTION', 'LOCAL_FUNCTION'):
                     iList.append(self.parseFunction(line))
+                elif command == 'SET_NAMETAG_SCALE':
+                    iList.append(self.parseSetNametagScale(line))
                 elif command == 'BLACK_CAT_LISTEN':
                     iList.append(self.parseBlackCatListen(line))
                 elif command == 'SHOW_THROW_SQUIRT_PREVIEW':
@@ -875,6 +887,11 @@ class NPCMoviePlayer(DirectObject.DirectObject):
         object = self.getVar(objectName)
         cfunc = compile('object' + '.' + functionName, '<string>', 'eval')
         return Func(eval(cfunc))
+
+    def parseSetNametagScale(self, line):
+        token, avatarName, scale = line
+        avatar = self.getVar(avatarName)
+        return Func(avatar.setNametagScale, scale)
 
     def parseAddLaffMeter(self, line):
         token, maxHpDelta = line

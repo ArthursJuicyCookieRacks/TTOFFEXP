@@ -1,7 +1,7 @@
 from direct.directnotify import DirectNotifyGlobal
-from direct.distributed.DistributedObjectUD import DistributedObjectUD
+from direct.distributed.DistributedObjectGlobalUD import DistributedObjectGlobalUD
 
-class DistributedDeliveryManagerUD(DistributedObjectUD):
+class DistributedDeliveryManagerUD(DistributedObjectGlobalUD):
     notify = DirectNotifyGlobal.directNotify.newCategory("DistributedDeliveryManagerUD")
 
     def hello(self, todo0):
@@ -68,7 +68,8 @@ class DistributedDeliveryManagerUD(DistributedObjectUD):
         pass
 
     def requestAck(self):
-        pass
+        # The catalog asks before it offers to send gifts.
+        self.sendUpdateToChannel(self.air.getMsgSender(), 'returnAck', [])
 
     def returnAck(self):
         pass

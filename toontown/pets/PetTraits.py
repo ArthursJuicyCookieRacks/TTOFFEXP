@@ -1,4 +1,5 @@
 from enum import Enum
+from otp.otpbase.PythonEnum import IntEnum
 from direct.showbase.PythonUtil import randFloat, normalDistrib
 from direct.showbase.PythonUtil import clampScalar
 from toontown.toonbase import TTLocalizer, ToontownGlobals
@@ -26,15 +27,15 @@ def gaussian(min, max, rng):
 class TraitDistribution:
     #TraitQuality = Enum('VERY_BAD, BAD, AVERAGE, GOOD, VERY_GOOD')
     #TraitTypes = Enum('INCREASING, DECREASING')
-    class TraitQuality(Enum):
-        VERY_BAD = 1
-        BAD = 2
-        AVERAGE = 3
-        GOOD = 4
-        VERY_GOOD = 5
-    class TraitTypes(Enum):
-        INCREASING = 1
-        DECREASING = 2
+    class TraitQuality(IntEnum):
+        VERY_BAD = 0
+        BAD = 1
+        AVERAGE = 2
+        GOOD = 3
+        VERY_GOOD = 4
+    class TraitTypes(IntEnum):
+        INCREASING = 0
+        DECREASING = 1
     Sz2MinMax = None
     TraitType = None
     TraitCutoffs = {TraitTypes.INCREASING: {TraitQuality.VERY_BAD: 0.1,

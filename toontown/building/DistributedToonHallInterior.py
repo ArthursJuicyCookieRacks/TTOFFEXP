@@ -105,7 +105,7 @@ class DistributedToonHallInterior(DistributedToonInterior):
 
     def startIfNeeded(self):
         try:
-            self.curPhase = self.getPhaseTorun()
+            self.curPhase = self.getPhaseToRun()
             if self.curPhase >= 0:
                 self.sillyFSM.request('Phase' + str(self.curPhase))
             else:

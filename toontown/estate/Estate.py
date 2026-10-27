@@ -17,6 +17,10 @@ from toontown.pets import PetTutorial
 from otp.distributed.TelemetryLimiter import RotationLimitToH, TLGatherAllAvs, TLNull
 from . import HouseGlobals
 
+
+LeavingStates = ('teleportOut', 'tunnelOut', 'doorOut', 'died', 'final')
+
+
 class Estate(Place.Place):
     notify = DirectNotifyGlobal.directNotify.newCategory('Estate')
 
@@ -245,7 +249,10 @@ class Estate(Place.Place):
         taskMgr.remove('estate-check-toon-underwater')
         if base.wantPets:
             if base.localAvatar.hasPet() and not base.localAvatar.bPetTutorialDone:
+                # Place's own zone-complete callback runs after this one and
+                # takes nextState from requestStatus.
                 self.nextState = 'petTutorial'
+                requestStatus['nextState'] = 'petTutorial'
 
     def teleportInDone(self):
         self.notify.debug('teleportInDone')
@@ -312,6 +319,10 @@ class Estate(Place.Place):
         return Task.cont
 
     def __checkToonUnderwater(self, task):
+        # Not while the toon is leaving: going back to walking would stop
+        # the teleport (or door, or tunnel) on its way out.
+        if self.fsm.getCurrentState().getName() in LeavingStates:
+            return Task.cont
         if base.localAvatar.getZ() < -4.0:
             self.__submergeToon()
         else:

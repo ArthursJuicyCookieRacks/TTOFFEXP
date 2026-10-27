@@ -6,8 +6,8 @@ from . import PartyGlobals
 class DistributedPartyCannonActivityAI(DistributedPartyActivityAI):
     notify = DirectNotifyGlobal.directNotify.newCategory("DistributedPartyCannonActivityAI")
     
-    def __init__(self, air):
-        DistributedPartyActivityAI.__init__(self, air)
+    def __init__(self, air, parent, activityTuple):
+        DistributedPartyActivityAI.__init__(self, air, parent, activityTuple)
         self.cloudColors = {}
         self.cloudsHit = {}
 
@@ -32,6 +32,7 @@ class DistributedPartyCannonActivityAI(DistributedPartyActivityAI):
             return
         # TODO: Pass a msgId(?) to the client so the client can use whatever localizer it chooses.
         # Ideally, we shouldn't even be passing strings that *should* be localized.
+        reward *= self.air.holidayManager.getPartyJellybeanMultiplier()
         self.sendUpdateToAvatarId(avId, 'showJellybeanReward', [reward, av.getMoney(), TTLocalizer.PartyCannonResults % (reward, self.cloudsHit[avId])])
         av.addMoney(reward)
         self.sendUpdate('setMovie', [PartyGlobals.CANNON_MOVIE_LANDED, avId])

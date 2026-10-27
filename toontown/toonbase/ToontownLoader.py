@@ -1,3 +1,4 @@
+import builtins
 from panda3d.core import *
 from direct.directnotify.DirectNotifyGlobal import *
 from direct.showbase import Loader
@@ -64,7 +65,9 @@ class ToontownLoader(Loader.Loader):
         return
 
     def tick(self):
-        if self.inBulkBlock:
+        # Offline, the AI loads its models (golf holes) with this same
+        # loader; the loading screen is the client's to draw.
+        if self.inBulkBlock and hasattr(builtins, 'base'):
             now = globalClock.getRealTime()
             if now - self._lastTickT > self.TickPeriod:
                 self._lastTickT += self.TickPeriod

@@ -1,10 +1,8 @@
 import toontown.minigame.MinigameCreatorAI
 from toontown.distributed.ToontownInternalRepository import ToontownInternalRepository
 from direct.distributed.PyDatagram import *
-from otp.rpc.RPCServer import RPCServer
 from otp.distributed.DistributedDirectoryAI import DistributedDirectoryAI
 from otp.distributed.OtpDoGlobals import *
-from .ToontownRPCHandler import *
 import urllib
 
 if config.ConfigVariableBool('want-mongo-client', False).getValue():
@@ -32,6 +30,9 @@ class ToontownUberRepository(ToontownInternalRepository):
         rootObj.generateWithRequiredAndId(self.getGameDoId(), 0, 0)
 
         if config.ConfigVariableBool('want-rpc-server', False).getValue():
+            # Only for hosted servers; the offline game has no web services.
+            from otp.rpc.RPCServer import RPCServer
+            from .ToontownRPCHandler import ToontownRPCHandler
             self.rpcserver = RPCServer(ToontownRPCHandler(self))
 
         self.createGlobals()
@@ -44,6 +45,7 @@ class ToontownUberRepository(ToontownInternalRepository):
         self.csm = self.generateGlobalObject(OTP_DO_ID_CLIENT_SERVICES_MANAGER, 'ClientServicesManager')
         self.chatAgent = self.generateGlobalObject(OTP_DO_ID_CHAT_MANAGER, 'ChatAgent')
         self.friendsManager = self.generateGlobalObject(OTP_DO_ID_TTR_FRIENDS_MANAGER, 'TTRFriendsManager')
+        self.deliveryManager = self.generateGlobalObject(OTP_DO_ID_TOONTOWN_DELIVERY_MANAGER, 'DistributedDeliveryManager')
         if config.ConfigVariableBool('want-parties', True).getValue():
             # want-parties overrides config for want-GlobalPartyManagerUD
             self.globalPartyMgr = self.generateGlobalObject(OTP_DO_ID_GLOBAL_PARTY_MANAGER, 'GlobalPartyManager')

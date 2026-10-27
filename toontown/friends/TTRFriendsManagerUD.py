@@ -28,6 +28,13 @@ class GetToonDataFSM(FSM):
         self.mgr.air.dbInterface.queryObject(self.mgr.air.dbId, self.avId, self.__queryResponse)
 
     def __queryResponse(self, dclass, fields):
+        petDclass = self.mgr.air.dclassesByName.get('DistributedPetUD') or self.mgr.air.dclassesByName.get('DistributedPet')
+        if dclass == petDclass:
+            # A toon's pet; the friends list shows it, too.
+            self.fields = fields
+            self.fields['ID'] = self.avId
+            self.callback(success=True, requesterId=self.requesterId, fields=self.fields, isPet=True)
+            return
         if dclass != self.mgr.air.dclassesByName['DistributedToonUD']:
             self.demand('Failure', 'Invalid dclass for avId %s!' % self.avId)
             return
@@ -482,11 +489,15 @@ class TTRFriendsManagerUD(DistributedObjectGlobalUD):
         fsm.start()
         self.fsms[requesterId] = fsm
 
-    def __gotAvatarDetails(self, success, requesterId, fields):
+    def __gotAvatarDetails(self, success, requesterId, fields, isPet=False):
         # We no longer need the FSM.
         self.deleteFSM(requesterId)
         if not success:
             # Something went wrong... abort.
+            return
+        if isPet:
+            details = [[name, value[0]] for name, value in fields.items() if name != 'ID' and len(value) == 1]
+            self.sendUpdateToAvatarId(requesterId, 'friendDetails', [fields['ID'], pickle.dumps(details)])
             return
         details = [
             ['setExperience' , fields['setExperience'][0]],

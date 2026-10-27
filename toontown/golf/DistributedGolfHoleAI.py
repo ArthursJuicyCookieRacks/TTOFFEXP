@@ -277,6 +277,10 @@ class DistributedGolfHoleAI(DistributedPhysicsWorldAI.DistributedPhysicsWorldAI,
 
     def choosePlayerToSimulate(self):
         stillPlaying = self.golfCourse.getStillPlayingAvIds()
+        # Only a client can fly the ball, and NPC players have none.
+        clients = [avId for avId in stillPlaying
+                   if getattr(simbase.air.doId2do.get(avId), 'isPlayerControlled', lambda: True)()]
+        stillPlaying = clients or stillPlaying
         playerId = 0
         if simbase.air.config.ConfigVariableBool('golf-trust-driver-first', 0).getValue():
             if stillPlaying:

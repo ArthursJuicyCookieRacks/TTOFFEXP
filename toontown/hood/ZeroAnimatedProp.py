@@ -87,7 +87,7 @@ class ZeroAnimatedProp(GenericAnimatedProp.GenericAnimatedProp, FSM.FSM):
 
     def startIfNeeded(self):
         try:
-            self.curPhase = self.getPhaseTorun()
+            self.curPhase = self.getPhaseToRun()
             if self.curPhase >= 0:
                 self.request('DoAnim')
         except:
@@ -114,7 +114,7 @@ class ZeroAnimatedProp(GenericAnimatedProp.GenericAnimatedProp, FSM.FSM):
         self.curIval = None
         if self.okToStartNextAnim:
             self.notify.debug('got pass okToStartNextAnim')
-            whichAnim = self.chooseAnimTorun()
+            whichAnim = self.chooseAnimToRun()
             self.notify.debug('whichAnim=%s' % whichAnim)
             self.lastPlayingAnimPhase = whichAnim
             self.curIval = self.createAnimSequence(whichAnim)

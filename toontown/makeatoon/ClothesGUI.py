@@ -31,8 +31,10 @@ class ClothesGUI(StateData.StateData):
         guiRArrowDown = self.gui.find('**/tt_t_gui_mat_arrowDown')
         guiRArrowDisabled = self.gui.find('**/tt_t_gui_mat_arrowDisabled')
         shuffleFrame = self.gui.find('**/tt_t_gui_mat_shuffleFrame')
-        shuffleFrame2 = self.gui.find('**/tt_t_gui_mat_shuffleFrame')
-        shuffleFrame2.setColor(0, 100, 30)
+        # The same frame. (It was tinted with setColor(0, 100, 30), which, as
+        # it is the same node, turned every frame here a flat bright cyan in
+        # place of the blue buttons the picture has.)
+        shuffleFrame2 = shuffleFrame
         shuffleArrowUp = self.gui.find('**/tt_t_gui_mat_shuffleArrowUp')
         shuffleArrowDown = self.gui.find('**/tt_t_gui_mat_shuffleArrowDown')
         shuffleArrowRollover = self.gui.find('**/tt_t_gui_mat_shuffleArrowUp')

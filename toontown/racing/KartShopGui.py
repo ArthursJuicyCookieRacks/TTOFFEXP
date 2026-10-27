@@ -1,6 +1,7 @@
 if __name__ == '__main__':
     from direct.directbase import DirectStart
 from enum import Enum
+from otp.otpbase.PythonEnum import IntEnum
 from panda3d.core import *
 from direct.directnotify import DirectNotifyGlobal
 from direct.gui.DirectGui import *
@@ -25,39 +26,39 @@ if (__debug__):
 #CBA_OPTIONS = PythonUtil.Enum('Cancel, BuyAccessory', -1)
 #BTK_OPTIONS = PythonUtil.Enum('Ok', -1)
 #BTA_OPTIONS = PythonUtil.Enum('Ok', -1)
-class MENUS(Enum):
-    MainMenu = 1
-    BuyKart = 2
-    BuyAccessory = 3
-    ReturnKart = 4
-    ConfirmBuyAccessory = 5
-    ConfirmBuyKart = 6
-    BoughtKart = 7
-    BoughtAccessory = 8
-    TeaserPanel = 9
-class MM_OPTIONS(Enum):
-    Cancel = 1
+class MENUS(IntEnum):
+    MainMenu = 0
+    BuyKart = 1
     BuyAccessory = 2
-    BuyKart = 3
-class BK_OPTIONS(Enum):
-    Cancel = 1
-    BuyKart = 2
-class BA_OPTIONS(Enum):
-    Cancel = 1
-    BuyAccessory = 2
-class RK_OPTIONS(Enum):
-    Cancel = 1
-    ReturnKart = 2
-class CBK_OPTIONS(Enum):
-    Cancel = 1
-    BuyKart = 2
-class CBA_OPTIONS(Enum):
-    Cancel = 1
-    BuyAccessory = 2
-class BTK_OPTIONS(Enum):
-    Ok = 1
-class BTA_OPTIONS(Enum):
-    Ok = 1
+    ReturnKart = 3
+    ConfirmBuyAccessory = 4
+    ConfirmBuyKart = 5
+    BoughtKart = 6
+    BoughtAccessory = 7
+    TeaserPanel = 8
+class MM_OPTIONS(IntEnum):
+    Cancel = -1
+    BuyAccessory = 0
+    BuyKart = 1
+class BK_OPTIONS(IntEnum):
+    Cancel = -1
+    BuyKart = 0
+class BA_OPTIONS(IntEnum):
+    Cancel = -1
+    BuyAccessory = 0
+class RK_OPTIONS(IntEnum):
+    Cancel = -1
+    ReturnKart = 0
+class CBK_OPTIONS(IntEnum):
+    Cancel = -1
+    BuyKart = 0
+class CBA_OPTIONS(IntEnum):
+    Cancel = -1
+    BuyAccessory = 0
+class BTK_OPTIONS(IntEnum):
+    Ok = -1
+class BTA_OPTIONS(IntEnum):
+    Ok = -1
 KS_TEXT_SIZE_BIG = TTLocalizer.KSGtextSizeBig
 KS_TEXT_SIZE_SMALL = TTLocalizer.KSGtextSizeSmall
 class KartShopGuiMgr(DirectObject.DirectObject):

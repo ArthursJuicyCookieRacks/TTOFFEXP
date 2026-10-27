@@ -42,6 +42,7 @@ class DistributedPartyTrampolineActivityAI(DistributedPartyActivityAI, FSM):
         message += '\n\n' + TTLocalizer.PartyTrampolineTopHeightResults % height
         # TODO: Pass a msgId(?) to the client so the client can use whatever localizer it chooses.
         # Ideally, we shouldn't even be passing strings that *should* be localized.
+        reward *= self.air.holidayManager.getPartyJellybeanMultiplier()
         self.sendUpdateToAvatarId(avId, 'showJellybeanReward', [reward, av.getMoney(), message])
         av.addMoney(reward)
         

@@ -248,7 +248,7 @@ class LevelSpec:
 
         def privSaveToDisk(self, filename):
             retval = 1
-            f = file(filename, 'wb')
+            f = open(filename, 'w')
             try:
                 f.write(self.getPrettyString())
             except IOError:

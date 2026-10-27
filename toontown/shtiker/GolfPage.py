@@ -1,4 +1,5 @@
 from enum import Enum
+from otp.otpbase.PythonEnum import IntEnum
 from direct.directnotify import DirectNotifyGlobal
 from direct.gui.DirectGui import *
 from panda3d.core import *
@@ -12,9 +13,9 @@ from toontown.golf import GolfGlobals
 if (__debug__):
     import pdb
 #PageMode = PythonUtil.Enum('Records, Trophy')
-class PageMode(Enum):
-    Records = 1
-    Trophy = 2
+class PageMode(IntEnum):
+    Records = 0
+    Trophy = 1
 
 class GolfPage(ShtikerPage):
     notify = DirectNotifyGlobal.directNotify.newCategory('GolfPage')

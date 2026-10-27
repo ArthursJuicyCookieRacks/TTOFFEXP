@@ -4,12 +4,17 @@
 
 # Client settings
 window-title Toontown Rewritten [DEV BUILD]
-server-version ttroff-beta-v2.12.2
+server-version TT-OFFEXP-1.0
 sync-video #f
 want-dev #f
 preload-avatars #t
+# Panda looks through every installed Python package for model-loader
+# add-ons on each model load when it finds none; the game uses none.
+loader-support-entry-points #f
 texture-anisotropic-degree 16
-want-speedhack-fix #t
+# Offline there is no server to protect. The check could end the game on its
+# own after a long stall or a clock jump (a phone waking from sleep).
+want-speedhack-fix #f
 load-display pandagl
 default-directnotify-level info
 
@@ -58,7 +63,7 @@ mongodb-url mongodb://127.0.0.1/astron
 want-pets #t
 want-news-tab #f
 want-news-page #f
-want-accessories #f
+want-accessories #t
 want-parties #t
 want-gardening #t
 want-gifting #f

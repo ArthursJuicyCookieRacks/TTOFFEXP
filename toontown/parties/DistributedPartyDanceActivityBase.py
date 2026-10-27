@@ -1,5 +1,6 @@
 import random
 from enum import Enum
+from otp.otpbase.PythonEnum import IntEnum
 from panda3d.core import *
 from direct.interval.FunctionInterval import Wait, Func
 from direct.interval.MetaInterval import Sequence, Parallel
@@ -20,10 +21,10 @@ from toontown.parties.KeyCodesGui import KeyCodesGui
 from toontown.parties import PartyGlobals
 DANCE_FLOOR_COLLISION = 'danceFloor_collision'
 #DanceViews = Enum(('Normal', 'Dancing', 'Isometric'))
-class DanceViews(Enum):
-    Normal = 1
-    Dancing = 2
-    Isometric = 3
+class DanceViews(IntEnum):
+    Normal = 0
+    Dancing = 1
+    Isometric = 2
 
 class DistributedPartyDanceActivityBase(DistributedPartyActivity):
     notify = directNotify.newCategory('DistributedPartyDanceActivity')

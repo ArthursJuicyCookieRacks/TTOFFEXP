@@ -9,6 +9,10 @@ from otp.otpbase import OTPLocalizer
 from direct.directnotify import DirectNotifyGlobal
 from toontown.toonbase import ToontownGlobals
 
+# The longest line typed on Android's keyboard.
+ANDROID_MAX_CHAT = 120
+
+
 class TTChatInputWhiteList(ChatInputWhiteListFrame):
     notify = DirectNotifyGlobal.directNotify.newCategory('TTChatInputWhiteList')
     TFToggleKey = config.ConfigVariableString('true-friend-toggle-key', 'alt').getValue()
@@ -52,6 +56,9 @@ class TTChatInputWhiteList(ChatInputWhiteListFrame):
          0.05), text=OTPLocalizer.ChatInputNormalWhisper, text_scale=0.04, text_fg=Vec4(0, 0, 0, 1), text_wordwrap=9.5, textMayChange=1)
         self.chatEntry.bind(DGG.OVERFLOW, self.chatOverflow)
         self.chatEntry.bind(DGG.TYPE, self.typeCallback)
+        if sys.platform == 'android':
+            # Tapping the line opens the keyboard again, to change it.
+            self.chatEntry.bind(DGG.B1PRESS, lambda event: self.askAndroidText())
         self.trueFriendChat = 0
         if config.ConfigVariableBool('whisper-to-nearby-true-friends', 1).getValue():
             self.accept(self.TFToggleKey, self.shiftPressed)
@@ -142,6 +149,38 @@ class TTChatInputWhiteList(ChatInputWhiteListFrame):
             base.localAvatar.enableAvatarControls()
         else:
             self.sendFailed(self.chatEntry.get())
+
+    def activate(self):
+        ChatInputWhiteListFrame.activate(self)
+        if sys.platform == 'android':
+            # A phone types with its own keyboard, straight into the chat bar;
+            # a tap on the bar brings the keyboard back after it was put away.
+            self.askAndroidText()
+            self.chatEntry.bind(DGG.B1PRESS, lambda event: self.askAndroidText())
+
+    def deactivate(self):
+        from toontown.toonbase import AndroidKeyboard
+        AndroidKeyboard.stop()
+        ChatInputWhiteListFrame.deactivate(self)
+
+    def askAndroidText(self):
+        from toontown.toonbase import AndroidKeyboard
+        AndroidKeyboard.start(self.chatEntry, ANDROID_MAX_CHAT, onSend=self.__androidSend,
+                              onClose=self.__androidClosed, onChange=lambda text: self.applyFilter(None))
+
+    def __androidSend(self, text):
+        if not self.active:
+            return
+        if text.strip():
+            self.applyFilter(None)
+            self.chatButtonPressed()
+        else:
+            self.cancelButtonPressed()
+
+    def __androidClosed(self, text):
+        # The keyboard was put away (the back button): what was typed stays
+        # in the bar, to send with its button or to tap the bar for more.
+        pass
 
     def cancelButtonPressed(self):
         self.requestMode('Off')

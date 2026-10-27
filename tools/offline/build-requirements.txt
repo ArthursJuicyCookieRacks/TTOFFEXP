@@ -1,0 +1,3 @@
+# What the packaged game needs from pip, for each platform (build_apps).
+panda3d==1.11.0
+semidbm

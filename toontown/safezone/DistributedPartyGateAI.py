@@ -22,20 +22,17 @@ class DistributedPartyGateAI(DistributedObjectAI):
         self.sendUpdateToAvatarId(avId, 'listAllPublicParties', [partyManager.getPublicParties()])
 
     def partyChoiceRequest(self, avId, shardId, zoneId):
-        # Try to get a spot for them in the party
-        # find partyId
-        party = None
-        pid = 0
-        for partyId in self.air.partyManager.pubPartyInfo:
-            p = self.air.partyManager.pubPartyInfo[partyId]
-            if p.get('shardId', 0) == shardId and p.get('zoneId', 0) == zoneId:
-                party = p
-                pid = partyId
-                break
-        if not party:
-            self.sendUpdateToAvatarId(self.air.getAvatarIdFromSender(), 'partyRequestDenied', [PartyGlobals.PartyGateDenialReasons.Unavailable])
-            return #dafuq
-        self.air.globalPartyMgr.d_requestPartySlot(pid, self.air.getAvatarIdFromSender(), self.doId)
+        # A toon picked a public party from the gate's list.
+        avId = self.air.getAvatarIdFromSender()
+        partyManager = self.air.partyManager
+        party = partyManager.getPartyInZone(zoneId)
+        if not party or party.isPrivate() or party.partyState or shardId != self.air.districtId:
+            self.sendUpdateToAvatarId(avId, 'partyRequestDenied', [PartyGlobals.PartyGateDenialReasons.Unavailable])
+            return
+        if len(party.avIdsAtParty) >= PartyGlobals.MaxToonsAtAParty:
+            self.sendUpdateToAvatarId(avId, 'partyRequestDenied', [PartyGlobals.PartyGateDenialReasons.Full])
+            return
+        self.sendUpdateToAvatarId(avId, 'setParty', [partyManager.getPublicPartyInfo(party), party.hostId])
 
 @dnaSpawn(DNAProp, 'prop_party_gate')
 def spawn(air, zone, element, match):

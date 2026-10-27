@@ -88,8 +88,10 @@ class DistCogdoGame(DistCogdoGameBase, DistributedObject):
 
     def announceGenerate(self):
         DistributedObject.announceGenerate(self)
-        self._requestInterior()
+        # Load first: placing the entrance elevator needs the loaded level,
+        # and the interior's elevator is already there by now.
         self.loadFSM.request('Loaded')
+        self._requestInterior()
         self.notify.info('difficulty: %s, safezoneId: %s' % (self.getDifficulty(), self.getSafezoneId()))
 
     def _requestInterior(self):

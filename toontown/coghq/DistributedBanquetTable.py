@@ -16,6 +16,7 @@ from toontown.toonbase import TTLocalizer
 from toontown.coghq import BanquetTableBase
 from toontown.coghq import DinerStatusIndicator
 from toontown.battle import MovieUtil
+from toontown.toonbase import TouchControls
 
 class DistributedBanquetTable(DistributedObject.DistributedObject, FSM.FSM, BanquetTableBase.BanquetTableBase):
     notify = DirectNotifyGlobal.directNotify.newCategory('DistributedBanquetTable')
@@ -316,6 +317,8 @@ class DistributedBanquetTable(DistributedObject.DistributedObject, FSM.FSM, Banq
             foodModel.setScale(newScale)
 
         def foodDetach(self = self, diner = diner):
+            if not diner.getRightHand().getNumChildren():
+                return
             foodModel = diner.getRightHand().getChild(0)
             (foodModel.reparentTo(serviceLoc),)
             (foodModel.setPosHpr(0, 0, 0, 0, 0, 0),)
@@ -323,7 +326,7 @@ class DistributedBanquetTable(DistributedObject.DistributedObject, FSM.FSM, Banq
             if SuitDNA.getSuitBodyType(diner.dna.name) == 'c':
                 scaleAdj = 0.6
             else:
-                scakeAdj = 0.8
+                scaleAdj = 0.8
             oldScale = foodModel.getScale()
             newScale = oldScale / scaleAdj
             foodModel.setScale(newScale)
@@ -644,6 +647,7 @@ class DistributedBanquetTable(DistributedObject.DistributedObject, FSM.FSM, Banq
          gui.find('**/CloseBtn_UP')), relief=None, scale=2, text=TTLocalizer.BossbotPitcherLeave, text_scale=0.04, text_pos=(0, -0.07), text_fg=VBase4(1, 1, 1, 1), pos=(1.05, 0, -0.82), command=self.__exitPitcher)
         self.accept('escape', self.__exitPitcher)
         self.accept('control', self.__controlPressed)
+        TouchControls.request('banquetTable')
         self.accept('control-up', self.__controlReleased)
         self.accept('InputState-forward', self.__upArrow)
         self.accept('InputState-reverse', self.__downArrow)
@@ -665,6 +669,7 @@ class DistributedBanquetTable(DistributedObject.DistributedObject, FSM.FSM, Banq
         self.__cleanupPitcherAdvice()
         self.ignore('escape')
         self.ignore('control')
+        TouchControls.release('banquetTable')
         self.ignore('control-up')
         self.ignore('InputState-forward')
         self.ignore('InputState-reverse')

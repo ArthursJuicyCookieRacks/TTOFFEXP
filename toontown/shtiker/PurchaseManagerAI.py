@@ -81,7 +81,7 @@ class PurchaseManagerAI(DistributedObjectAI.DistributedObjectAI):
                 if self.metagameRound == TravelGameGlobals.FinalMetagameRoundIndex:
                     numPlayers = len(self.votesArray)
                     extraBeans = self.votesArray[avIndex] * TravelGameGlobals.PercentOfVotesConverted[numPlayers] / 100.0
-                    if self.air.holidayManager.isHolidayRunning(ToontownGlobals.JELLYBEAN_TROLLEY_HOLIDAY) or self.air.holidayManager.isHolidayRunning(ToontownGlobals.JELLYBEAN_TROLLEY_HOLIDAY_MONTH):
+                    if self.air.holidayManager.isHolidayRunning(ToontownGlobals.JELLYBEAN_TROLLEY_HOLIDAY, ToontownGlobals.JELLYBEAN_TROLLEY_HOLIDAY_MONTH, ToontownGlobals.JELLYBEAN_DAY):
                         extraBeans *= MinigameGlobals.JellybeanTrolleyHolidayScoreMultiplier
                     av.addMoney(extraBeans)
                     self.air.writeServerEvent('minigame-extrabeans', avId=avId, previousMinigameId=self.previousMinigameId,
@@ -285,7 +285,7 @@ class PurchaseManagerAI(DistributedObjectAI.DistributedObjectAI):
                 else:
                     newRound = 0
                     newVotesArray = [TravelGameGlobals.DefaultStartingVotes] * len(playAgainList)
-            if len(playAgainList) == 1 and config.ConfigVariableBool('metagame-min-2-players', 1).getValue():
+            if len(playAgainList) == 1 and config.ConfigVariableBool('metagame-min-2-players', 0).getValue():
                 newRound = -1
             MinigameCreatorAI.createMinigame(self.air, playAgainList, self.trolleyZone, minigameZone=self.zoneId, previousGameId=self.previousMinigameId, newbieIds=newbieIdsToPass, startingVotes=newVotesArray, metagameRound=newRound, desiredNextGame=self.desiredNextGame)
         else:

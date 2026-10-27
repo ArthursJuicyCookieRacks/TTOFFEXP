@@ -69,7 +69,7 @@ class CatalogEmoteItem(CatalogItem.CatalogItem):
         if track != None:
             track = Sequence(Sequence(track, duration=0), Wait(duration + 2), name=name)
         else:
-            track = Sequence(Func(Emote.globalEmote.doEmote, toon, self.emoteIndex), Wait(duration + 4), name=name)
+            track = Sequence(Func(Emote.globalEmote.doEmote, self.pictureToon, self.emoteIndex), Wait(duration + 4), name=name)
         self.pictureToon = toon
         return (model, track)
 
@@ -89,7 +89,7 @@ class CatalogEmoteItem(CatalogItem.CatalogItem):
         if track != None:
             track = Sequence(Sequence(track, duration=0), Wait(duration + 2), name=name)
         else:
-            track = Sequence(Func(Emote.globalEmote.doEmote, toon, self.emoteIndex), Wait(duration + 4), name=name)
+            track = Sequence(Func(Emote.globalEmote.doEmote, self.pictureToon, self.emoteIndex), Wait(duration + 4), name=name)
         return track
 
     def cleanupPicture(self):

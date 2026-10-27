@@ -22,8 +22,10 @@ from . import GenderShop
 from . import BodyShop
 from . import ColorShop
 from . import MakeClothesGUI
+from . import HoldRepeat
 from . import NameShop
 import random
+from otp.nametag.NametagConstants import CFSpeech
 
 class MakeAToon(StateData.StateData):
     notify = DirectNotifyGlobal.directNotify.newCategory('MakeAToon')
@@ -150,6 +152,12 @@ class MakeAToon(StateData.StateData):
          guiCancelUp,
          guiCancelDown), image_scale=halfButtonScale, image1_scale=halfButtonHoverScale, image2_scale=halfButtonHoverScale, pos=(-1.179, 0, -0.011), command=self.__handleCancel, text=('', TTLocalizer.MakeAToonCancel, TTLocalizer.MakeAToonCancel), text_font=ToontownGlobals.getInterfaceFont(), text_scale=TTLocalizer.MATguiCancelButton, text_pos=(0, 0.115), text_fg=(1, 1, 1, 1), text_shadow=(0, 0, 0, 1))
         self.guiCancelButton.hide()
+        # Setup (how the NPC toons play along), bottom left beside Cancel,
+        # the same button as Shuffle.
+        setupUp = gui.find('**/tt_t_gui_mat_shuffleUp')
+        setupDown = gui.find('**/tt_t_gui_mat_shuffleDown')
+        self.guiSetupButton = DirectButton(parent=self.guiBottomBar, relief=None, image=(setupUp, setupDown, setupUp), image_scale=(-0.6, 0.6, 0.6), image1_scale=(-0.63, 0.6, 0.6), image2_scale=(-0.63, 0.6, 0.6), pos=(-0.86, 0, -0.011), command=self.__handleSetup, text=TTLocalizer.MakeAToonSetup, text_font=ToontownGlobals.getInterfaceFont(), text_scale=TTLocalizer.SBshuffleBtn, text_pos=(0, -0.02), text_fg=(1, 1, 1, 1), text_shadow=(0, 0, 0, 1))
+        self.setupPanel = None
         self.guiNextButton = DirectButton(parent=self.guiBottomBar, relief=None, image=(guiNextUp,
          guiNextDown,
          guiNextUp,
@@ -169,14 +177,14 @@ class MakeAToon(StateData.StateData):
         self.rotateLeftButton = DirectButton(parent=self.guiBottomBar, relief=None, image=(rotateUp,
          rotateDown,
          rotateUp,
-         rotateDown), image_scale=(-0.4, 0.4, 0.4), image1_scale=(-0.5, 0.5, 0.5), image2_scale=(-0.5, 0.5, 0.5), pos=(-0.329249, 0, 0.202961))
+         rotateDown), image_scale=(-0.4, 0.4, 0.4), image1_scale=(-0.5, 0.5, 0.5), image2_scale=(-0.5, 0.5, 0.5), pos=(-0.329249, 0, 0.262961), sortOrder=DGG.FOREGROUND_SORT_INDEX)
         self.rotateLeftButton.hide()
         self.rotateLeftButton.bind(DGG.B1PRESS, self.rotateToonLeft)
         self.rotateLeftButton.bind(DGG.B1RELEASE, self.stopToonRotateLeftTask)
         self.rotateRightButton = DirectButton(parent=self.guiBottomBar, relief=None, image=(rotateUp,
          rotateDown,
          rotateUp,
-         rotateDown), image_scale=(0.4, 0.4, 0.4), image1_scale=(0.5, 0.5, 0.5), image2_scale=(0.5, 0.5, 0.5), pos=(0.309534, 0, 0.206116))
+         rotateDown), image_scale=(0.4, 0.4, 0.4), image1_scale=(0.5, 0.5, 0.5), image2_scale=(0.5, 0.5, 0.5), pos=(0.309534, 0, 0.266116), sortOrder=DGG.FOREGROUND_SORT_INDEX)
         self.rotateRightButton.hide()
         self.rotateRightButton.bind(DGG.B1PRESS, self.rotateToonRight)
         self.rotateRightButton.bind(DGG.B1RELEASE, self.stopToonRotateRightTask)
@@ -254,6 +262,7 @@ class MakeAToon(StateData.StateData):
         self.bs.load()
         self.cos.load()
         self.cls.load()
+        HoldRepeat.addToArrows(aspect2d)
         self.ns.load()
         self.music = base.loader.loadMusic('phase_3/audio/bgm/create_a_toon.ogg')
         self.musicVolume = config.GetFloat('makeatoon-music-volume', 1)
@@ -284,6 +293,9 @@ class MakeAToon(StateData.StateData):
         del self.ns
         self.guiTopBar.destroy()
         self.guiBottomBar.destroy()
+        self.__closeSetup()
+        self.guiSetupButton.destroy()
+        del self.guiSetupButton
         self.guiCancelButton.destroy()
         self.guiCheckButton.destroy()
         self.eee.destroy()
@@ -370,6 +382,16 @@ class MakeAToon(StateData.StateData):
 
     def __handleNameShop(self):
         self.fsm.request('NameShop')
+
+    def __handleSetup(self):
+        from toontown.npcplayers import NPCSetupPanel
+        self.__closeSetup()
+        self.setupPanel = NPCSetupPanel.NPCSetupPanel()
+
+    def __closeSetup(self):
+        if getattr(self, 'setupPanel', None) is not None and not self.setupPanel.isEmpty():
+            self.setupPanel.destroy()
+        self.setupPanel = None
 
     def __handleCancel(self):
         self.doneStatus = 'cancel'
@@ -742,10 +764,18 @@ class MakeAToon(StateData.StateData):
         index = random.randint(0, len(self.crashSounds) - 1)
         base.playSfx(self.crashSounds[index], volume=self.sfxVolume)
 
+    def __rotateHeld(self):
+        watcher = base.mouseWatcherNode
+        return watcher is None or watcher.isButtonDown(MouseButton.one())
+
     def rotateToonLeft(self, event):
         taskMgr.add(self.rotateToonLeftTask, 'rotateToonLeftTask')
 
     def rotateToonLeftTask(self, task):
+        if not self.__rotateHeld():
+            # The release was missed (a controller click, a touch that left
+            # the window): stop rather than spin forever.
+            return task.done
         self.toon.setH(self.toon.getH() + self.hprDelta)
         return task.cont
 
@@ -756,6 +786,10 @@ class MakeAToon(StateData.StateData):
         taskMgr.add(self.rotateToonRightTask, 'rotateToonRightTask')
 
     def rotateToonRightTask(self, task):
+        if not self.__rotateHeld():
+            # The release was missed (a controller click, a touch that left
+            # the window): stop rather than spin forever.
+            return task.done
         self.toon.setH(self.toon.getH() - self.hprDelta)
         return task.cont
 

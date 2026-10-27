@@ -51,9 +51,6 @@ class DistributedBattleBaseAI(DistributedObjectAI.DistributedObjectAI, BattleBas
         if self.air.suitInvasionManager.getInvading():
             mult = getInvasionMultiplier()
             self.battleCalc.setSkillCreditMultiplier(mult)
-        '''if self.air.holidayManager.isMoreXpHolidayRunning():
-            mult = getMoreXpHolidayMultiplier()
-            self.battleCalc.setSkillCreditMultiplier(mult)'''
         self.fsm = None
         self.clearAttacks()
         self.ignoreFaceOffDone = 0
@@ -422,7 +419,7 @@ class DistributedBattleBaseAI(DistributedObjectAI.DistributedObjectAI, BattleBas
         for toon in self.activeToons:
             toonList = []
             for trackIndex in range(MAX_TRACK_INDEX):
-                toonList.append(toon.inventory.numItem(track, uberIndex))
+                toonList.append(toon.inventory.numItem(trackIndex, uberIndex))
 
             fieldList.append(encodeUber(toonList))
 
@@ -1099,16 +1096,22 @@ class DistributedBattleBaseAI(DistributedObjectAI.DistributedObjectAI, BattleBas
 
                 def handleGetPetProxy(success, petProxy, petId = petId, zoneId = zoneId, toonId = toonId):
                     if success:
-                        if petId not in simbase.air.doId2do:
-                            simbase.air.requestDeleteDoId(petId)
+
+                        def generateProxy():
+                            petProxy.dbObject = 1
+                            petProxy.doNotDeallocateChannel = True
+                            petProxy.generateWithRequiredAndId(petId, self.air.districtId, zoneId)
+                            petProxy.broadcastDominantMood()
+                            self.pets[toonId] = petProxy
+
+                        petDO = simbase.air.doId2do.get(petId)
+                        if petDO is None:
+                            generateProxy()
                         else:
-                            petDO = simbase.air.doId2do[petId]
+                            # The pet is out on its estate; it comes to the
+                            # battle as the proxy once it has left there.
+                            self.acceptOnce(petDO.getDeleteEvent(), generateProxy)
                             petDO.requestDelete()
-                            simbase.air.deleteDistObject(petDO)
-                        petProxy.dbObject = 1
-                        petProxy.generateWithRequiredAndId(petId, self.air.districtId, zoneId)
-                        petProxy.broadcastDominantMood()
-                        self.pets[toonId] = petProxy
                     else:
                         self.notify.warning('error generating petProxy: %s' % petId)
 

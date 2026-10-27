@@ -6,7 +6,7 @@ from toontown.hood import ZoneUtil
 def canAccess(avatarId, zoneId, function = ''):
     avatar = simbase.air.doId2do.get(avatarId)
     if avatar and avatar.getGameAccess() != OTPGlobals.AccessFull and not openToAll(zoneId, avatar):
-        if cmp(function, 'DistributedBoardingPartyAI.checkBoard') == 0:
+        if function == 'DistributedBoardingPartyAI.checkBoard':
             return False
         simbase.air.writeServerEvent('suspicious', avId=avatarId, issue='User with rights: %s requesting enter for paid access content without proper rights in zone %s from %s' % (avatar.getGameAccess(), zoneId, function))
         if config.ConfigVariableBool('want-ban-ispaid', True).getValue():
@@ -38,7 +38,7 @@ def openToAll(zoneId, avatar):
     elif zoneId in specialZones:
         allowed = True
     elif canonicalZoneId >= ToontownGlobals.DynamicZonesBegin and not avatar.getTutorialAck():
-        zoneDict = simbase.air.tutorialManager.playerDict.get(avatar.doId)
+        zoneDict = simbase.air.tutorialManager.avId2fsm.get(avatar.doId)
         if zoneDict:
             allowed = True
     return allowed

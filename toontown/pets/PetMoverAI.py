@@ -35,7 +35,7 @@ def generatePos():
         r2 = random.randint(0, estateRadius) - estateRadius / 2
         x = r + estateCenter[0]
         y = r2 + estateCenter[1]
-        raise inCircle(x, y) or AssertionError
+        assert inCircle(x, y)
         return (x, y)
 
     p = get()

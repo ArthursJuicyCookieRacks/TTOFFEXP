@@ -6,7 +6,7 @@ screenshots/
 astron/databases/
 .DS_Store
 *.pyc
-resources/
+resources
 settings.json
 *.json
 *.log
@@ -14,3 +14,13 @@ PrivacyMatters.py
 PrivacyStart.py
 files.py
 ai-crash.txt
+autoplay-db/
+
+# Packaged builds
+/phase_*.mf
+/build/
+/dist/*.zip
+/dist/*.aab
+/dist/*.apk
+turnip/
+turnip-runtime/

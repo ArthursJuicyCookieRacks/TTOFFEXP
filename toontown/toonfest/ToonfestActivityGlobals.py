@@ -1,4 +1,5 @@
 from enum import Enum
+from otp.otpbase.PythonEnum import IntEnum
 from panda3d.core import BitMask32
 from panda3d.core import Point3, VBase4
 from direct.showbase import PythonUtil
@@ -92,68 +93,68 @@ PartyEditorTrashBounds = ((-0.16, -0.38), (-0.05, -0.56))
 # 'PartyValentineJukebox40',
 # 'PartyValentineTrampoline'))
 # 'PartyValentineTrampoline'))
-class ActivityRequestStatus(Enum):
-    Joining = 1
-    Exiting = 2
-class InviteStatus(Enum):
-    NotRead = 1
-    ReadButNotReplied = 2
-    Accepted = 3
-    Rejected = 4
-class InviteTheme(Enum):
-    Birthday = 1
-    GenericMale = 2
-    GenericFemale = 3
-    Racing = 4
-    Valentoons = 5
-    VictoryParty = 6
-    Winter = 7
-class PartyStatus(Enum):
-    Pending = 1
-    Cancelled = 2
-    Finished = 3
-    CanStart = 4
-    Started = 5
-    NeverStarted = 6
-class AddPartyErrorCode(Enum):
-    AllOk = 1
-    ValidationError = 2
-    DatabaseError = 3
-    TooManyHostedParties = 4
-class ChangePartyFieldErrorCode(Enum):
-    AllOk = 1
-    ValidationError = 2
-    DatabaseError = 3
-    AlreadyStarted = 4
-    AlreadyRefunded = 5
-class ActivityTypes(Enum):
-    HostInitiated = 1
-    GuestInitiated = 2
-    Continuous = 3
-class PartyGateDenialReasons(Enum):
-    Unavailable = 1
-    Full = 2
-class ActivityIds(Enum):
-    PartyJukebox = 1
-    PartyCannon = 2
-    PartyTrampoline = 3
-    PartyCatch = 4
-    PartyDance = 5
-    PartyTugOfWar = 6
-    PartyFireworks = 7
-    PartyClock = 8
-    PartyJukebox40 = 9
-    PartyDance20 = 10
-    PartyCog = 11
-    PartyVictoryTrampoline = 12
-    PartyWinterCatch = 13
-    PartyWinterTrampoline = 14
-    PartyWinterCog = 15
-    PartyValentineDance = 16
-    PartyValentineDance20 = 17
-    PartyValentineJukebox = 18
-    PartyValentineJukebox40 = 19
-    PartyValentineTrampoline = 20
+class ActivityRequestStatus(IntEnum):
+    Joining = 0
+    Exiting = 1
+class InviteStatus(IntEnum):
+    NotRead = 0
+    ReadButNotReplied = 1
+    Accepted = 2
+    Rejected = 3
+class InviteTheme(IntEnum):
+    Birthday = 0
+    GenericMale = 1
+    GenericFemale = 2
+    Racing = 3
+    Valentoons = 4
+    VictoryParty = 5
+    Winter = 6
+class PartyStatus(IntEnum):
+    Pending = 0
+    Cancelled = 1
+    Finished = 2
+    CanStart = 3
+    Started = 4
+    NeverStarted = 5
+class AddPartyErrorCode(IntEnum):
+    AllOk = 0
+    ValidationError = 1
+    DatabaseError = 2
+    TooManyHostedParties = 3
+class ChangePartyFieldErrorCode(IntEnum):
+    AllOk = 0
+    ValidationError = 1
+    DatabaseError = 2
+    AlreadyStarted = 3
+    AlreadyRefunded = 4
+class ActivityTypes(IntEnum):
+    HostInitiated = 0
+    GuestInitiated = 1
+    Continuous = 2
+class PartyGateDenialReasons(IntEnum):
+    Unavailable = 0
+    Full = 1
+class ActivityIds(IntEnum):
+    PartyJukebox = 0
+    PartyCannon = 1
+    PartyTrampoline = 2
+    PartyCatch = 3
+    PartyDance = 4
+    PartyTugOfWar = 5
+    PartyFireworks = 6
+    PartyClock = 7
+    PartyJukebox40 = 8
+    PartyDance20 = 9
+    PartyCog = 10
+    PartyVictoryTrampoline = 11
+    PartyWinterCatch = 12
+    PartyWinterTrampoline = 13
+    PartyWinterCog = 14
+    PartyValentineDance = 15
+    PartyValentineDance20 = 16
+    PartyValentineJukebox = 17
+    PartyValentineJukebox40 = 18
+    PartyValentineTrampoline = 19
 PartyEditorActivityOrder = [ ActivityIds.PartyClock,
  ActivityIds.PartyJukebox,
  ActivityIds.PartyJukebox40,

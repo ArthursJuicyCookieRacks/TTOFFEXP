@@ -32,8 +32,11 @@ class NewLoadingScreen(DirectObject.DirectObject):
         if self.musPhase1:
             self.musicVolCont1(1)
             self.musicVolCont2(0)
-            self.musPhase1.setLoopStart(2.9)
-            self.musPhase2.setLoopStart(2.9)
+            # setLoopStart comes from the TTR-Offline Panda3D fork.
+            if hasattr(self.musPhase1, 'setLoopStart'):
+                self.musPhase1.setLoopStart(2.9)
+            if hasattr(self.musPhase2, 'setLoopStart'):
+                self.musPhase2.setLoopStart(2.9)
             self.musPhase1.setLoop(True)
             self.musPhase2.setLoop(True)
             self.musPhase1.play()

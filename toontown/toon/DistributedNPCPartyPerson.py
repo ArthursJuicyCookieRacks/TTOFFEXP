@@ -48,19 +48,15 @@ class DistributedNPCPartyPerson(DistributedNPCToonBase):
         self.askGui = TTDialog.TTGlobalDialog(dialogName=self.uniqueName('askGui'), doneEvent=self.planPartyQuestionGuiDoneEvent, message=TTLocalizer.PartyDoYouWantToPlan, style=TTDialog.YesNo, okButtonText=OTPLocalizer.DialogYes, cancelButtonText=OTPLocalizer.DialogNo)
         self.askGui.hide()
 
-    def initToonState(self):
-        self.setAnimState('neutral', 1.05, None, None)
+    def getNeutralRate(self):
+        return 1.05
+
+    def findNpcOrigin(self):
         if self.posIndex % 2 == 0:
             side = 'left'
         else:
             side = 'right'
-        npcOrigin = self.cr.playGame.hood.loader.geom.find('**/party_person_%s;+s' % side)
-        if not npcOrigin.isEmpty():
-            self.reparentTo(npcOrigin)
-            self.clearMat()
-        else:
-            self.notify.warning('announceGenerate: Could not find party_person_%s' % side)
-        return
+        return self.cr.playGame.hood.loader.geom.find('**/party_person_%s;+s' % side)
 
     def getCollSphereRadius(self):
         return 1.0

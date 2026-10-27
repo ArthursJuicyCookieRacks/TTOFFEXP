@@ -3,6 +3,7 @@ from direct.gui.DirectGui import *
 from panda3d.core import *
 from direct.interval.IntervalGlobal import *
 from otp.avatar.ShadowCaster import ShadowCaster
+from panda3d.physics import ActorNode
 
 class FlyingGag(NodePath, ShadowCaster):
 

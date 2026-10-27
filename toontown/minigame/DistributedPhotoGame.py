@@ -855,10 +855,10 @@ class DistributedPhotoGame(DistributedMinigame, PhotoGameBase.PhotoGameBase):
         found = 0
         loop = 0
         while not found and loop < length:
-            if pointList[index] == point:
+            if pointList[pointIndex] == point:
                 found = 1
             else:
-                index += 1
+                pointIndex += 1
                 loop += 1
 
         if not found:

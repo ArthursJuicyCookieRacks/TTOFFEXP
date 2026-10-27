@@ -2,7 +2,14 @@ from panda3d.core import *
 import builtins
 import os
 
-if __debug__:
+# The UberDOG and the AI districts run inside this process (otp.local), so
+# their messengers, task managers and interval managers have to be kept apart
+# from the client's. This must happen before anything from direct is imported.
+from otp.local import ExecutionContext
+ExecutionContext.install()
+
+# A packaged game (OfflineStart) has already loaded its own config.
+if __debug__ and not ConfigVariableBool('offline-release', False):
     loadPrcFile('config/dev.prc')
 
 # The VirtualFileSystem, which has already initialized, doesn't see the mount
@@ -79,6 +86,10 @@ print('ToontownStart: setting default font')
 from . import ToontownGlobals
 DirectGuiGlobals.setDefaultFontFunc(ToontownGlobals.getInterfaceFont)
 launcher.setPandaErrorCode(7)
+# An Android player's own graphics driver has to be in place before the
+# window opens.
+from . import TurnipDrivers
+TurnipDrivers.useDriver(settings.settings)
 from . import ToonBase
 ToonBase.ToonBase()
 from panda3d.core import *
@@ -86,6 +97,16 @@ if base.win == None:
     print('Unable to open window; aborting.')
     sys.exit()
 from direct.gui.DirectGui import *
+
+# A game controller works from the start, in the launcher too.
+from .Gamepad import Gamepad
+base.gamepad = Gamepad()
+
+# The packaged game opens on its launcher, and goes on from here once the
+# player presses PLAY!.
+from . import OfflineLauncher
+if OfflineLauncher.wanted():
+    OfflineLauncher.run()
 
 if not ConfigVariableBool('want-retro-rewritten', False):
     # Prepare new startup screen
@@ -120,6 +141,8 @@ if ConfigVariableBool('tt-framerate', False):
     TTFrameRateMeter()
 
 base.graphicsEngine.renderFrame()
+
+OfflineLauncher.progress(8, 'Loading the game...')
 
 # Prepare GUI
 DirectGuiGlobals.setDefaultDialogGeom(loader.loadModel('phase_3/models/gui/dialog_box_gui'))
@@ -178,6 +201,8 @@ else:
     base.cr = cr
     loader.endBulkLoad('init')
 
+OfflineLauncher.progress(20)
+
 # Prepare Friends Manager
 from otp.friends import FriendManager
 from otp.distributed.OtpDoGlobals import *
@@ -205,19 +230,25 @@ if not ConfigVariableBool('want-retro-rewritten', False):
     base.loadingScreen = NewLoadingScreen.NewLoadingScreen()
 
 if config.ConfigVariableBool('auto-start-server', False).getValue():
-    # Start DedicatedServer
+    # Start the game services (UberDOG and AI) inside this process.
     from otp.otpbase.OTPLocalizer import CRLoadingGameServices
 
     dialogClass = ToontownGlobals.getGlobalDialogClass()
     builtins.gameServicesDialog = dialogClass(message=CRLoadingGameServices)
     builtins.gameServicesDialog.show()
 
-    from toontown.toonbase.DedicatedServer import DedicatedServer
+    from otp.local.LocalServer import LocalServer
 
-    builtins.clientServer = DedicatedServer(localServer=True)
-    builtins.clientServer.start()
+    builtins.clientServer = LocalServer()
+
+    def startLocalServer(task):
+        # Wait a frame so the dialog is drawn before the districts load.
+        OfflineLauncher.progress(OfflineLauncher.TOWN_START, 'Building Toontown...')
+        builtins.clientServer.start()
+        return task.done
 
     def localServerReady():
+        OfflineLauncher.finish()
         builtins.gameServicesDialog.cleanup()
         del builtins.gameServicesDialog
         if not ConfigVariableBool('want-retro-rewritten', False):
@@ -226,6 +257,7 @@ if config.ConfigVariableBool('auto-start-server', False).getValue():
             base.startShow(cr)
 
     base.accept('localServerReady', localServerReady)
+    taskMgr.doMethodLater(0.1, startLocalServer, 'startLocalServer')
 else:
     if not ConfigVariableBool('want-retro-rewritten', False):
         messenger.send('AllowPressKey')
@@ -248,5 +280,8 @@ if autoRun:
     except SystemExit:
         raise
     except:
+        if ConfigVariableBool('offline-release', False):
+            # The packaged game shows it (OfflineStart).
+            raise
         import traceback
         traceback.print_exc()

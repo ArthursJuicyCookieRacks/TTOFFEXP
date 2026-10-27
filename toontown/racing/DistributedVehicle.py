@@ -22,6 +22,7 @@ from direct.showbase.PythonUtil import randFloat
 from direct.task.Task import Task
 from otp.nametag import NametagGlobals
 import math
+from panda3d.physics import ForceNode, LinearEulerIntegrator, LinearFrictionForce, LinearVectorForce, PhysicsCollisionHandler, PhysicsManager
 iceTurnFactor = 0.25
 iceAccelFactor = 0.4
 

@@ -22,6 +22,11 @@ class MinigameRulesPanel(StateData.StateData):
         self.gameTitleText = DirectLabel(parent=self.frame, text=self.gameTitle, scale=TTLocalizer.MRPgameTitleText, text_align=TextNode.ACenter, text_font=getSignFont(), text_fg=(1.0, 0.33, 0.33, 1.0), pos=TTLocalizer.MRgameTitleTextPos, relief=None)
         self.instructionsText = DirectLabel(parent=self.frame, text=self.instructions, scale=TTLocalizer.MRPinstructionsText, text_align=TextNode.ACenter, text_wordwrap=TTLocalizer.MRPinstructionsTextWordwrap, pos=TTLocalizer.MRPinstructionsTextPos, relief=None)
         self.playButton = DirectButton(parent=self.frame, relief=None, image=(buttonGui.find('**/InventoryButtonUp'), buttonGui.find('**/InventoryButtonDown'), buttonGui.find('**/InventoryButtonRollover')), image_color=Vec4(0, 0.9, 0.1, 1), text=TTLocalizer.MinigameRulesPanelPlay, text_fg=(1, 1, 1, 1), text_pos=(0, -0.02, 0), text_scale=TTLocalizer.MRPplayButton, pos=(1.0025, 0, -0.203), scale=1.05, command=self.playCallback)
+        # Skips the game altogether (Arthur asked): the toon leaves it as if
+        # the game had been called off. It sits on the right edge of the
+        # screen, level with Play.
+        self.skipButton = DirectButton(parent=base.a2dBottomRight, relief=None, image=(buttonGui.find('**/InventoryButtonUp'), buttonGui.find('**/InventoryButtonDown'), buttonGui.find('**/InventoryButtonRollover')), image_color=Vec4(0.9, 0.1, 0.1, 1), text=TTLocalizer.MinigameRulesPanelSkip, text_fg=(1, 1, 1, 1), text_pos=(0, -0.02, 0), text_scale=TTLocalizer.MRPplayButton, pos=(-0.14, 0, 0.13), scale=1.05, command=self.skipCallback)
+        self.skipButton.hide()
         minigameGui.removeNode()
         buttonGui.removeNode()
         self.timer = ToontownTimer.ToontownTimer()
@@ -38,17 +43,25 @@ class MinigameRulesPanel(StateData.StateData):
         del self.instructionsText
         self.playButton.destroy()
         del self.playButton
+        self.skipButton.destroy()
+        del self.skipButton
         del self.timer
 
     def enter(self):
         self.frame.show()
+        self.skipButton.show()
         self.timer.countdown(self.TIMEOUT, self.playCallback)
         self.accept('enter', self.playCallback)
 
     def exit(self):
         self.frame.hide()
+        self.skipButton.hide()
         self.timer.stop()
         self.ignore('enter')
 
     def playCallback(self):
         messenger.send(self.doneEvent)
+
+    def skipCallback(self):
+        self.skipButton['state'] = DGG.DISABLED
+        messenger.send('minigameAbort')

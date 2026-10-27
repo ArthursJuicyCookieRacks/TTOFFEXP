@@ -2,6 +2,7 @@ from direct.distributed.DistributedObjectAI import DistributedObjectAI
 from otp.ai.MagicWordGlobal import *
 from direct.task import Task
 from toontown.toonbase.AprilToonsGlobals import *
+import random
 
 class DistributedAprilToonsMgrAI(DistributedObjectAI):  
     def __init__(self, air):

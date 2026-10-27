@@ -168,7 +168,7 @@ class Decoration(NodePath):
             self.tubeCog.reparentTo(self)
         elif self.name == 'BannerVictory':
             self.bannerVictory = Actor.Actor('phase_13/models/parties/tt_m_ara_pty_bannerVictory_model', {'idle': 'phase_13/models/parties/tt_m_ara_pty_bannerVictory'})
-            slef.bannerVictory.setBlend(frameBlend = config.ConfigVariableBool('want-smooth-animations', False).getValue())
+            self.bannerVictory.setBlend(frameBlend = config.ConfigVariableBool('want-smooth-animations', False).getValue())
             balloonLeft = self.bannerVictory.find('**/balloonsLMesh')
             balloonRight = self.bannerVictory.find('**/balloonsRMesh')
             balloonLeft.setBillboardAxis()

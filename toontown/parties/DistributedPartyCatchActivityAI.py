@@ -51,6 +51,7 @@ class DistributedPartyCatchActivityAI(DistributedPartyActivityAI, DistributedPar
             return
         if catches > PartyGlobals.CatchMaxTotalReward:
             catches = PartyGlobals.CatchMaxTotalReward
+        catches *= self.air.holidayManager.getPartyJellybeanMultiplier()
         self.sendUpdateToAvatarId(avId, 'showJellybeanReward', [catches, av.getMoney(), TTLocalizer.PartyCatchRewardMessage % (catches, catches)])
         av.addMoney(catches)
         DistributedPartyActivityAI.toonExitDemand(self)

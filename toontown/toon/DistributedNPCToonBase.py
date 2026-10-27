@@ -12,6 +12,7 @@ from direct.distributed import ClockDelta
 from toontown.quest import QuestParser
 from toontown.quest import QuestChoiceGui
 from direct.interval.IntervalGlobal import *
+from direct.task import Task
 import random
 
 class DistributedNPCToonBase(DistributedToon.DistributedToon):
@@ -27,6 +28,8 @@ class DistributedNPCToonBase(DistributedToon.DistributedToon):
             self.setPlayerType(NametagGroup.CCNonPlayer)
 
     def disable(self):
+        taskMgr.remove(self.uniqueName('placeAtOrigin'))
+        self.originTries = 0
         self.ignore('enter' + self.cSphereNode.getName())
         DistributedToon.DistributedToon.disable(self)
 
@@ -68,14 +71,37 @@ class DistributedNPCToonBase(DistributedToon.DistributedToon):
         DistributedToon.DistributedToon.announceGenerate(self)
 
     def initToonState(self):
-        self.setAnimState('neutral', 0.9, None, None)
-        npcOrigin = render.find('**/npc_origin_' + repr((self.posIndex)))
+        self.setAnimState('neutral', self.getNeutralRate(), None, None)
+        self.placeAtOrigin()
+
+    def getNeutralRate(self):
+        return 0.9
+
+    def findNpcOrigin(self):
+        return render.find('**/npc_origin_' + repr((self.posIndex)))
+
+    def placeAtOrigin(self, task=None):
+        # The toon can arrive before the room or playground it stands in has
+        # loaded. Rather than stand where it happens to be (in the middle of
+        # nowhere, or by another room's spot), it waits out of sight until
+        # its spot is there.
+        try:
+            npcOrigin = self.findNpcOrigin()
+        except AttributeError:
+            npcOrigin = NodePath()
         if not npcOrigin.isEmpty():
             self.reparentTo(npcOrigin)
             self.initPos()
-        else:
-            self.notify.warning('announceGenerate: Could not find npc_origin_' + str(self.posIndex))
-        return
+            self.unstash()
+            return Task.done
+        self.originTries = getattr(self, 'originTries', 0) + 1
+        if self.originTries > 50:
+            self.notify.warning('Could not find the origin of %s (posIndex %s)' % (self.getName(), self.posIndex))
+            self.unstash()
+            return Task.done
+        self.stash()
+        taskMgr.doMethodLater(0.2, self.placeAtOrigin, self.uniqueName('placeAtOrigin'))
+        return Task.done
 
     def initPos(self):
         self.clearMat()

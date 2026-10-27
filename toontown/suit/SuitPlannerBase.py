@@ -9,6 +9,7 @@ from toontown.hood import HoodUtil
 from toontown.building import SuitBuildingGlobals
 from toontown.dna import *
 from direct.stdpy.file import open
+from toontown.dna import DNAUtil
 
 class SuitPlannerBase:
     notify = DirectNotifyGlobal.directNotify.newCategory('SuitPlannerBase')

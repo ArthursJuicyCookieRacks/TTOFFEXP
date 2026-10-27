@@ -1,4 +1,6 @@
+import sys
 from enum import Enum
+from otp.otpbase.PythonEnum import IntEnum
 from panda3d.core import *
 from . import ShtikerPage
 from toontown.toontowngui import TTDialog
@@ -82,9 +84,9 @@ speedChatStyles = ((2000,
   (165 / 255.0, 120 / 255.0, 50 / 255.0),
   (210 / 255.0, 200 / 255.0, 180 / 255.0)))
 #PageMode = PythonUtil.Enum('Options, Codes')
-class PageMode(Enum):
-    Options = 1
-    Codes = 2
+class PageMode(IntEnum):
+    Options = 0
+    Codes = 1
 
 class OptionsPage(ShtikerPage.ShtikerPage):
     notify = DirectNotifyGlobal.directNotify.newCategory('OptionsPage')
@@ -201,6 +203,10 @@ class OptionsTabPage(DirectFrame):
         self.Friends_toggleButton = DirectButton(parent=self, relief=None, image=(guiButton.find('**/QuitBtn_UP'), guiButton.find('**/QuitBtn_DN'), guiButton.find('**/QuitBtn_RLVR')), image_scale=button_image_scale, text='', text_scale=options_text_scale, text_pos=button_textpos, pos=(buttonbase_xcoord, 0.0, buttonbase_ycoord - textRowHeight * 3), command=self.__doToggleAcceptFriends)
         self.Whispers_toggleButton = DirectButton(parent=self, relief=None, image=(guiButton.find('**/QuitBtn_UP'), guiButton.find('**/QuitBtn_DN'), guiButton.find('**/QuitBtn_RLVR')), image_scale=button_image_scale, text='', text_scale=options_text_scale, text_pos=button_textpos, pos=(buttonbase_xcoord, 0.0, buttonbase_ycoord - textRowHeight * 4), command=self.__doToggleAcceptWhispers)
         self.DisplaySettingsButton = DirectButton(parent=self, relief=None, image=(guiButton.find('**/QuitBtn_UP'), guiButton.find('**/QuitBtn_DN'), guiButton.find('**/QuitBtn_RLVR')), image3_color=Vec4(0.5, 0.5, 0.5, 0.5), image_scale=button_image_scale, text=TTLocalizer.OptionsPageChange, text3_fg=(0.5, 0.5, 0.5, 0.75), text_scale=options_text_scale, text_pos=button_textpos, pos=(buttonbase_xcoord, 0.0, buttonbase_ycoord - textRowHeight * 5), command=self.__doDisplaySettings)
+        if sys.platform == 'android':
+            # The game always fills a phone's screen at its own resolution.
+            self.DisplaySettings_Label.hide()
+            self.DisplaySettingsButton.hide()
         self.speedChatStyleLeftArrow = DirectButton(parent=self, relief=None, image=(gui.find('**/Horiz_Arrow_UP'),
          gui.find('**/Horiz_Arrow_DN'),
          gui.find('**/Horiz_Arrow_Rllvr'),
@@ -219,7 +225,9 @@ class OptionsTabPage(DirectFrame):
         self.speedChatStyleText.setPos(0.37, 0, buttonbase_ycoord - textRowHeight * 6 + 0.03)
         self.speedChatStyleText.reparentTo(self, DGG.FOREGROUND_SORT_INDEX)
         self.exitButton = DirectButton(parent=self, relief=None, image=(guiButton.find('**/QuitBtn_UP'), guiButton.find('**/QuitBtn_DN'), guiButton.find('**/QuitBtn_RLVR')), image_scale=1.15, text=TTLocalizer.OptionsPageExitToontown, text_scale=options_text_scale, text_pos=button_textpos, textMayChange=0, pos=(0.45, 0, -0.6), command=self.__handleExitShowWithConfirm)
-        #self.customOptionsButton = DirectButton(parent=self, relief=None, image=(guiButton.find('**/QuitBtn_UP'), guiButton.find('**/QuitBtn_DN'), guiButton.find('**/QuitBtn_RLVR')), image_scale=1.15, text=TTLocalizer.NewOptionsButtonTitle, text_scale=options_text_scale, text_pos=button_textpos, textMayChange=0, pos=(-0.45, 0, -0.6), command=self.__handleExitShowWithConfirm)
+        # Setup: how the NPC toons play along (the same screen as Make-A-Toon's).
+        self.setupButton = DirectButton(parent=self, relief=None, image=(guiButton.find('**/QuitBtn_UP'), guiButton.find('**/QuitBtn_DN'), guiButton.find('**/QuitBtn_RLVR')), image_scale=1.15, text=TTLocalizer.OptionsPageSetup, text_scale=options_text_scale, text_pos=button_textpos, textMayChange=0, pos=(-0.45, 0, -0.6), command=self.__handleSetup)
+        self.setupPanel = None
         guiButton.removeNode()
         gui.removeNode()
         return
@@ -244,7 +252,18 @@ class OptionsTabPage(DirectFrame):
             self.exitButton.show()
         #    self.customOptionsButton.show()
 
+    def __handleSetup(self):
+        from toontown.npcplayers import NPCSetupPanel
+        self.__closeSetup()
+        self.setupPanel = NPCSetupPanel.NPCSetupPanel()
+
+    def __closeSetup(self):
+        if self.setupPanel is not None and not self.setupPanel.isEmpty():
+            self.setupPanel.destroy()
+        self.setupPanel = None
+
     def exit(self):
+        self.__closeSetup()
         self.ignore('confirmDone')
         self.hide()
         self.speedChatStyleText.exit()

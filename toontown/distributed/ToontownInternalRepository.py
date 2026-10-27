@@ -33,7 +33,9 @@ class ToontownInternalRepository(AstronInternalRepository):
         self.netMessenger.register(3, 'avatarOffline')
         self.netMessenger.register(4, 'enableLogins')
 
-        if hasattr(signal, 'alarm'):
+        # The watchdog kills a stalled AI process. In-process, a slow client
+        # frame (loading a zone) would trip it, so it only runs standalone.
+        if hasattr(signal, 'alarm') and not self.isLocal():
             signal.signal(signal.SIGALRM, watchdogExhausted)
 
             self.__watchdog = taskMgr.add(self.__resetWatchdog, 'watchdog')
@@ -41,6 +43,23 @@ class ToontownInternalRepository(AstronInternalRepository):
     def __resetWatchdog(self, task):
         signal.alarm(ai_watchdog.getValue())
         return task.cont
+
+    def callAsSender(self, avId, func, *args):
+        # Runs func as though avId's client had sent the message: the NPC
+        # players act through the same handlers as a real player's client.
+        if self._localConn is None:
+            old = self.getMsgSender()
+            try:
+                self.msgSender = avId
+                return func(*args)
+            finally:
+                self.msgSender = old
+        old = self._localMsgSender
+        self._localMsgSender = avId
+        try:
+            return func(*args)
+        finally:
+            self._localMsgSender = old
 
     def getAvatarIdFromSender(self):
         return self.getMsgSender() & 0xFFFFFFFF

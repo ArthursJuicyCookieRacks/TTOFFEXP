@@ -21,6 +21,7 @@ from direct.interval.IntervalGlobal import Sequence, Parallel, LerpScaleInterval
 from direct.actor import Actor
 from toontown.golf import GolfHoleBase
 from toontown.distributed import DelayDelete
+from panda3d.core import CollisionSphere, Quat, TransparencyAttrib
 
 class DistributedGolfHole(DistributedPhysicsWorld.DistributedPhysicsWorld, FSM, GolfHoleBase.GolfHoleBase):
     defaultTransitions = {'Off': ['Cleanup', 'ChooseTee', 'WatchTee'],

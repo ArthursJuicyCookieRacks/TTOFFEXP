@@ -5,6 +5,7 @@ from direct.distributed.DistributedObjectAI import DistributedObjectAI
 from .TrolleyConstants import *
 from toontown.minigame.MinigameCreatorAI import *
 from toontown.quest import Quests
+from toontown.toonbase import ToontownGlobals
 from otp.ai.MagicWordGlobal import *
 
 doesntWantTrolleyTracks = {}
@@ -72,18 +73,16 @@ class DistributedTrolleyAI(DistributedObjectAI, FSM):
             # players array would be empty. Therefore, we should only attempt
             # to create a minigame if there are still players.
 
-            newbieIds = []
-
-            for avId in players:
-            #    noTravel = doesntWantTrolleyTracks.get(avId)
-            #    aiNoTravel = doesntWantTrolleyTracks.get('everyone')
-
-                if self.isNewbie(avId):
-                    newbieIds.append(avId)
-
-            #if len(players) > 1 and not noTravel and not aiNoTravel:
-            #    mg = createMinigame(self.air, players, self.zoneId, metagameRound=0) #TODO: use holiday manager instead of this hardcoded shit
-            #else:
+            newbieIds = [avId for avId in players if self.isNewbie(avId)]
+            # Trolley Tracks: during the trolley holidays the trolley plays
+            # the board game between minigames.
+            trolleyTracks = self.air.holidayManager.isHolidayRunning(
+                ToontownGlobals.TROLLEY_HOLIDAY, ToontownGlobals.TROLLEY_WEEKEND, ToontownGlobals.SILLY_SATURDAY_TROLLEY)
+            if len(players) == 1 and config.ConfigVariableBool('metagame-min-2-players', 0).getValue():
+                trolleyTracks = False
+            if trolleyTracks:
+                mg = createMinigame(self.air, players, self.zoneId, newbieIds=newbieIds, metagameRound=0)
+            else:
                 mg = createMinigame(self.air, players, self.zoneId, newbieIds=newbieIds)
             for player in players:
                 self.sendUpdateToAvatarId(player, 'setMinigameZone', [mg['minigameZone'], mg['minigameId']])

@@ -30,15 +30,14 @@ class CatalogGardenStarterItem(CatalogItem.CatalogItem):
         return TTLocalizer.GardenStarterTypeName
 
     def recordPurchase(self, avatar, optional):
-        print('rental-- record purchase')
+        # The garden grows beside the toon's house: right away when their
+        # estate is loaded, otherwise the next time it is.
         if avatar:
-            print('starter garden-- has avater')
-            estate = simbase.air.estateManager.toon2estate.get(avatar)
+            estate = getattr(avatar, 'estate', None)
             if estate:
-                print('starter garden-- has estate')
                 estate.placeStarterGarden(avatar)
             else:
-                print('starter garden-- something not there')
+                avatar.b_setGardenStarted(1)
         return ToontownGlobals.P_ItemAvailable
 
     def getPicture(self, avatar):

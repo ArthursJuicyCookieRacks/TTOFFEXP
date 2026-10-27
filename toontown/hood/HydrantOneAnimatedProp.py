@@ -19,7 +19,7 @@ class HydrantOneAnimatedProp(ZeroAnimatedProp.ZeroAnimatedProp):
 
     def startIfNeeded(self):
         try:
-            self.curPhase = self.getPhaseTorun()
+            self.curPhase = self.getPhaseToRun()
             if self.curPhase >= self.PhaseWeStartAnimating:
                 self.request('DoAnim')
         except:

@@ -22,6 +22,7 @@ from toontown.battle.BattleProps import globalPropPool
 from toontown.battle.BattleSounds import globalBattleSoundCache
 from toontown.parties import *
 from otp.speedchat import SpeedChatGlobals
+from toontown.parties import PartyGlobals
 
 class DistributedToonfestCog(DistributedObject, FSM):
     notify = DirectNotifyGlobal.directNotify.newCategory('DistributedToonfestCog')

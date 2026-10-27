@@ -2,6 +2,7 @@ from direct.directnotify import DirectNotifyGlobal
 from direct.distributed import DistributedObject
 from direct.interval.IntervalGlobal import *
 from toontown.effects import DustCloud
+from otp.speedchat import SpeedChatGlobals
 
 def getDustCloudIval(toon):
     dustCloud = DustCloud.DustCloud(fBillboard=0)
@@ -29,6 +30,8 @@ class DistributedBlackCatMgr(DistributedObject.DistributedObject):
         DistributedBlackCatMgr.notify.debug('announceGenerate')
         DistributedObject.DistributedObject.announceGenerate(self)
         self.acceptOnce(DistributedBlackCatMgr.ActivateEvent, self.d_requestBlackCatTransformation)
+        # Saying "Toontastic!" where the manager is (Toon Hall) asks for it.
+        self.accept(SpeedChatGlobals.SCStaticTextMsgEvent, self.__phraseSaid)
         self.dustCloudIval = None
         return
 
@@ -37,7 +40,12 @@ class DistributedBlackCatMgr(DistributedObject.DistributedObject):
             self.dustCloudIval.finish()
         del self.dustCloudIval
         self.ignore(DistributedBlackCatMgr.ActivateEvent)
+        self.ignore(SpeedChatGlobals.SCStaticTextMsgEvent)
         DistributedObject.DistributedObject.delete(self)
+
+    def __phraseSaid(self, phraseId):
+        if phraseId == 5700:
+            messenger.send(DistributedBlackCatMgr.ActivateEvent)
 
     def d_requestBlackCatTransformation(self):
         self.sendUpdate('requestBlackCatTransformation', [])

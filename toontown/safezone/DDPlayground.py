@@ -8,6 +8,10 @@ from toontown.toonbase import ToontownGlobals
 from direct.directnotify import DirectNotifyGlobal
 from toontown.hood import Place
 
+
+LeavingStates = ('teleportOut', 'tunnelOut', 'doorOut', 'died', 'final')
+
+
 class DDPlayground(Playground.Playground):
     notify = DirectNotifyGlobal.directNotify.newCategory('DDPlayground')
 
@@ -62,6 +66,10 @@ class DDPlayground(Playground.Playground):
         return Task.cont
 
     def __checkToonUnderwater(self, task):
+        # Not while the toon is leaving: going back to walking would stop
+        # the teleport (or door, or tunnel) on its way out.
+        if self.fsm.getCurrentState().getName() in LeavingStates:
+            return Task.cont
         if base.localAvatar.getZ() < -2.3314585:
             self.__submergeToon()
         else:

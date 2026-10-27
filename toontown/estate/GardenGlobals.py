@@ -42,8 +42,8 @@ def getWateringCanPower(wateringCan, wateringCanSkill):
                 gardenNotify.warning("this shouldn't happen wateringCanSkill %d >= skill %d" % (wateringCanSkill, skill))
             wateringCanSkill = skill - 1
         if curWateringCan == wateringCan:
-            skillPtPerBox = skill / curBoxes
-            numBoxes += 1 + int(wateringCanSkill) / int(skillPtPerBox)
+            skillPtPerBox = skill // curBoxes
+            numBoxes += 1 + int(wateringCanSkill) // int(skillPtPerBox)
         else:
             numBoxes += curBoxes
 
@@ -502,8 +502,8 @@ def getShovelPower(shovel, shovelSkill):
             if shovelSkill >= skill:
                 gardenNotify.warning("this shouldn't happen shovelSkill %d >= skill %d" % (shovelSkill, skill))
                 shovelSkill = skill - 1
-            skillPtPerBox = skill / curBoxes
-            numBoxes += 1 + int(shovelSkill) / int(skillPtPerBox)
+            skillPtPerBox = skill // curBoxes
+            numBoxes += 1 + int(shovelSkill) // int(skillPtPerBox)
         else:
             numBoxes += curBoxes
 

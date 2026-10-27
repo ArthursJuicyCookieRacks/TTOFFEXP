@@ -25,11 +25,11 @@ class EntityTypeRegistry:
             return filename
 
         fileLines = open(getPyExtVersion(EntityTypes.__file__), 'rb').readlines()
-        hv.hashString(string.join(fileLines))
+        hv.hashString(b' '.join(fileLines).decode('latin-1'))
         s = str(hv.asHex())
         s += '.'
         fileLines = open(getPyExtVersion(self.entTypeModule.__file__), 'rb').readlines()
-        hv.hashString(string.join(fileLines))
+        hv.hashString(b' '.join(fileLines).decode('latin-1'))
         s += str(hv.asHex())
         self.hashStr = s
         getPyExtVersion = None

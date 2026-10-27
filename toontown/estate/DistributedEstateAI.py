@@ -7,14 +7,17 @@ import time
 from toontown.fishing.DistributedFishingPondAI import DistributedFishingPondAI
 from toontown.fishing import FishGlobals
 from toontown.fishing.DistributedFishingTargetAI import DistributedFishingTargetAI
-#from toontown.fishing.DistributedPondBingoManagerAI import DistributedPondBingoManagerAI
+from toontown.fishing.DistributedPondBingoManagerAI import DistributedPondBingoManagerAI
 from toontown.fishing import FishingTargetGlobals
 from toontown.safezone.DistributedFishingSpotAI import DistributedFishingSpotAI
 from toontown.safezone.SZTreasurePlannerAI import SZTreasurePlannerAI
 from toontown.safezone import TreasureGlobals
 
-from toontown.estate.DistributedGardenBoxAI import DistributedGardenBoxAI
-from toontown.estate.DistributedGardenPlotAI import DistributedGardenPlotAI
+from toontown.estate.GardenAI import GardenAI
+from toontown.estate.DistributedCannonAI import DistributedCannonAI
+from toontown.estate.DistributedTargetAI import DistributedTargetAI
+from toontown.estate import CannonGlobals
+import datetime
 
 
 class DistributedEstateAI(DistributedObjectAI):
@@ -29,7 +32,11 @@ class DistributedEstateAI(DistributedObjectAI):
         self.dawnTime = 0
         self.lastEpochTimestamp = 0
         self.rentalTimestamp = 0
+        self.rentalType = 0
+        self.rentalObjects = []
         self.houses = [None] * 6
+        self.pets = []
+        self.gardens = {}
 
         self.pond = None
         self.spots = []
@@ -45,26 +52,15 @@ class DistributedEstateAI(DistributedObjectAI):
         self.pond = DistributedFishingPondAI(simbase.air)
         self.pond.setArea(ToontownGlobals.MyEstate)
         self.pond.generateWithRequired(self.zoneId)
+        self.pond.bingoMgr = DistributedPondBingoManagerAI(self.air)
+        self.pond.bingoMgr.setPondDoId(self.pond.getDoId())
+        self.pond.bingoMgr.generateWithRequired(self.zoneId)
 
         for i in range(FishingTargetGlobals.getNumTargets(ToontownGlobals.MyEstate)):
             target = DistributedFishingTargetAI(self.air)
             target.setPondDoId(self.pond.getDoId())
             target.generateWithRequired(self.zoneId)
             self.targets.append(target)
-
-        for i in range(6):
-            avItems = self.items[i]
-            for item in avItems:
-                type, hardPoint, waterLevel, growthLevel, optional = item
-                if type == 2: # broken for now, rip
-                    boxes = GardenGlobals.estateBoxes[i]
-                    box = DistributedGardenBoxAI(self.air)
-                    box.setPlot(i)
-                    box.setOwnerIndex(i)
-                    box.setTypeIndex(boxes[hardPoint][3])
-                    box.setPosition(boxes[hardPoint][0], boxes[hardPoint][1], 20)
-                    box.setHeading(boxes[hardPoint][2])
-                    box.generateWithRequired(self.zoneId)
 
         spot = DistributedFishingSpotAI(self.air)
         spot.setPondDoId(self.pond.getDoId())
@@ -94,14 +90,68 @@ class DistributedEstateAI(DistributedObjectAI):
         self.createTreasurePlanner()
 
     def rentItem(self, type, duration):
-        pass # TODO - implement this
+        # A rental bought from the catalog starts right away and lasts
+        # duration minutes. Buying again while one runs replaces it.
+        self.endRental(announce=False)
+        self.b_setRentalType(type)
+        self.b_setRentalTimeStamp(int(time.time() + duration * 60))
+        self.startRental()
+
+    def startRental(self):
+        # Puts the rented items out, also when the estate loads while a
+        # rental is still running.
+        remaining = self.rentalTimestamp - time.time()
+        if not self.rentalType or remaining <= 0 or self.rentalObjects:
+            return
+        if self.rentalType == ToontownGlobals.RentalCannon:
+            target = DistributedTargetAI(self.air, -5.6, -24, 40)
+            target.generateWithRequired(self.zoneId)
+            target.setEnabled(1)
+            self.rentalObjects.append(target)
+            for drop in CannonGlobals.cannonDrops:
+                cannon = DistributedCannonAI(self.air, self.doId, target.doId, *drop)
+                cannon.generateWithRequired(self.zoneId)
+                self.rentalObjects.append(cannon)
+        elif self.rentalType == ToontownGlobals.RentalGameTable:
+            from toontown.safezone.DistributedPicnicTableAI import DistributedPicnicTableAI
+            for x, y, z, h in HouseGlobals.GameTablePositions:
+                table = DistributedPicnicTableAI(self.air, self.zoneId, 'gameTable', x, y, z, h, 0, 0)
+                self.rentalObjects.append(table)
+        taskMgr.doMethodLater(remaining, self.__rentalOver, self.uniqueName('rental-over'))
+
+    def __rentalOver(self, task):
+        self.endRental()
+        return task.done
+
+    def endRental(self, announce=True):
+        taskMgr.remove(self.uniqueName('rental-over'))
+        if announce and self.rentalObjects:
+            if self.rentalType == ToontownGlobals.RentalCannon:
+                self.sendUpdate('cannonsOver', [])
+            elif self.rentalType == ToontownGlobals.RentalGameTable:
+                self.sendUpdate('gameTableOver', [])
+        for obj in self.rentalObjects:
+            obj.requestDelete()
+        self.rentalObjects = []
+        if announce and self.rentalType:
+            self.b_setRentalType(0)
+            self.b_setRentalTimeStamp(0)
 
     def destroy(self):
+        taskMgr.remove(self.uniqueName('rental-over'))
+        for obj in self.rentalObjects:
+            obj.requestDelete()
+        self.rentalObjects = []
+        taskMgr.remove(self.uniqueName('garden-epoch'))
+        for garden in self.gardens.values():
+            garden.destroy()
+        self.gardens = {}
         for house in self.houses:
             if house:
                 house.requestDelete()
         del self.houses[:]
         if self.pond:
+            self.pond.bingoMgr.requestDelete()
             self.pond.requestDelete()
             for spot in self.spots:
                 spot.requestDelete()
@@ -110,6 +160,12 @@ class DistributedEstateAI(DistributedObjectAI):
 
         if self.treasurePlanner:
             self.treasurePlanner.stop()
+
+        for petId in self.pets:
+            pet = self.air.doId2do.get(petId)
+            if pet:
+                pet.requestDelete()
+        del self.pets[:]
 
         self.requestDelete()
 
@@ -199,17 +255,24 @@ class DistributedEstateAI(DistributedObjectAI):
         self.sendUpdate('setRentalTimeStamp', [rental])
 
     def b_setRentalTimeStamp(self, rental):
-        self.setRentalTimeStamp(self, rental)
-        self.b_setRentalTimeStamp(self, rental)
+        self.setRentalTimeStamp(rental)
+        self.d_setRentalTimeStamp(rental)
 
     def getRentalTimeStamp(self):
         return self.rentalTimestamp
 
-    def setRentalType(self, todo0):
-        pass
+    def setRentalType(self, type):
+        self.rentalType = type
+
+    def d_setRentalType(self, type):
+        self.sendUpdate('setRentalType', [type])
+
+    def b_setRentalType(self, type):
+        self.setRentalType(type)
+        self.d_setRentalType(type)
 
     def getRentalType(self):
-        return 0
+        return self.rentalType
 
     def setSlot0ToonId(self, id):
         self.toons[0] = id
@@ -228,7 +291,7 @@ class DistributedEstateAI(DistributedObjectAI):
         self.items[0] = items
 
     def d_setSlot0Items(self, items):
-        self.sendUpdate('setSlot5Items', [items])
+        self.sendUpdate('setSlot0Items', [items])
 
     def b_setSlot0Items(self, items):
         self.setSlot0Items(items)
@@ -254,11 +317,11 @@ class DistributedEstateAI(DistributedObjectAI):
         self.items[1] = items
 
     def d_setSlot1Items(self, items):
-        self.sendUpdate('setSlot2Items', [items])
+        self.sendUpdate('setSlot1Items', [items])
 
     def b_setSlot1Items(self, items):
-        self.setSlot2Items(items)
-        self.d_setSlot2Items(items)
+        self.setSlot1Items(items)
+        self.d_setSlot1Items(items)
 
     def getSlot1Items(self):
         return self.items[1]
@@ -321,13 +384,12 @@ class DistributedEstateAI(DistributedObjectAI):
     def d_setSlot4ToonId(self, id):
         self.sendUpdate('setSlot4ToonId', [id])
 
-    def b_setSlot5ToonId(self, id):
+    def b_setSlot4ToonId(self, id):
         self.setSlot4ToonId(id)
         self.d_setSlot4ToonId(id)
 
     def getSlot4ToonId(self):
         return self.toons[4]
-
 
     def setSlot4Items(self, items):
         self.items[4] = items
@@ -368,6 +430,9 @@ class DistributedEstateAI(DistributedObjectAI):
     def getSlot5Items(self):
         return self.items[5]
 
+    def b_setSlotItems(self, index, items):
+        getattr(self, 'b_setSlot%dItems' % index)(items)
+
     def setIdList(self, idList):
         for i in range(len(idList)):
             if i >= 6:
@@ -379,12 +444,31 @@ class DistributedEstateAI(DistributedObjectAI):
 
     def b_setIdList(self, idList):
         self.setIdList(idList)
-        self.d_setIdLst(idList)
+        self.d_setIdList(idList)
 
-    def completeFlowerSale(self, todo0):
-        pass
+    def completeFlowerSale(self, sell):
+        # The wheelbarrow buys the flower basket. Every tenth new kind of
+        # flower in the collection is a trophy and a laff point.
+        avId = self.air.getAvatarIdFromSender()
+        av = self.air.doId2do.get(avId)
+        if not av or not sell or not len(av.flowerBasket):
+            return
+        collection = av.flowerCollection
+        oldBonus = len(collection) // GardenGlobals.FLOWERS_PER_BONUS
+        value = av.flowerBasket.getTotalValue()
+        for flower in av.flowerBasket.flowerList:
+            collection.collectFlower(flower)
+        av.b_setFlowerCollection(*collection.getNetLists())
+        av.b_setFlowerBasket([], [])
+        av.addMoney(value)
+        newBonus = len(collection) // GardenGlobals.FLOWERS_PER_BONUS
+        if newBonus > oldBonus:
+            av.b_setMaxHp(av.getMaxHp() + newBonus - oldBonus)
+            av.toonUp(av.getMaxHp())
+            av.b_setGardenTrophies(list(range(min(newBonus, len(GardenGlobals.TrophyDict)))))
+            self.sendUpdate('awardedTrophy', [avId])
 
-    def awardedTrophy(self, todo0):
+    def awardedTrophy(self, avId):
         pass
 
     def setClouds(self, clouds):
@@ -412,12 +496,6 @@ class DistributedEstateAI(DistributedObjectAI):
         else:
             self.sendUpdateToAvatarId(avId, 'thankSeller', [ToontownGlobals.FISHSALE_COMPLETE, 0, 0])
 
-    def cannonsOver(self):
-        pass
-
-    def gameTableOver(self):
-        pass
-
     def updateToons(self):
         self.d_setSlot0ToonId(self.toons[0])
         self.d_setSlot1ToonId(self.toons[1])
@@ -435,32 +513,67 @@ class DistributedEstateAI(DistributedObjectAI):
         self.d_setSlot4Items(self.items[4])
         self.d_setSlot5Items(self.items[5])
 
+    def placeGardens(self, toonFields):
+        # The household is known now: every toon who started a garden gets
+        # it back, and the days that passed since the last visit catch up.
+        for index, avId in enumerate(self.toons):
+            if not avId:
+                continue
+            av = self.air.doId2do.get(avId)
+            if av:
+                started = av.getGardenStarted()
+            else:
+                started = (toonFields.get(index) or {}).get('setGardenStarted', [0])[0]
+            if started:
+                self.createGarden(index)
+        self.runDueEpochs()
+
+    def createGarden(self, index):
+        garden = GardenAI(self.air, self, index)
+        garden.create(self.items[index])
+        self.gardens[index] = garden
+        garden.save()
+
     def placeStarterGarden(self, avatar):
-        items = []
-        if avatar.getGardenStarted():
+        if avatar.getGardenStarted() or avatar.doId not in self.toons:
             return
-        avId = avatar.getDoId()
-        houseIndex = self.toons.index(avId)
-        plots = GardenGlobals.estatePlots[houseIndex]
-        boxes = GardenGlobals.estateBoxes[houseIndex]
-        for i in range(len(boxes)):
-            items.append([2, i, 0, 0, 0])
-            box = DistributedGardenBoxAI(self.air)
-            box.setPlot(i)
-            box.setOwnerIndex(houseIndex)
-            box.setTypeIndex(boxes[i][3])
-            box.setPosition(boxes[i][0], boxes[i][1], 20)
-            box.setHeading(boxes[i][2])
-            box.generateWithRequired(self.zoneId)
-        for i in range(len(plots)):
-            items.append([1, i, 0, 0, 0])
-            plot = DistributedGardenPlotAI(self.air)
-            plot.setPlot(i)
-            plot.setOwnerIndex(houseIndex)
-            if plots[i][3] != GardenGlobals.FLOWER_TYPE:
-                plot.setPosition(plots[i][0], plots[i][1], 20)
-                plot.setHeading(plots[i][2])
-            plot.generateWithRequired(self.zoneId)
-        self.items[houseIndex] = items
-        self.updateItems()
         avatar.b_setGardenStarted(1)
+        index = self.toons.index(avatar.doId)
+        self.b_setSlotItems(index, [])
+        self.createGarden(index)
+
+    @staticmethod
+    def countEpochs(since, now):
+        # The number of times the garden day turned over, at
+        # TIME_OF_DAY_FOR_EPOCH o'clock local time, after since up to now.
+        if not since or now <= since:
+            return 0
+        start = datetime.datetime.fromtimestamp(since)
+        epoch = start.replace(hour=GardenGlobals.TIME_OF_DAY_FOR_EPOCH, minute=0, second=0, microsecond=0)
+        if epoch <= start:
+            epoch += datetime.timedelta(days=1)
+        end = datetime.datetime.fromtimestamp(now)
+        if epoch > end:
+            return 0
+        return (end - epoch).days + 1
+
+    def runDueEpochs(self, task=None):
+        now = int(time.time())
+        count = self.countEpochs(self.lastEpochTimestamp, now)
+        for garden in self.gardens.values():
+            garden.runEpochs(count)
+        self.b_setLastEpochTimeStamp(now)
+        # Wake up for the next garden day.
+        nextEpoch = datetime.datetime.fromtimestamp(now).replace(hour=GardenGlobals.TIME_OF_DAY_FOR_EPOCH, minute=0, second=0, microsecond=0)
+        if nextEpoch.timestamp() <= now:
+            nextEpoch += datetime.timedelta(days=1)
+        taskMgr.remove(self.uniqueName('garden-epoch'))
+        taskMgr.doMethodLater(nextEpoch.timestamp() - now + 1, self.runDueEpochs, self.uniqueName('garden-epoch'))
+        if task:
+            return task.done
+
+    def doEpochNow(self, onlyForThisToonIndex=None):
+        # The garden accelerator: one garden day passes at once.
+        for index, garden in self.gardens.items():
+            if onlyForThisToonIndex is None or index == onlyForThisToonIndex:
+                garden.runEpochs(1)

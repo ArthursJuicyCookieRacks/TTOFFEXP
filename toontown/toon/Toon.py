@@ -478,7 +478,6 @@ def unloadDialog():
 
 class Toon(Avatar.Avatar, ToonHead):
     notify = DirectNotifyGlobal.directNotify.newCategory('Toon')
-    afkTimeout = config.ConfigVariableInt('afk-timeout', 600).getValue()
 
     def __init__(self):
         try:
@@ -653,6 +652,9 @@ class Toon(Avatar.Avatar, ToonHead):
         if len(newDNA.torso) < 2:
             self.sendLogSuspiciousEvent('nakedToonDNA %s was requested' % newDNA.torso)
             newDNA.torso = newDNA.torso + 's'
+        if self.style and newDNA.makeNetString() == self.style.makeNetString() and not getattr(self, 'isDisguised', 0):
+            # Back from the cache as it was: nothing to build again.
+            return
         self.setDNA(newDNA)
         self.setBlend(frameBlend = config.ConfigVariableBool('want-smooth-animations', False).getValue())
 
@@ -661,6 +663,10 @@ class Toon(Avatar.Avatar, ToonHead):
             if self.isDisguised:
                 return
         if self.style:
+            # A toon kept in the cache comes back with the same DNA; building
+            # its clothes and colours again cost ~30 ms a toon for nothing.
+            if dna.makeNetString() == self.style.makeNetString():
+                return
             self.updateToonDNA(dna)
         else:
             self.style = dna
@@ -1058,6 +1064,58 @@ class Toon(Avatar.Avatar, ToonHead):
 
         return swappedTorso
 
+    # Crocodiles and deer came without places for hats and glasses, so they
+    # borrow the short-headed cat's, moved to fit their own heads (measured
+    # from the head models): a deer's head is always the short shape, and a
+    # long crocodile head is taller than a short one but lower than a long
+    # cat's. Per head: the cat head borrowed, then for hats and for glasses
+    # the (y, z) shift and the scale.
+    ACCESSORY_HEAD_STAND_INS = {
+        'xl': ('cs', {'hat': (0.16, 0.08, 0.85), 'glasses': (-0.076, 0.017, 1.0)}),
+        'xs': ('cs', {'hat': (0.12, 0.0, 0.85), 'glasses': (-0.076, 0.0, 1.0)}),
+        'zl': ('cs', {'hat': (0.0, 0.2, 0.85), 'glasses': (0.0, 0.03, 1.0)}),
+        'zs': ('cs', {'hat': (0.0, 0.2, 0.85), 'glasses': (0.0, 0.03, 1.0)}),
+    }
+
+    # Headbands go round the head, so on the narrower crocodile and deer
+    # heads they are taken in further (width, depth), or they float.
+    HEADBAND_HATS = {22: (0.8, 0.95), 30: (0.72, 0.9), 35: (0.8, 0.95), 53: (0.75, 0.9)}
+
+    # Hats that still sat wrong after that, by hat and head: extra (y, z)
+    # shift and scale.
+    HAT_FITS = {(6, 'x'): (0.0, -0.1, 1.0), (6, 'z'): (0.0, -0.15, 1.0), (3, 'z'): (0.12, 0.02, 1.0),
+                (1, 'z'): (0.05, -0.05, 1.0),
+                (1, 'xs'): (0.03, -0.06, 1.0), (6, 'xs'): (0.03, -0.05, 1.0), (2, 'xl'): (0.0, 0.03, 1.1),
+                (3, 'zl'): (0.1, -0.04, 1.0), (4, 'zl'): (0.08, 0.0, 1.0)}
+    # Long deer antlers stand through these, so they fold down under them.
+    ANTLER_SQUASH_HATS = {3, 4, 5}
+    ANTLER_SQUASH = 0.6
+
+    def accessoryHead(self, table):
+        head = self.style.head[:2]
+        if head not in table and head in self.ACCESSORY_HEAD_STAND_INS:
+            head = self.ACCESSORY_HEAD_STAND_INS[head][0]
+        return head
+
+    def fitAccessory(self, geom, kind, table=None):
+        standIn = self.ACCESSORY_HEAD_STAND_INS.get(self.style.head[:2])
+        if standIn is None or (table and self.style.head[:2] in table):
+            return
+        dy, dz, scale = standIn[1][kind]
+        if kind == 'hat':
+            hat = self.getHat()[0]
+            fy, fz, fs = self.HAT_FITS.get((hat, self.style.head[:2]),
+                                           self.HAT_FITS.get((hat, self.style.head[0]), (0.0, 0.0, 1.0)))
+            dy += fy
+            dz += fz
+            scale *= fs
+        geom.setPos(geom.getX(), geom.getY() + dy, geom.getZ() + dz)
+        sx, sy = (1.0, 1.0)
+        if kind == 'hat':
+            sx, sy = self.HEADBAND_HATS.get(self.getHat()[0], (1.0, 1.0))
+        old = geom.getScale()
+        geom.setScale(old[0] * scale * sx, old[1] * scale * sy, old[2] * scale)
+
     def generateHat(self, fromRTM = False):
         hat = self.getHat()
         if hat[0] >= len(ToonDNA.HatModels):
@@ -1069,6 +1127,9 @@ class Toon(Avatar.Avatar, ToonHead):
 
             self.hatNodes = []
         self.showEars()
+        squash = self.ANTLER_SQUASH if hat[0] in self.ANTLER_SQUASH_HATS else 1.0
+        for antlers in self.findAllMatches('**/antlers-long'):
+            antlers.setSz(squash)
         if hat[0] != 0:
             hatGeom = loader.loadModel(ToonDNA.HatModels[hat[0]], okMissing=True)
             if hatGeom:
@@ -1087,14 +1148,15 @@ class Toon(Avatar.Avatar, ToonHead):
                     importlib.reload(AccessoryGlobals)
                 transOffset = None
                 if AccessoryGlobals.ExtendedHatTransTable.get(hat[0]):
-                    transOffset = AccessoryGlobals.ExtendedHatTransTable[hat[0]].get(self.style.head[:2])
+                    transOffset = AccessoryGlobals.ExtendedHatTransTable[hat[0]].get(self.accessoryHead(AccessoryGlobals.ExtendedHatTransTable[hat[0]]))
                 if transOffset == None:
-                    transOffset = AccessoryGlobals.HatTransTable.get(self.style.head[:2])
+                    transOffset = AccessoryGlobals.HatTransTable.get(self.accessoryHead(AccessoryGlobals.HatTransTable))
                     if transOffset == None:
                         return
                 hatGeom.setPos(transOffset[0][0], transOffset[0][1], transOffset[0][2])
                 hatGeom.setHpr(transOffset[1][0], transOffset[1][1], transOffset[1][2])
                 hatGeom.setScale(transOffset[2][0], transOffset[2][1], transOffset[2][2])
+                self.fitAccessory(hatGeom, 'hat')
                 headNodes = self.findAllMatches('**/__Actor_head')
                 for headNode in headNodes:
                     hatNode = headNode.attachNewNode('hatNode')
@@ -1131,15 +1193,17 @@ class Toon(Avatar.Avatar, ToonHead):
                 if fromRTM:
                     importlib.reload(AccessoryGlobals)
                 transOffset = None
-                if AccessoryGlobals.ExtendedGlassesTransTable.get(glasses[0]):
-                    transOffset = AccessoryGlobals.ExtendedGlassesTransTable[glasses[0]].get(self.style.head[:2])
+                extended = AccessoryGlobals.ExtendedGlassesTransTable.get(glasses[0])
+                if extended:
+                    transOffset = extended.get(self.accessoryHead(extended))
                 if transOffset == None:
-                    transOffset = AccessoryGlobals.GlassesTransTable.get(self.style.head[:2])
+                    transOffset = AccessoryGlobals.GlassesTransTable.get(self.accessoryHead(AccessoryGlobals.GlassesTransTable))
                     if transOffset == None:
                         return
                 glassesGeom.setPos(transOffset[0][0], transOffset[0][1], transOffset[0][2])
                 glassesGeom.setHpr(transOffset[1][0], transOffset[1][1], transOffset[1][2])
                 glassesGeom.setScale(transOffset[2][0], transOffset[2][1], transOffset[2][2])
+                self.fitAccessory(glassesGeom, 'glasses', extended)
                 headNodes = self.findAllMatches('**/__Actor_head')
                 for headNode in headNodes:
                     glassesNode = headNode.attachNewNode('glassesNode')
@@ -1179,9 +1243,10 @@ class Toon(Avatar.Avatar, ToonHead):
                     transOffset = AccessoryGlobals.BackpackTransTable.get(self.style.torso[:1])
                     if transOffset == None:
                         return
-                geom.setPos(transOffset[0][0], transOffset[0][1], transOffset[0][2])
+                back, up, grow = AccessoryGlobals.BackpackSpeciesFits.get(backpack[0], {}).get(self.style.head[0], (0.0, 0.0, 1.0))
+                geom.setPos(transOffset[0][0], transOffset[0][1] + back, transOffset[0][2] + up)
                 geom.setHpr(transOffset[1][0], transOffset[1][1], transOffset[1][2])
-                geom.setScale(transOffset[2][0], transOffset[2][1], transOffset[2][2])
+                geom.setScale(transOffset[2][0] * grow, transOffset[2][1] * grow, transOffset[2][2] * grow)
                 nodes = self.findAllMatches('**/def_joint_attachFlower')
                 for node in nodes:
                     theNode = node.attachNewNode('backpackNode')
@@ -1340,8 +1405,7 @@ class Toon(Avatar.Avatar, ToonHead):
                     nodePathList.append((node, offset))
 
         if nodePathList:
-            #nodePathList.sort(lambda x, y: cmp(x[0].getDistance(self), y[0].getDistance(self)))
-            nodePathList.sort()
+            nodePathList.sort(key=lambda x: x[0].getDistance(self))
             if len(nodePathList) >= 2:
                 if self.randGen.random() < 0.9:
                     chosenNodePath = nodePathList[0]
@@ -2118,9 +2182,10 @@ class Toon(Avatar.Avatar, ToonHead):
         self.loop('neutral')
         self.setPlayRate(animMultiplier * 0.4, 'neutral')
         self.setChatAbsolute(SLEEP_STRING, CFThought)
-        if self == base.localAvatar:
+        afkTimeout = OTPGlobals.getAfkTimeout()
+        if self == base.localAvatar and afkTimeout > 0:
             self.notify.debug('Adding timeout task to Toon.')
-            taskMgr.doMethodLater(self.afkTimeout, self.__handleAfkTimeout, self.uniqueName('afkTimeout'))
+            taskMgr.doMethodLater(afkTimeout, self.__handleAfkTimeout, self.uniqueName('afkTimeout'))
         self.setActiveShadow(0)
 
     def __handleAfkTimeout(self, task):
@@ -2291,7 +2356,7 @@ class Toon(Avatar.Avatar, ToonHead):
             for partName, pieceNames in pieces:
                 part = self.getPart(partName, lodName)
                 if part:
-                    if type(pieceNames) == bytes:
+                    if isinstance(pieceNames, str):
                         pieceNames = (pieceNames,)
                     for pieceName in pieceNames:
                         npc = part.findAllMatches('**/%s;+s' % pieceName)

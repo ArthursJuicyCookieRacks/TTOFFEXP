@@ -1,4 +1,5 @@
 from panda3d.core import *
+from otp.avatar.Avatar import teleportNotify
 from toontown.toonbase.ToonBaseGlobal import *
 from toontown.toonbase.ToontownGlobals import *
 from direct.gui.DirectGui import *

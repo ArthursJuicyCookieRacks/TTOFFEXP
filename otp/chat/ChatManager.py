@@ -12,6 +12,7 @@ from direct.directnotify import DirectNotifyGlobal
 from otp.login import LeaveToPayDialog
 from direct.gui.DirectGui import *
 from panda3d.core import *
+from otp.nametag.NametagConstants import CFSpeech, CFThought, CFTimeout
 ChatEvent = 'ChatEvent'
 NormalChatEvent = 'NormalChatEvent'
 SCChatEvent = 'SCChatEvent'

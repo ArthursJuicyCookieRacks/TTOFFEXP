@@ -66,6 +66,9 @@ class DistributedToon(DistributedPlayer.DistributedPlayer, Toon.Toon, Distribute
     notify = DirectNotifyGlobal.directNotify.newCategory('DistributedToon')
     partyNotify = DirectNotifyGlobal.directNotify.newCategory('DistributedToon_Party')
     chatGarbler = ToonChatGarbler.ToonChatGarbler()
+    # Only the player's own toon shows its gag menu; for everyone else it is
+    # built the first time something asks for it (see InventoryNew).
+    lazyInventoryGUI = True
     gmNameTag = None
 
     def __init__(self, cr, bFake = False):
@@ -237,6 +240,12 @@ class DistributedToon(DistributedPlayer.DistributedPlayer, Toon.Toon, Distribute
         DistributedPlayer.DistributedPlayer.disable(self)
         return
 
+    def getCacheable(self):
+        # Offline, every other toon is an NPC player. When the player steps
+        # into a shop and back out, the playground's toons go away and come
+        # back; kept, they come back at once instead of being built again.
+        return self.__class__ is DistributedToon and self.getDelayDeleteCount() <= 0
+
     def delete(self):
         try:
             self.DistributedToon_deleted
@@ -331,7 +340,7 @@ class DistributedToon(DistributedPlayer.DistributedPlayer, Toon.Toon, Distribute
 
     def setInventory(self, inventoryNetString):
         if not self.inventory:
-            self.inventory = InventoryNew.InventoryNew(self, inventoryNetString)
+            self.inventory = InventoryNew.InventoryNew(self, inventoryNetString, lazyGUI=self.lazyInventoryGUI)
         self.inventory.updateInvString(inventoryNetString)
 
     def setLastHood(self, lastHood):
@@ -439,7 +448,7 @@ class DistributedToon(DistributedPlayer.DistributedPlayer, Toon.Toon, Distribute
         try:
             hoodPhase = base.cr.hoodMgr.getPhaseFromHood(zoneId)
         except:
-            self.defaultZone = ToontownCentral
+            self.defaultZone = ToontownGlobals.ToontownCentral
             return
 
         if ConfigVariableBool('want-doomsday', False):

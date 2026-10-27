@@ -232,17 +232,20 @@ def getNextPos(currentPos, playground, area, doId):
         usedI = allocatedIndexes[doId][1][area]
     else:
         return (ButterflyPoints[playground][area][0], 0, 4.0)
-    nextPos = currentPos
-    while nextPos == currentPos:
-        if len(unusedI) == 0:
-            index = random.choice(usedI)
-            nextPos = ButterflyPoints[playground][area][index]
-        else:
-            index = random.choice(unusedI)
-            nextPos = ButterflyPoints[playground][area][index]
-            if nextPos != currentPos:
-                unusedI.remove(index)
-                usedI.append(index)
+    points = ButterflyPoints[playground][area]
+    # Pick a point other than the current one, preferring unused points. The
+    # old loop spun forever when every remaining point was the current one.
+    choices = [i for i in unusedI if points[i] != currentPos]
+    if choices:
+        index = random.choice(choices)
+        unusedI.remove(index)
+        usedI.append(index)
+    else:
+        choices = [i for i in usedI if points[i] != currentPos]
+        if not choices:
+            choices = [i for i in range(len(points)) if points[i] != currentPos] or [0]
+        index = random.choice(choices)
+    nextPos = points[index]
 
     dist = Vec3(nextPos - currentPos).length()
     time = dist / BUTTERFLY_SPEED + BUTTERFLY_TAKEOFF[playground] + BUTTERFLY_LANDING[playground]

@@ -116,7 +116,7 @@ class PhotoAlbumPage(ShtikerPage.ShtikerPage):
     def renameDialog(self, str):
         if os.path.isfile(self.photoPath + self.selectedFileName):
             separator = '_'
-            validChars = string.letters + string.digits + ' -#&.,'
+            validChars = string.ascii_letters + string.digits + ' -#&.,'
             str = [s for s in str if s in validChars]
             oldName = self.selectedFileName
             numUnders = oldName.count(separator)

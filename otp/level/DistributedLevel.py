@@ -309,7 +309,7 @@ class DistributedLevel(DistributedObject.DistributedObject, Level.Level):
         if zone == None:
             node = self.geom
         else:
-            node = self.getZoneNode(zoneNum)
+            node = self.getZoneNode(zone)
         node.setAlphaScale(alpha)
         return
 

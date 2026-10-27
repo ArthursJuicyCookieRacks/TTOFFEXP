@@ -1,8 +1,9 @@
+import math
 from direct.directnotify import DirectNotifyGlobal
 from direct.distributed.DistributedObjectAI import DistributedObjectAI
 from toontown.catalog.CatalogItemList import CatalogItemList
 from toontown.catalog import CatalogItem
-from toontown.catalog.CatalogFurnitureItem import CatalogFurnitureItem, FLCloset, FLBank, FLPhone
+from toontown.catalog.CatalogFurnitureItem import CatalogFurnitureItem, FLCloset, FLBank, FLPhone, FLTrunk
 from toontown.catalog.CatalogWallpaperItem import CatalogWallpaperItem
 from toontown.catalog.CatalogMouldingItem import CatalogMouldingItem
 from toontown.catalog.CatalogFlooringItem import CatalogFlooringItem
@@ -12,6 +13,7 @@ from .DistributedFurnitureItemAI import DistributedFurnitureItemAI
 from .DistributedBankAI import DistributedBankAI
 from .DistributedPhoneAI import DistributedPhoneAI
 from .DistributedClosetAI import DistributedClosetAI
+from .DistributedTrunkAI import DistributedTrunkAI
 
 class FurnitureError(Exception):
     def __init__(self, code):
@@ -109,6 +111,16 @@ class DistributedFurnitureManagerAI(DistributedObjectAI):
             items.append(item)
             # Since we have modified the items list, should we save it back to the house?
 
+        # Every toon has an accessory trunk too (Arthur asked), set down
+        # beside the closet.
+        if self.ownerId != 0 and not any(item.getFlags() & FLTrunk for item in items):
+            closet = [item for item in items if item.getFlags() & FLCloset][0]
+            x, y, z, h, p, r = closet.posHpr
+            angle = math.radians(h)
+            item = CatalogFurnitureItem(4000)
+            item.posHpr = (x + 4.0 * math.cos(angle), y + 4.0 * math.sin(angle), z, h, p, r)
+            items.append(item)
+
         for item in items:
             if item.getFlags() & FLCloset:
                 if self.house.gender == 0:
@@ -119,6 +131,14 @@ class DistributedFurnitureManagerAI(DistributedObjectAI):
                     # If they have a female closet, we need to make it a male closet.
                     item.furnitureType -= 10
                 do = DistributedClosetAI(self.air, self, item)
+            elif item.getFlags() & FLTrunk:
+                # Like the closet, the trunk matches the house owner.
+                if self.house.gender == 0:
+                    if item.furnitureType - 4000 < 10:
+                        item.furnitureType += 10
+                elif item.furnitureType - 4000 > 10:
+                    item.furnitureType -= 10
+                do = DistributedTrunkAI(self.air, self, item)
             elif item.getFlags() & FLBank:
                 do = DistributedBankAI(self.air, self, item)
             elif item.getFlags() & FLPhone:

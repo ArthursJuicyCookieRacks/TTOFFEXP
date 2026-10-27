@@ -17,6 +17,7 @@ from toontown.toonbase.ToontownTimer import ToontownTimer
 from toontown.toonbase import ToontownGlobals
 from direct.showbase import PythonUtil
 from otp.otpbase import OTPGlobals
+from otp.margins.WhisperPopup import WhisperPopup
 
 class DistributedPicnicTable(DistributedNode.DistributedNode):
 
@@ -109,6 +110,9 @@ class DistributedPicnicTable(DistributedNode.DistributedNode):
         return
 
     def handleSleep(self, task = None):
+        if self.fsm is None:
+            # The sleep watch started at generate outlived the table.
+            return
         if self.fsm.getCurrentState().getName() == 'chooseMode':
             self.cancelButtonPushed()
         elif self.fsm.getCurrentState().getName() == 'sitting':
@@ -231,6 +235,18 @@ class DistributedPicnicTable(DistributedNode.DistributedNode):
             self.isPlaying = True
 
     def announceWinner(self, winString, avId):
+        if winString.endswith(' Tie') or not avId:
+            # A draw, or a computer player won.
+            stateString = self.fsm.getCurrentState().getName()
+            if stateString == 'sitting' or stateString == 'observing':
+                base.cr.playGame.getPlace().setState('walk')
+            if winString.endswith(' Tie'):
+                message = TTLocalizer.PicnicTableTie % winString[:-len(' Tie')]
+            else:
+                message = TTLocalizer.PicnicTableComputerWon % winString
+            whisper = WhisperPopup(message, OTPGlobals.getInterfaceFont(), WhisperPopup.WTNormal)
+            whisper.manage(base.marginManager)
+            return
         if avId == base.localAvatar.getDoId():
             sound = Sequence(Wait(2.0), Parallel(SoundInterval(self.winSound), SoundInterval(self.happyDance)))
             sound.start()
@@ -636,7 +652,7 @@ class DistributedPicnicTable(DistributedNode.DistributedNode):
         oldTrack = self.__toonTracks.get(avId)
         if oldTrack:
             oldTrack.pause()
-            cleanupDelayDeletes(oldTrack)
+            DelayDelete.cleanupDelayDeletes(oldTrack)
 
     def clearToonTracks(self):
         keyList = []

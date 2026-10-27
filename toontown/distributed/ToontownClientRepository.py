@@ -68,6 +68,11 @@ class ToontownClientRepository(OTPClientRepository.OTPClientRepository):
     def __init__(self, serverVersion, launcher = None):
         OTPClientRepository.OTPClientRepository.__init__(self, serverVersion, launcher, playGame=PlayGame.PlayGame)
         self._playerAvDclass = self.dclassesByName['DistributedToon']
+        # The NPC toons of a playground or street are kept for when the
+        # player comes back out of a shop or back to the place, rather than
+        # built again (the AI keeps them for NPCSettings.keepAreas places).
+        from toontown.npcplayers import NPCSettings
+        self.cache.maxCacheItems = NPCSettings.npcsPerArea() * max(1, NPCSettings.keepAreas()) + 8
         setInterfaceFont(TTLocalizer.InterfaceFont)
         setSignFont(TTLocalizer.SignFont)
         setFancyFont(TTLocalizer.FancyFont)
@@ -101,8 +106,8 @@ class ToontownClientRepository(OTPClientRepository.OTPClientRepository):
         self.ttrFriendsManager = self.generateGlobalObject(OtpDoGlobals.OTP_DO_ID_TTR_FRIENDS_MANAGER, 'TTRFriendsManager')
         self.speedchatRelay = self.generateGlobalObject(OtpDoGlobals.OTP_DO_ID_TOONTOWN_SPEEDCHAT_RELAY, 'TTSpeedchatRelay')
         self.deliveryManager = self.generateGlobalObject(OtpDoGlobals.OTP_DO_ID_TOONTOWN_DELIVERY_MANAGER, 'DistributedDeliveryManager')
-        if config.ConfigVariableBool('want-code-redemption', 1).getValue():
-            self.codeRedemptionManager = self.generateGlobalObject(OtpDoGlobals.OTP_DO_ID_TOONTOWN_CODE_REDEMPTION_MANAGER, 'TTCodeRedemptionMgr')
+        # Codes are redeemed with the district's TTCodeRedemptionMgr, which
+        # the AI makes; there is no UberDOG one.
         if config.ConfigVariableBool('want-arg-manager', 0).getValue():
             self.argManager = self.generateGlobalObject(OtpDoGlobals.OTP_DO_ID_TTR_ARG_MANAGER, 'ARGManager')
 
@@ -221,7 +226,9 @@ class ToontownClientRepository(OTPClientRepository.OTPClientRepository):
             else:
                 self.music = base.musicManager.getSound('phase_3/audio/bgm/ttr_d_theme_phase2.ogg')
             if self.music:
-                self.music.setLoopStart(2.9)
+                # setLoopStart comes from the TTR-Offline Panda3D fork.
+                if hasattr(self.music, 'setLoopStart'):
+                    self.music.setLoopStart(2.9)
                 self.music.setLoop(True)
                 self.music.setVolume(0.8)
                 self.music.play()
@@ -443,7 +450,7 @@ class ToontownClientRepository(OTPClientRepository.OTPClientRepository):
         gotData = 1
 
 
-        if isinstance(pad.func, bytes):
+        if isinstance(pad.func, str):
             messenger.send(pad.func, list((gotData, pad.avatar) + pad.args))
         else:
             pad.func(*(gotData, pad.avatar) + pad.args)
@@ -469,7 +476,7 @@ class ToontownClientRepository(OTPClientRepository.OTPClientRepository):
             dclass = self.dclassesByName[dclassName]
             pad.avatar.updateAllRequiredFields(dclass, di)
             gotData = 1
-        if isinstance(pad.func, bytes):
+        if isinstance(pad.func, str):
             messenger.send(pad.func, list((gotData, pad.avatar) + pad.args))
         else:
             pad.func(*(gotData, pad.avatar) + pad.args)
@@ -484,9 +491,13 @@ class ToontownClientRepository(OTPClientRepository.OTPClientRepository):
         self._userLoggingOut = False
         if not self.streetSign:
             self.streetSign = StreetSign.StreetSign()
+        from toontown.npcplayers import NPCHelpPrompt
+        NPCHelpPrompt.start()
         return
 
     def exitPlayingGame(self):
+        from toontown.npcplayers import NPCHelpPrompt
+        NPCHelpPrompt.stop()
         ivalMgr.interrupt()
         if self.objectManager != None:
             self.objectManager.destroy()
@@ -607,17 +618,17 @@ class ToontownClientRepository(OTPClientRepository.OTPClientRepository):
 
     def handleCloseShard(self, msgType, di):
         if msgType == CLIENT_ENTER_OBJECT_REQUIRED:
-            di2 = PyDatagramIterator(di)
+            di2 = PyDatagramIterator(di.getDatagram(), di.getCurrentIndex())
             parentId = di2.getUint32()
             if self._doIdIsOnCurrentShard(parentId):
                 return
         elif msgType == CLIENT_ENTER_OBJECT_REQUIRED_OTHER:
-            di2 = PyDatagramIterator(di)
+            di2 = PyDatagramIterator(di.getDatagram(), di.getCurrentIndex())
             parentId = di2.getUint32()
             if self._doIdIsOnCurrentShard(parentId):
                 return
         elif msgType == CLIENT_OBJECT_SET_FIELD:
-            di2 = PyDatagramIterator(di)
+            di2 = PyDatagramIterator(di.getDatagram(), di.getCurrentIndex())
             doId = di2.getUint32()
             if self._doIdIsOnCurrentShard(doId):
                 return
@@ -747,7 +758,7 @@ class ToontownClientRepository(OTPClientRepository.OTPClientRepository):
                 self.identifyFriend(doId)
                 return 1
 
-        return 0
+        return int(self.isNPCFriend(doId))
 
     def isAvatarFriend(self, doId):
         for friendId, flags in base.localAvatar.friendsList:
@@ -755,17 +766,23 @@ class ToontownClientRepository(OTPClientRepository.OTPClientRepository):
                 self.identifyFriend(doId)
                 return 1
 
-        return 0
+        return int(self.isNPCFriend(doId))
 
     def getFriendFlags(self, doId):
         for friendId, flags in base.localAvatar.friendsList:
             if friendId == doId:
                 return flags
 
-        return 0
+        return FriendChat if self.isNPCFriend(doId) else 0
 
     def isFriendOnline(self, doId):
-        return doId in self.friendsOnline
+        return doId in self.friendsOnline or self.isNPCFriend(doId)
+
+    def isNPCFriend(self, doId):
+        # Offline, the NPC toons around the player are friends (see
+        # NPCFriends).
+        from toontown.npcplayers import NPCFriends
+        return NPCFriends.isNPCFriend(doId)
 
     def addAvatarToFriendsList(self, avatar):
         self.friendsMap[avatar.doId] = avatar
@@ -788,7 +805,7 @@ class ToontownClientRepository(OTPClientRepository.OTPClientRepository):
             self.notify.warning("Don't know who friend %s is." % doId)
             return
         if not ((isinstance(avatar, DistributedToon.DistributedToon) and avatar.__class__ == DistributedToon.DistributedToon) or isinstance(avatar, DistributedPet.DistributedPet)):
-            self.notify.warning('friendsNotify%s: invalid friend object %s' % (choice(source, '(%s)' % source, ''), doId))
+            self.notify.warning('friendsNotify%s: invalid friend object %s' % ('(%s)' % source if source else '', doId))
             return
         if base.wantPets:
             if avatar.isPet():
@@ -900,6 +917,7 @@ class ToontownClientRepository(OTPClientRepository.OTPClientRepository):
         messenger.send('friendsMapComplete')
 
     def handleGetFriendsListExtended(self, resp):
+        avatarHandleList = []
         for toon in resp:
             abort = 0
             doId = toon[0]
@@ -1088,8 +1106,30 @@ class ToontownClientRepository(OTPClientRepository.OTPClientRepository):
         OTPClientRepository.OTPClientRepository.handleUpdateField(self, di)
 
     def handleDelete(self, di):
+        # An object leaving the player's view. Kept ones (see getCacheable)
+        # wait in the cache for the player to come back.
         doId = di.getUint32()
+        obj = self.doId2do.get(doId)
+        if obj is not None and obj.getCacheable() and obj.getDelayDeleteCount() <= 0:
+            del self.doId2do[doId]
+            if self.cache.cache(obj):
+                return
+            self.doId2do[doId] = obj
         self.deleteObject(doId)
+
+    def flushToonCache(self):
+        # The toons kept from the last place are no good in another one,
+        # unless the AI keeps each place's toons for when the player is back.
+        # (CRCache.flush would also send clientCleanup to everything.)
+        from toontown.npcplayers import NPCSettings
+        from toontown.toon.DistributedToon import DistributedToon
+        keepToons = NPCSettings.keepAreas() > 0
+        for distObj in list(self.cache.dict.values()):
+            if keepToons and isinstance(distObj, DistributedToon):
+                continue
+            del self.cache.dict[distObj.doId]
+            self.cache.fifo.remove(distObj)
+            distObj.deleteOrDelay()
 
     def deleteObject(self, doId, ownerView = False):
         if doId in self.doId2do:

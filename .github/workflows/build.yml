@@ -1,0 +1,763 @@
+# Builds the offline game for Windows and Android.
+#
+# 1. Compiles Panda3D 1.11 (upstream master at PANDA3D_COMMIT; the audio
+#    loop-start change our 1.10 fork carried is part of it) into wheels for
+#    Windows and for each Android ABI. Android also gets the patches in
+#    tools/offline/panda3d-patches.
+# 2. Packs RegDogg/TTR-Offline-resources into the phase multifiles.
+# 3. Freezes the game with build_apps and packages it: a zip for Windows and,
+#    for Android, an .aab plus a universal .apk to install directly.
+#
+# The Panda3D builds are cached by commit, so only the first run is slow.
+
+name: Build
+
+on:
+  # Branch pushes are built through their pull request; a tag builds a release.
+  push:
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+# A newer push to the same pull request replaces a build still running.
+concurrency:
+  group: build-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+env:
+  PANDA3D_COMMIT: ec9ea0a93a7de249efea3f41b4fdf878f5e1650b
+  RESOURCES_REPO: RegDogg/TTR-Offline-resources
+  PYTHON_VERSION: '3.13'
+  # Upstream Panda3D's own CI uses these.
+  WIN_THIRDPARTY: https://www.panda3d.org/download/panda3d-1.10.16/panda3d-1.10.16-tools-win64.zip
+  ANDROID_PYTHON: 3.13.9
+  ANDROID_NDK: 29.0.14206865
+  ANDROID_THIRDPARTY_COMMIT: 935c80380ca171e08587c570e9dad678d29db3c8
+  # Mesa (zink) for custom graphics drivers on Android phones.
+  MESA_VERSION: 25.2.6
+  ANDROID_API_TURNIP: 29
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  panda3d-windows:
+    name: Panda3D for Windows
+    runs-on: windows-2022
+    steps:
+    - name: Restore the wheel
+      id: cache
+      uses: actions/cache@v5
+      with:
+        path: wheels
+        key: panda3d-win_amd64-${{ env.PANDA3D_COMMIT }}-py${{ env.PYTHON_VERSION }}-v1
+
+    - name: Check out Panda3D
+      if: steps.cache.outputs.cache-hit != 'true'
+      uses: actions/checkout@v7
+      with:
+        repository: panda3d/panda3d
+        ref: ${{ env.PANDA3D_COMMIT }}
+        path: panda3d
+
+    - uses: actions/setup-python@v7
+      if: steps.cache.outputs.cache-hit != 'true'
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Get the thirdparty packages
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      working-directory: panda3d
+      run: |
+        exec > >(tee -a "$RUNNER_TEMP/steps.log") 2>&1
+        curl --retry 5 --retry-delay 10 --retry-all-errors -fLo thirdparty-tools.zip "$WIN_THIRDPARTY"
+        unzip -q thirdparty-tools.zip -d thirdparty-tools
+        mv thirdparty-tools/panda3d-1.10.16/thirdparty .
+
+    - name: Build
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      working-directory: panda3d
+      run: |
+        exec > >(tee -a "$RUNNER_TEMP/steps.log") 2>&1
+        python makepanda/makepanda.py --git-commit=$PANDA3D_COMMIT --outputdir=built --everything --no-eigen \
+          --python-incdir="$pythonLocation/include" --python-libdir="$pythonLocation/lib" \
+          --threads=4 --windows-sdk=10 --msvc-version=14.3 --wheel
+        mkdir -p ../wheels
+        mv panda3d-*.whl ../wheels/
+
+    - name: Check the wheel has what the game needs
+      shell: bash
+      run: |
+        exec > >(tee -a "$RUNNER_TEMP/steps.log") 2>&1
+        python -m zipfile -l wheels/panda3d-*.whl > contents.txt
+        for module in panda3d/core panda3d/direct panda3d/physics panda3d/ode panda3d/fx p3openal_audio pandagl; do
+          grep -q "$module" contents.txt || { echo "the wheel is missing $module"; exit 1; }
+        done
+
+    - uses: actions/upload-artifact@v7
+      with:
+        name: panda3d-win_amd64
+        path: wheels/*.whl
+
+    - name: Show the end of the log
+      if: failure()
+      run: |
+        # The job logs are not always reachable, so the end of the log goes
+        # into annotations too.
+        tail -c 12000 "$RUNNER_TEMP/steps.log" | "$(command -v python || command -v python3)" -c "
+        import sys
+        text = sys.stdin.read().replace('\\r', '')
+        for start in range(0, len(text), 3000):
+            chunk = text[start:start + 3000].replace('%', '%25').replace('\\n', '%0A')
+            print('::error title=Log %d::%s' % (start // 3000 + 1, chunk))
+        "
+  panda3d-android:
+    name: Panda3D for Android (${{ matrix.abi }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - abi: arm64-v8a
+          arch: arm64
+          triple: aarch64-linux-android
+          libs: android-libs-arm64
+        - abi: armeabi-v7a
+          arch: arm
+          triple: arm-linux-androideabi
+          libs: android-libs-armv7a
+        - abi: x86_64
+          arch: x86_64
+          triple: x86_64-linux-android
+          libs: android-libs-x86_64
+    steps:
+    # Our changes to Panda3D (game controllers on Android) are applied on
+    # top of PANDA3D_COMMIT; the wheel is rebuilt whenever they change.
+    - name: Check out the Panda3D patches
+      uses: actions/checkout@v7
+      with:
+        sparse-checkout: tools/offline/panda3d-patches
+        path: game
+
+    - name: Restore the wheel
+      id: cache
+      uses: actions/cache@v5
+      with:
+        path: wheels
+        key: panda3d-android-${{ matrix.abi }}-${{ env.PANDA3D_COMMIT }}-py${{ env.ANDROID_PYTHON }}-${{ hashFiles('game/tools/offline/panda3d-patches/*.patch') }}-v3
+
+    - name: Check out Panda3D
+      if: steps.cache.outputs.cache-hit != 'true'
+      uses: actions/checkout@v7
+      with:
+        repository: panda3d/panda3d
+        ref: ${{ env.PANDA3D_COMMIT }}
+        path: panda3d
+
+    - name: Apply the Panda3D patches
+      if: steps.cache.outputs.cache-hit != 'true'
+      working-directory: panda3d
+      run: |
+        for patch in ../game/tools/offline/panda3d-patches/*.patch; do
+          echo "Applying $patch"
+          git apply --verbose "$patch"
+        done
+
+    - name: Set up the Android SDK
+      if: steps.cache.outputs.cache-hit != 'true'
+      uses: android-actions/setup-android@v4
+      with:
+        packages: 'tools platform-tools platforms;android-21 ndk;${{ env.ANDROID_NDK }}'
+
+    - name: Set up the Android NDK
+      if: steps.cache.outputs.cache-hit != 'true'
+      run: |
+        exec > >(tee -a "$RUNNER_TEMP/steps.log") 2>&1
+        echo "ANDROID_NDK_ROOT=$ANDROID_SDK_ROOT/ndk/$ANDROID_NDK" >> $GITHUB_ENV
+
+    - uses: actions/setup-python@v7
+      if: steps.cache.outputs.cache-hit != 'true'
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Restore Python for Android
+      if: steps.cache.outputs.cache-hit != 'true'
+      id: python-cache
+      uses: actions/cache@v5
+      with:
+        path: ~/python-prefix
+        key: android-python-${{ env.ANDROID_PYTHON }}-${{ matrix.abi }}-ndk${{ env.ANDROID_NDK }}
+
+    - name: Build Python for Android
+      if: steps.cache.outputs.cache-hit != 'true' && steps.python-cache.outputs.cache-hit != 'true'
+      run: |
+        exec > >(tee -a "$RUNNER_TEMP/steps.log") 2>&1
+        wget -q https://www.python.org/ftp/python/$ANDROID_PYTHON/Python-$ANDROID_PYTHON.tar.xz
+        tar -xJf Python-$ANDROID_PYTHON.tar.xz
+        sed -i.bak "s/aarch64-linux-android/${{ matrix.triple }}/" Python-$ANDROID_PYTHON/Android/android.py
+        sed -i.bak "s/ndk_version=[0-9.]\{1,\}/ndk_version=$ANDROID_NDK/" Python-$ANDROID_PYTHON/Android/android-env.sh
+        (cd Python-$ANDROID_PYTHON/Android && python3 android.py build ${{ matrix.triple }})
+        cp -R Python-$ANDROID_PYTHON/cross-build/${{ matrix.triple }}/prefix ~/python-prefix
+
+    - name: Restore the thirdparty packages
+      if: steps.cache.outputs.cache-hit != 'true'
+      id: thirdparty-cache
+      uses: actions/cache@v5
+      with:
+        path: panda3d/thirdparty
+        key: android-thirdparty-${{ env.ANDROID_THIRDPARTY_COMMIT }}-${{ matrix.abi }}-ndk${{ env.ANDROID_NDK }}
+
+    - name: Build the thirdparty packages
+      if: steps.cache.outputs.cache-hit != 'true' && steps.thirdparty-cache.outputs.cache-hit != 'true'
+      working-directory: panda3d
+      run: |
+        exec > >(tee -a "$RUNNER_TEMP/steps.log") 2>&1
+        sudo apt-get install -y yasm
+        git clone --revision=$ANDROID_THIRDPARTY_COMMIT --depth=1 https://github.com/rdb/panda3d-thirdparty.git thirdparty
+        cd thirdparty
+        cmake -B build \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_ROOT/build/cmake/android.toolchain.cmake \
+          -DCMAKE_ANDROID_ARCH_ABI=${{ matrix.abi }} \
+          -DCMAKE_ANDROID_ARCH=${{ matrix.arch }} \
+          -DCMAKE_SYSTEM_VERSION=21 \
+          -DANDROID_ABI=${{ matrix.abi }} \
+          -DANDROID_PLATFORM=android-21 \
+          -DBUILD_FCOLLADA=OFF \
+          -DBUILD_OPENSSL=OFF \
+          -DBUILD_VRPN=OFF \
+          -DBUILD_ARTOOLKIT=OFF
+        cmake --build build --config Release -j4
+        rm -rf build
+
+    - name: Build
+      if: steps.cache.outputs.cache-hit != 'true'
+      working-directory: panda3d
+      run: |
+        exec > >(tee -a "$RUNNER_TEMP/steps.log") 2>&1
+        # The wheel takes libpython and the compiled standard library modules
+        # from the thirdparty folder.
+        libs=thirdparty/${{ matrix.libs }}
+        [ -d "$libs" ] || libs=$(ls -d thirdparty/android-libs-* | head -1)
+        rm -rf "$libs/python"
+        cp -R ~/python-prefix "$libs/python"
+        # build_apps finds a standard library module as libpy.<name>.so, so
+        # the modules lose their platform tag (math.cpython-313-...so).
+        for module in "$libs"/python/lib/python3.*/lib-dynload/*.so; do
+          name=$(basename "$module")
+          mv "$module" "$(dirname "$module")/${name%%.*}.so"
+        done
+        python makepanda/makepanda.py --git-commit=$PANDA3D_COMMIT --target android-21 --arch ${{ matrix.arch }} \
+          --python-incdir=$HOME/python-prefix/include --python-libdir=$HOME/python-prefix/lib \
+          --everything --no-openssl --no-tinydisplay --no-pandatool --threads=4 --wheel
+        mkdir -p ../wheels
+        mv panda3d-*.whl ../wheels/
+
+    - name: Check the wheel has what the game needs
+      run: |
+        exec > >(tee -a "$RUNNER_TEMP/steps.log") 2>&1
+        python -m zipfile -l wheels/panda3d-*.whl > contents.txt
+        for module in panda3d/core panda3d/direct panda3d/physics panda3d/ode panda3d/fx p3openal_audio pandagles2 libdeploy-stubw libpython deploy_libs/math.so deploy_libs/_struct.so; do
+          grep -q "$module" contents.txt || { echo "the wheel is missing $module"; exit 1; }
+        done
+
+    - uses: actions/upload-artifact@v7
+      with:
+        name: panda3d-android-${{ matrix.abi }}
+        path: wheels/*.whl
+
+    - name: Show the end of the log
+      if: failure()
+      run: |
+        # The job logs are not always reachable, so the end of the log goes
+        # into annotations too.
+        tail -c 12000 "$RUNNER_TEMP/steps.log" | "$(command -v python || command -v python3)" -c "
+        import sys
+        text = sys.stdin.read().replace('\\r', '')
+        for start in range(0, len(text), 3000):
+            chunk = text[start:start + 3000].replace('%', '%25').replace('\\n', '%0A')
+            print('::error title=Log %d::%s' % (start // 3000 + 1, chunk))
+        "
+  turnip-runtime:
+    name: Mesa and adrenotools for custom drivers (Android)
+    runs-on: ubuntu-24.04
+    steps:
+    - name: Check out the Mesa patches
+      uses: actions/checkout@v7
+      with:
+        sparse-checkout: tools/offline/mesa-patches
+        path: game
+
+    - name: Restore the libraries
+      id: cache
+      uses: actions/cache@v5
+      with:
+        path: out
+        key: turnip-runtime-mesa${{ env.MESA_VERSION }}-${{ hashFiles('game/tools/offline/mesa-patches/*.patch') }}-ndk${{ env.ANDROID_NDK }}-v1
+
+    - name: Set up the Android NDK
+      if: steps.cache.outputs.cache-hit != 'true'
+      uses: android-actions/setup-android@v4
+      with:
+        packages: 'ndk;${{ env.ANDROID_NDK }}'
+
+    - name: Get the sources
+      if: steps.cache.outputs.cache-hit != 'true'
+      run: |
+        exec > >(tee -a "$RUNNER_TEMP/steps.log") 2>&1
+        curl -sSfL https://archive.mesa3d.org/mesa-$MESA_VERSION.tar.xz | tar xJ
+        mv mesa-$MESA_VERSION mesa
+        cd mesa
+        for patch in ../game/tools/offline/mesa-patches/*.patch; do patch -p1 < "$patch"; done
+        # Built with the NDK alone: no Android system tracing.
+        sed -i 's/DETECT_OS_ANDROID/0/' src/util/perf/cpu_trace.h
+        cd ..
+        git clone -q --depth 1 --recurse-submodules --shallow-submodules https://github.com/bylaws/libadrenotools.git adrenotools
+
+    - name: Install the build tools
+      if: steps.cache.outputs.cache-hit != 'true'
+      run: |
+        exec > >(tee -a "$RUNNER_TEMP/steps.log") 2>&1
+        sudo apt-get update -q && sudo apt-get install -y -q ninja-build glslang-tools
+        pip install -q meson mako pyyaml packaging
+
+    - name: Build Mesa
+      if: steps.cache.outputs.cache-hit != 'true'
+      run: |
+        exec > >(tee -a "$RUNNER_TEMP/steps.log") 2>&1
+        # Mesa's OpenGL ES on zink, drawing into Android windows through
+        # Vulkan (see tools/offline/mesa-patches), for the game to load in
+        # place of the phone's own when the player picks a Turnip driver.
+        BIN=$ANDROID_SDK_ROOT/ndk/$ANDROID_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin
+        CC=$BIN/aarch64-linux-android$ANDROID_API_TURNIP-clang
+        # What Mesa's Android code uses of system libraries an app can't load
+        # is done here with the NDK instead.
+        cat > ndkstub.c <<'STUB'
+        #include <errno.h>
+        #include <linux/sync_file.h>
+        #include <poll.h>
+        #include <string.h>
+        #include <sys/ioctl.h>
+        #include <sys/system_properties.h>
+        int property_get(const char *key, char *value, const char *default_value);
+        int property_get(const char *key, char *value, const char *default_value)
+        {
+           int len = __system_property_get(key, value);
+           if (len > 0)
+              return len;
+           len = default_value ? (int)strlen(default_value) : 0;
+           if (len > PROP_VALUE_MAX - 1)
+              len = PROP_VALUE_MAX - 1;
+           if (len)
+              memcpy(value, default_value, len);
+           value[len] = 0;
+           return len;
+        }
+        int sync_merge(const char *name, int fd1, int fd2);
+        int sync_merge(const char *name, int fd1, int fd2)
+        {
+           struct sync_merge_data data;
+           memset(&data, 0, sizeof(data));
+           data.fd2 = fd2;
+           strncpy(data.name, name, sizeof(data.name) - 1);
+           if (ioctl(fd1, SYNC_IOC_MERGE, &data) < 0)
+              return -1;
+           return data.fence;
+        }
+        int sync_wait(int fd, int timeout);
+        int sync_wait(int fd, int timeout)
+        {
+           struct pollfd fds = {fd, POLLIN, 0};
+           int ret;
+           do {
+              ret = poll(&fds, 1, timeout);
+           } while (ret == -1 && (errno == EINTR || errno == EAGAIN));
+           if (ret == 0) {
+              errno = ETIME;
+              return -1;
+           }
+           return ret > 0 ? 0 : -1;
+        }
+        STUB
+        $CC -O2 -fPIC -c ndkstub.c -o ndkstub.o
+        $BIN/llvm-ar rcs $PWD/libndkstub.a ndkstub.o
+        cat > android.cross <<CROSS
+        [binaries]
+        c = '$CC'
+        cpp = '${CC}++'
+        ar = '$BIN/llvm-ar'
+        strip = '$BIN/llvm-strip'
+        pkg-config = '/bin/false'
+        [built-in options]
+        c_args = ['-DVK_USE_PLATFORM_ANDROID_KHR', '-I$PWD/mesa/include/android_stub']
+        cpp_args = ['-DVK_USE_PLATFORM_ANDROID_KHR', '-I$PWD/mesa/include/android_stub']
+        c_link_args = ['-landroid', '-llog', '$PWD/libndkstub.a']
+        cpp_link_args = ['-landroid', '-llog', '$PWD/libndkstub.a', '-static-libstdc++']
+        [host_machine]
+        system = 'android'
+        cpu_family = 'aarch64'
+        cpu = 'armv8'
+        endian = 'little'
+        CROSS
+        cd mesa
+        meson setup build --cross-file ../android.cross --prefix=/out -Dbuildtype=release -Db_ndebug=true \
+          -Dallow-fallback-for=libdrm --force-fallback-for=libdrm -Dlibdrm:tests=false -Dlibdrm:intel=disabled \
+          -Dlibdrm:radeon=disabled -Dlibdrm:amdgpu=disabled -Dlibdrm:nouveau=disabled -Dlibdrm:vmwgfx=disabled \
+          -Dplatforms= -Dgallium-drivers=zink -Dvulkan-drivers= -Degl=enabled -Dgles1=disabled -Dgles2=enabled \
+          -Dglx=disabled -Dgbm=disabled -Dllvm=disabled -Dxmlconfig=disabled -Dzstd=disabled -Dvalgrind=disabled \
+          -Dlibunwind=disabled -Degl-lib-suffix=_mesa -Dgles-lib-suffix=_mesa -Dshader-cache=disabled \
+          -Dlmsensors=disabled -Dvideo-codecs= -Dgallium-va=disabled -Dgallium-vdpau=disabled \
+          -Dgallium-extra-hud=false -Dbuild-tests=false > ../meson.log 2>&1 || { tail -60 ../meson.log; exit 1; }
+        ninja -C build -k 0 > ../ninja.log 2>&1 || { grep -B2 -A6 "error:\|undefined" ../ninja.log | head -200; exit 1; }
+        DESTDIR=$PWD/../install ninja -C build install > /dev/null
+
+    - name: Build adrenotools
+      if: steps.cache.outputs.cache-hit != 'true'
+      run: |
+        exec > >(tee -a "$RUNNER_TEMP/steps.log") 2>&1
+        # Opens the player's Turnip driver in place of the phone's Vulkan
+        # driver.
+        cmake -S adrenotools -B adrenotools/build -G Ninja \
+          -DCMAKE_TOOLCHAIN_FILE=$ANDROID_SDK_ROOT/ndk/$ANDROID_NDK/build/cmake/android.toolchain.cmake \
+          -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=$ANDROID_API_TURNIP -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON
+        ninja -C adrenotools/build
+        mkdir out
+        cp install/out/lib/libdrm.so install/out/lib/libgallium-*.so install/out/lib/libEGL_mesa.so \
+          install/out/lib/libGLESv2_mesa.so adrenotools/build/libadrenotools.so adrenotools/build/src/hook/*.so out/
+        $ANDROID_SDK_ROOT/ndk/$ANDROID_NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip --strip-unneeded out/*.so
+        ls -l out
+
+    - uses: actions/upload-artifact@v7
+      with:
+        name: turnip-runtime
+        path: out/*.so
+
+    - name: Show the end of the log
+      if: failure()
+      run: |
+        tail -c 12000 "$RUNNER_TEMP/steps.log" | python3 -c "
+        import sys
+        text = sys.stdin.read().replace('\\r', '')
+        for start in range(0, len(text), 3000):
+            chunk = text[start:start + 3000].replace('%', '%25').replace('\\n', '%0A')
+            print('::error title=Log %d::%s' % (start // 3000 + 1, chunk))
+        "
+
+  resources:
+    name: Phase multifiles
+    runs-on: ubuntu-24.04
+    steps:
+    - uses: actions/checkout@v7
+
+    - name: Check out the resources
+      uses: actions/checkout@v7
+      with:
+        repository: ${{ env.RESOURCES_REPO }}
+        path: resources-checkout
+
+    - uses: actions/setup-python@v7
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Pack
+      run: |
+        exec > >(tee -a "$RUNNER_TEMP/steps.log") 2>&1
+        # Any Panda3D can write multifiles.
+        pip install panda3d
+        mkdir multifiles
+        # This repository's own changes to the resources (the new logo).
+        cp -rv resources-overlay/. resources-checkout/
+        python tools/offline/pack_resources.py resources-checkout multifiles
+
+    - uses: actions/upload-artifact@v7
+      with:
+        name: multifiles
+        path: multifiles/*.mf
+        compression-level: 0
+
+    - name: Show the end of the log
+      if: failure()
+      run: |
+        # The job logs are not always reachable, so the end of the log goes
+        # into annotations too.
+        tail -c 12000 "$RUNNER_TEMP/steps.log" | "$(command -v python || command -v python3)" -c "
+        import sys
+        text = sys.stdin.read().replace('\\r', '')
+        for start in range(0, len(text), 3000):
+            chunk = text[start:start + 3000].replace('%', '%25').replace('\\n', '%0A')
+            print('::error title=Log %d::%s' % (start // 3000 + 1, chunk))
+        "
+  game:
+    name: Package the game
+    needs: [panda3d-windows, panda3d-android, resources, turnip-runtime]
+    runs-on: windows-2022
+    permissions:
+      contents: write
+    steps:
+    - uses: actions/checkout@v7
+
+    - uses: actions/setup-python@v7
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - uses: actions/setup-java@v6
+      with:
+        distribution: temurin
+        java-version: '21'
+
+    - name: Get the Panda3D wheels
+      uses: actions/download-artifact@v8
+      with:
+        pattern: panda3d-*
+        path: wheels
+        merge-multiple: true
+
+    - name: Get the phase multifiles
+      uses: actions/download-artifact@v8
+      with:
+        name: multifiles
+        path: .
+
+    - name: Get the custom driver libraries
+      uses: actions/download-artifact@v8
+      with:
+        name: turnip-runtime
+        path: turnip-runtime
+
+    - name: Install the build tools
+      shell: bash
+      run: |
+        exec > >(tee -a "$RUNNER_TEMP/steps.log") 2>&1
+        python tools/offline/pack_turnip_runtime.py turnip-runtime .
+        ls -l wheels
+        # protobuf writes the Android App Bundle.
+        pip install setuptools "protobuf>=6.33" wheels/panda3d-*win_amd64.whl
+
+    - name: Build
+      shell: bash
+      env:
+        PIP_FIND_LINKS: ${{ github.workspace }}/wheels
+      run: |
+        exec > >(tee -a "$RUNNER_TEMP/steps.log") 2>&1
+        # One platform at a time: they log differently (see setup.py).
+        TTR_PLATFORMS=win_amd64 python setup.py bdist_apps
+        TTR_PLATFORMS=android python setup.py bdist_apps
+
+    - name: Make an installable APK
+      shell: bash
+      run: |
+        exec > >(tee -a "$RUNNER_TEMP/steps.log") 2>&1
+        # A release build is signed with the keystore in the
+        # ANDROID_KEYSTORE secret when there is one, otherwise with a
+        # throwaway key, which installs fine but cannot update an APK signed
+        # with another key.
+        curl -fsSLo bundletool.jar https://github.com/google/bundletool/releases/download/1.18.1/bundletool-all-1.18.1.jar
+        if [ -n "$ANDROID_KEYSTORE" ]; then
+          echo "$ANDROID_KEYSTORE" | base64 -d > game.keystore
+        else
+          keytool -genkeypair -keystore game.keystore -storepass android -keypass android -alias game \
+            -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=TTR-Offline"
+          ANDROID_KEYSTORE_PASSWORD=android
+          ANDROID_KEY_ALIAS=game
+        fi
+        aab=$(ls dist/*.aab)
+        python tools/offline/store_multifiles_uncompressed.py "$aab"
+        python tools/offline/add_adaptive_icon.py "$aab"
+        java -jar bundletool.jar build-apks --bundle="$aab" --output=game.apks --mode=universal \
+          --ks=game.keystore --ks-pass=pass:$ANDROID_KEYSTORE_PASSWORD --ks-key-alias=$ANDROID_KEY_ALIAS \
+          --key-pass=pass:$ANDROID_KEYSTORE_PASSWORD
+        python -m zipfile -e game.apks apks
+        mv apks/universal.apk "${aab%.aab}.apk"
+        python -m zipfile -l "${aab%.aab}.apk" > apk-contents.txt
+        grep -q 'res/mipmap-anydpi-v26/ic_launcher.xml' apk-contents.txt
+        echo "::notice title=APK contents::$(grep -c 'lib/x86_64/libpy\.' apk-contents.txt) Python modules for x86_64; $(grep -E 'assets/phase_3\.mf|lib/x86_64/libpy\.math' apk-contents.txt | tr -s ' ' | tr '\n' ';')"
+        ls -l dist
+      env:
+        ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
+        ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+
+    - uses: actions/upload-artifact@v7
+      with:
+        name: TTR-Offline-Windows
+        path: dist/*win_amd64*.zip
+        compression-level: 0
+
+    - uses: actions/upload-artifact@v7
+      with:
+        name: TTR-Offline-Android
+        path: dist/*.apk
+        compression-level: 0
+
+    - uses: actions/upload-artifact@v7
+      with:
+        name: TTR-Offline-Android-Bundle
+        path: dist/*.aab
+        compression-level: 0
+
+    - name: Publish the release
+      if: startsWith(github.ref, 'refs/tags/v')
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        exec > >(tee -a "$RUNNER_TEMP/steps.log") 2>&1
+        gh release create "$GITHUB_REF_NAME" dist/*win_amd64*.zip dist/*.apk dist/*.aab --title "$GITHUB_REF_NAME" --generate-notes
+
+    - name: Show the end of the log
+      if: failure()
+      run: |
+        # The job logs are not always reachable, so the end of the log goes
+        # into annotations too.
+        tail -c 12000 "$RUNNER_TEMP/steps.log" | "$(command -v python || command -v python3)" -c "
+        import sys
+        text = sys.stdin.read().replace('\\r', '')
+        for start in range(0, len(text), 3000):
+            chunk = text[start:start + 3000].replace('%', '%25').replace('\\n', '%0A')
+            print('::error title=Log %d::%s' % (start // 3000 + 1, chunk))
+        "
+
+  # The smoke tests start each build on a machine like a player's and check
+  # that the game comes up and keeps running. They upload what they saw (a
+  # screenshot and the log) for a look.
+  smoke-windows:
+    name: Start the Windows build
+    needs: game
+    runs-on: windows-2022
+    steps:
+    - uses: actions/download-artifact@v8
+      with:
+        name: TTR-Offline-Windows
+        path: .
+
+    - name: Start the game
+      shell: pwsh
+      run: |
+        Expand-Archive -Path (Get-ChildItem *.zip)[0] -DestinationPath game
+        $exe = (Get-ChildItem game -Recurse -Filter TTR-Offline.exe)[0]
+        # The runner has no graphics card, only Windows' software OpenGL.
+        $env:TTR_EXTRA_PRC = 'framebuffer-hardware #f;framebuffer-software #t'
+        $game = Start-Process -FilePath $exe.FullName -WorkingDirectory $exe.DirectoryName -PassThru
+        Start-Sleep -Seconds 120
+        Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+        $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+        $bitmap = New-Object System.Drawing.Bitmap $screen.Width, $screen.Height
+        [System.Drawing.Graphics]::FromImage($bitmap).CopyFromScreen($screen.Location, [System.Drawing.Point]::Empty, $screen.Size)
+        $bitmap.Save("$PWD\screenshot.png")
+        New-Item -ItemType Directory -Force logs | Out-Null
+        Get-ChildItem $env:LOCALAPPDATA\TTR-Offline\logs, $env:APPDATA\TTR-Offline\logs -Filter *.log -ErrorAction SilentlyContinue | Copy-Item -Destination logs
+        $log = (Get-ChildItem logs\*.log | Get-Content -Raw) -join "`n"
+        $end = if ($log.Length -gt 3000) { $log.Substring($log.Length - 3000) } else { $log }
+        Write-Output "::notice title=End of the game log::$($end -replace '%', '%25' -replace "`r", '' -replace "`n", '%0A')"
+        if ($game.HasExited) { Write-Output "::error::The game exited with code $($game.ExitCode)"; exit 1 }
+        if ($log -match 'Traceback') { Write-Output "::error::The game log has a Python error"; exit 1 }
+        Stop-Process -Id $game.Id
+
+    - uses: actions/upload-artifact@v7
+      if: always()
+      with:
+        name: smoke-windows
+        path: |
+          screenshot.png
+          logs
+
+  smoke-android:
+    name: Start the Android build (${{ matrix.abi }})
+    needs: game
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - abi: x86_64
+          api: 34
+          profile: ''
+        # A phone's build, run through the emulator's ARM translation, on a
+        # phone-sized screen.
+        - abi: arm64-v8a
+          api: 35
+          profile: pixel_7
+    steps:
+    - uses: actions/download-artifact@v8
+      with:
+        name: TTR-Offline-Android
+        path: .
+
+    - name: Let the emulator use KVM
+      run: |
+        echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+        sudo udevadm control --reload-rules
+        sudo udevadm trigger --name-match=kvm
+
+    - name: Write the emulator script
+      run: |
+        # The game's own log lines are those of its process, so note its id
+        # while it runs; the crash buffer has any native crash.
+        cat > smoke.sh <<'SCRIPT'
+        adb install -r --abi ${{ matrix.abi }} *.apk
+        adb logcat -c
+        # A start cut short first, which the next start reports.
+        adb shell am start -n com.ttroffline.game/org.panda3d.android.PythonActivity
+        sleep 6
+        adb shell am force-stop com.ttroffline.game
+        sleep 2
+        adb shell am start -n com.ttroffline.game/org.panda3d.android.PythonActivity
+        sleep 10
+        adb shell pidof com.ttroffline.game > startpid.txt
+        # A player touches the launcher's empty space.
+        for i in 1 2 3; do adb shell input tap 300 300; sleep 2; done
+        sleep 134
+        adb exec-out screencap -p > screenshot.png
+        adb shell pidof com.ttroffline.game > pid.txt
+        adb shell wm size > screen.txt
+        adb logcat -d > logcat.txt
+        adb logcat -d --pid="$(cat startpid.txt)" > game.txt
+        adb logcat -d -b crash > crash.txt
+        true
+        SCRIPT
+
+    - name: Start the game in an emulator
+      uses: reactivecircus/android-emulator-runner@v2
+      with:
+        api-level: ${{ matrix.api }}
+        arch: x86_64
+        target: google_apis
+        profile: ${{ matrix.profile }}
+        disk-size: 6000M
+        emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+        script: bash smoke.sh
+
+    - name: Check the game
+      run: |
+        # The game's own lines and any crash, in a few annotations. A game
+        # that died before its id was noted is found from the crash report.
+        pid=$(cat startpid.txt)
+        [ -n "$pid" ] || pid=$(grep -o 'pid: [0-9]*' crash.txt | head -1 | cut -d' ' -f2)
+        # Leave out the runtime's thread dump, which follows any crash.
+        if [ -n "$pid" ]; then grep -E "^\S+ \S+ +$pid " logcat.txt | grep -v 'runtime.cc:' > game.txt || true; fi
+        # And what the system did with the game's window.
+        grep -E " (ActivityTaskManager|ActivityManager|WindowManager|InputDispatcher)\b" logcat.txt | grep -v "Sent Transition\|info={id" | tail -c 6000 > system.txt || true
+        { cat screen.txt; head -c 3000 crash.txt; echo; tail -c 6000 system.txt; echo; tail -c 24000 game.txt; } > shown.txt
+        python3 -c "
+        text = open('shown.txt', errors='replace').read()
+        for start in range(0, len(text), 3000):
+            print('::notice title=Game log %d::' % (start // 3000 + 1) + text[start:start + 3000].replace('%', '%25').replace('\\n', '%0A'))
+        "
+        [ -s startpid.txt ] || { echo '::error::The game did not start'; exit 1; }
+        [ -s pid.txt ] || { echo '::error::The game is no longer running'; exit 1; }
+        if grep -q 'Traceback' game.txt; then echo '::error::The log has a Python error'; exit 1; fi
+        # The cut-short start was force-stopped, which is no crash, but its log was read.
+        grep -qE 'CrashReport: the last start (ended early|closed without an error)' game.txt || { echo '::error::The last start was not looked at'; exit 1; }
+
+    - uses: actions/upload-artifact@v7
+      if: always()
+      with:
+        name: smoke-android-${{ matrix.abi }}
+        path: |
+          screenshot.png
+          logcat.txt
+          game.txt
+          crash.txt

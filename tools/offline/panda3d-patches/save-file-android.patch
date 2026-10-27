@@ -1,0 +1,163 @@
+diff --git a/panda/src/android/PythonActivity.java b/panda/src/android/PythonActivity.java
+index 0fa781b..7031f8a 100644
+--- a/panda/src/android/PythonActivity.java
++++ b/panda/src/android/PythonActivity.java
+@@ -33,6 +33,7 @@ import android.database.Cursor;
+ import android.net.Uri;
+ import android.provider.OpenableColumns;
+ import java.io.File;
++import java.io.FileInputStream;
+ import java.io.FileOutputStream;
+ import java.io.InputStream;
+ import java.io.OutputStream;
+@@ -293,8 +294,70 @@ public class PythonActivity extends PandaActivity {
+         return typedText;
+     }
+ 
++    // Saving one of the game's files somewhere the player picks with the
++    // system's "save as" screen (for toon backups that must outlive the
++    // app).  savedFile is null while that screen is open, "" if nothing was
++    // saved, and otherwise the name the file was saved under.
++    private static final int SAVE_FILE_REQUEST = 0x7d02;
++    private volatile String savedFile = "";
++    private volatile String saveSource = null;
++
++    public void saveFile(String sourcePath, String mimeType, String name) {
++        savedFile = null;
++        saveSource = sourcePath;
++        runOnUiThread(() -> {
++            Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
++            intent.addCategory(Intent.CATEGORY_OPENABLE);
++            intent.setType(mimeType);
++            intent.putExtra(Intent.EXTRA_TITLE, name);
++            try {
++                startActivityForResult(intent, SAVE_FILE_REQUEST);
++            } catch (Exception e) {
++                savedFile = "";
++            }
++        });
++    }
++
++    public String getSavedFile() {
++        return savedFile;
++    }
++
++    private void writeSavedFile(Uri uri) {
++        String name = "saved";
++        try (Cursor cursor = getContentResolver().query(uri, null, null, null, null)) {
++            if (cursor != null && cursor.moveToFirst()) {
++                int column = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
++                if (column >= 0 && cursor.getString(column) != null) {
++                    name = cursor.getString(column);
++                }
++            }
++        } catch (Exception e) {
++        }
++        try (InputStream in = new FileInputStream(saveSource);
++             OutputStream out = getContentResolver().openOutputStream(uri)) {
++            byte[] buffer = new byte[65536];
++            int count;
++            while ((count = in.read(buffer)) > 0) {
++                out.write(buffer, 0, count);
++            }
++            out.flush();
++            savedFile = name;
++        } catch (Exception e) {
++            savedFile = "";
++        }
++    }
++
+     @Override
+     protected void onActivityResult(int requestCode, int resultCode, Intent intent) {
++        if (requestCode == SAVE_FILE_REQUEST) {
++            if (resultCode == RESULT_OK && intent != null && intent.getData() != null) {
++                Uri uri = intent.getData();
++                new Thread(() -> writeSavedFile(uri)).start();
++            } else {
++                savedFile = "";
++            }
++            return;
++        }
+         if (requestCode == PICK_FILE_REQUEST) {
+             if (resultCode == RESULT_OK && intent != null && intent.getData() != null) {
+                 Uri uri = intent.getData();
+diff --git a/pandatool/src/deploy-stub/android_support.cxx b/pandatool/src/deploy-stub/android_support.cxx
+index e09ccdc..95b5eb8 100644
+--- a/pandatool/src/deploy-stub/android_support.cxx
++++ b/pandatool/src/deploy-stub/android_support.cxx
+@@ -187,11 +187,75 @@ _py_typed_text(PyObject *self, PyObject *args) {
+   return text;
+ }
+ 
++/**
++ * Opens the system's "save as" screen to save a copy of the given file.
++ * saved_file() says when it is done.
++ */
++static PyObject *
++_py_save_file(PyObject *self, PyObject *args) {
++  char *source_path;
++  char *mime_type;
++  char *name;
++  if (!PyArg_ParseTuple(args, "sss", &source_path, &mime_type, &name)) {
++    return NULL;
++  }
++  jobject activity;
++  jclass activity_class;
++  JNIEnv *env = get_activity_env(activity, activity_class);
++  jmethodID method = env ? env->GetMethodID(activity_class, "saveFile", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V") : nullptr;
++  if (method == nullptr) {
++    if (env != nullptr) {
++      env->ExceptionClear();
++    }
++    PyErr_SetString(PyExc_NotImplementedError, "this activity cannot save files");
++    return NULL;
++  }
++  jstring jsource_path = env->NewStringUTF(source_path);
++  jstring jmime_type = env->NewStringUTF(mime_type);
++  jstring jname = env->NewStringUTF(name);
++  env->CallVoidMethod(activity, method, jsource_path, jmime_type, jname);
++  env->DeleteLocalRef(jsource_path);
++  env->DeleteLocalRef(jmime_type);
++  env->DeleteLocalRef(jname);
++  env->DeleteLocalRef(activity_class);
++  Py_RETURN_NONE;
++}
++
++/**
++ * Returns None while the "save as" screen is open, "" if nothing was saved,
++ * or else the name the file was saved under.
++ */
++static PyObject *
++_py_saved_file(PyObject *self, PyObject *args) {
++  jobject activity;
++  jclass activity_class;
++  JNIEnv *env = get_activity_env(activity, activity_class);
++  jmethodID method = env ? env->GetMethodID(activity_class, "getSavedFile", "()Ljava/lang/String;") : nullptr;
++  if (method == nullptr) {
++    if (env != nullptr) {
++      env->ExceptionClear();
++    }
++    return PyUnicode_FromString("");
++  }
++  jstring result = (jstring)env->CallObjectMethod(activity, method);
++  env->DeleteLocalRef(activity_class);
++  if (result == nullptr) {
++    Py_RETURN_NONE;
++  }
++  const char *chars = env->GetStringUTFChars(result, nullptr);
++  PyObject *saved = PyUnicode_FromString(chars);
++  env->ReleaseStringUTFChars(result, chars);
++  env->DeleteLocalRef(result);
++  return saved;
++}
++
+ static PyMethodDef python_simple_funcs[] = {
+   { "log_write", &_py_log_write, METH_VARARGS },
+   { "find_library", &_py_find_library, METH_VARARGS },
+   { "pick_file", &_py_pick_file, METH_VARARGS },
+   { "picked_file", &_py_picked_file, METH_NOARGS },
++  { "save_file", &_py_save_file, METH_VARARGS },
++  { "saved_file", &_py_saved_file, METH_NOARGS },
+   { "ask_text", &_py_ask_text, METH_VARARGS },
+   { "typed_text", &_py_typed_text, METH_NOARGS },
+   { NULL, NULL }

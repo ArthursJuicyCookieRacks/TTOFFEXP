@@ -576,7 +576,6 @@ class PhysicsWorldBase:
         self.massList.append(M)
         self.geomList.append(geom)
         self.geomList.append(geom2)
-        self.odePandaRelationList.append((boxNodePathGeom, body))
         if colOnlyBall == 1:
             geom.setCollideBits(BitMask32(251658240))
             geom.setCategoryBits(BitMask32(0))

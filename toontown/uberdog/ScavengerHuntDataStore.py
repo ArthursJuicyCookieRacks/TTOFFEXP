@@ -1,4 +1,5 @@
 from direct.directnotify import DirectNotifyGlobal
+import pickle
 from toontown.uberdog.DataStore import *
 
 class ScavengerHuntDataStore(DataStore):
@@ -22,15 +23,15 @@ class ScavengerHuntDataStore(DataStore):
 
     def __addGoalToAvatarId(self, avId, goal):
         if self.wantAnyDbm:
-            pAvId = cPickle.dumps(avId)
-            pGoal = cPickle.dumps(goal)
+            pAvId = pickle.dumps(avId)
+            pGoal = pickle.dumps(goal)
             pData = self.data.get(pAvId, None)
             if pData != None:
-                data = cPickle.loads(pData)
+                data = pickle.loads(pData)
             else:
                 data = set()
             data.add(goal)
-            pData = cPickle.dumps(data)
+            pData = pickle.dumps(data)
             self.data[pAvId] = pData
         else:
             self.data.setdefault(avId, set())
@@ -40,10 +41,10 @@ class ScavengerHuntDataStore(DataStore):
 
     def __getGoalsForAvatarId(self, avId):
         if self.wantAnyDbm:
-            pAvId = cPickle.dumps(avId)
+            pAvId = pickle.dumps(avId)
             pData = self.data.get(pAvId, None)
             if pData != None:
-                data = list(cPickle.loads(pData))
+                data = list(pickle.loads(pData))
             else:
                 data = []
             return data

@@ -87,7 +87,40 @@ class Spellbook:
             return 0
         return self.currentInvoker.getAdminAccess()
 
-spellbook = Spellbook()
+class ProcessSpellbooks:
+    """
+    The client and the servers each have their own Spellbook. When the AI and
+    UberDOG run inside the game process (otp.local) they share its modules,
+    so `spellbook` picks the book of whichever process is running: the one
+    named by game.process ('client' or 'server').
+    """
+
+    def __init__(self):
+        self.books = {}
+
+    def getBook(self, process=None):
+        if process is None:
+            process = game.process
+        book = self.books.get(process)
+        if book is None:
+            book = self.books[process] = Spellbook()
+        return book
+
+    def __getattr__(self, name):
+        return getattr(self.getBook(), name)
+
+spellbook = ProcessSpellbooks()
+
+
+def getWordProcess(module):
+    """
+    Which process a Magic Word defined in `module` belongs to: words in AI and
+    UberDOG modules are run by the servers, everything else by the client.
+    """
+    name = module.rsplit('.', 1)[-1]
+    if name.endswith('AI') or name.endswith('UD') or name in ('ToontownAIRepository', 'ToontownUberRepository'):
+        return 'server'
+    return 'client'
 
 
 # CATEGORIES
@@ -196,8 +229,10 @@ class MagicWordDecorator:
     object process the Magic Word's construction.
     """
 
-    def __init__(self, name=None, types=[str], access=None, category=CATEGORY_UNKNOWN, targetClasses=[], aliases=[]):
+    def __init__(self, name=None, types=[str], access=None, category=CATEGORY_UNKNOWN, targetClasses=[], aliases=[],
+                 process=None):
         self.name = name
+        self.process = process
         self.types = types
         self.category = category
         if access != None:
@@ -221,7 +256,7 @@ class MagicWordDecorator:
             self.access = config_access
 
         word = MagicWord(name, mw, self.types, self.access, mw.__doc__, self.category, self.targetClasses, self.aliases)
-        spellbook.addWord(word)
+        spellbook.getBook(self.process or getWordProcess(mw.__module__)).addWord(word)
 
         return mw
 

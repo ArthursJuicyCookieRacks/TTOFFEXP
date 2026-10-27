@@ -1,0 +1,187 @@
+"""A toon that the district plays itself, standing in for another player.
+
+To everyone else it is an ordinary DistributedToon: it has a name, a look,
+laff and gags, walks around, and joins battles and boss fights. Nothing of it
+is saved; the NPCPlayerManagerAI makes these toons where the real player is
+and throws them away when the player leaves.
+
+The toon's actions reach the district's objects the way a client's messages
+do (see asSender), so the battle, elevator and boss code treat it like any
+other toon.
+"""
+
+import random
+
+from direct.directnotify import DirectNotifyGlobal
+from direct.distributed.ClockDelta import globalClockDelta
+from panda3d.core import Datagram, DatagramIterator
+
+from otp.otpbase import OTPGlobals
+from toontown.battle import SuitBattleGlobals
+from toontown.coghq import CogDisguiseGlobals
+from toontown.suit import SuitDNA
+from toontown.toon import Experience
+from toontown.toon.DistributedToonAI import DistributedToonAI
+from toontown.toonbase import ToontownGlobals
+
+
+# How full an NPC keeps its gag bag: a share of a full one, picked once per
+# NPC.
+# The cog suits NPCs wear, from the lowest cog (0) to the top one (7); the
+# middle ones most often.
+SUIT_TYPES = (0, 1, 2, 2, 3, 3, 4, 4, 4, 5, 5, 5, 6, 6, 7)
+GAG_FILL = (0.45, 1.0)
+
+
+class NPCPlayerAI(DistributedToonAI):
+    notify = DirectNotifyGlobal.directNotify.newCategory('NPCPlayerAI')
+
+    def __init__(self, air, manager):
+        # The objects of this class are DistributedToons on the wire.
+        air.dclassesByName.setdefault('NPCPlayerAI', air.dclassesByName['DistributedToonAI'])
+        DistributedToonAI.__init__(self, air)
+        self.manager = manager
+        self.brain = None
+        # Some setters log the doId, so the toon has it before the defaults.
+        self.doId = air.allocateChannel()
+        self.applyFieldDefaults()
+        self.gameAccess = OTPGlobals.AccessFull
+
+    def applyProfile(self, profile):
+        # Before generate, so the toon arrives on the clients as it is.
+        self.setName(profile['name'])
+        self.setDNAString(profile['dna'].makeNetString())
+        self.setMaxHp(profile['maxHp'])
+        self.setHp(profile['maxHp'])
+        self.setTrackAccess(profile['trackAccess'])
+        experience = Experience.Experience(owner=self)
+        experience.experience = list(profile['experience'])
+        self.setExperience(experience.makeNetString())
+        self.setMaxCarry(profile['maxCarry'])
+        accessories = profile.get('accessories', {})
+        for kind, setter in (('hat', self.setHat), ('glasses', self.setGlasses),
+                             ('backpack', self.setBackpack), ('shoes', self.setShoes)):
+            if kind in accessories:
+                setter(*accessories[kind])
+        if profile.get('cogSuits'):
+            self.giveCogSuits()
+        if 'kart' in profile:
+            self.setKartBodyType(profile['kart'])
+            self.setTickets(profile['tickets'])
+        self.fillBag()
+
+    def giveCogSuits(self):
+        # Every part, so the toon can see the boss, but each suit a cog of
+        # its own somewhere up the department's ladder: players met in the
+        # lobbies were all sorts, not all the top cog.
+        types = [random.choice(SUIT_TYPES) for dept in SuitDNA.suitDepts]
+        levels = []
+        for dept in range(len(SuitDNA.suitDepts)):
+            head = SuitDNA.suitHeadTypes[types[dept] + SuitDNA.suitsPerDept * dept]
+            levels.append(SuitBattleGlobals.SuitAttributes[head]['level'] + random.randint(0, 4))
+        self.setCogTypes(types)
+        self.setCogLevels(levels)
+        self.setCogParts(list(CogDisguiseGlobals.PartsPerSuitBitmasks))
+        self.setCogMerits([0] * len(SuitDNA.suitDepts))
+        # Just enough: battles add more, and the field holds no more than
+        # 65535.
+        self.setCogMerits([CogDisguiseGlobals.getTotalMerits(self, dept) for dept in range(len(SuitDNA.suitDepts))])
+
+    def restock(self):
+        # A set again, as after a trip to the gag shop.
+        self.fillBag()
+        self.d_setInventory(self.inventory.makeNetString())
+
+    def fillBag(self):
+        # Like players, some carry a full bag and some only part of one.
+        self.inventory.zeroInv()
+        self.inventory.maxOutInv()
+        if getattr(self, 'gagFill', None) is None:
+            self.gagFill = random.uniform(*GAG_FILL)
+        target = int(self.inventory.totalProps * self.gagFill)
+        stocked = [(track, level) for track in range(len(self.inventory.inventory))
+                   for level in range(len(self.inventory.inventory[track]))
+                   for n in range(self.inventory.inventory[track][level])]
+        random.shuffle(stocked)
+        for track, level in stocked[:max(0, len(stocked) - target)]:
+            self.inventory.inventory[track][level] -= 1
+        self.inventory.calcTotalProps()
+
+    def generateInZone(self, zoneId, x=0, y=0, z=0, h=0):
+        self.setPosHpr(x, y, z, h, 0, 0)
+        self.generateWithRequiredAndId(self.doId, self.air.districtId, zoneId)
+        # What a player's own client would send once it is in the zone; these
+        # are kept for toons who arrive later.
+        self.sendUpdate('setParent', [ToontownGlobals.SPRender])
+        self.placeAt(x, y, z, h)
+        self.b_setAnimState('neutral', 1.0)
+
+    def isPlayerControlled(self):
+        return False
+
+    def isNPCPlayer(self):
+        return True
+
+    def applyFieldDefaults(self):
+        # Every required field starts at its default from the dc file, the
+        # way a new toon in the database would.
+        for i in range(self.dclass.getNumInheritedFields()):
+            field = self.dclass.getInheritedField(i)
+            if not field.isRequired() or field.asMolecularField():
+                continue
+            if field.getName() == 'setDNAString':
+                # Has no usable default; applyProfile sets it.
+                continue
+            default = field.getDefaultValue()
+            dg = Datagram()
+            dg.addUint16(field.getNumber())
+            dg.appendData(default)
+            try:
+                self.dclass.receiveUpdate(self, DatagramIterator(dg))
+            except Exception as e:
+                self.notify.warning('default for %s: %s' % (field.getName(), e))
+
+    # Getters the district never needed, since only the database used to
+    # send a toon's required fields; they return what the field holds.
+
+    def getKartAccessoriesOwned(self):
+        return list(self.accessories)
+
+    # --- Acting like a client ---
+
+    def asSender(self, func, *args):
+        """Calls func as though this toon's client had sent it."""
+        return self.air.callAsSender(self.doId, func, *args)
+
+    def setCatalogSchedule(self, currentWeek, nextTime):
+        # NPC toons never shop, so no catalog is made for them.
+        self.catalogScheduleCurrentWeek = currentWeek
+        self.catalogScheduleNextTime = nextTime
+
+    # --- Moving ---
+
+    def placeAt(self, x, y, z, h):
+        # A jump to a spot, remembered for toons who arrive later.
+        self.setPosHpr(x, y, z, h, 0, 0)
+        self.sendUpdate('setPosHpr', [x, y, z, h, 0, 0])
+
+    def moveTo(self, x, y, z, h):
+        self.setPosHpr(x, y, z, h, 0, 0)
+        self.sendUpdate('setSmPosHpr', [x, y, z, h, 0, 0, globalClockDelta.getRealNetworkTime(bits=16)])
+
+    def stopMoving(self):
+        self.sendUpdate('setSmStop', [globalClockDelta.getRealNetworkTime(bits=16)])
+
+    # --- Acting like a player ---
+
+    def b_setEmoteState(self, animIndex, animMultiplier):
+        self.sendUpdate('setEmoteState', [animIndex, animMultiplier, globalClockDelta.getRealNetworkTime(bits=16)])
+
+    def d_setSC(self, msgIndex):
+        self.sendUpdate('setSC', [msgIndex])
+
+    def delete(self):
+        if self.brain is not None:
+            self.brain.destroy()
+            self.brain = None
+        DistributedToonAI.delete(self)

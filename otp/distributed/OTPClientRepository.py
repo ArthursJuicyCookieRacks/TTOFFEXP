@@ -6,12 +6,14 @@ import random
 import gc
 import os
 from panda3d.core import *
+from panda3d.direct import CConnectionRepository
 from panda3d.core import *
 from direct.gui.DirectGui import *
 from otp.distributed.OtpDoGlobals import *
 from direct.interval.IntervalGlobal import ivalMgr
 from direct.directnotify.DirectNotifyGlobal import directNotify
 from direct.distributed.ClientRepositoryBase import ClientRepositoryBase
+from otp.local.LocalConnection import LocalConnectionMixin
 from direct.fsm.ClassicFSM import ClassicFSM
 from direct.fsm.State import State
 from direct.task import Task
@@ -34,24 +36,26 @@ from otp.login import HTTPUtil
 from otp.otpbase import OTPGlobals
 from otp.otpbase import OTPLauncherGlobals
 from enum import Enum
+from otp.otpbase.PythonEnum import IntEnum
 from otp.uberdog import OtpAvatarManager
 from otp.distributed import OtpDoGlobals
 from otp.distributed.TelemetryLimiter import TelemetryLimiter
 from otp.ai.GarbageLeakServerEventAggregator import GarbageLeakServerEventAggregator
 from toontown.toonbase import ToontownGlobals
+from otp.margins.WhisperPopup import WhisperPopup
 
-class OTPClientRepository(ClientRepositoryBase):
+class OTPClientRepository(LocalConnectionMixin, ClientRepositoryBase):
     notify = directNotify.newCategory('OTPClientRepository')
     avatarLimit = 6
     #WishNameResult = Enum(['Failure',
     # 'PendingApproval',
     # 'Approved',
     # 'Rejected'])
-    class WishNameResult(Enum):
-        Failure = 1
-        PendingApproval = 2
-        Approved = 3
-        Rejected = 4
+    class WishNameResult(IntEnum):
+        Failure = 0
+        PendingApproval = 1
+        Approved = 2
+        Rejected = 3
     whiteListChatEnabled = 1 # TODO: Have server set this on localAvatar on login.
 
     def __init__(self, serverVersion, launcher = None, playGame = None):
@@ -723,6 +727,7 @@ class OTPClientRepository(ClientRepositoryBase):
         self.handler = self.handleMessageType
         messenger.send('connectionIssue')
         statusCode = 0
+        url = self.serverList[0] if self.serverList else URLSpec()
         if isinstance(e, HTTPUtil.ConnectionError):
             statusCode = e.statusCode
             self.notify.warning('Got status code %s from connection to %s.' % (statusCode, url.cStr()))
@@ -936,6 +941,12 @@ class OTPClientRepository(ClientRepositoryBase):
             message = OTPLocalizer.CRBootedReasonUnknownCode % self.bootedIndex
         else:
             message = OTPLocalizer.CRLostConnection
+        # Offline a lost connection is always a bug; say where it came from,
+        # so a screenshot of the box tells what happened.
+        conn = getattr(self, '_localConn', None)
+        closeReason = getattr(conn, 'closeReason', None)
+        if closeReason:
+            message += '\n\n(%s)' % closeReason
         reconnect = 1
         if self.bootedIndex in (152, 127):
             reconnect = 0
@@ -1558,7 +1569,8 @@ class OTPClientRepository(ClientRepositoryBase):
             try:
                 self.handleUpdateField(di)
             except AssertionError as msg:
-                self.notify.warning('AssertionError: %s' % msg)
+                import traceback
+                self.notify.warning('AssertionError: %s\n%s' % (msg, traceback.format_exc()))
         elif msgType == CLIENT_OBJECT_LEAVING:
             self.handleDelete(di)
         else:

@@ -288,7 +288,7 @@ class InteractiveAnimatedProp(GenericAnimatedProp.GenericAnimatedProp, FSM.FSM):
         self.curIval = None
         if self.okToStartNextAnim:
             self.notify.debug('got pass okToStartNextAnim')
-            whichAnim = self.chooseIdleAnimTorun()
+            whichAnim = self.chooseIdleAnimToRun()
             if self.visId == localAvatar.zoneId:
                 self.notify.debug('whichAnim=%s' % whichAnim)
                 if __dev__:
@@ -407,7 +407,7 @@ class InteractiveAnimatedProp(GenericAnimatedProp.GenericAnimatedProp, FSM.FSM):
             elif isinstance(curInfo, str):
                 if curInfo == animName:
                     result = index
-                    breal
+                    break
 
         return result
 

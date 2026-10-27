@@ -325,7 +325,7 @@ class Avatar(Actor, ShadowCaster):
         elif type == 'special':
             sfxIndex = 5
         else:
-            notify.error('unrecognized dialogue type: ', type)
+            self.notify.error('unrecognized dialogue type: %s' % type)
 
         # The standard cog phrase gets too repetitive when there are so many cogs running around.
         # Let's just choose a random one.
@@ -356,7 +356,7 @@ class Avatar(Actor, ShadowCaster):
         elif type == 'special':
             sfxIndex = 5
         else:
-            notify.error('unrecognized dialogue type: ', type)
+            self.notify.error('unrecognized dialogue type: %s' % type)
         if sfxIndex != None and sfxIndex < len(dialogueArray) and dialogueArray[sfxIndex] != None:
             retval = dialogueArray[sfxIndex]
         return retval

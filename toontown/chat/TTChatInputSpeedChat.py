@@ -7,6 +7,7 @@ from otp.speedchat import SpeedChatGlobals
 from toontown.speedchat import TTSpeedChatGlobals
 from toontown.speedchat import TTSCSingingTerminal
 from toontown.speedchat import TTSCIndexedTerminal
+from toontown.speedchat.TTSCToolsMenu import TTSCToolsMenu
 from direct.showbase import DirectObject
 from direct.fsm import ClassicFSM, State
 from direct.fsm import State
@@ -496,6 +497,8 @@ class TTChatInputSpeedChat(DirectObject.DirectObject):
         structure.append([SCEmoteMenu, OTPLocalizer.SCMenuEmotions])
         structure.append([SCCustomMenu, OTPLocalizer.SCMenuCustom])
         structure.append([TTSCResistanceMenu, OTPLocalizer.SCMenuResistance])
+        # Magic words for the offline game's player (MaxToon and restocks).
+        structure.append([TTSCToolsMenu, 'TOOLS'])
         if hasattr(base, 'wantPets') and base.wantPets:
             structure += scPetMenuStructure
         if config.ConfigVariableBool('want-doomsday', False).getValue():

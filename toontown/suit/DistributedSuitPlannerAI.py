@@ -20,6 +20,9 @@ import random
 from .SuitLegList import *
 from toontown.dna import *
 from otp.ai.MagicWordGlobal import *
+# The departments that have field offices.
+CogdoTracks = ('s', 'l')
+
 
 class DistributedSuitPlannerAI(DistributedObjectAI.DistributedObjectAI, SuitPlannerBase.SuitPlannerBase):
     CogdoPopFactor = config.GetFloat('cogdo-pop-factor', 1.5)
@@ -556,7 +559,7 @@ class DistributedSuitPlannerAI(DistributedObjectAI.DistributedObjectAI, SuitPlan
         self.air = air
         self.zoneId = zoneId
         self.canonicalZoneId = ZoneUtil.getCanonicalZoneId(zoneId)
-        if config.ConfigVariableBool('want-cogdos', False).getValue():
+        if air.wantCogdominiums:
             if not hasattr(self.__class__, 'CogdoPopAdjusted'):
                 self.__class__.CogdoPopAdjusted = True
                 for index in range(len(self.SuitHoodInfo)):
@@ -587,6 +590,8 @@ class DistributedSuitPlannerAI(DistributedObjectAI.DistributedObjectAI, SuitPlan
         self.battleList = []
         self.battleMgr = BattleManagerAI.BattleManagerAI(self.air)
         self.setupDNA()
+        # The route table, a little each frame before the first cogs fly in.
+        self.dnaData.suitGraph.buildTableSoon()
         if self.notify.getDebug():
             self.notify.debug('Creating a building manager AI in zone' + str(self.zoneId))
         self.buildingMgr = self.air.buildingManagers.get(self.zoneId)
@@ -802,6 +807,10 @@ class DistributedSuitPlannerAI(DistributedObjectAI.DistributedObjectAI, SuitPlan
         suitLevel, suitType, suitTrack = self.pickLevelTypeAndTrack(suitLevel, suitType, suitTrack)
         newSuit.setupSuitDNA(suitLevel, suitType, suitTrack)
         newSuit.buildingHeight = buildingHeight
+        if cogdoTakeover is None and newSuit.attemptingTakeover and toonBlockTakeover is None:
+            # Sellbots and Lawbots take some buildings over as field offices.
+            cogdoTakeover = (self.air.wantCogdominiums and suitTrack in CogdoTracks and
+                             random.random() < self.CogdoRatio)
         gotDestination = self.chooseDestination(newSuit, startTime, toonBlockTakeover=toonBlockTakeover, cogdoTakeover=cogdoTakeover, minPathLen=minPathLen, maxPathLen=maxPathLen)
         if not gotDestination:
             self.notify.debug("Couldn't get a destination in %d!" % self.zoneId)
@@ -968,6 +977,11 @@ class DistributedSuitPlannerAI(DistributedObjectAI.DistributedObjectAI, SuitPlan
         taskMgr.doMethodLater(t, self.adjustSuitPopulation, self.taskName('sptAdjustPopulation'))
 
     def upkeepSuitPopulation(self, task):
+        if not self.dnaData.suitGraph.tableReady():
+            # The route table is still being built, a little each frame.
+            # (Building the rest here held the game for up to a second.)
+            task.delayTime = 1.0
+            return task.again
         targetFlyInNum = self.calcDesiredNumFlyInSuits()
         targetFlyInNum = min(targetFlyInNum, self.TOTAL_MAX_SUITS - self.numBuildingSuits)
         streetPoints = self.streetPointList[:]
@@ -1055,11 +1069,13 @@ class DistributedSuitPlannerAI(DistributedObjectAI.DistributedObjectAI, SuitPlan
         building = self.buildingMgr.getBuilding(blockNumber)
         building.suitTakeOver(suitTrack, difficulty, buildingHeight)
 
-    def cogdoTakeOver(self, blockNumber, difficulty, buildingHeight):
+    def cogdoTakeOver(self, blockNumber, suitTrack, difficulty, buildingHeight):
+        if self.pendingBuildingTracks.count(suitTrack) > 0:
+            self.pendingBuildingTracks.remove(suitTrack)
         if self.pendingBuildingHeights.count(buildingHeight) > 0:
             self.pendingBuildingHeights.remove(buildingHeight)
         building = self.buildingMgr.getBuilding(blockNumber)
-        building.cogdoTakeOver(difficulty, buildingHeight)
+        building.cogdoTakeOver(suitTrack, difficulty, buildingHeight)
 
     def recycleBuilding(self):
         bmin = self.SuitHoodInfo[self.hoodInfoIdx][self.SUIT_HOOD_INFO_BMIN]

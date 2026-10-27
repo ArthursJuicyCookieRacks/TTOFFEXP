@@ -38,7 +38,7 @@ _cardImagesInitialized = 0
 _modelPathBase = 'phase_3.5/models/gui/inventory_icons'
 
 def convertValueToGagTrackAndLevel(value):
-    imageNum = int(rank // MaxSuit)
+    imageNum = int(value // MaxSuit)
     track = imageNum % (ToontownBattleGlobals.MAX_TRACK_INDEX + 1)
     level = imageNum // (ToontownBattleGlobals.MAX_TRACK_INDEX + 1)
     return (track, level)

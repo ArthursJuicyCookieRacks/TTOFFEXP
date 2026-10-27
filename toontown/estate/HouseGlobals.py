@@ -100,3 +100,6 @@ HALF_DAY_PERIOD = 1050
 HALF_NIGHT_PERIOD = 300
 FIREWORKS_MOVIE_CLEAR = 0
 FIREWORKS_MOVIE_GUI = 1
+
+# Where the rented game table stands on the estate lawn: x, y, z, h.
+GameTablePositions = [(-5.6, -24.0, 0.025, 0)]

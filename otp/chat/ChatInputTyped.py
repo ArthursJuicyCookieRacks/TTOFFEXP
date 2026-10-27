@@ -4,6 +4,7 @@ import sys
 from direct.gui.DirectGui import *
 from panda3d.core import *
 from otp.otpbase import OTPLocalizer
+from otp.nametag.NametagConstants import CFSpeech, CFTimeout
 
 class ChatInputTyped(DirectObject.DirectObject):
     ExecNamespace = None

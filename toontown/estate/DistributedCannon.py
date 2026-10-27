@@ -21,6 +21,8 @@ from toontown.toonbase import TTLocalizer
 from direct.distributed import DistributedObject
 from toontown.effects import Wake
 from direct.controls.ControlManager import CollisionHandlerRayStart
+from otp.nametag.Nametag import Nametag
+from otp.nametag.NametagFloat3d import NametagFloat3d
 LAND_TIME = 2
 WORLD_SCALE = 2.0
 GROUND_SCALE = 1.4 * WORLD_SCALE
@@ -467,7 +469,7 @@ class DistributedCannon(DistributedObject.DistributedObject):
         tag.setBillboardOffset(0)
         tag.setAvatar(self.toonHead)
         toon.nametag.addNametag(tag)
-        tagPath = self.toonHead.attachNewNode(tag.upcastToPandaNode())
+        tagPath = self.toonHead.attachNewNode(tag)
         tagPath.setPos(0, 0, 1)
         self.toonHead.tag = tag
         self.__loadToonInCannon()

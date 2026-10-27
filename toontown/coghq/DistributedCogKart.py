@@ -11,6 +11,7 @@ from toontown.building import ElevatorConstants
 from toontown.distributed import DelayDelete
 from direct.showbase import PythonUtil
 from toontown.building import BoardingGroupShow
+from toontown.hood import ZoneUtil
 
 class DistributedCogKart(DistributedElevatorExt.DistributedElevatorExt):
     notify = DirectNotifyGlobal.directNotify.newCategory('DistributedCogKart')

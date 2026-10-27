@@ -117,8 +117,10 @@ class QuestManagerAI:
                                 self.__incrementQuestProgress(toon.quests[index])
         toon.updateQuests()
 
-    def toonKilledCogdo(self, toon, difficulty, floors, zoneId, activeToons):
-        pass
+    def toonKilledCogdo(self, toon, track, difficulty, floors, zoneId, activeToons):
+        # A field office counts as a cog building of its department, with
+        # the executive suite as its top floor.
+        self.toonKilledBuilding(toon, track, difficulty, floors + 1, zoneId, activeToons)
 
     def toonRecoveredCogSuitPart(self, toon, zoneId, toonList):
         pass
@@ -196,6 +198,11 @@ class QuestManagerAI:
         # This means we want to store the reward in the toons setRewardHistory.
         finalReward = rewardId if storeReward else 0
         progress = 0
+        quest = Quests.getQuest(questId)
+        if isinstance(quest, Quests.FriendQuest):
+            # Offline there is nobody to befriend, so "Make a Friend" tasks
+            # are complete the moment they are taken: just hand them back in.
+            progress = quest.getNumFriends() if isinstance(quest, Quests.FriendNewbieQuest) else 1
         toon.addQuest((questId, npc.getDoId(), toNpcId, rewardId, progress), finalReward)
         # Tell the NPC that we assigned this quest to the given toon.
         npc.assignQuest(toon.getDoId(), questId, rewardId, toNpcId)

@@ -1,4 +1,5 @@
 from enum import Enum
+from otp.otpbase.PythonEnum import IntEnum
 from direct.directnotify import DirectNotifyGlobal
 from direct.gui.DirectGui import *
 from panda3d.core import *
@@ -14,10 +15,10 @@ from .FishPage import FishingTrophy
 if (__debug__):
     import pdb
 #PageMode = PythonUtil.Enum('Customize, Records, Trophy')
-class PageMode(Enum):
-    Customize = 1
-    Records = 2
-    Trophy = 3
+class PageMode(IntEnum):
+    Customize = 0
+    Records = 1
+    Trophy = 2
 
 class KartPage(ShtikerPage):
     notify = DirectNotifyGlobal.directNotify.newCategory('KartPage')

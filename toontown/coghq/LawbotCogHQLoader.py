@@ -23,7 +23,9 @@ class LawbotCogHQLoader(CogHQLoader.CogHQLoader):
             state = self.fsm.getStateNamed(stateName)
             state.addTransition('stageInterior')
 
-        for stateName in ['quietZone']:
+        # 'start' lets a toon teleport straight into the DA office lobby,
+        # as it can into the Sellbot factory's courtyard.
+        for stateName in ['start', 'quietZone']:
             state = self.fsm.getStateNamed(stateName)
             state.addTransition('factoryExterior')
 

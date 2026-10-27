@@ -11,6 +11,70 @@ from direct.directnotify import DirectNotifyGlobal
 # All numbers/values in here are hard-coded. Maybe we should move them to
 # ToontownGlobals or something?
 
+# The holidays that are an invasion, and their cogs: (cog, special suit),
+# special suit being 1 for skelecogs. A None cog is a random one.
+G = ToontownGlobals
+HolidayInvasions = {
+    G.SKELECOG_INVASION: (None, 1),
+    G.MR_HOLLYWOOD_INVASION: ('mh', 0),
+    G.BOSSCOG_INVASION: ('tbc', 0),
+    G.YES_MAN_INVASION: ('ym', 0),
+    G.TIGHTWAD_INVASION: ('tw', 0),
+    G.TELEMARKETER_INVASION: ('tm', 0),
+    G.HEADHUNTER_INVASION: ('hh', 0),
+    G.SPINDOCTOR_INVASION: ('sd', 0),
+    G.MONEYBAGS_INVASION: ('mb', 0),
+    G.TWOFACES_INVASION: ('tf', 0),
+    G.MINGLER_INVASION: ('m', 0),
+    G.LOANSHARK_INVASION: ('ls', 0),
+    G.CORPORATE_RAIDER_INVASION: ('cr', 0),
+    G.ROBBER_BARON_INVASION: ('rb', 0),
+    G.LEGAL_EAGLE_INVASION: ('le', 0),
+    G.BIG_WIG_INVASION: ('bw', 0),
+    G.BIG_CHEESE_INVASION: ('tbc', 0),
+    G.DOWN_SIZER_INVASION: ('ds', 0),
+    G.MOVER_AND_SHAKER_INVASION: ('ms', 0),
+    G.DOUBLETALKER_INVASION: ('dt', 0),
+    G.PENNY_PINCHER_INVASION: ('pp', 0),
+    G.NAME_DROPPER_INVASION: ('nd', 0),
+    G.AMBULANCE_CHASER_INVASION: ('ac', 0),
+    G.MICROMANAGER_INVASION: ('mm', 0),
+    G.NUMBER_CRUNCHER_INVASION: ('nc', 0),
+    G.COLD_CALLER_INVASION: ('cc', 0),
+    G.BEAN_COUNTER_INVASION: ('bc', 0),
+    G.DOUBLE_TALKER_INVASION: ('dt', 0),
+    G.DOWNSIZER_INVASION: ('ds', 0),
+    G.SELLBOT_INVASION_MOVER_AND_SHAKER: ('ms', 0),
+    G.PRE_JULY_4_DOWNSIZER_INVASION: ('ds', 0),
+    G.PRE_JULY_4_BIGWIG_INVASION: ('bw', 0),
+}
+del G
+# Enough cogs to last until the holiday is over.
+HolidayInvasionSuits = 100000
+
+# The offline game's districts with their own rules. The developers'
+# district only gets an invasion someone summons. Each training district
+# always has an invasion of one cog track, going from one cog of it to
+# another, chosen at random, every 30 to 60 minutes (TrainingInvasionMinutes).
+# Every street's cogs count towards an invasion's total, so a count runs out
+# in minutes; these invasions end on time instead.
+DEVELOPER_DISTRICTS = ('Developers Dreams', 'Developer Dreamland')
+TRAINING_DISTRICTS = {
+    'Training Tycoon': 's',
+    'Training Tundra': 'm',
+    'Training Township': 'l',
+    'Training Turf': 'c',
+}
+TrainingInvasionMinutes = (30, 60)
+# The pause between one training invasion and the next.
+TrainingInvasionGap = 5
+
+
+def trainingCogs(dept):
+    start = SuitDNA.suitDepts.index(dept) * SuitDNA.suitsPerDept
+    return SuitDNA.suitHeadTypes[start:start + SuitDNA.suitsPerDept]
+
+
 class SuitInvasionManagerAI:
     """
     This is a very basic AI class to handle Suit Invasions in Toontown.
@@ -27,6 +91,20 @@ class SuitInvasionManagerAI:
         self.suitName = None
         self.numSuits = 0
         self.spawnedSuits = 0
+        self.holidayInvasion = None
+        districtName = getattr(air, 'districtName', '')
+        self.trainingDept = TRAINING_DISTRICTS.get(districtName)
+        # Only invasions someone asks for (a summons, a magic word): no
+        # random ones and none for a holiday.
+        self.summonsOnly = districtName in DEVELOPER_DISTRICTS or self.trainingDept is not None
+        if self.trainingDept is not None:
+            taskMgr.doMethodLater(1, self.__nextTrainingInvasion, 'training-invasion')
+        if self.summonsOnly:
+            return
+        messenger.accept('holidayStarted', self, self.__holidayStarted)
+        messenger.accept('holidayEnded', self, self.__holidayEnded)
+        # Holidays already running when the district started.
+        taskMgr.doMethodLater(1, self.__startRunningHolidays, 'holiday-invasions')
 
         if config.ConfigVariableBool('want-mega-invasions', False).getValue(): # TODO - config for this
             # Mega invasion configuration.
@@ -73,13 +151,44 @@ class SuitInvasionManagerAI:
                 # N.B.: randomInvasionProbability = mega invasion probability.
                 suitName = self.megaInvasionCog
                 numSuits = randint(2000, 15000)
-                specialSuit = random.choice([0, 0, 0, 1, 2])
+                specialSuit = choice([0, 0, 0, 1, 2])
             else:
                 suitName = choice(SuitDNA.suitHeadTypes)
                 numSuits = randint(1500, 5000)
                 specialSuit = False
             self.startInvasion(suitName, numSuits, specialSuit)
         return task.again
+
+    def __nextTrainingInvasion(self, task=None):
+        if not self.getInvading():
+            cogs = [cog for cog in trainingCogs(self.trainingDept) if cog != self.lastTrainingCog] or \
+                trainingCogs(self.trainingDept)
+            cog = choice(cogs)
+            self.lastTrainingCog = cog
+            self.startInvasion(cog, HolidayInvasionSuits, 0,
+                               duration=randint(*TrainingInvasionMinutes) * 60)
+        return Task.done
+
+    lastTrainingCog = None
+
+    def __startRunningHolidays(self, task):
+        for holidayId in self.air.holidayManager.currentHolidays:
+            self.__holidayStarted(holidayId)
+        return task.done
+
+    def __holidayStarted(self, holidayId):
+        if holidayId not in HolidayInvasions:
+            return
+        suitName, specialSuit = HolidayInvasions[holidayId]
+        if self.getInvading():
+            # The holiday's cogs take over from the invasion going on.
+            self.stopInvasion()
+        if self.startInvasion(suitName or choice(SuitDNA.suitHeadTypes), HolidayInvasionSuits, specialSuit):
+            self.holidayInvasion = holidayId
+
+    def __holidayEnded(self, holidayId):
+        if holidayId == self.holidayInvasion:
+            self.stopInvasion()
 
     def getInvading(self):
         """ Tell the caller if an invasion is currently running. """
@@ -108,7 +217,12 @@ class SuitInvasionManagerAI:
         self.spawnedSuits = 0
         self.invading = 0
         self.suitName = None
+        self.holidayInvasion = None
         self.__spAllCogsSupaFly()
+        if self.trainingDept is not None:
+            # On to the next cog of the track.
+            taskMgr.remove('training-invasion')
+            taskMgr.doMethodLater(TrainingInvasionGap, self.__nextTrainingInvasion, 'training-invasion')
 
     def __checkInvasionOver(self):
         """ Test if the current invasion has created all the suits. """
@@ -126,7 +240,7 @@ class SuitInvasionManagerAI:
         for sp in list(self.air.suitPlanners.values()):
             sp.flySuits()
 
-    def startInvasion(self, suitName='f', numSuits=1000, specialSuit=0):
+    def startInvasion(self, suitName='f', numSuits=1000, specialSuit=0, duration=None):
         """
         Start an invasion on the current AI. This can be invoked by anything, such
         as a toon summoning an invasion, or an admin manually starting an
@@ -150,7 +264,9 @@ class SuitInvasionManagerAI:
         # take around 20 minutes, becoming 1.2 seconds per cog.
         # We added in a bit of a grace period, making it 1.5 seconds per cog, or 25 minutes.
         timePerCog = config.GetFloat('invasion-time-per-cog', 1.5)
-        taskMgr.doMethodLater(timePerCog * numSuits, self.stopInvasion, 'invasion-timeout')
+        if duration is None:
+            duration = timePerCog * numSuits
+        taskMgr.doMethodLater(duration, self.stopInvasion, 'invasion-timeout')
         self.__spAllCogsSupaFly()
         return True
 

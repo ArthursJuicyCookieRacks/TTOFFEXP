@@ -483,6 +483,11 @@ class ToonBase(OTPBase.OTPBase):
         return self.exitErrorCode
 
     def userExit(self):
+        print('ToonBase: userExit, the window was closed (%s)' % (self.win.getProperties() if self.win else None))
+        if not hasattr(self, 'cr'):
+            # Closed on the launcher, before the game has loaded.
+            self.exitShow()
+            return
         try:
             self.localAvatar.d_setAnimState('TeleportOut', 1)
         except:

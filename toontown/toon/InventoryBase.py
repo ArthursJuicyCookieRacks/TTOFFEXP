@@ -171,7 +171,7 @@ class InventoryBase(DirectObject.DirectObject):
     def getTrackAndLevel(self, propName):
         for track in range(0, len(Tracks)):
             if AvProps[track].count(propName):
-                return (tracks, AvProps[track].index(propName))
+                return (track, AvProps[track].index(propName))
 
         return (-1, -1)
 

@@ -1,13 +1,14 @@
 from enum import Enum
+from otp.otpbase.PythonEnum import IntEnum
 from panda3d.core import *
 from direct.interval.IntervalGlobal import *
 from direct.showbase import PythonUtil
 from toontown.battle.BattleProps import globalPropPool
 from direct.directnotify import DirectNotifyGlobal
 #SFX = PythonUtil.Enum('poof, magic')
-class SFX(Enum):
-    poof = 1
-    magic = 2
+class SFX(IntEnum):
+    poof = 0
+    magic = 1
 SFXPATHS = {SFX.poof: 'phase_4/audio/sfx/firework_distance_02.ogg',
  SFX.magic: 'phase_4/audio/sfx/SZ_DD_treasure.ogg'}
 

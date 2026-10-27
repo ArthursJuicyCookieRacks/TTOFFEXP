@@ -300,12 +300,12 @@ class NametagGroup:
         self.nametags.append(nametag)
         self.updateNametag(nametag)
         if self.manager != None and isinstance(nametag, MarginPopup):
-            nametag.manage(manager)
+            nametag.manage(self.manager)
 
     def removeNametag(self, nametag):
         self.nametags.remove(nametag)
         if self.manager != None and isinstance(nametag, MarginPopup):
-            nametag.unmanage(manager)
+            nametag.unmanage(self.manager)
         nametag.destroy()
 
     def manage(self, manager):

@@ -8,9 +8,11 @@ class NewsManagerAI(DistributedObjectAI):
 
     def __init__(self, air):
         DistributedObjectAI.__init__(self, air)
-        self.accept('avatarEntered', self.__announceIfInvasion)
+        self.holidayIdList = list(air.holidayManager.currentHolidays)
+        self.accept('avatarEntered', self.__avatarEntered)
 
-    def __announceIfInvasion(self, avatar):
+    def __avatarEntered(self, avatar):
+        self.sendUpdateToAvatarId(avatar.getDoId(), 'setHolidayIdList', [self.holidayIdList])
         if self.air.suitInvasionManager.getInvading():
             self.sendUpdateToAvatarId(avatar.getDoId(), 'setInvasionStatus', [
                 ToontownGlobals.SuitInvasionBulletin, self.air.suitInvasionManager.suitName,
@@ -56,8 +58,18 @@ class NewsManagerAI(DistributedObjectAI):
     def setInvasionStatus(self, todo0, todo1, todo2, todo3):
         pass
 
-    def setHolidayIdList(self, todo0):
-        pass
+    def setHolidayIdList(self, holidayIdList):
+        self.holidayIdList = holidayIdList
+
+    def d_setHolidayIdList(self, holidayIdList):
+        self.sendUpdate('setHolidayIdList', [holidayIdList])
+
+    def b_setHolidayIdList(self, holidayIdList):
+        self.setHolidayIdList(holidayIdList)
+        self.d_setHolidayIdList(holidayIdList)
+
+    def getHolidayIdList(self):
+        return self.holidayIdList
 
     def holidayNotify(self):
         pass
@@ -66,13 +78,13 @@ class NewsManagerAI(DistributedObjectAI):
         pass
 
     def getWeeklyCalendarHolidays(self):
-        return []
+        return self.air.holidayManager.getWeeklyCalendarHolidays()
 
     def setYearlyCalendarHolidays(self, todo0):
         pass
 
     def getYearlyCalendarHolidays(self):
-        return []
+        return self.air.holidayManager.getYearlyCalendarHolidays()
 
     def setOncelyCalendarHolidays(self, todo0):
         pass
@@ -102,3 +114,20 @@ def invasionstatus():
         ToontownGlobals.SuitInvasionUpdate, simbase.air.suitInvasionManager.suitName,
         simbase.air.suitInvasionManager.numSuits, simbase.air.suitInvasionManager.specialSuit
     ])
+
+@magicWord(category=CATEGORY_OVERRIDE, types=[int])
+def startHoliday(holidayId):
+    """ Starts a holiday, whatever the calendar says. """
+    simbase.air.holidayManager.startHoliday(holidayId)
+    return 'Holiday %d started.' % holidayId
+
+@magicWord(category=CATEGORY_OVERRIDE, types=[int])
+def endHoliday(holidayId):
+    """ Ends a holiday, whatever the calendar says. """
+    simbase.air.holidayManager.endHoliday(holidayId)
+    return 'Holiday %d ended.' % holidayId
+
+@magicWord(category=CATEGORY_DEBUG)
+def holidays():
+    """ Lists the holidays that are running. """
+    return 'Holidays: %s' % (simbase.air.holidayManager.currentHolidays or 'none')

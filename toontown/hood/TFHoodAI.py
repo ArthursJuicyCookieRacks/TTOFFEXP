@@ -11,6 +11,7 @@ from toontown.toonfest.DistributedToonfestTowerAI import DistributedToonfestTowe
 from toontown.toonfest.DistributedToonfestTowerBaseAI import DistributedToonfestTowerBaseAI
 from toontown.toonfest.DistributedToonfestVictoryTrampolineActivityAI import DistributedToonfestVictoryTrampolineActivityAI
 from toontown.toonfest.DistributedToonfestCogAI import DistributedToonfestCogAI
+from toontown.toonfest.DistributedToonfestBalloonAI import DistributedToonfestBalloonAI
 #from toontown.toonfest.DistributedToonfestCannonActivityAI import DistributedToonfestCannonActivityAI
 
 class TFHoodAI(SZHoodAI):
@@ -34,6 +35,10 @@ class TFHoodAI(SZHoodAI):
         #self.toonfestDayNight.generateWithRequired(self.HOOD)
         #self.cannonActivity = DistributedToonfestCannonActivityAI(self.air)
         #self.cannonActivity.generateWithRequired(self.HOOD)
+        # Alec's balloon ride to the top of the tower.
+        self.balloon = DistributedToonfestBalloonAI(self.air)
+        self.balloon.generateWithRequired(self.HOOD)
+        self.balloon.b_setState('Waiting')
         self.loadActivities()
 
     def loadActivities(self):

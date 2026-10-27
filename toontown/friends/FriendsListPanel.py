@@ -370,7 +370,7 @@ class FriendsListPanel(DirectFrame, StateData.StateData):
         if self.panelType == FLPPlayers:
             playerFriendList = base.cr.playerFriendsManager.playerFriendsList
             for playerFriendId in playerFriendList:
-                if base.cr.playerFriendsManager.playerId2Info.has_key(playerFriendId):
+                if playerFriendId in base.cr.playerFriendsManager.playerId2Info:
                     playerFriendInfo = base.cr.playerFriendsManager.playerId2Info.get(playerFriendId)
                     if playerFriendInfo.onlineYesNo:
                         if playerFriendInfo.understandableYesNo:
@@ -408,7 +408,7 @@ class FriendsListPanel(DirectFrame, StateData.StateData):
         if self.panelType == FLPOnlinePlayers:
             playerFriendList = base.cr.playerFriendsManager.playerFriendsList
             for playerFriendId in playerFriendList:
-                if base.cr.playerFriendsManager.playerId2Info.has_key(playerFriendId):
+                if playerFriendId in base.cr.playerFriendsManager.playerId2Info:
                     playerFriendInfo = base.cr.playerFriendsManager.playerId2Info.get(playerFriendId)
                     if playerFriendInfo.onlineYesNo:
                         if playerFriendInfo.understandableYesNo:
@@ -571,6 +571,10 @@ class FriendsListPanel(DirectFrame, StateData.StateData):
                 newFriends.append((ignored, 0))
 
         if self.panelType == FLPAll or self.panelType == FLPOnline:
+            # Offline, the NPC toons around are friends too (see NPCFriends).
+            from toontown.npcplayers import NPCFriends
+            for avId in NPCFriends.npcFriends():
+                freeChatOneRef.append((avId, ToontownGlobals.FriendChat, 0, 0))
             if base.wantPets and base.localAvatar.hasPet():
                 petFriends.insert(0, (base.localAvatar.getPetId(), 0))
         for friendPair in list(self.friends.keys()):

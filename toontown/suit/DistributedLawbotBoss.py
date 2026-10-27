@@ -1,3 +1,4 @@
+import functools
 from direct.showbase.ShowBase import *
 from direct.interval.IntervalGlobal import *
 from toontown.battle.BattleProps import *
@@ -1354,8 +1355,7 @@ class DistributedLawbotBoss(DistributedBossCog.DistributedBossCog, FSM.FSM):
         threshold = 0.1
         
         
-        #planes.sort(lambda p1, p2: p1.compareTo(p2, threshold))
-        planes.sort() # PY3 Needs fixing
+        planes.sort(key=functools.cmp_to_key(lambda p1, p2: p1.compareTo(p2, threshold)))
         
         lastPlane = None
         for plane in planes:

@@ -4,6 +4,7 @@ from toontown.coghq import BossbotCogHQLoader
 from toontown.hood import ZoneUtil
 from panda3d.core import *
 from direct.interval.LerpInterval import LerpHprInterval
+from toontown.toonbase import TTLocalizer
 
 class BossbotHQ(CogHood.CogHood):
 

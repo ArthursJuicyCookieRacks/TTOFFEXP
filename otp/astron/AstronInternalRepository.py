@@ -11,6 +11,8 @@ from direct.distributed.PyDatagram import PyDatagram
 from direct.distributed.PyDatagramIterator import PyDatagramIterator
 from .AstronDatabaseInterface import AstronDatabaseInterface
 from .AstronNetMessenger import AstronNetMessenger
+from otp.local import LocalServer
+from otp.local.LocalConnection import LocalConnectionMixin
 
 # Helper functions for logging output:
 def msgpack_length(dg, length, fix, maxfix, tag8, tag16, tag32):
@@ -87,7 +89,7 @@ def msgpack_encode(dg, element):
     else:
         raise TypeError('Encountered non-MsgPack-packable value: %r' % element)
 
-class AstronInternalRepository(ConnectionRepository):
+class AstronInternalRepository(LocalConnectionMixin, ConnectionRepository):
     """
     This class is part of Panda3D's new MMO networking framework.
     It interfaces with an Astron (https://github.com/Astron/Astron) server in
@@ -134,7 +136,7 @@ class AstronInternalRepository(ConnectionRepository):
         self.eventLogId = self.config.GetString('eventlog-id', 'AIR:%d' % self.ourChannel)
         self.eventSocket = None
         eventLogHost = self.config.GetString('eventlog-host', '')
-        if eventLogHost:
+        if eventLogHost and LocalServer.getInstance() is None:
             if ':' in eventLogHost:
                 host, port = eventLogHost.split(':', 1)
                 self.setEventLogHost(host, int(port))
@@ -590,7 +592,17 @@ class AstronInternalRepository(ConnectionRepository):
 
         N.B. This overrides the base class's connect(). You cannot use the
         ConnectionRepository connect() parameters.
+
+        When the game runs its own server (otp.local.LocalServer), the
+        repository is attached to it directly and host is ignored.
         """
+
+        localServer = LocalServer.getInstance()
+        if localServer is not None:
+            self.notify.info('Connecting to the local server.')
+            self.connectLocal(localServer.connectInternal(self), isClient=False)
+            self.__connected()
+            return
 
         url = URLSpec()
         url.setServer(host)
@@ -668,7 +680,12 @@ class AstronInternalRepository(ConnectionRepository):
         should be used whenever such an interesting in-game event occurs.
         """
 
-        if self.eventSocket is not None:
+        localServer = LocalServer.getInstance()
+        if localServer is not None and self.isLocal():
+            localServer.writeServerEvent(self.eventLogId, logtype, args, kwargs)
+            return
+
+        if self.eventSocket is None:
             return # No event logger configured!
 
         log = collections.OrderedDict()
