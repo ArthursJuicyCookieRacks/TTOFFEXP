@@ -405,9 +405,19 @@ def scenarioMaxToon():
     yield until(lambda: ToontownGlobals.SellbotHQ in localAvatar.getTeleportAccess(), 30, 'teleport access')
     # A lone toon can go sad in the long facilities; the runs test the game's
     # flow, not its balance.
-    magicWord('~immortal')
-    magicWord('~unlimitedGags')
+    onDistrict(hardy, localAvatar.doId)
     yield sleep(1)
+
+
+def hardy(air, avId):
+    # Immortal, with every gag and full laff (set, not toggled, so a second
+    # call changes nothing).
+    av = air.doId2do[avId]
+    av.setImmortalMode(True)
+    av.setUnlimitedGags(True)
+    av.doRestock(0)
+    av.toonUp(ToontownGlobals.MaxHpLimit)
+    return (av.hp, av.maxHp, av.immortalMode, av.unlimitedGags)
 
 
 PLAYGROUNDS = [
@@ -485,6 +495,45 @@ def battleToons(air, avId):
         if avId in battle.toons:
             return len(battle.toons)
     return 0
+
+
+def scenarioNeedHelp():
+    # Setup: Solo. A street battle shows the Need Help! button; pressed (by
+    # needHelpWatcher), NPC toons fill the battle.
+    from toontown.npcplayers import NPCSettings
+    shots = os.environ.get('AUTOPLAY_SHOTS', '/tmp')
+    NPCSettings.setHelpMode(NPCSettings.HELP_SOLO)
+    street = ToontownGlobals.SillyStreet
+    yield from teleport(street - street % 1000, firstVisgroup(street))
+    magicWord('~spawn mh 12')
+    yield until(suitsNearby, 120, 'a cog on the street')
+    for attempt in range(5):
+        suit = min(suitsNearby(), key=lambda s: (s.getPos(render) - localAvatar.getPos(render)).length())
+        while placeState() == 'walk' and not suit.isEmpty():
+            localAvatar.setPos(render, suit.getPos(render))
+            yield sleep(0.1)
+        if placeState() != 'walk':
+            break
+        yield until(suitsNearby, 120, 'another cog on the street')
+    yield until(lambda: placeState() == 'battle', 60, 'battle to start')
+    yield until(lambda: townBattle() and not townBattle().helpButton.isHidden(), 30, 'the Need Help! button')
+    yield sleep(1)
+    base.screenshot(os.path.join(shots, 'needhelp-button.png'), defaultFilename=0)
+    if not os.environ.get('AUTOPLAY_NEED_HELP'):
+        townBattle().helpButton['command']()
+    yield until(lambda: onDistrict(battleToons, localAvatar.doId) >= 4, 90, 'the battle to fill after Need Help!')
+    yield sleep(2)
+    base.screenshot(os.path.join(shots, 'needhelp-street.png'), defaultFilename=0)
+    if not townBattle().helpButton.isHidden():
+        raise StepFailed('the Need Help! button stayed after being pressed')
+    while placeState() == 'battle':
+        if townBattleState() == 'Attack':
+            track, level = pickGag()
+            messenger.send(townBattle().battleEvent, [{'mode': 'Attack', 'track': track, 'level': level, 'target': 0}])
+            yield until(lambda: townBattleState() != 'Attack', 30, 'gag choice to register')
+        else:
+            yield sleep(0.2)
+    yield until(walking, 120, 'walking after the battle')
 
 
 def scenarioHelpMode():
@@ -1018,6 +1067,283 @@ def scenarioOffice():
     yield from boardElevator('DistributedLawOfficeElevatorExt',
                              lambda do: getattr(do, 'intZoneId', None) == ToontownGlobals.LawbotStageIntA)
     yield from clearRooms('StageInterior', 'DistributedStage')
+
+
+def shotFrom(name, pos, lookAt):
+    # A screenshot from a free camera spot; the toon's camera comes back.
+    oldParent = camera.getParent()
+    oldPos = camera.getPos()
+    oldHpr = camera.getHpr()
+    camera.wrtReparentTo(render)
+    camera.setPos(render, pos)
+    camera.lookAt(render, lookAt)
+    base.graphicsEngine.renderFrame()
+    base.graphicsEngine.renderFrame()
+    base.screenshot(os.path.join(os.environ.get('AUTOPLAY_SHOTS', '/tmp'), name), defaultFilename=0)
+    camera.reparentTo(oldParent)
+    camera.setPos(oldPos)
+    camera.setHpr(oldHpr)
+
+
+def fightRoomCogs(interior, room, deadline):
+    # Beats every cog in a facility room (the inner loop of clearRooms).
+    target = targetSince = None
+    while placeName() == interior:
+        if time.time() > deadline:
+            raise StepFailed('still inside the %s' % interior)
+        if placeState() == 'battle':
+            yield from fightBattle()
+            continue
+        suits = [do for do in list(base.cr.doId2do.values())
+                 if getattr(do, 'levelDoId', None) == room.doId and hasattr(do, 'boss') and not do.isEmpty()]
+        if not suits:
+            break
+        if walking():
+            localAvatar.setPos(render, suits[0].getPos(render))
+            if suits[0].doId != target:
+                target, targetSince = suits[0].doId, time.time()
+            elif time.time() - targetSince > 5:
+                suits[0].handleBattleBlockerCollision()
+                targetSince = time.time()
+        yield sleep(0.2)
+
+
+def scenarioNPCClubPuzzles():
+    # The Front Three with an NPC party: the NPCs whack the moles, run the
+    # hedge maze and clear Bust-A-Cog boards (see NPCFacilities); the player
+    # only stands about (and plays the green, which needs a player's screen).
+    shots = os.environ.get('AUTOPLAY_SHOTS', '/tmp')
+    yield from teleport(ToontownGlobals.BossbotHQ)
+    yield from boardElevator('DistributedCogKart',
+                             lambda do: getattr(do, 'countryClubId', None) == ToontownGlobals.BossbotCountryClubIntA)
+    interior = 'CountryClubInterior'
+    yield until(lambda: placeName() == interior, 180, 'inside the club')
+    yield until(lambda: findObject('DistributedCountryClub', lambda do: do.rooms), 180, 'the rooms')
+    club = findObject('DistributedCountryClub', lambda do: do.rooms)
+    onDistrict(lambda air, avId: air.doId2do[avId].doRestock(0), localAvatar.doId)
+    deadline = time.time() + 1500
+    partyIds = lambda: onDistrict(lambda air, avId: [npc.doId for npc in air.npcPlayerManager.party.partyOf(air.doId2do[avId])], localAvatar.doId)
+    log('party: %s' % partyIds())
+    if not partyIds():
+        raise StepFailed('no NPC party came along')
+    results = {}
+    for index, room in enumerate(list(club.rooms)):
+        yield until(walking, 120, 'walking before room %d' % index)
+        log('room %d: %s; toon %s, client laff %s' % (index, room.__class__.__name__, onDistrict(hardy, localAvatar.doId), localAvatar.hp))
+        club.warpToRoom(room.roomId)
+        yield sleep(3)
+        yield from fightRoomCogs(interior, room, deadline)
+        yield until(walking, 120, 'walking after the cogs of room %d' % index)
+        log('after the cogs: toon %s, client laff %s' % (onDistrict(hardy, localAvatar.doId), localAvatar.hp))
+        inRoom = lambda do: getattr(do, 'levelDoId', None) == room.doId
+        moles = findObject('DistributedMoleField', inRoom)
+        if moles:
+            log('mole field: standing on it')
+            localAvatar.setPos(render, moles.centerNode.getPos(render) + Point3(moles.spacingX * 0.5, moles.spacingY * 0.5, 0))
+            started = time.time()
+            shot = 0
+            whacks = lambda: onDistrict(lambda air, doId: (air.doId2do[doId].numMolesWhacked, air.doId2do[doId].moleTarget,
+                                                            air.npcPlayerManager.facilities.stats), moles.doId)
+            def npcState(air, avId):
+                player = air.doId2do[avId]
+                fac = air.npcPlayerManager.facilities
+                return ([(npc.doId, type(getattr(npc, 'job', None)).__name__, npc.zoneId, npc.busy, npc.crew is not None, npc.walk is not None)
+                         for npc in air.npcPlayerManager.party.partyOf(player)],
+                        [(type(e).__name__, list(e.level.presentAvIds)) for e in fac.entitiesFor(player)], player.zoneId, fac.stats)
+            nextDebug = 0
+            onDistrict(lambda air, avId: setattr(air.npcPlayerManager.facilities, 'debug', True), localAvatar.doId)
+            yield sleep(6)
+            # Out of the moles' way once the clock runs (a bomb or two would
+            # end the test toon), but still on the green.
+            localAvatar.setPos(render, moles.centerNode.getPos(render) + Point3(moles.dimensionX * 0.5 + 7, moles.spacingY * 0.5, 0))
+            while index in club.blockedRooms:
+                if time.time() > nextDebug:
+                    nextDebug = time.time() + 8
+                    log('mole field state: %s' % (onDistrict(npcState, localAvatar.doId),))
+                if time.time() - started > 400:
+                    raise StepFailed('the mole field was not beaten by the NPCs; %s' % (whacks(),))
+                if int(time.time() - started) % 4 == 0 and shot < 14:
+                    shot += 1
+                    npcs = [base.cr.doId2do.get(i) for i in partyIds()]
+                    npcs = [n for n in npcs if n is not None and not n.isEmpty()]
+                    moving = [n for n in npcs if n.smoother.getSmoothForwardVelocity() > 0.1] or npcs
+                    if shot % 3 == 0 or not moving:
+                        shotFrom('moles-%d.png' % shot, moles.centerNode.getPos(render) + Point3(0, -34, 22), moles.centerNode.getPos(render))
+                    else:
+                        npc = moving[shot % len(moving)]
+                        shotFrom('moles-%d.png' % shot, npc.getPos(render) + Point3(-6, -9, 6), npc.getPos(render) + Point3(0, 0, 1.5))
+                    yield sleep(1)
+                yield sleep(0.5)
+            results['moles'] = whacks()
+            log('mole field beaten: %s' % (results['moles'],))
+        maze = findObject('DistributedMaze', inRoom)
+        if maze:
+            geom = maze.roomHold.getGeom()
+            entrance = geom.find('**/ENTRANCE').getPos(render)
+            finish = geom.find('**/finish').getPos(render)
+            log('maze: walking in at %s' % entrance)
+            localAvatar.setPos(render, entrance)
+            yield sleep(0.5)
+            localAvatar.setPos(render, entrance + Point3(2, 0, 0))
+            yield until(lambda: maze.gameStarted, 30, 'the maze clock to start')
+            started = time.time()
+            shot = 0
+            finished = lambda: onDistrict(lambda air, doId: list(air.doId2do[doId].finishedList), maze.doId)
+            center = (entrance + finish) * 0.5
+            while not set(partyIds()) <= set(finished()) and not maze.timedOut:
+                if time.time() - started > 150:
+                    log('maze not finished by every NPC: %s of %s' % (finished(), partyIds()))
+                    break
+                if shot < 12 and int(time.time() - started) % 8 == 0:
+                    shot += 1
+                    shotFrom('maze-top-%d.png' % shot, center + Point3(0, 0, 150), center + Point3(0, 0.01, 0))
+                    npcs = [base.cr.doId2do.get(i) for i in partyIds()]
+                    npcs = [n for n in npcs if n is not None and not n.isEmpty()]
+                    if npcs:
+                        npc = npcs[shot % len(npcs)]
+                        shotFrom('maze-npc-%d.png' % shot, npc.getPos(render) + Point3(0, -8, 9), npc.getPos(render) + Point3(0, 0, 2))
+                    yield sleep(1)
+                yield sleep(0.5)
+            results['maze'] = (finished(), partyIds(), round(time.time() - started))
+            log('maze: finished %s' % (results['maze'],))
+            localAvatar.setPos(render, finish)
+            yield until(lambda: maze.finished or maze.timedOut, 30, 'the player to finish the maze')
+            yield until(walking, 120, 'walking after the maze')
+        golf = findObject('DistributedGolfGreenGame', inRoom)
+        if golf:
+            boards = lambda: onDistrict(lambda air, doId: [(b[3], b[0] == 'closed') for b in air.doId2do[doId].boardList], golf.doId)
+            taskMgr.doMethodLater(20, lambda t: (shotFrom('green-1.png', golf.getPos(render) + Point3(0, 24, 10), golf.getPos(render) + Point3(0, 8, 2)), None)[1], 'greenShot')
+            yield from playGolfGreen(golf)
+            results['green'] = boards()
+            log('green boards (closer, closed): %s' % (results['green'],))
+            yield until(walking, 60, 'walking after the golf green')
+            break
+    log('club puzzle results: %s' % results)
+    if 'moles' not in results or 'maze' not in results or 'green' not in results:
+        raise StepFailed('not every puzzle was met: %s' % sorted(results))
+    npcIds = set(partyIds())
+    if not npcIds & set(results['maze'][0]):
+        raise StepFailed('no NPC finished the maze')
+    if not [closer for closer, closed in results['green'] if closer in npcIds]:
+        raise StepFailed('no NPC cleared a board on the green')
+
+
+def scenarioNPCMintRide():
+    # The mint's paint mixer room with an NPC party: the player (moved by
+    # hand) jumps onto a mixer, rides it, jumps to the next and down again;
+    # the NPCs follow the footsteps: jumping, waiting for the platform and
+    # riding it (see NPCFacilities.trailWalk / ride).
+    shots = os.environ.get('AUTOPLAY_SHOTS', '/tmp')
+    yield from teleport(ToontownGlobals.CashbotHQ)
+    yield from boardElevator('DistributedMintElevatorExt',
+                             lambda do: getattr(do, 'mintId', None) == ToontownGlobals.CashbotMintIntA)
+    yield until(lambda: placeName() == 'MintInterior', 180, 'inside the mint')
+    yield until(lambda: findObject('DistributedMint', lambda do: do.rooms), 180, 'the rooms')
+    mint = findObject('DistributedMint', lambda do: do.rooms)
+    partyIds = lambda: onDistrict(lambda air, avId: [npc.doId for npc in air.npcPlayerManager.party.partyOf(air.doId2do[avId])], localAvatar.doId)
+    if not partyIds():
+        raise StepFailed('no NPC party came along')
+    mixerRoom = lambda: next((r for r in mint.rooms if [e for e in getattr(r, 'entities', {}).values() if e.__class__.__name__ == 'PaintMixer']), None)
+    yield until(mixerRoom, 60, 'the paint mixer room to load')
+    room = mixerRoom()
+    yield until(walking, 120, 'walking')
+    mint.warpToRoom(room.roomId)
+    yield sleep(4)
+    mixers = sorted([e for e in room.entities.values() if e.__class__.__name__ == 'PaintMixer'], key=lambda e: e.entId)
+    log('party %s; player at %s' % (partyIds(), localAvatar.getPos(render)))
+    onDistrict(lambda air, avId: setattr(air.npcPlayerManager.facilities, 'debug', True), localAvatar.doId)
+    npcToons = lambda: [t for t in (base.cr.doId2do.get(i) for i in partyIds()) if t is not None and not t.isEmpty()]
+    shot = [0]
+
+    def snap(tag):
+        shot[0] += 1
+        toons = npcToons()
+        focus = toons[0].getPos(render) if toons else localAvatar.getPos(render)
+        shotFrom('ride-%02d-%s.png' % (shot[0], tag), focus + Point3(-14, -22, 12), focus + Point3(0, 0, 2))
+
+    def top(mixer):
+        bounds = mixer.platform.getTightBounds(render)
+        return Point3((bounds[0][0] + bounds[1][0]) * 0.5, (bounds[0][1] + bounds[1][1]) * 0.5, bounds[1][2] + 0.1)
+
+    def arc(start, end, duration=0.8):
+        steps = int(duration / 0.05)
+        for k in range(1, steps + 1):
+            t = float(k) / steps
+            p = start + (end - start) * t
+            localAvatar.setPos(render, p[0], p[1], p[2] + 3.5 * 4 * t * (1 - t))
+            yield sleep(0.05)
+
+    def ride(mixer, seconds):
+        start = time.time()
+        while time.time() - start < seconds:
+            p = top(mixer)
+            localAvatar.setPos(render, p)
+            yield sleep(0.05)
+
+    heights = {}
+
+    def watch():
+        for t in npcToons():
+            z = t.getPos(render)[2]
+            heights[t.doId] = max(heights.get(t.doId, -99), z)
+
+    # Onto the nearest mixer when it comes by.
+    first = min(mixers, key=lambda m: (top(m) - localAvatar.getPos(render)).length())
+    yield until(lambda: (Point3(top(first)[0], top(first)[1], 0) - Point3(localAvatar.getX(render), localAvatar.getY(render), 0)).length() < 9, 30, 'the mixer to come near')
+    log('jumping onto mixer %s' % first.entId)
+    topZ = top(first)[2]
+    yield from arc(Point3(localAvatar.getPos(render)), top(first))
+    snap('jumped-on')
+    def report(tag):
+        log('%s: player %s; mixers %s; NPCs %s' % (tag, localAvatar.getPos(render), [(m.entId, top(m)) for m in mixers],
+                                                   [(t.doId, t.getPos(render)) for t in npcToons()]))
+
+    for i in range(80):
+        p = top(first)
+        localAvatar.setPos(render, p)
+        watch()
+        if i in (30, 60):
+            snap('riding')
+        if i % 20 == 0:
+            report('riding %d' % i)
+        yield sleep(0.1)
+    # Across to the next mixer when the two are close.
+    others = [m for m in mixers if m is not first]
+    nearest = lambda: min(others, key=lambda m: (top(m) - top(first)).length())
+    started = time.time()
+    while (top(nearest()) - top(first)).length() > 15 and time.time() - started < 40:
+        localAvatar.setPos(render, top(first))
+        watch()
+        yield sleep(0.1)
+    report('before the second jump')
+    second = nearest()
+    log('jumping across to mixer %s' % second.entId)
+    yield from arc(top(first), top(second))
+    snap('jumped-across')
+    for i in range(80):
+        p = top(second)
+        localAvatar.setPos(render, p)
+        watch()
+        if i in (30, 60):
+            snap('riding-2')
+        yield sleep(0.1)
+    # Down to the floor beside it, and a wait for the stragglers.
+    p = top(second)
+    floor = Point3(p[0] + 6, p[1] + 6, 3.0)
+    log('jumping down')
+    yield from arc(p, floor, 1.0)
+    for i in range(160):
+        watch()
+        if i in (20, 60, 110):
+            snap('down')
+        if i % 40 == 0:
+            report('down %d' % i)
+        yield sleep(0.1)
+    stats = onDistrict(lambda air, avId: dict(air.npcPlayerManager.facilities.stats), localAvatar.doId)
+    log('NPC heights reached: %s; facilities stats %s' % (heights, stats))
+    rode = [doId for doId, z in heights.items() if z > topZ - 1.0]
+    if not rode:
+        raise StepFailed('no NPC got up onto a mixer')
 
 
 def scenarioCountryClub():
@@ -3622,6 +3948,9 @@ SCENARIOS = [
     ('displaysettings', scenarioDisplaySettings),
     ('npcstairs', scenarioNPCStairs),
     ('npcs', scenarioNPCs),
+    ('npcmintride', scenarioNPCMintRide),
+    ('npcclubpuzzles', scenarioNPCClubPuzzles),
+    ('needhelp', scenarioNeedHelp),
     ('npcstreets', scenarioNPCStreets),
     ('npcfriends', scenarioNPCFriends),
     ('npcbuilding', withNPCs(scenarioBuilding, ['DistributedBattleBldgAI'])),
@@ -3696,6 +4025,40 @@ SCENARIOS = [
 # --- Runner ---
 
 HITCH_MS = float(os.environ.get('AUTOPLAY_HITCH_MS', 0))
+
+
+def needHelpWatcher(task):
+    """With AUTOPLAY_NEED_HELP set, presses the battle's Need Help! button
+    whenever it shows (and AUTOPLAY_HELP_MODE picks the Setup first)."""
+    try:
+        tb = townBattle()
+        button = getattr(tb, 'helpButton', None) if tb else None
+        if button is not None and not button.isHidden():
+            log('pressing Need Help!')
+            base.screenshot(os.path.join(os.environ.get('AUTOPLAY_SHOTS', '/tmp'), 'needhelp-%s-%d.png' % (placeName(), int(time.time()))), defaultFilename=0)
+            button['command']()
+            needHelpWatcher.pressed = getattr(needHelpWatcher, 'pressed', 0) + 1
+            name = os.path.join(os.environ.get('AUTOPLAY_SHOTS', '/tmp'), 'needhelp-after-%s-%d.png' % (placeName(), int(time.time())))
+            taskMgr.doMethodLater(6, lambda t: (base.screenshot(name, defaultFilename=0), None)[1], 'autoplayNeedHelpShot')
+        elif tb is not None and placeState() == 'battle' and os.environ.get('AUTOPLAY_NEED_HELP_DEBUG'):
+            def why(air, avId):
+                from toontown.npcplayers import NPCSettings
+                player = air.doId2do.get(avId)
+                battle, key = air.npcPlayerManager.helpKey(player)
+                return (player.getBattleId(), battle.__class__.__name__, key, NPCSettings.helpMode(),
+                        key and NPCSettings.canAskHelp(avId, key), battle and len(battle.toons), tb.fsm.getCurrentState().getName(),
+                        taskMgr.hasTaskNamed(tb.helpTaskName))
+            log('need help hidden: %s' % (onDistrict(why, localAvatar.doId),))
+    except Exception:
+        log('need help watcher: ' + traceback.format_exc())
+    return task.again
+
+
+if os.environ.get('AUTOPLAY_HELP_MODE'):
+    from toontown.npcplayers import NPCSettings as _NPCSettings
+    _NPCSettings.setHelpMode(os.environ['AUTOPLAY_HELP_MODE'])
+if os.environ.get('AUTOPLAY_NEED_HELP'):
+    taskMgr.doMethodLater(0.5, needHelpWatcher, 'autoplayNeedHelp')
 
 
 def watchGc():

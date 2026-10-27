@@ -346,6 +346,9 @@ class NPCParty:
                 continue
             if npc.busy:
                 continue
+            if self.manager.facilities.holds(npc):
+                # Busy with a puzzle of the place (see NPCFacilities).
+                continue
             if self.inBossFight(npc):
                 # In a boss fight each toon does its own job (see
                 # NPCBossCrew), rather than tagging along.
@@ -367,6 +370,10 @@ class NPCParty:
             path = getNav().walkable(npc.getPos(), target) if distance < CATCH_UP_DISTANCE else None
             if path:
                 npc.walk = [path, RUN_SPEED, None, None]
+            elif self.manager.facilities.trailWalk(npc, player, playerPos):
+                # No straight way there (a gap, a platform): it goes the way
+                # the player went, jumps and all.
+                pass
             else:
                 npc.placeAt(target[0], target[1], target[2], npc.getH())
 

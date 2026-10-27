@@ -82,6 +82,29 @@ class NPCNav:
             return None
         return best
 
+    def groundHit(self, x, y, z):
+        """Like groundZ, but also the node the ground belongs to (a moving
+        platform carries whoever stands on it), or (None, None)."""
+        scene = self.getScene()
+        if scene is None:
+            return z, None
+        self.ray.setOrigin(x, y, z + STEP_UP)
+        self.ray.setDirection(0, 0, -1)
+        self.traverser.clearColliders()
+        self.traverser.addCollider(self.rayPath, self.queue)
+        self.traverse(scene)
+        best = None
+        into = None
+        for i in range(self.queue.getNumEntries()):
+            entry = self.queue.getEntry(i)
+            hitZ = entry.getSurfacePoint(scene).getZ()
+            if hitZ <= z + STEP_UP and (best is None or hitZ > best):
+                best = hitZ
+                into = entry.getIntoNodePath()
+        if best is None or best < z - MAX_DROP:
+            return None, None
+        return best, into
+
     def covered(self, x, y, z):
         """Whether there is floor overhead at (x, y), as under a staircase."""
         scene = self.getScene()
@@ -117,8 +140,12 @@ class NPCNav:
         self.traverser.addCollider(self.segmentPath, self.queue)
         self.traverse(scene)
         for i in range(self.queue.getNumEntries()):
-            into = self.queue.getEntry(i).getIntoNodePath()
-            # Other toons and the cogs walk about; only the scenery counts.
+            entry = self.queue.getEntry(i)
+            into = entry.getIntoNodePath()
+            # Other toons and the cogs walk about, and trigger spheres stop
+            # nobody; only the scenery counts.
+            if not entry.getInto().isTangible():
+                continue
             if into.findNetTag('avatarDoId').isEmpty() and into.findNetPythonTag('avatar').isEmpty():
                 return False
         return True
