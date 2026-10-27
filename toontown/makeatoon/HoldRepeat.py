@@ -1,7 +1,7 @@
 """Holding a Make-A-Toon arrow keeps stepping through the choices.
 
 A press steps once, straight away. Held past HOLD_DELAY the arrow steps again
-every REPEAT_TIME (three choices in a two-second hold, as Arthur asked), until
+every REPEAT_TIME (the first, quicker pace: Arthur found the slower one too slow), until
 it is let go or reaches the end of the list (where the arrow is disabled).
 """
 
@@ -11,8 +11,8 @@ from direct.gui.DirectGuiBase import DirectGuiWidget
 from direct.task import Task
 from panda3d.core import MouseButton
 
-HOLD_DELAY = 0.75
-REPEAT_TIME = 0.75
+HOLD_DELAY = 0.5
+REPEAT_TIME = 0.35
 
 
 def mouseHeld():

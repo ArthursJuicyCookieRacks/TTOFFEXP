@@ -70,6 +70,7 @@ if (__debug__):
 
 class LocalToon(DistributedToon.DistributedToon, LocalAvatar.LocalAvatar):
     neverDisable = 1
+    lazyInventoryGUI = False
     piePowerSpeed = config.ConfigVariableDouble('pie-power-speed', 0.2).getValue()
     piePowerExponent = config.ConfigVariableDouble('pie-power-exponent', 0.75).getValue()
 

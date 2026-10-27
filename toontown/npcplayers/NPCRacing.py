@@ -21,11 +21,13 @@ from direct.task import Task
 from panda3d.core import Point3, Vec3
 
 from otp.local.ExecutionContext import getClientBuiltin
+from toontown.hood import ZoneUtil
 from toontown.npcplayers.NPCMinigames import clientSend, isNPC
 from toontown.racing import RaceGlobals
 from toontown.racing.DistributedRaceAI import DistributedRaceAI
 from toontown.racing.DistributedRacePadAI import DistributedRacePadAI
 from toontown.racing.KartShopGlobals import KartGlobals
+from toontown.toonbase import ToontownGlobals
 
 TICK = 0.1
 TELEPORT_TIME = 2.6
@@ -338,7 +340,21 @@ class NPCRacing:
             traceback.print_exc()
         return Task.again
 
+    def anyoneRacing(self):
+        """Whether a player is at Goofy Speedway or in a race (its own zone)."""
+        if self.drivers:
+            return True
+        for player in getattr(self.manager, 'lastPlayers', None) or self.manager.getPlayers():
+            zoneId = player.zoneId or 0
+            if zoneId >= ToontownGlobals.DynamicZonesBegin or ZoneUtil.getHoodId(zoneId) == ToontownGlobals.GoofySpeedway:
+                return True
+        return False
+
     def update(self):
+        # Looking through every object in the game ten times a second is
+        # only worth it where there is racing to do.
+        if not self.anyoneRacing():
+            return
         now = globalClock.getFrameTime()
         pads, races = [], []
         for obj in list(self.air.doId2do.values()):

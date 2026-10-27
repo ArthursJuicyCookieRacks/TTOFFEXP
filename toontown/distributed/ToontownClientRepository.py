@@ -491,9 +491,13 @@ class ToontownClientRepository(OTPClientRepository.OTPClientRepository):
         self._userLoggingOut = False
         if not self.streetSign:
             self.streetSign = StreetSign.StreetSign()
+        from toontown.npcplayers import NPCHelpPrompt
+        NPCHelpPrompt.start()
         return
 
     def exitPlayingGame(self):
+        from toontown.npcplayers import NPCHelpPrompt
+        NPCHelpPrompt.stop()
         ivalMgr.interrupt()
         if self.objectManager != None:
             self.objectManager.destroy()

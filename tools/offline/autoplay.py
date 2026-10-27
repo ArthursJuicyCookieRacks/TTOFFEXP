@@ -214,8 +214,8 @@ listener.accept('localServerReady', lambda: ready.append(1))
 
 
 def checkHoldRepeat(mat):
-    # Holding a colour arrow for two seconds steps through three colours (Arthur),
-    # at a pace that can still be followed.
+    # Holding a colour arrow keeps stepping: one at once, then after half a
+    # second one every 0.35 s (about five in a two-second hold).
     from direct.gui import DirectGuiGlobals as DGG
     from toontown.makeatoon import HoldRepeat
     button = mat.cos.allRButton
@@ -230,7 +230,12 @@ def checkHoldRepeat(mat):
     steps = (mat.cos.headChoice - before) % length
     log('holding the colour arrow for 2 s stepped %d colours' % steps)
     base.screenshot(os.path.join(os.environ.get('AUTOPLAY_SHOTS', '/tmp'), 'mat-hold.png'), defaultFilename=0)
-    if steps != 3:
+    # The Setup screen opens from the bottom left button.
+    mat.guiSetupButton['command']()
+    yield sleep(0.5)
+    base.screenshot(os.path.join(os.environ.get('AUTOPLAY_SHOTS', '/tmp'), 'mat-setup.png'), defaultFilename=0)
+    mat.setupPanel.close()
+    if not 4 <= steps <= 6:
         raise StepFailed('holding the arrow stepped %d colours' % steps)
 
 
@@ -419,6 +424,124 @@ def scenarioPlaygrounds():
         yield sleep(2)
 
 
+def scenarioClassicChars():
+    # Every playground has its classic character walking about, who greets
+    # a toon that walks up and says goodbye when it leaves.
+    from toontown.classicchars.DistributedCCharBase import DistributedCCharBase
+    shots = os.environ.get('AUTOPLAY_SHOTS', '/tmp')
+    hoods = [int(h) for h in os.environ['AUTOPLAY_CCHAR_HOODS'].split(',')] if os.environ.get('AUTOPLAY_CCHAR_HOODS') else PLAYGROUNDS[:8]
+    for hoodId in hoods:
+        yield from teleport(hoodId)
+        chars = lambda: [do for do in base.cr.doId2do.values() if isinstance(do, DistributedCCharBase)]
+        yield until(chars, 30, 'classic character in %d' % hoodId)
+        char = chars()[0]
+        names = sorted(c.getName() for c in chars())
+        said = []
+        orig = char.setChat
+        char.setChat = lambda category, msg, avId: (said.append((category, msg)), orig(category, msg, avId))
+        start = Point3(char.getPos())
+        toon = base.localAvatar
+        toon.setPos(char, 1, 5, 0)
+        toon.headsUp(char)
+        # the greeting comes when the toon enters the character's blather
+        # sphere (Donald on his boat only talks over the holidays, as in the
+        # real game, so he is just looked at)
+        silent = names == ['DonaldDock'] and not onDistrict(lambda air: air.holidayManager.currentHolidays and None)
+        def aiState(air):
+            ai = air.doId2do.get(char.doId)
+            return (ai.fsm.getCurrentState().getName(), list(ai.nearbyAvatars)) if ai else None
+        # Characters only chat between walks (Vampire Mickey's are slow), so
+        # keep the toon at the character's side until it has had its say.
+        for i in range(90):
+            if said or (silent and i >= 3):
+                break
+            yield sleep(2)
+            toon.setPos(char, 1, 5, 0)
+            toon.headsUp(char)
+            if i % 5 == 0:
+                log('char at %s, ai %s' % (char.getPos(render), onDistrict(aiState)))
+        if not silent:
+            yield until(lambda: said, 20, '%s greeting the toon' % names)
+        yield sleep(2.5)
+        base.screenshot(os.path.join(shots, 'cchar-%d.png' % hoodId), defaultFilename=0)
+        moved = (Point3(char.getPos()) - start).length()
+        log('%d: %s said %s, moved %.1f' % (hoodId, names, said, moved))
+        char.setChat = orig
+        yield sleep(0.5)
+
+
+def battleToons(air, avId):
+    # How many toons are in the player's battle (0 outside one).
+    for battle in air.npcPlayerManager.getBattles():
+        if avId in battle.toons:
+            return len(battle.toons)
+    return 0
+
+
+def scenarioHelpMode():
+    # Setup: Turn based asks Solo / Need Help! when a street battle starts;
+    # Solo keeps the NPC toons out, and the Setup screen itself opens from
+    # the Shticker Book.
+    from toontown.npcplayers import NPCSettings, NPCHelpPrompt, NPCSetupPanel
+    from toontown.toonbase.ToontownBattleGlobals import THROW_TRACK
+    shots = os.environ.get('AUTOPLAY_SHOTS', '/tmp')
+    yield until(walking, 60, 'walking before opening the book')
+    place().fsm.request('stickerBook')
+    yield until(lambda: place().isAccepting('bookDone'), 30, 'the Shticker Book open')
+    book = localAvatar.book
+    book.setPage(book.pages[[p.__class__.__name__ for p in book.pages].index('OptionsPage')])
+    yield sleep(1)
+    base.screenshot(os.path.join(shots, 'setup-options.png'), defaultFilename=0)
+    panel = NPCSetupPanel.NPCSetupPanel()
+    panel.pick(NPCSettings.HELP_TURN_BASED)
+    yield sleep(0.5)
+    base.screenshot(os.path.join(shots, 'setup-panel.png'), defaultFilename=0)
+    panel.close()
+    book.doneStatus = {"mode": "close"}
+    messenger.send(book.doneEvent)
+    yield until(walking, 60, 'walking after the book')
+    if NPCSettings.helpMode() != NPCSettings.HELP_TURN_BASED:
+        raise StepFailed('Setup did not keep Turn based')
+
+    street = ToontownGlobals.SillyStreet
+    yield from teleport(street - street % 1000, firstVisgroup(street))
+    for wanted, name in ((False, 'solo'), (True, 'help')):
+        magicWord('~spawn mh 12')
+        yield until(suitsNearby, 120, 'a cog on the street')
+        for attempt in range(5):
+            suit = min(suitsNearby(), key=lambda s: (s.getPos(render) - localAvatar.getPos(render)).length())
+            while placeState() == 'walk' and not suit.isEmpty():
+                localAvatar.setPos(render, suit.getPos(render))
+                yield sleep(0.1)
+            if placeState() != 'walk':
+                break
+            yield until(suitsNearby, 120, 'another cog on the street')
+        yield until(lambda: placeState() == 'battle', 60, 'battle to start')
+        yield until(lambda: NPCHelpPrompt._prompt[0] is not None, 30, 'the Solo / Need Help! question')
+        yield sleep(1)
+        base.screenshot(os.path.join(shots, 'help-prompt-%s.png' % name), defaultFilename=0)
+        NPCHelpPrompt._prompt[0].answer(wanted)
+        if wanted:
+            yield until(lambda: onDistrict(battleToons, localAvatar.doId) >= 4, 90, 'the battle to fill after Need Help!')
+        else:
+            yield sleep(12)
+            if onDistrict(battleToons, localAvatar.doId) != 1:
+                raise StepFailed('an NPC joined a Solo battle')
+        yield sleep(1)
+        base.screenshot(os.path.join(shots, 'help-battle-%s.png' % name), defaultFilename=0)
+        # Win it with the biggest gags and get back on the street.
+        while placeState() == 'battle':
+            if townBattleState() == 'Attack':
+                track, level = pickGag()
+                messenger.send(townBattle().battleEvent, [{'mode': 'Attack', 'track': track, 'level': level, 'target': 0}])
+                yield until(lambda: townBattleState() != 'Attack', 30, 'gag choice to register')
+            else:
+                yield sleep(0.2)
+        yield until(walking, 120, 'walking after the battle')
+        onDistrict(lambda air, avId: air.doId2do[avId].doRestock(0), localAvatar.doId)
+    NPCSettings.setHelpMode(NPCSettings.HELP_NORMAL)
+
+
 def firstVisgroup(streetId):
     # A street's own zone has no scenery; toons stand in its visgroups.
     for path in glob.glob(os.path.join('resources', 'phase_*', 'dna', '*_%d.xml' % streetId)):
@@ -434,6 +557,27 @@ def scenarioStreets():
         yield from teleport(hoodId, firstVisgroup(zoneId))
         yield sleep(2)
     yield from teleport(ToontownGlobals.ToontownCentral)
+
+
+def cogTables(air):
+    # How many street cog planners have their route table, and how many
+    # cogs are out on the streets.
+    from toontown.suit.DistributedSuitPlannerAI import DistributedSuitPlannerAI
+    from toontown.suit.DistributedSuitAI import DistributedSuitAI
+    planners = [do for do in air.doId2do.values() if isinstance(do, DistributedSuitPlannerAI)]
+    ready = len([p for p in planners if p.dnaData.suitGraph.tableReady()])
+    suits = len([do for do in air.doId2do.values() if isinstance(do, DistributedSuitAI)])
+    return len(planners), ready, suits
+
+
+def scenarioCogTables():
+    # The cog route tables are built a little each frame after startup, and
+    # the cogs fly in once they are done: all of them within a minute.
+    yield until(lambda: onDistrict(cogTables)[0] > 0, 60, 'the cog planners')
+    yield until(lambda: onDistrict(cogTables)[1] == onDistrict(cogTables)[0], 90, 'every route table')
+    log('cog tables', onDistrict(cogTables))
+    yield until(lambda: onDistrict(cogTables)[2] > 20, 60, 'cogs on the streets')
+    log('cog tables', onDistrict(cogTables))
 
 
 def suitsNearby():
@@ -920,6 +1064,15 @@ def fightBoss(interior, bossClass, actions, timeout=2400, prelude={}):
             boss.autoplayNextShot = time.time() + shotEvery
             base.screenshot(os.path.join(os.environ.get('AUTOPLAY_SHOTS', '/tmp'), 'boss-%s-%s-%d.png' % (
                 bossClass, boss.state, int(time.time()))), defaultFilename=0)
+            if boss.state in ('BattleThree', 'Victory', 'Reward', 'Epilogue'):
+                # A second shot from over the boss's shoulder, where the
+                # NPC toons stunning it (and standing about afterwards) are.
+                node = getattr(boss, 'rotateNode', None) or boss
+                camera.setPos(node, 0, 30, 22)
+                camera.lookAt(node, 0, -20, 3)
+                base.graphicsEngine.renderFrame()
+                base.screenshot(os.path.join(os.environ.get('AUTOPLAY_SHOTS', '/tmp'), 'bossview-%s-%s-%d.png' % (
+                    bossClass, boss.state, int(time.time()))), defaultFilename=0)
         if boss.state != lastState:
             if lastState is not None:
                 log('boss state %s lasted %.0f s; %s' % (lastState, time.time() - stateStart, onDistrict(bossStatus, boss.doId)))
@@ -3255,6 +3408,7 @@ def scenarioExitToontown():
     book = localAvatar.book
     book.doneStatus = {'mode': 'exit', 'exitTo': 'closeShard'}
     base.cr._userLoggingOut = True
+    book.doneStatus = {"mode": "close"}
     messenger.send(book.doneEvent)
     yield until(lambda: loginState() == 'chooseAvatar', 120, 'Pick-A-Toon after Exit Toontown')
     yield sleep(2)
@@ -3484,6 +3638,9 @@ SCENARIOS = [
     ('npctoonup', scenarioNPCToonUp),
     ('npcready', scenarioNPCReady),
     ('playgrounds', scenarioPlaygrounds),
+    ('classicchars', scenarioClassicChars),
+    ('helpmode', scenarioHelpMode),
+    ('cogtables', scenarioCogTables),
     ('streets', scenarioStreets),
     ('battle', scenarioBattle),
     ('building', scenarioBuilding),

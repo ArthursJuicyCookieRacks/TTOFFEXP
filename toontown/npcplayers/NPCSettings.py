@@ -60,3 +60,75 @@ def setTrolleyGame(avId, gameId):
 def takeTrolleyGame(avId):
     """The game the player picked, once: the next ride is random again."""
     return _trolleyGame.pop(avId, None)
+
+
+# --- How the NPC toons help the player (the Setup screen) ---
+
+# normal: NPC toons join the player's battles and elevators as they please.
+# turnbased: at each thing other toons could join (a street battle, an
+#   elevator into a building, field office, factory, mint, office, golf
+#   course or boss fight) the player is asked: Solo or Need Help!
+# solo: no NPC toon ever helps.
+HELP_MODES = ('normal', 'turnbased', 'solo')
+HELP_NORMAL, HELP_TURN_BASED, HELP_SOLO = HELP_MODES
+
+_helpMode = [None]
+
+
+def helpMode():
+    if _helpMode[0] is None:
+        mode = Settings().getString('game', 'npc-help', HELP_NORMAL)
+        _helpMode[0] = mode if mode in HELP_MODES else HELP_NORMAL
+    return _helpMode[0]
+
+
+def setHelpMode(mode, settings=None):
+    if mode not in HELP_MODES:
+        return
+    _helpMode[0] = mode
+    (settings or Settings()).updateSetting('game', 'npc-help', mode)
+    # A fresh choice forgets the answers given under the old one.
+    _helpAnswers.clear()
+    del _helpQuestions[:]
+
+
+# Turn based: the player's answers, by (avId, the battle's or elevator's
+# doId), and the questions waiting for the player's game to show them.
+_helpAnswers = {}
+_helpQuestions = []
+
+
+def wantsHelp(avId, key):
+    """Whether NPC toons may help avId with the thing key names: True, False,
+    or None while the player has yet to be asked or to answer (turn based)."""
+    mode = helpMode()
+    if mode == HELP_NORMAL:
+        return True
+    if mode == HELP_SOLO:
+        return False
+    answer = _helpAnswers.get((avId, key))
+    if answer is None and (avId, key) not in _helpQuestions:
+        _helpQuestions.append((avId, key))
+    return answer
+
+
+def takeHelpQuestion(avId):
+    """The key of a thing the player's game should ask about, if any."""
+    for item in _helpQuestions:
+        if item[0] == avId:
+            return item[1]
+    return None
+
+
+def setHelpAnswer(avId, key, wantHelp):
+    _helpAnswers[(avId, key)] = bool(wantHelp)
+    if (avId, key) in _helpQuestions:
+        _helpQuestions.remove((avId, key))
+
+
+def forgetHelpAnswer(key):
+    """The thing is over (the player got off the elevator): asked afresh next time."""
+    for item in [k for k in _helpAnswers if k[1] == key]:
+        del _helpAnswers[item]
+    for item in [q for q in _helpQuestions if q[1] == key]:
+        _helpQuestions.remove(item)

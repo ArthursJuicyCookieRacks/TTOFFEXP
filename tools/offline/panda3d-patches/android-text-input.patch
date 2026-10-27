@@ -1,5 +1,5 @@
 diff --git a/panda/src/android/PythonActivity.java b/panda/src/android/PythonActivity.java
-index 7f625a1..daa4d75 100644
+index 7f625a1..df47dd1 100644
 --- a/panda/src/android/PythonActivity.java
 +++ b/panda/src/android/PythonActivity.java
 @@ -15,7 +15,17 @@ package org.panda3d.android;
@@ -20,7 +20,7 @@ index 7f625a1..daa4d75 100644
  import android.database.Cursor;
  import android.net.Uri;
  import android.provider.OpenableColumns;
-@@ -114,6 +124,118 @@ public class PythonActivity extends PandaActivity {
+@@ -114,6 +124,128 @@ public class PythonActivity extends PandaActivity {
          }
      }
  
@@ -95,23 +95,34 @@ index 7f625a1..daa4d75 100644
 +            typedText = "E:" + text;
 +            hiddenEdit.setText(text);
 +            hiddenEdit.setSelection(hiddenEdit.getText().length());
++            hiddenEdit.setFocusable(true);
 +            hiddenEdit.setFocusableInTouchMode(true);
-+            hiddenEdit.requestFocus();
-+            // The game's surface can take the focus back a moment later, so
-+            // the keyboard is asked for once things have settled too.
-+            showKeyboard();
-+            hiddenEdit.postDelayed(() -> {
++            // A field made just now is not in the window yet: the keyboard
++            // asked for at once would come up bound to the game's surface,
++            // which takes no typing, and nothing typed would arrive until
++            // the field was asked for again. So the field gets the focus
++            // once it is attached, the keyboard is bound to it in so many
++            // words, and both are asked for again once things have
++            // settled, since the game's surface can take the focus back.
++            Runnable takeFocus = () -> {
 +                if (hiddenEdit != null && typedText.startsWith("E:")) {
 +                    hiddenEdit.requestFocus();
 +                    showKeyboard();
 +                }
-+            }, 200);
++            };
++            hiddenEdit.post(takeFocus);
++            hiddenEdit.postDelayed(takeFocus, 250);
++            hiddenEdit.postDelayed(takeFocus, 700);
 +        });
 +    }
 +
 +    private void showKeyboard() {
 +        InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
-+        if (imm != null) {
++        if (imm != null && hiddenEdit != null) {
++            if (!hiddenEdit.isFocused()) {
++                hiddenEdit.requestFocus();
++            }
++            imm.restartInput(hiddenEdit);
 +            imm.showSoftInput(hiddenEdit, InputMethodManager.SHOW_FORCED);
 +        }
 +    }
@@ -121,15 +132,14 @@ index 7f625a1..daa4d75 100644
 +        if (imm != null) {
 +            imm.hideSoftInputFromWindow(hiddenEdit.getWindowToken(), 0);
 +        }
-+        // The text field goes away altogether. Left in place it keeps the
-+        // focus (Android gives it straight back to the only field there
-+        // is), and while it has it a controller's buttons go to the
-+        // keyboard instead of the game, until the screen is touched.
-+        ViewGroup parent = (ViewGroup) hiddenEdit.getParent();
-+        if (parent != null) {
-+            parent.removeView(hiddenEdit);
-+        }
-+        hiddenEdit = null;
++        // The field stays in the window, ready for the next time, but can
++        // hold no focus until then: left focusable it would keep it (Android
++        // gives the focus straight back to the only field there is), and a
++        // controller's buttons would go to the keyboard instead of the game
++        // until the screen was touched.
++        hiddenEdit.clearFocus();
++        hiddenEdit.setFocusable(false);
++        hiddenEdit.setFocusableInTouchMode(false);
 +    }
 +
 +    public String getTypedText() {

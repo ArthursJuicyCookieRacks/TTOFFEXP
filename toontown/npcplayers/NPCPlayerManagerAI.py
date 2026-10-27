@@ -21,7 +21,7 @@ from toontown.classicchars import CCharPaths
 from toontown.dna import DNAStoreSuitPoint
 from toontown.hood import ZoneUtil
 from toontown.npcplayers import NPCProfiles
-from toontown.npcplayers.NPCSettings import preloadNPCs, keepAreas, npcsPerArea
+from toontown.npcplayers.NPCSettings import preloadNPCs, keepAreas, npcsPerArea, helpMode, wantsHelp, setHelpAnswer, HELP_SOLO
 from toontown.npcplayers.NPCBattleCrew import NPCBattleCrew, isNPC
 from toontown.npcplayers.NPCNav import getNav
 from toontown.npcplayers.NPCGolf import NPCGolf
@@ -111,12 +111,15 @@ PLAYGROUND_CHARS = {
     ToontownGlobals.OutdoorZone: (TTLocalizer.Chip, 0),
 }
 STREET_BATTLES = ('DistributedBattleAI',)
-# On a street most toons keep to the sidewalks, out of the cogs' way; this
-# share of a street's toons walks in the road, where the cogs walk.
-ROAD_SHARE = 0.35
-# And never more than this many in the road at once, however many toons
-# the place has; the rest keep to the sidewalks.
-MAX_IN_ROAD = 8
+# A spawn spot is level ground: a step this far in any direction rises or
+# drops less than this.
+STAIR_STEP = 2.0
+STAIR_RISE = 0.35
+# On a street the toons run about the road, where the cogs walk, the way
+# they do in a playground (Arthur): up to MAX_IN_ROAD of them; any more
+# keep to the sidewalks.
+ROAD_SHARE = 1.0
+MAX_IN_ROAD = 15
 # How much higher than the road the sidewalk is, at least.
 CURB = 0.3
 # How far from a cog's path to look for the sidewalk, and how far onto it a
@@ -313,7 +316,8 @@ class NPCPlayerManagerAI:
 
     def __update(self):
         now = globalClock.getFrameTime()
-        for player in self.getPlayers():
+        self.lastPlayers = self.getPlayers()
+        for player in self.lastPlayers:
             areaId = getAreaId(player.zoneId)
             if areaId is None:
                 # Inside a shop or other building: the toons outside stay
@@ -569,7 +573,7 @@ class NPCPlayerManagerAI:
         random.shuffle(points)
         for point, zoneId in sorted(points[:12], key=lambda p: self.crowding(area, p[0])):
             ground = nav.standZ(point[0], point[1], point[2])
-            if ground is not None:
+            if ground is not None and self.levelGround(point[0], point[1], ground):
                 return Point3(point[0], point[1], ground), zoneId
         # Somewhere near the player, in sight of them.
         for i in range(6):
@@ -580,6 +584,16 @@ class NPCPlayerManagerAI:
             if path:
                 return path[-1], playerZone
         return None
+
+    def levelGround(self, x, y, z):
+        # Not on a staircase or a slope (Toontown Central's steps had toons
+        # starting on them): the ground a step away is at the same height.
+        nav = getNav()
+        for dx, dy in ((STAIR_STEP, 0), (-STAIR_STEP, 0), (0, STAIR_STEP), (0, -STAIR_STEP)):
+            ground = nav.groundZ(x + dx, y + dy, z)
+            if ground is None or abs(ground - z) > STAIR_RISE:
+                return False
+        return True
 
     def spawn(self, area, pos, zoneId, player=None, inRoad=True):
         npc = NPCPlayerAI(self.air, self)
@@ -877,6 +891,10 @@ class NPCPlayerManagerAI:
             if len(battle.toons) >= (4 if players else NPC_BATTLE_SIZE):
                 # A battle of NPCs alone keeps a place for the player.
                 continue
+            if players and (helpMode() == HELP_SOLO or wantsHelp(players[0], battle.doId) is not True):
+                # Setup: Solo, or Turn based without a Need Help! yet. A
+                # passing toon walks round the player's battle.
+                continue
             center = Point3(battle.pos[0], battle.pos[1], 0)
             if (center - flat).length() < JOIN_RANGE:
                 npc.walk = None
@@ -946,6 +964,9 @@ class NPCPlayerManagerAI:
             if not players or len(battle.toons) >= 4 or not battle.toonCanJoin():
                 continue
             crew = self.crewFor(battle)
+            if helpMode() == HELP_SOLO:
+                # Setup: Solo. No NPC toon helps.
+                continue
             # The player's party comes along wherever the battle is.
             party = [npc for p in players for npc in self.party.partyOf(p)
                      if npc.crew is None and not npc.busy and npc.zoneId == p.zoneId]
@@ -955,6 +976,10 @@ class NPCPlayerManagerAI:
                 crew.join(npc, pos[0], pos[1], pos[2])
                 continue
             if battle.__class__.__name__ not in STREET_BATTLES:
+                continue
+            if wantsHelp(players[0].doId, battle.doId) is not True:
+                # Setup: Turn based, and the player said Solo (or has yet
+                # to answer; see NPCHelpPrompt).
                 continue
             coming = len([npc for area in self.areas.values() for npc in area.npcs
                           if getattr(npc, 'headingTo', None) is battle])
@@ -1103,6 +1128,12 @@ class NPCPlayerManagerAI:
     def readyAnswer(self, player, elevatorId, start):
         # From the player's answer to the full elevator's question.
         return self.party.readyAnswer(player, elevatorId, start)
+
+    def helpAnswer(self, player, key, wantHelp):
+        # From the player's Solo / Need Help! answer (Setup: Turn based).
+        setHelpAnswer(player.doId, key, wantHelp)
+        self.stats['help answers'] = self.stats.get('help answers', 0) + 1
+        return True
 
     def joinGroup(self, player, npc):
         """An NPC toon in the player's boarding group goes where they go."""

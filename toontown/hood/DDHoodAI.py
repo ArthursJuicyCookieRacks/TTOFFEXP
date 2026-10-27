@@ -4,6 +4,8 @@ from toontown.safezone.DistributedBoatAI import DistributedBoatAI
 from toontown.toon import NPCToons
 from .SZHoodAI import SZHoodAI
 
+from toontown.classicchars import ClassicCharsAI
+
 class DDHoodAI(SZHoodAI):
     HOOD = ToontownGlobals.DonaldsDock
 
@@ -14,3 +16,5 @@ class DDHoodAI(SZHoodAI):
 
         self.boat = DistributedBoatAI(self.air)
         self.boat.generateWithRequired(self.safezone)
+        self.classicChars = ClassicCharsAI.spawn(self.air, self.HOOD)
+

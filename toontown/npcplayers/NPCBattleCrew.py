@@ -654,7 +654,12 @@ class RoundPlanner:
                     return (track, self.closestLevel(levels, level), -1)
             elif levels and not (track == DROP and target in lured):
                 if target in alive:
-                    return (track, self.closestLevel(levels, level), target)
+                    # The same track on the player's cog, as big as it
+                    # still needs (counting the lure's bonus) and no bigger.
+                    needed = hp.get(target, 0)
+                    if track in (THROW, SQUIRT) and target in lured:
+                        needed = int(math.ceil(needed / 1.5))
+                    return (track, self.bestLevel(npc, track, levels, needed), target)
                 # That cog is going down; the same gag on the next one, as
                 # big as it needs.
                 for other in self.ordered(alive, hp, lured):
