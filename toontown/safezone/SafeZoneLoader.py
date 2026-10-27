@@ -1,4 +1,5 @@
 from panda3d.core import *
+from toontown.hood import SceneryFlattener
 from toontown.toonbase.ToonBaseGlobal import *
 from toontown.distributed.ToontownMsgTypes import *
 from toontown.hood import ZoneUtil
@@ -96,6 +97,7 @@ class SafeZoneLoader(StateData.StateData):
             self.holidayPropTransforms[i] = np.getNetTransform()
 
         self.geom.flattenMedium()
+        SceneryFlattener.flatten(self.geom)
         gsg = base.win.getGsg()
         if gsg:
             self.geom.prepareScene(gsg)
