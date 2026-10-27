@@ -13,6 +13,23 @@ def accessoryChoices(styles):
     choices.remove((0, 0, 0))
     return [(0, 0, 0)] + choices
 
+def accessoryName(kind, choice):
+    """What the game calls the accessory with this (model, texture, colour)."""
+    if tuple(choice) == (0, 0, 0):
+        return TTLocalizer.MakeAToonNoAccessory
+    styles, descriptions, models = {
+        'hat': (ToonDNA.HatStyles, TTLocalizer.HatStylesDescriptions, ToonDNA.HatModels),
+        'glasses': (ToonDNA.GlassesStyles, TTLocalizer.GlassesStylesDescriptions, ToonDNA.GlassesModels),
+        'backpack': (ToonDNA.BackpackStyles, TTLocalizer.BackpackStylesDescriptions, ToonDNA.BackpackModels),
+        'shoes': (ToonDNA.ShoesStyles, TTLocalizer.ShoesStylesDescriptions, ToonDNA.ShoesModels)}[kind]
+    for style, value in styles.items():
+        if tuple(value) == tuple(choice) and style in descriptions:
+            return descriptions[style]
+    # One of the models the catalog never named: its file name.
+    model = models[choice[0]] or ''
+    return model.split('_')[-1]
+
+
 ACCESSORY_KINDS = (('hat', TTLocalizer.TrunkHatGUI, ToonDNA.HatStyles),
  ('glasses', TTLocalizer.TrunkGlassesGUI, ToonDNA.GlassesStyles),
  ('backpack', TTLocalizer.TrunkBackpackGUI, ToonDNA.BackpackStyles),
@@ -50,7 +67,11 @@ class MakeClothesGUI(ClothesGUI.ClothesGUI):
              shuffleArrowDown,
              shuffleArrowUp,
              shuffleArrowDisabled), image_scale=halfButtonInvertScale, image1_scale=halfButtonInvertHoverScale, image2_scale=halfButtonInvertHoverScale, pos=(0.2, 0, 0), command=self.swapAccessory, extraArgs=[kind, 1])
-            self.accessoryButtons[kind] = (frame, lButton, rButton)
+            # The accessory's name and number, so one that doesn't show can
+            # be named (Arthur asked).
+            nameLabel = DirectLabel(parent=frame, relief=None, pos=(0, 0, -0.085), text='', text_scale=0.038,
+                                    text_fg=(1, 1, 1, 1), text_shadow=(0, 0, 0, 1), text_font=ToontownGlobals.getInterfaceFont())
+            self.accessoryButtons[kind] = (frame, lButton, rButton, nameLabel)
         self.accessoryFrame.hide()
         # Shuffle for the accessories, in the clothes Shuffle button's place
         # while they are showing. A shuffle leaves each kind off about a
@@ -69,7 +90,8 @@ class MakeClothesGUI(ClothesGUI.ClothesGUI):
         del self.accessoryShuffle
         self.accessoriesButton.destroy()
         del self.accessoriesButton
-        for frame, lButton, rButton in self.accessoryButtons.values():
+        for frame, lButton, rButton, nameLabel in self.accessoryButtons.values():
+            nameLabel.destroy()
             lButton.destroy()
             rButton.destroy()
             frame.destroy()
@@ -112,8 +134,9 @@ class MakeClothesGUI(ClothesGUI.ClothesGUI):
         choices, choice = self.accessories[kind]
         choice = max(0, min(len(choices) - 1, choice + offset))
         self.accessories[kind][1] = choice
-        frame, lButton, rButton = self.accessoryButtons[kind]
+        frame, lButton, rButton, nameLabel = self.accessoryButtons[kind]
         self.updateScrollButtons(choice, len(choices), 0, lButton, rButton)
+        nameLabel['text'] = '%s, %d of %d' % (accessoryName(kind, choices[choice]), choice + 1, len(choices))
         if not getattr(self, 'toon', None):
             return
         idx, textureIdx, colorIdx = choices[choice]
