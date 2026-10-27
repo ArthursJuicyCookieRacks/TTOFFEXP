@@ -145,7 +145,7 @@ class TownBattle(StateData.StateData):
         buttons = loader.loadModel('phase_3/models/gui/quit_button')
         self.helpButton = DirectButton(parent=base.a2dBottomRight, relief=None,
                                        image=(buttons.find('**/QuitBtn_UP'), buttons.find('**/QuitBtn_DN'), buttons.find('**/QuitBtn_RLVR')),
-                                       image_scale=(1.0, 1, 1.2), pos=(-0.24, 0, 0.58), scale=0.85,
+                                       image_scale=(1.0, 1, 1.2), pos=(-0.2, 0, 0.09), scale=0.85,
                                        text=TTLocalizer.TownBattleNeedHelp, text_scale=0.05, text_pos=(0, -0.016),
                                        text_font=ToontownGlobals.getInterfaceFont(), command=self.__needHelp)
         buttons.removeNode()
