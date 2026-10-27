@@ -198,6 +198,11 @@ class QuestManagerAI:
         # This means we want to store the reward in the toons setRewardHistory.
         finalReward = rewardId if storeReward else 0
         progress = 0
+        quest = Quests.getQuest(questId)
+        if isinstance(quest, Quests.FriendQuest):
+            # Offline there is nobody to befriend, so "Make a Friend" tasks
+            # are complete the moment they are taken: just hand them back in.
+            progress = quest.getNumFriends() if isinstance(quest, Quests.FriendNewbieQuest) else 1
         toon.addQuest((questId, npc.getDoId(), toNpcId, rewardId, progress), finalReward)
         # Tell the NPC that we assigned this quest to the given toon.
         npc.assignQuest(toon.getDoId(), questId, rewardId, toNpcId)
