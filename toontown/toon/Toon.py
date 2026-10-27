@@ -1097,9 +1097,9 @@ class Toon(Avatar.Avatar, ToonHead):
             head = self.ACCESSORY_HEAD_STAND_INS[head][0]
         return head
 
-    def fitAccessory(self, geom, kind):
+    def fitAccessory(self, geom, kind, table=None):
         standIn = self.ACCESSORY_HEAD_STAND_INS.get(self.style.head[:2])
-        if standIn is None:
+        if standIn is None or (table and self.style.head[:2] in table):
             return
         dy, dz, scale = standIn[1][kind]
         if kind == 'hat':
@@ -1193,8 +1193,9 @@ class Toon(Avatar.Avatar, ToonHead):
                 if fromRTM:
                     importlib.reload(AccessoryGlobals)
                 transOffset = None
-                if AccessoryGlobals.ExtendedGlassesTransTable.get(glasses[0]):
-                    transOffset = AccessoryGlobals.ExtendedGlassesTransTable[glasses[0]].get(self.accessoryHead(AccessoryGlobals.ExtendedGlassesTransTable[glasses[0]]))
+                extended = AccessoryGlobals.ExtendedGlassesTransTable.get(glasses[0])
+                if extended:
+                    transOffset = extended.get(self.accessoryHead(extended))
                 if transOffset == None:
                     transOffset = AccessoryGlobals.GlassesTransTable.get(self.accessoryHead(AccessoryGlobals.GlassesTransTable))
                     if transOffset == None:
@@ -1202,7 +1203,7 @@ class Toon(Avatar.Avatar, ToonHead):
                 glassesGeom.setPos(transOffset[0][0], transOffset[0][1], transOffset[0][2])
                 glassesGeom.setHpr(transOffset[1][0], transOffset[1][1], transOffset[1][2])
                 glassesGeom.setScale(transOffset[2][0], transOffset[2][1], transOffset[2][2])
-                self.fitAccessory(glassesGeom, 'glasses')
+                self.fitAccessory(glassesGeom, 'glasses', extended)
                 headNodes = self.findAllMatches('**/__Actor_head')
                 for headNode in headNodes:
                     glassesNode = headNode.attachNewNode('glassesNode')
@@ -1242,9 +1243,10 @@ class Toon(Avatar.Avatar, ToonHead):
                     transOffset = AccessoryGlobals.BackpackTransTable.get(self.style.torso[:1])
                     if transOffset == None:
                         return
-                geom.setPos(transOffset[0][0], transOffset[0][1], transOffset[0][2])
+                back, up, grow = AccessoryGlobals.BackpackSpeciesFits.get(backpack[0], {}).get(self.style.head[0], (0.0, 0.0, 1.0))
+                geom.setPos(transOffset[0][0], transOffset[0][1] + back, transOffset[0][2] + up)
                 geom.setHpr(transOffset[1][0], transOffset[1][1], transOffset[1][2])
-                geom.setScale(transOffset[2][0], transOffset[2][1], transOffset[2][2])
+                geom.setScale(transOffset[2][0] * grow, transOffset[2][1] * grow, transOffset[2][2] * grow)
                 nodes = self.findAllMatches('**/def_joint_attachFlower')
                 for node in nodes:
                     theNode = node.attachNewNode('backpackNode')

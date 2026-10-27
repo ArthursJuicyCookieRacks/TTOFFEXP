@@ -1143,12 +1143,12 @@ ExtendedBackpackTransTable = {1: {'m': ((0.227545, -1.05, 0.053624), (180.0, 6.0
 # other sizes than the originals: the default spot, scaled to match, moved
 # out of the body, and turned: (scale, back, up, heading, pitch).
 EXTRA_BACKPACK_FITS = {25: (2.6, 0.3, 0.12, 180.0, 0.0, -0.06),   # santa's sack
-                       26: (5.2, 0.5, 0.5, 180.0, 0.0, 0.0),    # scarf, wrapped round the neck
+                       26: (4.6, {'s': 0.96, 'm': 0.57, 'l': 0.61}, {'s': 0.28, 'm': 0.4, 'l': 0.7}, 180.0, 0.0, 0.0),   # scarf, centred on the neck of each body
                        27: (1.5, -0.06, 0.0, 0.0, 0.0, 0.0),    # bow
-                       32: (3.0, 0.35, 0.0, 180.0, 0.0, 0.0)}   # trash can lid flat on the back, handle out
+                       32: (3.0, {'s': 0.26, 'm': 0.18, 'l': 0.05}, 0.0, 180.0, 8.0, 0.0)}   # trash can lid flat on the back, handle out
 for _idx, (_grow, _back, _up, _turn, _tilt, _side) in EXTRA_BACKPACK_FITS.items():
     ExtendedBackpackTransTable[_idx] = dict(
-        (_torso, ((_pos[0] + _side, _pos[1] + _back, _pos[2] + _up), (_hpr[0] + _turn, _hpr[1] + _tilt, _hpr[2]),
+        (_torso, ((_pos[0] + _side, _pos[1] + (_back[_torso] if isinstance(_back, dict) else _back), _pos[2] + (_up[_torso] if isinstance(_up, dict) else _up)), (_hpr[0] + _turn, _hpr[1] + _tilt, _hpr[2]),
                   tuple(_s * _grow for _s in _scale)))
         for _torso, (_pos, _hpr, _scale) in BackpackTransTable.items())
 
@@ -1156,31 +1156,67 @@ for _idx, (_grow, _back, _up, _turn, _tilt, _side) in EXTRA_BACKPACK_FITS.items(
 # friends) were made at about the size they are worn, not the three to four
 # times larger size the tables above shrink. Their places come from the base
 # table for each head, scaled up and moved a little (units are the toon's).
-# Dogs, mice and horses have long snouts, so an item worn at the nose moves
-# by snout={head letter: (forward, up)} on those heads.
-def fromBase(table, scale=1.0, move=(0.0, 0.0, 0.0), turn=(0.0, 0.0, 0.0), snout={}):
+# Each entry is placed from the base table for the head, scaled and moved,
+# then nudged per head: nudge={head key or species letter: (dx, dy, dz, grow)}.
+def fromBase(table, scale=1.0, move=(0.0, 0.0, 0.0), turn=(0.0, 0.0, 0.0), nudge={}):
     fitted = {}
     for head, (pos, hpr, size) in table.items():
-        forward, up = snout.get(head[0], (0.0, 0.0))
-        fitted[head] = ((pos[0] + move[0], pos[1] + move[1] + forward, pos[2] + move[2] + up),
+        dx, dy, dz, grow = nudge.get(head, nudge.get(head[0], (0.0, 0.0, 0.0, 1.0)))
+        fitted[head] = ((pos[0] + move[0] + dx, pos[1] + move[1] + dy, pos[2] + move[2] + dz),
                         (hpr[0] + turn[0], hpr[1] + turn[1], hpr[2] + turn[2]),
-                        (size[0] * scale, size[1] * scale, size[2] * scale))
+                        (size[0] * scale * grow, size[1] * scale * grow, size[2] * scale * grow))
     return fitted
 
 # A hat is placed by its middle, so it rises by about half its height.
-EXTRA_HAT_FITS = {57: (3.6, (0.0, 0.0, 0.1), (0.0, 0.0, 0.0), {}),    # ball hat
-                  58: (3.6, (0.0, 0.0, 0.1), (0.0, 0.0, 0.0), {}),    # elf hat
+EXTRA_HAT_FITS = {57: (3.6, (0.0, 0.0, -0.08), (0.0, 0.0, 0.0), {}),    # ball hat
+                  58: (3.6, (0.0, 0.0, -0.1), (0.0, 0.0, 0.0), {}),    # elf hat
                   60: (3.6, (0.0, 0.0, 0.05), (0.0, 0.0, 0.0), {})}   # winter hat
-# The moustaches sit on the upper lip, under the nose: further forward on
-# the long-snouted heads.
-MOUSTACHE_FIT = (3.8, (0.0, 0.6, 0.2), (0.0, 0.0, 0.0), {'d': (0.4, -0.05), 'm': (0.75, -0.05), 'h': (0.6, 0.4)})
-EXTRA_GLASSES_FITS = {22: (4.5, (0.0, 0.1, 0.1), (0.0, 0.0, 0.0), {}),    # snow goggles
-                      23: MOUSTACHE_FIT,   # moustache A
-                      24: MOUSTACHE_FIT,   # moustache B
-                      25: MOUSTACHE_FIT}   # moustache C
+# Muzzle measurements in head-joint space, from the neutral muzzle geometry:
+# {head: (front y, bottom z, top z, width, nose bottom z or None)}.
+MUZZLES = {'dl': (0.82, -0.19, 0.38, 0.94, 0.12), 'ds': (0.82, -0.19, 0.38, 0.94, 0.17),
+           'cl': (0.73, -0.44, 0.12, 0.70, None), 'cs': (0.73, -0.44, 0.12, 0.70, None),
+           'hl': (1.10, -0.60, 0.25, 0.84, None), 'hs': (1.10, -0.60, 0.25, 0.84, None),
+           'ml': (1.01, -0.35, 0.39, 1.48, None), 'ms': (1.01, -0.35, 0.39, 1.48, None),
+           'rl': (0.58, -0.57, -0.11, 0.72, None), 'rs': (0.58, -0.57, -0.04, 1.12, None),
+           'fl': (0.89, -0.36, 0.12, 1.14, None), 'fs': (0.89, -0.36, 0.12, 1.14, None),
+           'pl': (0.83, -0.58, 0.15, 0.83, None), 'ps': (0.83, -0.58, 0.15, 0.83, None),
+           'bl': (0.90, -0.44, 0.18, 0.92, None), 'bs': (0.90, -0.44, 0.18, 0.92, None),
+           'sl': (1.03, -0.61, 0.12, 1.28, None), 'ss': (1.03, -0.61, 0.12, 1.28, None),
+           'xl': (1.04, -0.52, 0.14, 1.00, None), 'xs': (1.04, -0.52, 0.14, 1.00, None),
+           'zl': (0.90, -0.39, 0.10, 0.80, -0.06), 'zs': (0.90, -0.39, 0.10, 0.80, -0.07)}
+# The moustache models face +y with their origin at the head joint:
+# {glasses index: (top z, bottom z, back y, width, width over the muzzle
+# width, height over the lip height)}. B droops below the mouth.
+MOUSTACHE_MODELS = {23: (-0.16, -0.41, 0.42, 0.86, 0.85, 0.55),
+                    24: (-0.21, -0.70, 0.43, 0.70, 0.75, 0.95),
+                    25: (-0.21, -0.40, 0.47, 0.60, 0.85, 0.55)}
+# Per-head corrections on top of the measured place: {head: (dy, dz, grow)}.
+MOUSTACHE_NUDGE = {}
+def moustacheTable(idx):
+    top, bottom, back, width, over, tall = MOUSTACHE_MODELS[idx]
+    height = top - bottom
+    table = {}
+    for head, (muzFront, lo, hi, muzWidth, nose) in MUZZLES.items():
+        dy, dz, grow = MOUSTACHE_NUDGE.get(head, (0.0, 0.0, 1.0))
+        # The moustache hangs just in front of the rounded muzzle, its top
+        # under the nose and its bottom about the mouth.
+        lipTop = (nose - 0.01) if nose is not None else lo + 0.6 * (hi - lo)
+        s = min(over * muzWidth / width, tall * (lipTop - lo) / height)
+        y = muzFront - 0.05
+        if head[0] == 'f':
+            y, lipTop, s = 0.5, hi + 0.14, 1.1    # ducks wear it on the face above the bill
+        s = min(max(s, 0.7), 1.9) * grow
+        table[head] = ((0.0, y - back * s + dy, lipTop - top * s + dz), (0.0, 0.0, 0.0), (s, s, s))
+    return table
+EXTRA_GLASSES_FITS = {22: (4.5, (0.0, 0.1, 0.1), (0.0, 0.0, 0.0), {})}    # snow goggles
+for _idx, (_scale, _move, _turn, _nudge) in EXTRA_HAT_FITS.items():
+    ExtendedHatTransTable[_idx] = fromBase(HatTransTable, _scale, _move, _turn, _nudge)
+for _idx, (_scale, _move, _turn, _nudge) in EXTRA_GLASSES_FITS.items():
+    ExtendedGlassesTransTable[_idx] = fromBase(GlassesTransTable, _scale, _move, _turn, _nudge)
+for _idx in MOUSTACHE_MODELS:
+    ExtendedGlassesTransTable[_idx] = moustacheTable(_idx)
 
-
-for _idx, (_scale, _move, _turn, _snout) in EXTRA_HAT_FITS.items():
-    ExtendedHatTransTable[_idx] = fromBase(HatTransTable, _scale, _move, _turn, _snout)
-for _idx, (_scale, _move, _turn, _snout) in EXTRA_GLASSES_FITS.items():
-    ExtendedGlassesTransTable[_idx] = fromBase(GlassesTransTable, _scale, _move, _turn, _snout)
+# Backpacks are placed by torso size only, but the scarf and the lid meet
+# heads and bodies of every shape, so each species may nudge them:
+# {backpack index: {species letter: (back, up, grow)}}.
+BackpackSpeciesFits = {26: {'f': (0.0, -0.2, 0.92), 's': (0.0, -0.2, 0.92), 'b': (0.0, -0.1, 1.0), 'h': (0.0, -0.05, 1.0), 'm': (0.0, -0.05, 1.0)}, 32: {}}
