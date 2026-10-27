@@ -261,6 +261,15 @@ def scenarioLogin():
             yield until(lambda: shop() == name, 30, name)
             if name == 'ColorShop':
                 yield from checkHoldRepeat(mat)
+            if name == 'ClothesShop':
+                # The accessories, a few steps in, with their name labels.
+                gui = mat.cls
+                gui.showAccessories(True)
+                for kind, steps in (('hat', 23), ('glasses', 5), ('backpack', 9), ('shoes', 12)):
+                    gui.swapAccessory(kind, steps)
+                yield sleep(0.5)
+                base.screenshot(os.path.join(os.environ.get('AUTOPLAY_SHOTS', '/tmp'), 'mat-accessories.png'), defaultFilename=0)
+                gui.showAccessories(False)
         yield sleep(2)
         mat.ns._NameShop__createAvatar(skipTutorial=not TUTORIAL)
     else:

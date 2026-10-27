@@ -5553,6 +5553,7 @@ MinigameRulesPanelPlay = 'PLAY'
 MinigameRulesPanelSkip = 'SKIP'
 MakeAToonAccessories = 'Accessories'
 MakeAToonSetup = 'Setup'
+MakeAToonNoAccessory = 'None'
 MakeAToonClothes = 'Clothes'
 GagShopName = "Goofy's Gag Shop"
 GagShopPlayAgain = 'PLAY\nAGAIN'
