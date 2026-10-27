@@ -37,7 +37,7 @@ PITCHER_HIT_CHANCE = 0.45
 PITCHERS = 3
 GOLF_TIME = (5.0, 9.0)
 # Chances a pie does what it was thrown for.
-STUN_CHANCE = 0.15
+STUN_CHANCE = 0.25
 HIT_CHANCE = 0.4
 # Seconds between one NPC's throws at a dizzy VP: a player has to get in
 # front of him and aim.
@@ -64,12 +64,19 @@ GOLFERS = 2
 GOLF_HIT_CHANCE = 0.45
 # Between goes the NPCs move about the arena on their own, as players do,
 # rather than following the player: how often, and how far from the boss.
-ROAM_TIME = (3.0, 9.0)
+ROAM_TIME = (1.0, 4.0)
 ROAM_RANGE = (14.0, 40.0)
+# In the pie round the toons not stunning him keep moving, as players do.
+PIE_ROAM_TIME = (0.5, 2.5)
+PIE_ROAM_RANGE = (16.0, 34.0)
+# The stunners go up to the open ground in front of him and throw from
+# there, this far from his middle (he swats within about 14).
+STUN_SPOT = (18.0, 24.0)
+STUN_SPOT_NEAR = 5.0
 # No roaming path passes nearer the boss than this.
 BOSS_CLEAR = 11.0
 # Now and then an NPC stops to emote instead of walking.
-ROAM_EMOTE_CHANCE = 0.3
+ROAM_EMOTE_CHANCE = 0.15
 # Every stretch where the player's toon is let loose: the goes against the
 # boss, and the breaks after each cog fight and after the win.
 ROAM_STATES = (('s', 'RollToBattleTwo'), ('s', 'BattleTwo'), ('s', 'BattleThree'), ('s', 'NearVictory'),
@@ -91,8 +98,14 @@ JUMPABLE = (ToontownGlobals.BossCogAreaAttack, ToontownGlobals.BossCogDirectedAt
             ToontownGlobals.BossCogSlowDirectedAttack, ToontownGlobals.BossCogGearDirectedAttack,
             ToontownGlobals.BossCogGavelStomp, ToontownGlobals.BossCogGolfAreaAttack)
 HIT_STATES = ('BattleThree', 'BattleFour', 'RollToBattleTwo')
-HEAL_PLAYER_BELOW = 0.4
+# Toon-up pies for the player: only once it is really hurt, and one healer
+# at a time with a breather between heals, not a constant shower of them.
+HEAL_PLAYER_BELOW = 0.25
 HEAL_HIT_CHANCE = 0.7
+HEAL_REST = 9.0
+# After a zap or a jump the toon's walk animation is started again (the
+# slip and jump leave it posed, so it would slide about otherwise).
+ANIM_REFRESH_AFTER = 2.5
 # A pie that misses lands on the floor this far from what it was thrown at.
 MISS_BY = (4.0, 9.0)
 
@@ -120,6 +133,8 @@ class NPCBossCrew:
         self.dizzy = False
         self.stunRestUntil = 0
         self.nextRoam = {}
+        self.nextHeal = 0
+        self.animRefresh = {}
         self.taskName = 'npcBossCrew-%d' % boss.doId
         taskMgr.doMethodLater(TICK, self.__tick, self.taskName)
 
@@ -152,12 +167,18 @@ class NPCBossCrew:
         now = globalClock.getFrameTime()
         if state != self.stateSince[0]:
             self.stateSince = (state, now)
+            # A new stretch: everyone gets going straight away.
+            self.nextRoam = {}
         try:
             members = self.members()
             self.takeHits(members)
+            self.refreshAnims(members, now)
             if (self.dept, state) in ROAM_STATES:
                 for npc in members:
-                    self.roam(npc, now)
+                    if self.dept == 's' and state == 'BattleThree' and self.isStunner(npc):
+                        self.goToStunSpot(npc, now)
+                    else:
+                        self.roam(npc, now)
             play = getattr(self, 'play%s%s' % (self.dept.upper(), state), None)
             if play is not None:
                 pace = SLOW_TIME if (self.dept, state) in SLOW_JOBS else THROW_TIME
@@ -190,18 +211,25 @@ class NPCBossCrew:
                     return True
         return False
 
-    def roam(self, npc, now):
+    def canRoam(self, npc, now):
         if npc.walk is not None or npc.busy or now < self.nextRoam.get(npc.doId, 0):
-            return
-        self.nextRoam[npc.doId] = now + random.uniform(*ROAM_TIME)
+            return False
         if self.isStationed(npc) or npc.getBattleId() > 0 or getattr(npc, 'crew', None) is not None:
             # Held by the game, or fighting the cogs.
+            self.nextRoam[npc.doId] = now + 1.0
+            return False
+        return True
+
+    def roam(self, npc, now):
+        if not self.canRoam(npc, now):
             return
+        pieRound = self.dept == 's' and self.boss.getCurrentOrNextState() == 'BattleThree'
+        self.nextRoam[npc.doId] = now + random.uniform(*(PIE_ROAM_TIME if pieRound else ROAM_TIME))
         center = self.bossPos()
         if center is None:
             return
         self.syncPos(npc)
-        if random.random() < ROAM_EMOTE_CHANCE:
+        if not pieRound and random.random() < ROAM_EMOTE_CHANCE:
             from toontown.npcplayers.NPCPlayerManagerAI import IDLE_EMOTES
             npc.b_setEmoteState(random.choice(IDLE_EMOTES), 1.0)
             return
@@ -209,12 +237,74 @@ class NPCBossCrew:
         pos = npc.getPos()
         for i in range(6):
             angle = random.uniform(0, 2 * math.pi)
-            dist = random.uniform(*ROAM_RANGE)
+            dist = random.uniform(*(PIE_ROAM_RANGE if pieRound else ROAM_RANGE))
             target = Point3(center[0] + dist * math.cos(angle), center[1] + dist * math.sin(angle), pos[2])
             path = nav.walkable(pos, target)
             if path and not self.nearBoss(path, center):
-                npc.walk = [path, ToontownGlobals.ToonForwardSpeed, None, None]
+                self.startWalk(npc, path)
                 return
+        # Nowhere to go from here this time; try again next tick.
+        self.nextRoam[npc.doId] = now
+
+    def startWalk(self, npc, path):
+        # The scenes leave toons posed (a slip, a jump, the elevator ride),
+        # and a posed toon slides along; a fresh Happy state runs again.
+        self.wakeAnim(npc)
+        npc.walk = [path, ToontownGlobals.ToonForwardSpeed, None, None]
+
+    def wakeAnim(self, npc):
+        npc.b_setAnimState('neutral', 1.0)
+        npc.b_setAnimState('Happy', 1.0)
+
+    def refreshAnims(self, members, now):
+        for npc in members:
+            due = self.animRefresh.get(npc.doId)
+            if due is not None and now >= due:
+                del self.animRefresh[npc.doId]
+                self.wakeAnim(npc)
+
+    def stunSpot(self):
+        # On the open ground in front of him (he faces -Y in his own frame).
+        base = getClientBuiltin('base')
+        boss = base.cr.doId2do.get(self.boss.doId) if base else None
+        if boss is None or boss.isEmpty():
+            return None
+        node = getattr(boss, 'rotateNode', boss)
+        return base.render.getRelativePoint(node, Point3(random.uniform(-5, 5), -random.uniform(*STUN_SPOT), 0))
+
+    def goToStunSpot(self, npc, now):
+        """A stunner heads for the open ground in front of the VP, where a
+        player stands to throw under him, and keeps to it as he turns;
+        while he is dizzy or the stunners rest it roams like the others."""
+        if self.dizzy or now < self.stunRestUntil:
+            self.roam(npc, now)
+            return
+        if not self.canRoam(npc, now):
+            return
+        spot = self.stunSpot()
+        if spot is None:
+            return
+        self.syncPos(npc)
+        pos = npc.getPos()
+        if (Point3(pos[0], pos[1], 0) - Point3(spot[0], spot[1], 0)).length() < STUN_SPOT_NEAR * 2:
+            # Close enough; a short shuffle keeps it looking alive.
+            self.nextRoam[npc.doId] = now + random.uniform(*PIE_ROAM_TIME)
+            return
+        path = getNav().walkable(pos, Point3(spot[0], spot[1], pos[2]))
+        if path:
+            self.startWalk(npc, path)
+            self.nextRoam[npc.doId] = now + 0.5
+        else:
+            self.roam(npc, now)
+
+    def atStunSpot(self, npc):
+        base = getClientBuiltin('base')
+        boss = base.cr.doId2do.get(self.boss.doId) if base else None
+        client = base.cr.doId2do.get(npc.doId) if base else None
+        if boss is None or boss.isEmpty() or client is None or client.isEmpty():
+            return False
+        rel = client.getPos(getattr(boss, 'rotateNode', boss))
+        return abs(rel[0]) < 9 and -STUN_SPOT[1] - STUN_SPOT_NEAR < rel[1] < -STUN_SPOT[0] + STUN_SPOT_NEAR
 
     def nearBoss(self, path, center):
         for point in path:
@@ -267,6 +357,8 @@ class NPCBossCrew:
             if hit is None:
                 continue
             self.safeUntil[npc.doId] = now + HIT_REST
+            self.animRefresh[npc.doId] = now + ANIM_REFRESH_AFTER
+            npc.walk = None
             pos = npc.getPos()
             npc.asSender(boss.zapToon, pos[0], pos[1], pos[2], npc.getH(), 0, 0, 0, 0, hit,
                          globalClockDelta.getFrameNetworkTime(bits=16))
@@ -278,8 +370,7 @@ class NPCBossCrew:
 
     def jump(self, npc):
         npc.b_setAnimState('jump', 1.0)
-        taskMgr.doMethodLater(1.2, lambda task: (not npc.isDeleted() and npc.b_setAnimState('neutral', 1.0)) and None,
-                              'npcBossJump-%d' % npc.doId)
+        self.animRefresh[npc.doId] = globalClock.getFrameTime() + 1.2
 
     # --- Pies, for the look of it ---
 
@@ -332,9 +423,14 @@ class NPCBossCrew:
             npc.b_setNumPies(ToontownGlobals.FullPies)
 
     def healPlayer(self, npc):
-        # Pies at a toon heal it; the player comes first.
+        # Pies at a toon heal it; the player comes first, but only when really
+        # hurt, and not from everyone at once.
+        now = globalClock.getFrameTime()
+        if now < self.nextHeal:
+            return False
         for player in self.players():
             if player.maxHp and float(player.hp) / player.maxHp < HEAL_PLAYER_BELOW:
+                self.nextHeal = now + HEAL_REST
                 base = getClientBuiltin('base')
                 client = base.cr.doId2do.get(player.doId) if base else None
                 target = client.getPos(base.render) + Point3(0, 0, 3) if client is not None else None
@@ -373,9 +469,9 @@ class NPCBossCrew:
             self.throwAt(npc, target, ToontownGlobals.PieCodeBossCog, hit)
             if hit:
                 npc.asSender(boss.hitBoss, 1)
-        elif self.isStunner(npc) and now >= self.stunRestUntil:
-            # A pie under his front, while he faces the toon, stuns him;
-            # most miss.
+        elif self.isStunner(npc) and now >= self.stunRestUntil and self.atStunSpot(npc):
+            # From the open ground in front of him a pie under his front
+            # stuns him; most miss.
             stun = random.random() < STUN_CHANCE
             self.throwAt(npc, target, ToontownGlobals.PieCodeBossInsides, stun)
             self.count('vp stun tries')

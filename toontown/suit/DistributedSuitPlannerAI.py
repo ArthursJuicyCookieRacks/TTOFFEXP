@@ -590,6 +590,8 @@ class DistributedSuitPlannerAI(DistributedObjectAI.DistributedObjectAI, SuitPlan
         self.battleList = []
         self.battleMgr = BattleManagerAI.BattleManagerAI(self.air)
         self.setupDNA()
+        # The route table, a little each frame before the first cogs fly in.
+        self.dnaData.suitGraph.buildTableSoon()
         if self.notify.getDebug():
             self.notify.debug('Creating a building manager AI in zone' + str(self.zoneId))
         self.buildingMgr = self.air.buildingManagers.get(self.zoneId)
@@ -975,6 +977,11 @@ class DistributedSuitPlannerAI(DistributedObjectAI.DistributedObjectAI, SuitPlan
         taskMgr.doMethodLater(t, self.adjustSuitPopulation, self.taskName('sptAdjustPopulation'))
 
     def upkeepSuitPopulation(self, task):
+        if not self.dnaData.suitGraph.tableReady():
+            # The route table is still being built, a little each frame.
+            # (Building the rest here held the game for up to a second.)
+            task.delayTime = 1.0
+            return task.again
         targetFlyInNum = self.calcDesiredNumFlyInSuits()
         targetFlyInNum = min(targetFlyInNum, self.TOTAL_MAX_SUITS - self.numBuildingSuits)
         streetPoints = self.streetPointList[:]

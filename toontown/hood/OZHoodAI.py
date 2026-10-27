@@ -12,6 +12,8 @@ PicnicTables = [(1, -22.0614, -23.779, 1.45, 0, 0, 0),
                 (2, 35.4114, -35.0274, 0.5, 0, 1.10906, 0)]
 
 
+from toontown.classicchars import ClassicCharsAI
+
 class OZHoodAI(SZHoodAI):
     HOOD = ToontownGlobals.OutdoorZone
 
@@ -27,3 +29,5 @@ class OZHoodAI(SZHoodAI):
             basket = DistributedPicnicBasketAI(self.air, tableNumber, x, y, z, h, p, r)
             basket.generateWithRequired(self.HOOD)
             self.picnicBaskets.append(basket)
+        self.classicChars = ClassicCharsAI.spawn(self.air, self.HOOD)
+

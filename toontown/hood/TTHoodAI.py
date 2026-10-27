@@ -8,6 +8,8 @@ from toontown.election.DistributedTelevisionAI import DistributedTelevisionAI
 from direct.task import Task
 import time
 
+from toontown.classicchars import ClassicCharsAI
+
 class TTHoodAI(SZHoodAI):
     HOOD = ToontownGlobals.ToontownCentral
     
@@ -23,6 +25,8 @@ class TTHoodAI(SZHoodAI):
         if self.air.config.ConfigVariableBool('want-doomsday', False).getValue():
             self.spawnElection()
     
+        self.classicChars = ClassicCharsAI.spawn(self.air, self.HOOD)
+
     def spawnElection(self):
         election = self.air.doFind('ElectionEvent')
         if election == None:

@@ -1,3 +1,5 @@
+import time
+
 from .DNAParser import *
 from . import DNAStoreSuitPoint
 
@@ -59,17 +61,58 @@ class DNASuitGraph(object):
             self._point2inboundEdges.setdefault(b, []).append(edge)
 
         # The route table is only for the cog planner's getSuitPath, so it is
-        # made the first time a route is asked for: the game's own copy of
-        # each street never needs it.
+        # made the first time a route is asked for, or a little each frame
+        # once the planner asks (buildTableSoon): the game's own copy of
+        # each street never needs it, and all at once it held the game for a
+        # quarter second per street.
         self._table = None
+        self._tableDone = False
+        self._nextDestination = 0
+
+    # Graphs whose tables are being built a bit each frame.
+    _pending = []
+    BUILD_SLICE = 0.02
+
+    def buildTableSoon(self):
+        if self._tableDone or self in DNASuitGraph._pending:
+            return
+        if not DNASuitGraph._pending:
+            taskMgr.add(DNASuitGraph._buildPending, 'suitGraphTables')
+        DNASuitGraph._pending.append(self)
+
+    @staticmethod
+    def _buildPending(task):
+        deadline = time.perf_counter() + DNASuitGraph.BUILD_SLICE
+        while DNASuitGraph._pending:
+            if DNASuitGraph._pending[0]._buildStep(deadline):
+                return task.cont
+            DNASuitGraph._pending.pop(0)
+        return task.done
+
+    def tableReady(self):
+        return self._tableDone
 
     def _buildTable(self):
+        self._buildStep(None)
+
+    def _buildStep(self, deadline):
+        """Builds the table for the destinations after the ones already done,
+        until the deadline (None: all of them). Returns True while there is
+        more to do."""
         points = self.points
-        self._table = uint16array(4 * len(points)*len(points), 0xFF)
-        visited = bytearray(len(points))
-        for i, point in enumerate(points):
+        if self._table is None:
+            self._table = uint16array(4 * len(points)*len(points), 0xFF)
+            self._visited = bytearray(len(points))
+        while self._nextDestination < len(points):
+            point = points[self._nextDestination]
+            self._nextDestination += 1
             for neighbor in self.getOriginPoints(point):
-                self.addLink(neighbor, point, 1, point, False, visited)
+                self.addLink(neighbor, point, 1, point, False, self._visited)
+            if deadline is not None and time.perf_counter() > deadline:
+                return True
+        self._tableDone = True
+        self._visited = None
+        return False
 
     def addLink(self, point, neighbor, distance, destination, unbounded, visited):
         pointIndex = self._id2index[point.id]
@@ -124,7 +167,7 @@ class DNASuitGraph(object):
         return self.getEdgeZone(edges[0])
 
     def getSuitPath(self, startPoint, endPoint, minPathLen, maxPathLen):
-        if self._table is None:
+        if not self._tableDone:
             self._buildTable()
         start = self._id2index[startPoint.id]
         end = self._id2index[endPoint.id]

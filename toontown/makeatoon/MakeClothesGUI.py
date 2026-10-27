@@ -1,5 +1,7 @@
 from direct.gui.DirectGui import *
+import random
 from . import ClothesGUI
+from . import ShuffleButton
 from toontown.makeatoon.MakeAToonGlobals import *
 from toontown.toon import ToonDNA
 from toontown.toonbase import TTLocalizer
@@ -50,10 +52,21 @@ class MakeClothesGUI(ClothesGUI.ClothesGUI):
              shuffleArrowDisabled), image_scale=halfButtonInvertScale, image1_scale=halfButtonInvertHoverScale, image2_scale=halfButtonInvertHoverScale, pos=(0.2, 0, 0), command=self.swapAccessory, extraArgs=[kind, 1])
             self.accessoryButtons[kind] = (frame, lButton, rButton)
         self.accessoryFrame.hide()
+        # Shuffle for the accessories, in the clothes Shuffle button's place
+        # while they are showing. A shuffle leaves each kind off about a
+        # third of the time, so a toon isn't always wearing all four.
+        self.accessoryShuffleMsg = 'AccessoryShuffle'
+        self.accessoryShuffle = ShuffleButton.ShuffleButton(AccessoryShuffleOwner(self), self.accessoryShuffleMsg)
+        self.accessoryShuffle.setChoicePool([[0] * max(1, len(choices) // 2) + list(range(1, len(choices)))
+                                             for choices, choice in (self.accessories[kind] for kind, label, styles in ACCESSORY_KINDS)])
+        self.accessoryShuffle.parentFrame.hide()
         # The same button as Shuffle, just under it.
         self.accessoriesButton = DirectButton(parent=self.parentFrame, relief=None, pos=(0, 0, 0.15), hpr=(0, 0, 5), image=(shuffleUp, shuffleDown, shuffleUp), image_scale=(-0.9, 0.6, 0.6), image1_scale=(-0.93, 0.6, 0.6), image2_scale=(-0.93, 0.6, 0.6), text=TTLocalizer.MakeAToonAccessories, text_font=ToontownGlobals.getInterfaceFont(), text_scale=TTLocalizer.SBshuffleBtn * 0.75, text_pos=(0, -0.02), text_fg=(1, 1, 1, 1), text_shadow=(0, 0, 0, 1), command=self.toggleAccessories)
 
     def unload(self):
+        self.ignore(self.accessoryShuffleMsg)
+        self.accessoryShuffle.unload()
+        del self.accessoryShuffle
         self.accessoriesButton.destroy()
         del self.accessoriesButton
         for frame, lButton, rButton in self.accessoryButtons.values():
@@ -70,6 +83,8 @@ class MakeClothesGUI(ClothesGUI.ClothesGUI):
         ClothesGUI.ClothesGUI.enter(self, toon)
         for kind in self.accessories:
             self.swapAccessory(kind, 0)
+        self.accept(self.accessoryShuffleMsg, self.shuffleAccessories)
+        self.acceptOnce('MAT-newToonCreated', self.accessoryShuffle.cleanHistory)
         self.showAccessories(self.showingAccessories)
 
     def toggleAccessories(self):
@@ -85,10 +100,12 @@ class MakeClothesGUI(ClothesGUI.ClothesGUI):
         if show:
             self.accessoryFrame.show()
             self.shuffleButton.parentFrame.hide()
+            self.accessoryShuffle.parentFrame.show()
             self.accessoriesButton['text'] = TTLocalizer.MakeAToonClothes
         else:
             self.accessoryFrame.hide()
             self.shuffleButton.parentFrame.show()
+            self.accessoryShuffle.parentFrame.hide()
             self.accessoriesButton['text'] = TTLocalizer.MakeAToonAccessories
 
     def swapAccessory(self, kind, offset):
@@ -109,6 +126,14 @@ class MakeClothesGUI(ClothesGUI.ClothesGUI):
         else:
             self.toon.setShoes(idx, textureIdx, colorIdx)
         messenger.send('wakeup')
+
+    def getAccessoryChoices(self):
+        return [self.accessories[kind][1] for kind, label, styles in ACCESSORY_KINDS]
+
+    def shuffleAccessories(self):
+        for (kind, label, styles), choice in zip(ACCESSORY_KINDS, self.accessoryShuffle.getCurrChoice()):
+            self.accessories[kind][1] = choice
+            self.swapAccessory(kind, 0)
 
     def getAccessories(self):
         """(hat, glasses, backpack, shoes) as picked here."""
@@ -146,3 +171,14 @@ class MakeClothesGUI(ClothesGUI.ClothesGUI):
             self.swapTop(0)
             self.swapBottom(0)
         return None
+
+
+class AccessoryShuffleOwner:
+    """What ShuffleButton asks of the shop it sits in, for the accessories."""
+
+    def __init__(self, shop):
+        self.shop = shop
+        self.parentFrame = shop.parentFrame
+
+    def getCurrToonSetting(self):
+        return self.shop.getAccessoryChoices()

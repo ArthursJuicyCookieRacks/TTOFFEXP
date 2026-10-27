@@ -21,7 +21,7 @@ from otp.local.ExecutionContext import getClientBuiltin
 from toontown.building.DistributedElevatorFSMAI import DistributedElevatorFSMAI
 from toontown.cogdominium.DistCogdoGameAI import DistCogdoGameAI
 from toontown.golf.DistributedGolfCourseAI import DistributedGolfCourseAI
-from toontown.npcplayers.NPCSettings import wantsTrolleyCompany
+from toontown.npcplayers.NPCSettings import wantsTrolleyCompany, wantsHelp, forgetHelpAnswer
 from toontown.npcplayers.NPCBattleCrew import isNPC
 from toontown.suit.DistributedBossCogAI import DistributedBossCogAI
 from toontown.npcplayers.NPCNav import getNav
@@ -141,6 +141,8 @@ class NPCParty:
                 continue
             if not players:
                 elevator.npcDeclined = None
+                # Asked again (Setup: Turn based) when a player next gets on.
+                forgetHelpAnswer(elevator.doId)
                 continue
             if getattr(elevator, 'npcDeclined', None) == players[0].doId:
                 # The player sent them out (see readyAnswer); they stay out
@@ -155,8 +157,14 @@ class NPCParty:
             if len(getattr(elevator, 'npcOnTheWay', ())) >= list(seats).count(None):
                 continue
             player = players[0]
-            if isinstance(elevator, DistributedTrolleyAI) and not wantsTrolleyCompany(player.doId):
-                # The player chose to ride solo.
+            if isinstance(elevator, DistributedTrolleyAI):
+                if not wantsTrolleyCompany(player.doId):
+                    # The player chose to ride solo.
+                    continue
+            elif not self.partyOf(player) and wantsHelp(player.doId, elevator.doId) is not True:
+                # Setup: Solo, or Turn based with the player yet to say Need
+                # Help! (see NPCHelpPrompt). A party already along (they
+                # were let in at the first elevator) rides on without asking.
                 continue
             npc = self.pickBoarder(elevator, player)
             if npc is not None:

@@ -152,6 +152,12 @@ class MakeAToon(StateData.StateData):
          guiCancelUp,
          guiCancelDown), image_scale=halfButtonScale, image1_scale=halfButtonHoverScale, image2_scale=halfButtonHoverScale, pos=(-1.179, 0, -0.011), command=self.__handleCancel, text=('', TTLocalizer.MakeAToonCancel, TTLocalizer.MakeAToonCancel), text_font=ToontownGlobals.getInterfaceFont(), text_scale=TTLocalizer.MATguiCancelButton, text_pos=(0, 0.115), text_fg=(1, 1, 1, 1), text_shadow=(0, 0, 0, 1))
         self.guiCancelButton.hide()
+        # Setup (how the NPC toons play along), bottom left beside Cancel,
+        # the same button as Shuffle.
+        setupUp = gui.find('**/tt_t_gui_mat_shuffleUp')
+        setupDown = gui.find('**/tt_t_gui_mat_shuffleDown')
+        self.guiSetupButton = DirectButton(parent=self.guiBottomBar, relief=None, image=(setupUp, setupDown, setupUp), image_scale=(-0.6, 0.6, 0.6), image1_scale=(-0.63, 0.6, 0.6), image2_scale=(-0.63, 0.6, 0.6), pos=(-0.86, 0, -0.011), command=self.__handleSetup, text=TTLocalizer.MakeAToonSetup, text_font=ToontownGlobals.getInterfaceFont(), text_scale=TTLocalizer.SBshuffleBtn, text_pos=(0, -0.02), text_fg=(1, 1, 1, 1), text_shadow=(0, 0, 0, 1))
+        self.setupPanel = None
         self.guiNextButton = DirectButton(parent=self.guiBottomBar, relief=None, image=(guiNextUp,
          guiNextDown,
          guiNextUp,
@@ -287,6 +293,9 @@ class MakeAToon(StateData.StateData):
         del self.ns
         self.guiTopBar.destroy()
         self.guiBottomBar.destroy()
+        self.__closeSetup()
+        self.guiSetupButton.destroy()
+        del self.guiSetupButton
         self.guiCancelButton.destroy()
         self.guiCheckButton.destroy()
         self.eee.destroy()
@@ -373,6 +382,16 @@ class MakeAToon(StateData.StateData):
 
     def __handleNameShop(self):
         self.fsm.request('NameShop')
+
+    def __handleSetup(self):
+        from toontown.npcplayers import NPCSetupPanel
+        self.__closeSetup()
+        self.setupPanel = NPCSetupPanel.NPCSetupPanel()
+
+    def __closeSetup(self):
+        if getattr(self, 'setupPanel', None) is not None and not self.setupPanel.isEmpty():
+            self.setupPanel.destroy()
+        self.setupPanel = None
 
     def __handleCancel(self):
         self.doneStatus = 'cancel'

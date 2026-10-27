@@ -18,14 +18,16 @@ from toontown.toonbase.ToontownBattleGlobals import (
     Levels, HEAL_TRACK, TRAP_TRACK, LURE_TRACK, SOUND_TRACK, THROW_TRACK, SQUIRT_TRACK, DROP_TRACK)
 
 # For each place: the laff range, and the highest gag level (0 to 6) the
-# toons there have, or a range of them for places toons of all sorts visit.
+# toons there have, as a range: a toon with the least laff has the lowest,
+# one with the most the highest (Arthur: a mix in every playground, none
+# too easy).
 TIERS = {
-    ToontownGlobals.ToontownCentral: ((20, 35), 2),
-    ToontownGlobals.DonaldsDock: ((35, 50), 3),
-    ToontownGlobals.DaisyGardens: ((45, 60), 4),
-    ToontownGlobals.MinniesMelodyland: ((55, 75), 4),
-    ToontownGlobals.TheBrrrgh: ((70, 90), 5),
-    ToontownGlobals.DonaldsDreamland: ((85, 105), 5),
+    ToontownGlobals.ToontownCentral: ((20, 35), (1, 2)),
+    ToontownGlobals.DonaldsDock: ((34, 50), (2, 3)),
+    ToontownGlobals.DaisyGardens: ((45, 62), (3, 4)),
+    ToontownGlobals.MinniesMelodyland: ((55, 75), (3, 4)),
+    ToontownGlobals.TheBrrrgh: ((68, 90), (4, 5)),
+    ToontownGlobals.DonaldsDreamland: ((85, 110), (4, 5)),
     ToontownGlobals.SellbotHQ: ((70, 137), (5, 6)),
     ToontownGlobals.CashbotHQ: ((75, 137), (5, 6)),
     ToontownGlobals.LawbotHQ: ((80, 137), (5, 6)),

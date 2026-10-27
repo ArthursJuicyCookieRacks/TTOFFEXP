@@ -23,6 +23,16 @@ def getExtendedChat(chatset, extendedChat):
 
 
 def getChatter(charName, chatterType):
+    # A holiday's chatter is only written for some characters (the circuit
+    # race, every Monday, has lines for Goofy alone); the rest say their
+    # everyday lines rather than nothing.
+    chatter = _getChatter(charName, chatterType)
+    if chatter is None and chatterType:
+        chatter = _getChatter(charName, 0)
+    return chatter
+
+
+def _getChatter(charName, chatterType):
     if charName == TTLocalizer.Mickey:
         if chatterType == ToontownGlobals.APRIL_FOOLS_COSTUMES:
             return TTLocalizer.AFMickeyChatter
@@ -238,7 +248,7 @@ def getChatter(charName, chatterType):
             return SillyChipChatter
         else:
             return ChipChatter
-    elif charName == TTLocalizer.Dale or TTLocalizer.JailbirdDale:
+    elif charName == TTLocalizer.Dale or charName == TTLocalizer.JailbirdDale:
         if chatterType == ToontownGlobals.APRIL_FOOLS_COSTUMES:
             return TTLocalizer.AFDaleChatter
         elif chatterType == ToontownGlobals.HALLOWEEN_COSTUMES:

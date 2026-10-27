@@ -13,7 +13,7 @@ index daa4d75..e4499be 100644
  import android.view.ViewGroup;
  import android.view.WindowManager;
  import android.view.inputmethod.EditorInfo;
-@@ -50,6 +53,47 @@ public class PythonActivity extends PandaActivity {
+@@ -50,6 +53,50 @@ public class PythonActivity extends PandaActivity {
          mActivity = this;
      }
  
@@ -21,10 +21,13 @@ index daa4d75..e4499be 100644
 +    // battery) and no navigation bar.  A swipe from the edge shows them for
 +    // a moment.  Android shows them again after a dialog or a trip out of
 +    // the app, so this is redone each time the game gets the focus back.
++    // The screen also stays on while the game is open: no dimming and no
++    // sleep between touches (a controller player may not touch it at all).
 +    @Override
 +    protected void onCreate(Bundle savedInstanceState) {
 +        super.onCreate(savedInstanceState);
 +        getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
++        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 +        if (Build.VERSION.SDK_INT >= 28) {
 +            // Draw under the camera notch too.  Panda builds against an
 +            // old SDK, so the field (LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES

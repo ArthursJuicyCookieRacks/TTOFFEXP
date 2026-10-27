@@ -5,6 +5,8 @@ from toontown.toon import NPCToons
 from toontown.safezone import ButterflyGlobals
 from toontown.safezone.DistributedButterflyAI import DistributedButterflyAI
 
+from toontown.classicchars import ClassicCharsAI
+
 class DGHoodAI(SZHoodAI):
     HOOD = ToontownGlobals.DaisyGardens
 
@@ -16,6 +18,8 @@ class DGHoodAI(SZHoodAI):
         self.flower = DistributedDGFlowerAI(self.air)
         self.flower.generateWithRequired(self.HOOD)
         self.createButterflies()
+        self.classicChars = ClassicCharsAI.spawn(self.air, self.HOOD)
+
 
     def createButterflies(self):
         playground = ButterflyGlobals.DG
