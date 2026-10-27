@@ -1143,9 +1143,9 @@ ExtendedBackpackTransTable = {1: {'m': ((0.227545, -1.05, 0.053624), (180.0, 6.0
 # other sizes than the originals: the default spot, scaled to match, moved
 # out of the body, and turned: (scale, back, up, heading, pitch).
 EXTRA_BACKPACK_FITS = {25: (2.6, 0.3, 0.12, 180.0, 0.0, -0.06),   # santa's sack
-                       26: (5.2, 0.5, 0.5, 0.0, 0.0, 0.0),      # scarf, wrapped round the neck
+                       26: (5.2, 0.5, 0.5, 180.0, 0.0, 0.0),    # scarf, wrapped round the neck
                        27: (1.5, -0.06, 0.0, 0.0, 0.0, 0.0),    # bow
-                       32: (3.0, -0.2, 0.0, 180.0, 18.0, 0.0)}  # trash can lid, handle out
+                       32: (3.0, 0.35, 0.0, 180.0, 0.0, 0.0)}   # trash can lid flat on the back, handle out
 for _idx, (_grow, _back, _up, _turn, _tilt, _side) in EXTRA_BACKPACK_FITS.items():
     ExtendedBackpackTransTable[_idx] = dict(
         (_torso, ((_pos[0] + _side, _pos[1] + _back, _pos[2] + _up), (_hpr[0] + _turn, _hpr[1] + _tilt, _hpr[2]),
@@ -1157,24 +1157,24 @@ for _idx, (_grow, _back, _up, _turn, _tilt, _side) in EXTRA_BACKPACK_FITS.items(
 # times larger size the tables above shrink. Their places come from the base
 # table for each head, scaled up and moved a little (units are the toon's).
 # Dogs, mice and horses have long snouts, so an item worn at the nose moves
-# forward and down by snout=(forward, up) on those heads.
-SNOUT_HEADS = ('d', 'm', 'h')
-def fromBase(table, scale=1.0, move=(0.0, 0.0, 0.0), turn=(0.0, 0.0, 0.0), snout=(0.0, 0.0)):
+# by snout={head letter: (forward, up)} on those heads.
+def fromBase(table, scale=1.0, move=(0.0, 0.0, 0.0), turn=(0.0, 0.0, 0.0), snout={}):
     fitted = {}
     for head, (pos, hpr, size) in table.items():
-        forward, up = snout if head[0] in SNOUT_HEADS else (0.0, 0.0)
+        forward, up = snout.get(head[0], (0.0, 0.0))
         fitted[head] = ((pos[0] + move[0], pos[1] + move[1] + forward, pos[2] + move[2] + up),
                         (hpr[0] + turn[0], hpr[1] + turn[1], hpr[2] + turn[2]),
                         (size[0] * scale, size[1] * scale, size[2] * scale))
     return fitted
 
 # A hat is placed by its middle, so it rises by about half its height.
-EXTRA_HAT_FITS = {57: (3.6, (0.0, 0.0, 0.3), (0.0, 0.0, 0.0), (0.0, 0.0)),    # ball hat
-                  58: (3.6, (0.0, 0.0, 0.3), (0.0, 0.0, 0.0), (0.0, 0.0)),    # elf hat
-                  60: (3.6, (0.0, 0.0, 0.05), (0.0, 0.0, 0.0), (0.0, 0.0))}   # winter hat
-# The moustaches hang under the nose, so they sit forward and low.
-MOUSTACHE_FIT = (3.8, (0.0, 0.6, 0.35), (0.0, 0.0, 0.0), (0.3, -0.2))
-EXTRA_GLASSES_FITS = {22: (4.5, (0.0, 0.1, 0.1), (0.0, 0.0, 0.0), (0.0, 0.0)),    # snow goggles
+EXTRA_HAT_FITS = {57: (3.6, (0.0, 0.0, 0.1), (0.0, 0.0, 0.0), {}),    # ball hat
+                  58: (3.6, (0.0, 0.0, 0.1), (0.0, 0.0, 0.0), {}),    # elf hat
+                  60: (3.6, (0.0, 0.0, 0.05), (0.0, 0.0, 0.0), {})}   # winter hat
+# The moustaches sit on the upper lip, under the nose: further forward on
+# the long-snouted heads.
+MOUSTACHE_FIT = (3.8, (0.0, 0.6, 0.2), (0.0, 0.0, 0.0), {'d': (0.4, -0.05), 'm': (0.75, -0.05), 'h': (0.6, 0.4)})
+EXTRA_GLASSES_FITS = {22: (4.5, (0.0, 0.1, 0.1), (0.0, 0.0, 0.0), {}),    # snow goggles
                       23: MOUSTACHE_FIT,   # moustache A
                       24: MOUSTACHE_FIT,   # moustache B
                       25: MOUSTACHE_FIT}   # moustache C
