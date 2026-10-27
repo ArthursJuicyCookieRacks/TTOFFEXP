@@ -90,6 +90,7 @@ def setHelpMode(mode, settings=None):
     # A fresh choice forgets the answers given under the old one.
     _helpAnswers.clear()
     del _helpQuestions[:]
+    _helpForced.clear()
 
 
 # Turn based: the player's answers, by (avId, the battle's or elevator's
@@ -98,9 +99,36 @@ _helpAnswers = {}
 _helpQuestions = []
 
 
+# Things the player pressed Need Help! for in a battle (any Setup), by the
+# battle's or boss's doId: NPC toons help there whatever the Setup says.
+_helpForced = set()
+
+
+def forceHelp(key):
+    _helpForced.add(key)
+
+
+def helpForced(key):
+    return key in _helpForced
+
+
+def canAskHelp(avId, key):
+    """Whether the Need Help! button belongs in avId's battle key: the Setup
+    is Solo, or Turn based and the player said Solo, and they have not
+    pressed it yet."""
+    if key in _helpForced:
+        return False
+    mode = helpMode()
+    if mode == HELP_SOLO:
+        return True
+    return mode == HELP_TURN_BASED and _helpAnswers.get((avId, key)) is False
+
+
 def wantsHelp(avId, key):
     """Whether NPC toons may help avId with the thing key names: True, False,
     or None while the player has yet to be asked or to answer (turn based)."""
+    if key in _helpForced:
+        return True
     mode = helpMode()
     if mode == HELP_NORMAL:
         return True
@@ -128,6 +156,7 @@ def setHelpAnswer(avId, key, wantHelp):
 
 def forgetHelpAnswer(key):
     """The thing is over (the player got off the elevator): asked afresh next time."""
+    _helpForced.discard(key)
     for item in [k for k in _helpAnswers if k[1] == key]:
         del _helpAnswers[item]
     for item in [q for q in _helpQuestions if q[1] == key]:
