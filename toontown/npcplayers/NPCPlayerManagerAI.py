@@ -21,10 +21,12 @@ from toontown.classicchars import CCharPaths
 from toontown.dna import DNAStoreSuitPoint
 from toontown.hood import ZoneUtil
 from toontown.npcplayers import NPCProfiles
-from toontown.npcplayers.NPCSettings import preloadNPCs, keepAreas, npcsPerArea, helpMode, wantsHelp, setHelpAnswer, HELP_SOLO
+from toontown.npcplayers.NPCSettings import preloadNPCs, keepAreas, npcsPerArea, helpMode, wantsHelp, setHelpAnswer, HELP_SOLO, \
+    forceHelp, helpForced, canAskHelp
 from toontown.npcplayers.NPCBattleCrew import NPCBattleCrew, isNPC
 from toontown.npcplayers.NPCNav import getNav
 from toontown.npcplayers.NPCGolf import NPCGolf
+from toontown.npcplayers.NPCFacilities import NPCFacilities
 from toontown.npcplayers.NPCMinigames import NPCMinigames
 from toontown.npcplayers.NPCRacing import NPCRacing
 from toontown.npcplayers.NPCParty import NPCParty
@@ -262,6 +264,7 @@ class NPCPlayerManagerAI:
         self.crews = {}
         self.party = NPCParty(self)
         self.golf = NPCGolf(self)
+        self.facilities = NPCFacilities(self)
         self.minigames = NPCMinigames(self)
         self.racing = NPCRacing(self)
         self.stats = {}
@@ -280,6 +283,7 @@ class NPCPlayerManagerAI:
             for npc in area.npcs[:]:
                 self.despawn(npc, quietly=True)
         self.party.destroy()
+        self.facilities.destroy()
         self.minigames.destroy()
         self.racing.destroy()
 
@@ -648,6 +652,7 @@ class NPCPlayerManagerAI:
                         self.walkNPC(area, npc, dt)
                         if npc.walk is not None and not npc.isDeleted():
                             self.bump(area, npc, suits)
+            self.facilities.tick(now, dt)
             self.party.follow()
             for npc in self.party.members[:]:
                 if npc.crew is None and not npc.busy and not npc.isDeleted():
@@ -964,8 +969,8 @@ class NPCPlayerManagerAI:
             if not players or len(battle.toons) >= 4 or not battle.toonCanJoin():
                 continue
             crew = self.crewFor(battle)
-            if helpMode() == HELP_SOLO:
-                # Setup: Solo. No NPC toon helps.
+            if helpMode() == HELP_SOLO and not helpForced(battle.doId):
+                # Setup: Solo. No NPC toon helps (unless asked to; see needHelp).
                 continue
             # The player's party comes along wherever the battle is.
             party = [npc for p in players for npc in self.party.partyOf(p)
@@ -1128,6 +1133,160 @@ class NPCPlayerManagerAI:
     def readyAnswer(self, player, elevatorId, start):
         # From the player's answer to the full elevator's question.
         return self.party.readyAnswer(player, elevatorId, start)
+
+    # --- Need Help! in a battle (Setup: Solo, or Solo at the turn based prompt) ---
+
+    HELPERS = 3
+
+    def playerBoss(self, player):
+        for obj in list(self.air.doId2do.values()):
+            if isinstance(obj, DistributedBossCogAI) and not obj.isDeleted() and obj.zoneId == player.zoneId and \
+                    player.doId in obj.involvedToons + obj.looseToons:
+                return obj
+        return None
+
+    def helpKey(self, player):
+        """The battle (or boss fight) the player is in and the key its help is
+        asked under, or (None, None)."""
+        battle = self.air.doId2do.get(player.getBattleId())
+        if not isinstance(battle, DistributedBattleBaseAI):
+            # Building and HQ battles add their toons before they are
+            # generated, so the toon's battleId stays unset.
+            battle = None
+            for obj in list(self.air.doId2do.values()):
+                if isinstance(obj, DistributedBattleBaseAI) and not obj.isDeleted() and player.doId in obj.toons:
+                    battle = obj
+                    break
+        if battle is None or battle.isDeleted() or battle.fsm is None:
+            return None, None
+        boss = self.playerBoss(player)
+        return battle, (boss.doId if boss is not None else battle.doId)
+
+    def needHelpAvailable(self, player):
+        """Whether the player's battle shows the Need Help! button."""
+        battle, key = self.helpKey(player)
+        if battle is None or not canAskHelp(player.doId, key):
+            return False
+        boss = self.playerBoss(player)
+        if boss is not None:
+            return len(boss.involvedToons) < 8
+        return len(battle.toons) < 4
+
+    def needHelp(self, player):
+        """The player pressed Need Help!: NPC toons join the battle. On a
+        street the toons about come running (more are made if there are too
+        few); anywhere else (a building, field office, factory, mint, office,
+        golf course or boss fight) three toons fit for the place arrive."""
+        battle, key = self.helpKey(player)
+        if battle is None or not canAskHelp(player.doId, key):
+            return False
+        forceHelp(key)
+        setHelpAnswer(player.doId, key, True)
+        self.stats['need help'] = self.stats.get('need help', 0) + 1
+        boss = self.playerBoss(player)
+        if boss is not None:
+            return self.helpInBoss(player, boss, battle)
+        if battle.__class__.__name__ in STREET_BATTLES and self.areas.get(getAreaId(battle.zoneId)) is not None:
+            area = self.areas[getAreaId(battle.zoneId)]
+            free = [npc for npc in area.npcs if npc.crew is None and not npc.busy and not npc.isDeleted() and
+                    getattr(npc, 'headingTo', None) is None]
+            wanted = max(0, min(self.HELPERS, 4 - len(battle.toons)))
+            for i in range(wanted - len(free)):
+                spot = self.battleSpot(battle)
+                npc = self.spawn(area, spot, battle.zoneId, player)
+                npc.b_setAnimState('TeleportIn', 1.0)
+            self.joinBattles()
+            return True
+        return self.helpInside(player, battle)
+
+    def makeHelper(self, player, zoneId, spot, heading=0.0):
+        """A toon fit for the place, in the player's party, arriving at spot."""
+        npc = NPCPlayerAI(self.air, self)
+        npc.applyProfile(NPCProfiles.makeProfile(zoneId, player))
+        npc.area = None
+        npc.inRoad = False
+        npc.crew = None
+        npc.party = None
+        npc.walk = None
+        npc.idleUntil = 0
+        npc.busy = False
+        npc.generateInZone(zoneId, spot[0], spot[1], spot[2], heading)
+        npc.b_setAnimState('TeleportIn', 1.0)
+        self.party.take(npc, player)
+        npc.helper = True
+        return npc
+
+    def helperSpots(self, battle, count):
+        spots = []
+        for i in range(count):
+            try:
+                spot = self.battleSpot(battle)
+            except Exception:
+                spot = None
+            if spot is None:
+                angle = random.uniform(0, 2 * math.pi)
+                spot = Point3(battle.pos[0] + 8 * math.cos(angle), battle.pos[1] + 8 * math.sin(angle), battle.pos[2])
+            spots.append(spot)
+        return spots
+
+    def helpInside(self, player, battle):
+        wanted = max(0, min(self.HELPERS, 4 - len(battle.toons)))
+        if not wanted:
+            return False
+        if not battle.isJoinable():
+            battle.joinableFsm.request('Joinable')
+        # The floor (building or field office) must know its new toons, or
+        # the elevator to the next floor leaves them behind.
+        floor = None
+        for obj in list(self.air.doId2do.values()):
+            if getattr(obj, 'battle', None) is battle and hasattr(obj, 'toons') and obj.zoneId == battle.zoneId:
+                floor = obj
+                break
+        crew = self.crewFor(battle)
+        for spot in self.helperSpots(battle, wanted):
+            npc = self.makeHelper(player, battle.zoneId, spot)
+            if floor is not None:
+                addToon = getattr(floor, '_%s__addToon' % floor.__class__.__name__, None)
+                if addToon is not None:
+                    addToon(npc.doId)
+                elif npc.doId not in floor.toons:
+                    floor.toons.append(npc.doId)
+                    if isinstance(getattr(floor, 'responses', None), dict):
+                        floor.responses[npc.doId] = 0
+            level = getattr(floor, 'level', None) or getattr(battle, 'level', None)
+            if level is not None and hasattr(level, 'avIdList') and npc.doId not in level.avIdList:
+                level.avIdList.append(npc.doId)
+            h = -math.degrees(math.atan2(battle.pos[0] - spot[0], battle.pos[1] - spot[1]))
+            npc.placeAt(spot[0], spot[1], spot[2], h)
+            if not crew.join(npc, spot[0], spot[1], spot[2]):
+                self.notify.warning('helper %s could not join battle %s' % (npc.doId, battle.doId))
+        return True
+
+    def helpInBoss(self, player, boss, battle):
+        wanted = max(0, min(self.HELPERS, 8 - len(boss.involvedToons)))
+        if not wanted:
+            return False
+        side = 'A' if player.doId in boss.toonsA else 'B'
+        for spot in self.helperSpots(battle, wanted):
+            npc = self.makeHelper(player, boss.zoneId, spot)
+            if npc.cogTypes and npc.cogTypes[0] >= 0 and any(npc.cogLevels):
+                npc.b_setCogIndex(ToontownGlobals.cogHQZoneId2deptIndex(ZoneUtil.getHoodId(boss.zoneId)))
+            boss.addToon(npc.doId)
+            boss.looseToons.remove(npc.doId)
+            boss.involvedToons.append(npc.doId)
+            # On the player's side while there is room, else the other.
+            sides = [boss.toonsA, boss.toonsB] if side == 'A' else [boss.toonsB, boss.toonsA]
+            for toons in sides:
+                if len(toons) < 4:
+                    toons.append(npc.doId)
+                    break
+            mine = battle if npc.doId in (boss.toonsA if side == 'A' else boss.toonsB) else \
+                (boss.battleB if side == 'A' else boss.battleA)
+            if isinstance(mine, DistributedBattleBaseAI) and not mine.isDeleted() and mine.toonCanJoin():
+                self.crewFor(mine).join(npc, spot[0], spot[1], spot[2])
+        boss.sendToonIds()
+        self.joinBosses()
+        return True
 
     def helpAnswer(self, player, key, wantHelp):
         # From the player's Solo / Need Help! answer (Setup: Turn based).

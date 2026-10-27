@@ -64,3 +64,13 @@ def whispered(doId):
     if doId not in npcFriends():
         return False
     return bool(_call('summon', doId))
+
+
+def needHelpAvailable():
+    """Whether the Need Help! button belongs in the player's battle."""
+    return bool(_call('needHelpAvailable'))
+
+
+def needHelp():
+    """The player pressed Need Help!: NPC toons join their battle."""
+    return bool(_call('needHelp'))
