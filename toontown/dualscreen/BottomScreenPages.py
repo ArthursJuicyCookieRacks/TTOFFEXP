@@ -327,13 +327,13 @@ class BottomScreen(DirectObject):
         from toontown.toon import LaffMeter
         avatar = base.localAvatar
         self.paper()
-        self.nameLabel = self.label(avatar.getName(), (0, 0, 0.84), scale=0.085, font=ToontownGlobals.getToonFont())
+        self.nameLabel = self.label(avatar.getName(), (0, 0, 0.885), scale=0.085, font=ToontownGlobals.getToonFont())
         self.laffMeter = LaffMeter.LaffMeter(avatar.style, avatar.hp, avatar.maxHp)
         self.laffMeter.setAvatar(avatar)
         self.laffMeter.reparentTo(self.page)
         self.laffMeter.setScale(0.17)
         self.laffMeter.start()
-        self.laffMeter.setPos(0.0, 0, 0.54)
+        self.laffMeter.setPos(0.0, 0, 0.58)
         self.accept('toonLookChanged', self.rebuild)
         beans = self.panel((0, 0, 0.22), 0.38, 0.13, CREAM, touchable=True)
         jar = beans.attachNewNode('jar')
