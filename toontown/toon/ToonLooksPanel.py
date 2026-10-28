@@ -12,6 +12,7 @@ from direct.gui.DirectGui import *
 from direct.interval.IntervalGlobal import *
 from direct.showbase.DirectObject import DirectObject
 
+from toontown.login import AvatarChoice
 from toontown.toon import ToonHead
 from toontown.toon import ToonLooks
 from toontown.toonbase import TTLocalizer
@@ -24,10 +25,14 @@ OUTLINE = (0.6, 0.38, 0.0, 1)
 # The window sits a little above the middle of the screen.
 WINDOW_Z = 0.1
 SQUARES = ('Red', 'Green', 'Purple', 'Blue', 'Pink', 'Yellow')
-# Each square is tilted its own way: where its Edit button and its trash can
-# fit inside it (measured from the squares' pictures).
-EDIT_POS = ((0.012, -0.168), (-0.032, -0.156), (0.028, -0.168), (-0.032, -0.164), (0.04, -0.148), (-0.028, -0.168))
-TRASH_POS = ((0.164, 0.096), (0.137, 0.144), (0.167, 0.129), (0.149, 0.138), (0.17, 0.102), (0.164, 0.138))
+# Laid out the way Pick-A-Toon lays out its squares (AvatarChoice), at
+# SQUARE_SCALE of its size: the head in the middle, the name tilted with each
+# square, the trash can bottom right and the button bottom left, each pulled
+# in just enough to stay inside its tilted square.
+SQUARE_SCALE = 0.62
+NAME_POS = tuple((x * SQUARE_SCALE, z * SQUARE_SCALE) for x, y, z in AvatarChoice.NAME_POSITIONS)
+EDIT_POS = ((-0.11, -0.166), (-0.104, -0.156), (-0.112, -0.167), (-0.095, -0.143), (-0.095, -0.143), (-0.092, -0.138))
+TRASH_POS = ((0.108, -0.151), (0.192, -0.104), (0.134, -0.14), (0.182, -0.108), (0.141, -0.135), (0.162, -0.12))
 SLOT_POS = ((-0.5, 0.22), (0, 0.22), (0.5, 0.22),
             (-0.5, -0.24), (0, -0.24), (0.5, -0.24))
 _circle = []
@@ -195,7 +200,7 @@ class LooksWindow(DirectObject):
         if wearing:
             button['state'] = DGG.DISABLED
         head = hidden.attachNewNode('lookHead')
-        head.setPosHprScale(0, 5, -0.005, 180, 0, 0, 0.15, 0.15, 0.15)
+        head.setPosHprScale(0, 5, -0.1 * SQUARE_SCALE, 180, 0, 0, 0.24 * SQUARE_SCALE, 0.24 * SQUARE_SCALE, 0.24 * SQUARE_SCALE)
         head.reparentTo(button.stateNodePath[0], 20)
         for state in (1, 2, 3):
             head.instanceTo(button.stateNodePath[state], 20)
@@ -207,14 +212,16 @@ class LooksWindow(DirectObject):
         model.startBlink()
         model.startLookAround()
         button.headModel = model
-        DirectLabel(parent=button, relief=None, pos=(0, 0, 0.16), text=TTLocalizer.LooksNumber % (slot + 1), text_font=ToontownGlobals.getInterfaceFont(), text_scale=0.04, text_fg=(1, 1, 1, 1), text_shadow=(0, 0, 0, 1))
+        nameX, nameZ = NAME_POS[slot]
+        name = TTLocalizer.LooksNumber % (slot + 1)
+        if wearing:
+            name = '%s - %s' % (name, TTLocalizer.LooksWearing)
+        DirectLabel(parent=button, relief=None, pos=(nameX, 0, nameZ), hpr=(0, 0, AvatarChoice.NAME_ROTATIONS[slot]), text=name, text_font=ToontownGlobals.getInterfaceFont(), text_scale=0.042, text_fg=(1, 0.95, 0.3, 1) if wearing else (1, 1, 1, 1), text_shadow=(0, 0, 0, 1))
         editX, editZ = EDIT_POS[slot]
         trashX, trashZ = TRASH_POS[slot]
-        if wearing:
-            DirectLabel(parent=button, relief=None, pos=(editX, 0, editZ + 0.05), text=TTLocalizer.LooksWearing, text_font=ToontownGlobals.getInterfaceFont(), text_scale=0.045, text_fg=(1, 0.95, 0.3, 1), text_shadow=(0, 0, 0, 1))
-        else:
+        if not wearing:
             DirectButton(parent=button, relief=None, image=(trashGui.find('**/TrashCan_CLSD'), trashGui.find('**/TrashCan_OPEN'), trashGui.find('**/TrashCan_RLVR')), pos=(trashX, 0, trashZ), scale=0.22, command=self.askRemove, extraArgs=[slot])
-        DirectButton(parent=button, relief=None, image=(quitGui.find('**/QuitBtn_UP'), quitGui.find('**/QuitBtn_DN'), quitGui.find('**/QuitBtn_RLVR')), image_scale=(0.75, 1, 1.1), pos=(editX, 0, editZ), scale=0.5, text=TTLocalizer.LooksEdit, text_font=ToontownGlobals.getInterfaceFont(), text_scale=0.1, text_pos=(0, -0.03), text_fg=(1, 1, 1, 1), text_shadow=(0, 0, 0, 1), command=self.edit, extraArgs=[slot])
+        DirectButton(parent=button, relief=None, image=(quitGui.find('**/QuitBtn_UP'), quitGui.find('**/QuitBtn_DN'), quitGui.find('**/QuitBtn_RLVR')), image_scale=(0.75, 1, 1.1), pos=(editX, 0, editZ), scale=0.45, text=TTLocalizer.LooksEdit, text_font=ToontownGlobals.getInterfaceFont(), text_scale=0.1, text_pos=(0, -0.03), text_fg=(1, 1, 1, 1), text_shadow=(0, 0, 0, 1), command=self.edit, extraArgs=[slot])
         return button
 
     def destroyFrame(self):
