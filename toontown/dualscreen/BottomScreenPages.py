@@ -10,11 +10,13 @@ toons help. In a battle that row is the Cogs' laff and Need Help!.
 Every page but the first has a Back arrow to the laff meter.
 """
 
+import math
+
 from direct.directnotify import DirectNotifyGlobal
 from direct.gui import DirectGuiGlobals as DGG
 from direct.gui.DirectGui import DirectFrame, DirectLabel
 from direct.showbase.DirectObject import DirectObject
-from panda3d.core import NodePath, Point3, TextNode
+from panda3d.core import CardMaker, NodePath, PNMImage, Point3, TextNode, Texture, TransparencyAttrib
 
 from toontown.hood import ZoneUtil
 from toontown.toonbase import ToontownBattleGlobals
@@ -23,12 +25,26 @@ from toontown.toonbase import ToontownGlobals
 notify = DirectNotifyGlobal.directNotify.newCategory('BottomScreen')
 
 WHITE = (1, 1, 1, 1)
-SHADOW = (0, 0, 0, 0.6)
-DARK = (0.12, 0.18, 0.4, 1)
-PANEL = (1, 1, 1, 0.85)
+# Book page colors: the writing, quieter writing, the line under a title,
+# the edge of a card and the cards' soft tints.
+INK = (0.16, 0.22, 0.48, 1)
+SOFT = (0.38, 0.42, 0.55, 1)
+RULE = (0.72, 0.77, 0.88, 1)
+EDGE = (0.66, 0.72, 0.84)
+CREAM = (1, 0.97, 0.86, 1)
+GOLD = (1, 0.92, 0.6, 1)
+SKY = (0.78, 0.89, 1, 1)
+MINT = (0.78, 0.95, 0.78, 1)
+LILAC = (0.88, 0.82, 1, 1)
+ROSE = (1, 0.82, 0.8, 1)
+PINK = (1, 0.84, 0.94, 1)
+# The page's writing stays within this far of the middle, the home page's
+# buttons are TILE across, GRID apart.
+CONTENT = 0.7
+TILE = 0.32
+GRID = 0.38
 NOT_STARTED = 'Game Not Started'
 NO_TOON = 'Toon Not Selected'
-SQUARES = ('Red', 'Green', 'Purple', 'Blue', 'Pink', 'Yellow')
 SPEEDCHAT = ((100, 'Hi!'), (102, 'Hello!'), (300, 'Yay!'), (500, 'Thanks!'), (511, 'Can you help me?'), (200, 'Bye!'))
 EMOTES = ('Wave', 'Happy', 'Dance', 'Laugh')
 REFRESH = 1.0
@@ -216,9 +232,11 @@ class BottomScreen(DirectObject):
 
     # --- Building blocks ---
 
-    def label(self, text, pos, scale=0.07, fg=WHITE, parent=None, font=None, wordwrap=None, align=TextNode.ACenter, shadow=SHADOW):
+    def label(self, text, pos, scale=0.07, fg=INK, parent=None, font=None, wordwrap=None, align=TextNode.ACenter, shadow=None):
         args = dict(parent=parent or self.page, relief=None, pos=pos, text=text, text_scale=scale, text_fg=fg,
-                    text_font=font or self.font, text_align=align, text_shadow=shadow)
+                    text_font=font or self.font, text_align=align)
+        if shadow:
+            args['text_shadow'] = shadow
         if wordwrap:
             args['text_wordwrap'] = wordwrap
         return DirectLabel(**args)
@@ -227,36 +245,56 @@ class BottomScreen(DirectObject):
         self.taps.append(Tap(node, command, args))
         return node
 
-    def iconButton(self, pos, square, icon, iconScale, command, *args, size=0.3):
-        frame = DirectFrame(parent=self.page, relief=None, image=self.find('tt_m_gui_pat_mainGui', 'tt_t_gui_pat_square' + square),
-                            image_scale=size * 1.18, pos=pos, state=DGG.NORMAL)
+    def paper(self):
+        # An empty page of the Shticker Book (the right half of its picture).
+        texture = self.find('stickerbook_gui', 'big_book').findTexture('*')
+        cards = CardMaker('page')
+        cards.setFrame(-self.width, self.width, -1, 1)
+        cards.setUvRange((0.5, 0), (1, 1))
+        card = self.page.attachNewNode(cards.generate())
+        card.setTexture(texture, 1)
+        card.setBin('background', 0)
+
+    def panel(self, pos, width, height, tint=WHITE, parent=None, touchable=False, **kw):
+        """A rounded card, width by height, centered on pos."""
+        frame = DirectFrame(parent=parent or self.page, relief=None, image=roundedTexture(width / height),
+                            image_scale=(width / 2.0, 1, height / 2.0), image_color=tint, pos=pos,
+                            frameSize=(-width / 2.0, width / 2.0, -height / 2.0, height / 2.0),
+                            state=DGG.NORMAL if touchable else DGG.DISABLED, **kw)
+        frame.setTransparency(TransparencyAttrib.MAlpha)
+        return frame
+
+    def iconTile(self, pos, tint, icon, iconScale, command, *args, size=TILE):
+        frame = self.panel(pos, size, size, tint, touchable=True)
         if icon is not None:
             holder = frame.attachNewNode('icon')
             icon.copyTo(holder)
             holder.setScale(iconScale)
             holder.setY(-1)
+            low, high = holder.getTightBounds(frame) or (Point3(0), Point3(0))
+            holder.setX(holder.getX() - (low[0] + high[0]) / 2.0)
+            holder.setZ(holder.getZ() - (low[2] + high[2]) / 2.0)
         return self.tap(frame, command, *args)
 
-    def textButton(self, text, pos, command, *args, scale=(1.0, 1, 1.0), textScale=0.06, color=(1, 1, 1, 1), width=None):
-        images = (self.find('quit_button', 'QuitBtn_UP'), self.find('quit_button', 'QuitBtn_DN'), self.find('quit_button', 'QuitBtn_RLVR'))
-        frame = DirectFrame(parent=self.page, relief=None, image=images[0], image_scale=scale, image_color=color, pos=pos,
-                            text=text, text_scale=textScale, text_pos=(0, -0.018), text_fg=WHITE, text_shadow=SHADOW,
-                            text_font=self.font, state=DGG.NORMAL)
+    def textButton(self, text, pos, command, *args, width=0.62, height=0.14, textScale=0.055, tint=WHITE):
+        frame = self.panel(pos, width, height, tint, touchable=True, text=text, text_scale=textScale,
+                           text_pos=(0, -textScale * 0.35), text_fg=INK, text_font=self.font)
         return self.tap(frame, command, *args)
 
-    def title(self, text):
-        self.label(text, (0, 0, 0.86), scale=0.11, font=self.signFont, fg=(1, 0.92, 0.2, 1), shadow=(0.2, 0.2, 0.5, 1))
+    def title(self, text, font=None):
+        self.label(text, (0, 0, 0.8), scale=0.1, font=font or self.font, fg=INK)
+        DirectFrame(parent=self.page, relief=DGG.FLAT, frameColor=RULE, frameSize=(-0.55, 0.55, -0.004, 0.004), pos=(0, 0, 0.74))
 
     def backButton(self):
-        arrow = self.find('tt_m_gui_mat_mainGui', 'tt_t_gui_mat_nextUp')
-        frame = DirectFrame(parent=self.page, relief=None, image=arrow, image_scale=(-0.55, 0.55, 0.55),
-                            pos=(-self.width + 0.17, 0, -0.86), state=DGG.NORMAL)
+        images = tuple(self.find('stickerbook_gui', name) for name in ('arrow_button', 'arrow_down', 'arrow_rollover'))
+        frame = DirectFrame(parent=self.page, relief=None, image=images[0], scale=(-0.18, 0.18, 0.18),
+                            pos=(-self.width + 0.27, 0, -0.82), state=DGG.NORMAL)
         self.tap(frame, self.show, 'home')
 
     def say(self, text, seconds=3.0):
         if self.message is None or self.message.isEmpty():
-            self.message = DirectLabel(parent=self.page, relief=DGG.FLAT, frameColor=(0.1, 0.15, 0.35, 0.85), pad=(0.04, 0.03),
-                                       pos=(0, 0, -0.68), text='', text_scale=0.06, text_fg=WHITE, text_font=self.font,
+            self.message = DirectLabel(parent=self.page, relief=DGG.FLAT, frameColor=(0.16, 0.22, 0.48, 0.92), pad=(0.05, 0.04),
+                                       pos=(0, 0, -0.6), text='', text_scale=0.055, text_fg=WHITE, text_font=self.font,
                                        text_wordwrap=22, sortOrder=100)
         self.message['text'] = text
         self.message.resetFrameSize()
@@ -269,58 +307,57 @@ class BottomScreen(DirectObject):
     # --- Before the game ---
 
     def buildNotStarted(self):
-        self.label(NOT_STARTED, (0, 0, -0.03), scale=0.17, wordwrap=8, shadow=(0.1, 0.2, 0.45, 0.9))
+        self.label(NOT_STARTED, (0, 0, -0.03), scale=0.17, wordwrap=8, fg=WHITE, shadow=(0.1, 0.2, 0.45, 0.9))
 
     def buildNoToon(self):
-        self.label(NO_TOON, (0, 0, -0.03), scale=0.17, wordwrap=8, shadow=(0.1, 0.2, 0.45, 0.9))
+        self.label(NO_TOON, (0, 0, -0.03), scale=0.17, wordwrap=8, fg=WHITE, shadow=(0.1, 0.2, 0.45, 0.9))
 
     # --- The laff meter page ---
 
     def buildHome(self):
         from toontown.toon import LaffMeter
         avatar = base.localAvatar
-        self.nameLabel = self.label(avatar.getName(), (0, 0, 0.87), scale=0.08, font=ToontownGlobals.getToonFont())
+        self.paper()
+        self.nameLabel = self.label(avatar.getName(), (0, 0, 0.84), scale=0.085, font=ToontownGlobals.getToonFont())
         self.laffMeter = LaffMeter.LaffMeter(avatar.style, avatar.hp, avatar.maxHp)
         self.laffMeter.setAvatar(avatar)
         self.laffMeter.reparentTo(self.page)
-        self.laffMeter.setScale(0.2)
-        self.laffMeter.setPos(-0.12, 0, 0.5)
+        self.laffMeter.setScale(0.17)
         self.laffMeter.start()
+        # The meter's face sits a little left of its middle.
+        self.laffMeter.setPos(0.25 * 0.17, 0, 0.54)
         self.accept('toonLookChanged', self.rebuild)
-        jar = self.find('jar_gui', 'Jar')
-        self.beans = DirectLabel(parent=self.page, relief=None, image=jar, image_scale=0.45, image_pos=(0, 0, 0.03),
-                                 pos=(self.width - 0.2, 0, 0.55), text='', text_scale=0.065, text_pos=(0, -0.17), text_fg=WHITE,
-                                 text_shadow=SHADOW, text_font=self.font)
-        self.tap(self.beans, self.show, 'progress')
-        icons = (('Yellow', self.find('inventory_icons', 'inventory_tart'), 1.35, 'gags'),
-                 ('Blue', self.find('stickerbook_gui', 'questCard'), 0.19, 'tasks'),
-                 ('Green', self.find('sos_textures', 'teleportIcon'), 0.2, 'map'),
-                 ('Purple', self.find('sos_textures', 'district'), 0.2, 'districts'),
-                 ('Red', self.find('stickerbook_gui', 'BookIcon_CLSD'), 0.3, None))
-        spacing = (self.width * 2 - 0.12) / 5
-        for i, (square, icon, scale, page) in enumerate(icons):
-            x = -self.width + 0.06 + spacing * (i + 0.5)
-            if page:
-                self.iconButton((x, 0, 0.08), square, icon, scale, self.show, page, size=spacing * 0.92)
-            else:
-                self.iconButton((x, 0, 0.08), square, icon, scale, self.openBook, size=spacing * 0.92)
+        beans = self.panel((0, 0, 0.22), 0.5, 0.13, CREAM, touchable=True)
+        jar = beans.attachNewNode('jar')
+        self.find('jar_gui', 'Jar').copyTo(jar)
+        jar.setScale(0.18)
+        jar.setPos(-0.16, -1, 0.005)
+        self.beans = self.label('', (0.06, 0, -0.02), scale=0.065, parent=beans)
+        self.tap(beans, self.show, 'progress')
+        tiles = ((GOLD, self.find('inventory_icons', 'inventory_tart'), 1.25, 'gags'),
+                 (SKY, self.find('stickerbook_gui', 'questCard'), 0.17, 'tasks'),
+                 (MINT, self.find('sos_textures', 'teleportIcon'), 0.18, 'map'),
+                 (LILAC, self.find('sos_textures', 'district'), 0.18, 'districts'),
+                 (ROSE, self.find('stickerbook_gui', 'BookIcon_CLSD'), 0.22, None),
+                 (PINK, self.find('friendslist_gui', 'FriendsBox_Closed'), 0.45, 'friends'),
+                 (SKY, self.chatIcon(), 0.9, 'chat'),
+                 (GOLD, self.find('stickerbook_gui', 'CogArmIcon2'), 0.2, 'progress'),
+                 (MINT, self.find('sos_textures', 'gui_gear'), 0.16, 'help'))
         self.extras = self.page.attachNewNode('extras')
         self.battleRow = self.page.attachNewNode('battle')
-        self.buildExtras()
+        for i, (tint, icon, scale, name) in enumerate(tiles):
+            row, column = divmod(i, 3)
+            pos = ((column - 1) * GRID, 0, -0.02 - row * GRID)
+            if row:
+                page, self.page = self.page, self.extras
+            if name:
+                self.iconTile(pos, tint, icon, scale, self.show, name)
+            else:
+                self.iconTile(pos, tint, icon, scale, self.openBook)
+            if row:
+                self.page = page
         self.battleShown = None
         self.refreshHome()
-
-    def buildExtras(self):
-        page, self.page = self.page, self.extras
-        icons = (('Pink', self.find('friendslist_gui', 'FriendsBox_Closed'), 0.5, 'friends'),
-                 ('Blue', self.chatIcon(), 1.0, 'chat'),
-                 ('Yellow', self.find('sos_textures', 'disguise2'), 0.2, 'progress'),
-                 ('Green', self.find('sos_textures', 'gui_gear'), 0.18, 'help'))
-        spacing = (self.width * 2 - 0.3) / 4
-        for i, (square, icon, scale, name) in enumerate(icons):
-            x = -self.width + 0.15 + spacing * (i + 0.5)
-            self.iconButton((x, 0, -0.38), square, icon, scale, self.show, name, size=spacing * 0.8)
-        self.page = page
 
     def chatIcon(self):
         # A SpeedChat balloon saying Hi!.
@@ -366,20 +403,20 @@ class BottomScreen(DirectObject):
         self.taps = [tap for tap in self.taps if not tap.node.isEmpty() and tap.node.hasParent()]
         page, self.page = self.page, self.battleRow
         suits = [suit for suit in getattr(battle, 'activeSuits', []) if suit is not None and not suit.isEmpty()]
-        self.label('Cogs', (0, 0, -0.2), scale=0.065)
+        box = self.panel((0, 0, -0.42), 1.36, 0.5, CREAM)
+        self.label('Cogs', (0, 0, 0.17), scale=0.06, parent=box)
         for i, suit in enumerate(suits[:4]):
-            z = -0.3 - i * 0.1
+            z = 0.07 - i * 0.09
             hp, maxHp = getattr(suit, 'currHP', 0), max(1, getattr(suit, 'maxHP', 1))
             name = '%s (level %d)' % (suit.getName(), suit.getActualLevel()) if hasattr(suit, 'getActualLevel') else suit.getName()
-            self.label(name, (-self.width + 0.08, 0, z), scale=0.05, align=TextNode.ALeft)
-            bar = DirectFrame(parent=self.page, relief=DGG.FLAT, frameColor=(0.2, 0.2, 0.2, 0.8),
-                              frameSize=(0, 0.5, -0.025, 0.025), pos=(self.width - 0.58, 0, z + 0.012))
+            self.label(name, (-0.62, 0, z - 0.015), scale=0.045, parent=box, align=TextNode.ALeft)
+            DirectFrame(parent=box, relief=DGG.FLAT, frameColor=(0.75, 0.75, 0.78, 1), frameSize=(0, 0.36, -0.022, 0.022), pos=(0.1, 0, z))
             fraction = max(0.0, min(1.0, hp / float(maxHp)))
-            color = (0.2, 0.9, 0.2, 1) if fraction > 0.5 else (1, 0.8, 0.1, 1) if fraction > 0.25 else (1, 0.2, 0.15, 1)
-            DirectFrame(parent=bar, relief=DGG.FLAT, frameColor=color, frameSize=(0, 0.5 * fraction, -0.025, 0.025))
-            self.label('%d/%d' % (hp, maxHp), (self.width - 0.33, 0, z - 0.012), scale=0.04, parent=bar.getParent())
+            color = (0.3, 0.8, 0.3, 1) if fraction > 0.5 else (0.95, 0.75, 0.15, 1) if fraction > 0.25 else (0.9, 0.25, 0.2, 1)
+            DirectFrame(parent=box, relief=DGG.FLAT, frameColor=color, frameSize=(0, 0.36 * fraction, -0.022, 0.022), pos=(0.1, 0, z))
+            self.label('%d/%d' % (hp, maxHp), (0.62, 0, z - 0.013), scale=0.04, parent=box, align=TextNode.ARight)
         if NPCFriends.needHelpAvailable():
-            self.textButton('Need Help!', (0, 0, -0.74), self.needHelp, scale=(1.3, 1, 1.5), textScale=0.065)
+            self.textButton('Need Help!', (0, 0, -0.8), self.needHelp, width=0.62, height=0.15, textScale=0.065, tint=ROSE)
         self.page = page
 
     def needHelp(self):
@@ -397,6 +434,7 @@ class BottomScreen(DirectObject):
     # --- Gags ---
 
     def buildGags(self):
+        self.paper()
         self.title('Gags')
         self.backButton()
         self.gagLabels = []
@@ -404,24 +442,24 @@ class BottomScreen(DirectObject):
         inventory = avatar.inventory
         rows = len(ToontownBattleGlobals.Tracks)
         levels = len(ToontownBattleGlobals.Levels[0])
-        cell = min((self.width * 2 - 0.1) / levels, 1.45 / rows)
-        top = 0.66
+        cell = min(CONTENT * 2 / levels, 1.4 / rows)
+        top = 0.6
         for track in range(rows):
             z = top - cell * track
             hasTrack = avatar.hasTrackAccess(track)
             color = ToontownBattleGlobals.TrackColors[track]
-            DirectFrame(parent=self.page, relief=DGG.FLAT, frameColor=(color[0], color[1], color[2], 0.85 if hasTrack else 0.25),
-                        frameSize=(-self.width + 0.04, self.width - 0.04, -cell * 0.47, cell * 0.47), pos=(0, 0, z))
+            tint = tuple(0.45 + 0.55 * c for c in color[:3]) + ((1,) if hasTrack else (0.35,))
+            self.panel((0, 0, z), cell * levels + 0.04, cell * 0.94, tint)
             for level in range(levels):
-                x = -self.width + 0.05 + cell * (level + 0.5)
+                x = cell * (level - (levels - 1) / 2.0)
                 icon = self.find('inventory_icons', ToontownBattleGlobals.AvPropsNew[track][level])
                 holder = self.page.attachNewNode('gag')
                 icon.copyTo(holder)
                 holder.setPos(x, 0, z + cell * 0.08)
-                holder.setScale(cell * 5.2)
+                holder.setScale(cell * 5.0)
                 if not hasTrack or level >= inventory.getMax(track, level) and inventory.numItem(track, level) == 0 and not avatar.experience.getExpLevel(track) >= level:
                     holder.setColorScale(1, 1, 1, 0.25)
-                label = self.label('', (x, 0, z - cell * 0.4), scale=cell * 0.26)
+                label = self.label('', (x, 0, z - cell * 0.4), scale=cell * 0.25)
                 self.gagLabels.append((label, track, level, hasTrack))
         self.refreshGags()
 
@@ -437,16 +475,16 @@ class BottomScreen(DirectObject):
     # --- ToonTasks ---
 
     def buildTasks(self):
+        self.paper()
         self.title('ToonTasks')
         self.backButton()
         holder = self.page.attachNewNode('tasks')
-        holder.setPos(0, 0, 0.0)
-        scale = min(1.0, (self.width * 2 - 0.04) / 1.8)
-        holder.setScale(scale)
+        holder.setPos(0, 0, -0.02)
+        holder.setScale(min(1.0, CONTENT * 2 / 1.8))
         for frame in base.localAvatar.questPage.questFrames:
             frame.instanceTo(holder)
         if not base.localAvatar.quests:
-            self.label('No ToonTasks right now.', (0, 0, -0.7), scale=0.065)
+            self.label('No ToonTasks right now.', (0, 0, -0.66), scale=0.06)
 
     # --- Maps ---
 
@@ -458,25 +496,22 @@ class BottomScreen(DirectObject):
         place = currentPlace()
         zoneId = place.getZoneId() if place is not None and hasattr(place, 'getZoneId') else 0
         streetName = ToontownGlobals.StreetNames.get(ZoneUtil.getCanonicalBranchZone(zoneId), ('',))[-1]
-        self.label(streetName, (0, 0, 0.86), scale=0.085, font=self.signFont, fg=(1, 0.92, 0.2, 1), shadow=(0.2, 0.2, 0.5, 1))
+        self.paper()
+        self.title(streetName)
         self.backButton()
         holder = self.page.attachNewNode('streetMap')
-        size = min(self.width * 2 - 0.08, 1.45)
-        holder.setScale(size)
-        holder.setPos(0, 0, 0.08)
+        holder.setScale(min(CONTENT * 2, 1.3))
+        holder.setPos(0, 0, 0.02)
         questMap.container.instanceTo(holder)
-        icon = self.find('toontown_map', 'toontown_map')
-        frame = DirectFrame(parent=self.page, relief=None, image=icon, image_scale=(0.27, 1, 0.2), pos=(self.width - 0.24, 0, -0.84),
-                            state=DGG.NORMAL, text='World Map', text_scale=0.05, text_pos=(0, -0.15), text_fg=WHITE,
-                            text_shadow=SHADOW, text_font=self.font)
-        self.tap(frame, self.show, 'world')
+        self.textButton('World Map', (0.12, 0, -0.84), self.show, 'world', width=0.6, tint=MINT)
 
     def buildWorld(self):
+        self.paper()
         self.title('Toontown')
         self.backButton()
-        scale = (self.width * 2 - 0.06) / 1.8
+        scale = CONTENT * 2 / 1.8
         world = DirectFrame(parent=self.page, relief=None, image=self.find('toontown_map', 'toontown_map'),
-                            image_scale=(1.8, 1, 1.35), scale=scale, pos=(0, 0, 0.07))
+                            image_scale=(1.8, 1, 1.35), scale=scale, pos=(0, 0, 0.1))
         allZones = [hood for hood in ToontownGlobals.Hoods if hood not in (ToontownGlobals.GolfZone, ToontownGlobals.ToonFest)]
         positions, clouds, cloudScales = MAP_LABELS, MAP_CLOUDS, MAP_CLOUD_SCALES
         visited = set(base.localAvatar.hoodsVisited) & set(base.cr.hoodMgr.getAvailableZones())
@@ -488,8 +523,8 @@ class BottomScreen(DirectObject):
             if hood in visited:
                 name = base.cr.hoodMgr.getFullnameFromId(hood)
                 canGo = hood in access
-                label = DirectLabel(parent=world, relief=DGG.FLAT, pad=(0.03, 0.02), frameColor=(1, 1, 1, 0.75) if canGo else (0.8, 0.8, 0.8, 0.55),
-                                    pos=positions[index], text=name, text_scale=0.06, text_wordwrap=7, text_fg=DARK if canGo else (0.35, 0.35, 0.35, 1),
+                label = DirectLabel(parent=world, relief=DGG.FLAT, pad=(0.03, 0.02), frameColor=(1, 1, 1, 0.8) if canGo else (0.8, 0.8, 0.8, 0.55),
+                                    pos=positions[index], text=name, text_scale=0.06, text_wordwrap=7, text_fg=INK if canGo else (0.35, 0.35, 0.35, 1),
                                     text_font=self.font, state=DGG.NORMAL)
                 if canGo:
                     self.tap(label, self.teleport, hood)
@@ -500,7 +535,7 @@ class BottomScreen(DirectObject):
         zoneId = place.getZoneId() if place is not None and hasattr(place, 'getZoneId') else 0
         hoodName = ToontownGlobals.hoodNameMap.get(ZoneUtil.getCanonicalHoodId(zoneId), ('',))[-1]
         if hoodName:
-            self.label('You are in %s. Tap a place to go there.' % hoodName, (0, 0, -0.62), scale=0.05, wordwrap=26)
+            self.label('You are in %s.\nTap a place to go there.' % hoodName, (0, 0, -0.55), scale=0.05)
 
     def teleport(self, hood):
         if not self.walking():
@@ -514,6 +549,7 @@ class BottomScreen(DirectObject):
     # --- Districts ---
 
     def buildDistricts(self):
+        self.paper()
         self.title('Districts')
         self.backButton()
         self.districtRows = None
@@ -532,16 +568,14 @@ class BottomScreen(DirectObject):
         self.taps = [tap for tap in self.taps if not tap.node.isEmpty() and tap.node.hasParent()]
         page, self.page = self.page, self.page.attachNewNode('districts')
         self.districtList = self.page
-        rowHeight = min(0.2, 1.45 / max(1, len(rows)))
+        rowHeight = min(0.17, 1.3 / max(1, len(rows)))
         for i, (shardId, name, population) in enumerate(rows):
-            z = 0.66 - rowHeight * i
+            z = 0.6 - rowHeight * i
             here = shardId == current
-            row = DirectFrame(parent=self.page, relief=DGG.FLAT, frameColor=(1, 0.95, 0.5, 0.95) if here else PANEL,
-                              frameSize=(-self.width + 0.06, self.width - 0.06, -rowHeight * 0.44, rowHeight * 0.44), pos=(0, 0, z),
-                              state=DGG.NORMAL)
-            self.label(name, (-self.width + 0.12, 0, -0.02), scale=min(0.07, rowHeight * 0.4), fg=DARK, parent=row, align=TextNode.ALeft, shadow=None)
-            self.label('You are here' if here else '%d toons' % population, (self.width - 0.12, 0, -0.02),
-                       scale=min(0.055, rowHeight * 0.32), fg=DARK, parent=row, align=TextNode.ARight, shadow=None)
+            row = self.panel((0, 0, z), CONTENT * 2, rowHeight * 0.86, GOLD if here else WHITE, touchable=not here)
+            self.label(name, (-CONTENT + 0.06, 0, -0.02), scale=min(0.06, rowHeight * 0.38), parent=row, align=TextNode.ALeft)
+            self.label('You are here' if here else '%d toons' % population, (CONTENT - 0.06, 0, -0.02),
+                       scale=min(0.048, rowHeight * 0.3), fg=SOFT, parent=row, align=TextNode.ARight)
             if not here:
                 self.tap(row, self.switchDistrict, shardId, name)
         self.page = page
@@ -558,6 +592,7 @@ class BottomScreen(DirectObject):
     # --- NPC friends ---
 
     def buildFriends(self):
+        self.paper()
         self.title('Friends')
         self.backButton()
         self.friendRows = None
@@ -576,14 +611,13 @@ class BottomScreen(DirectObject):
         page, self.page = self.page, self.page.attachNewNode('friends')
         self.friendList = self.page
         if not names:
-            self.label('No toons around right now.', (0, 0, 0.2), scale=0.07)
+            self.label('No toons around right now.', (0, 0, 0.2), scale=0.065)
         for i, (doId, name) in enumerate(names):
-            z = 0.66 - 0.17 * i
-            row = DirectFrame(parent=self.page, relief=DGG.FLAT, frameColor=PANEL,
-                              frameSize=(-self.width + 0.06, self.width - 0.06, -0.075, 0.075), pos=(0, 0, z), state=DGG.NORMAL)
-            self.label(name, (-self.width + 0.12, 0, -0.02), scale=0.065, fg=DARK, parent=row, align=TextNode.ALeft, shadow=None)
-            self.label('Ask for help', (self.width - 0.12, 0, -0.02), scale=0.05, fg=(0.1, 0.5, 0.15, 1), parent=row,
-                       align=TextNode.ARight, shadow=None)
+            z = 0.6 - 0.16 * i
+            row = self.panel((0, 0, z), CONTENT * 2, 0.14, WHITE, touchable=True)
+            self.label(name, (-CONTENT + 0.06, 0, -0.02), scale=0.058, parent=row, align=TextNode.ALeft)
+            self.label('Ask for help', (CONTENT - 0.06, 0, -0.02), scale=0.046, fg=(0.15, 0.5, 0.2, 1), parent=row,
+                       align=TextNode.ARight)
             self.tap(row, self.summon, doId, name)
         self.page = page
 
@@ -598,18 +632,20 @@ class BottomScreen(DirectObject):
 
     def buildChat(self):
         from otp.otpbase import OTPLocalizer
+        self.paper()
         self.title('Quick Chat')
         self.backButton()
         for i, (index, text) in enumerate(SPEEDCHAT):
-            x = -self.width / 2 + (i % 2) * self.width
-            z = 0.62 - (i // 2) * 0.2
-            self.textButton(text, (x, 0, z), self.speak, index, scale=(1.35, 1, 1.6), textScale=0.055)
-        self.label('Emotes', (0, 0, -0.04), scale=0.075)
+            x = (i % 2 - 0.5) * 0.7
+            z = 0.6 - (i // 2) * 0.18
+            self.textButton(text, (x, 0, z), self.speak, index, width=0.64, height=0.14, textScale=0.05)
+        self.label('Emotes', (0, 0, 0.0), scale=0.07)
+        DirectFrame(parent=self.page, relief=DGG.FLAT, frameColor=RULE, frameSize=(-0.3, 0.3, -0.003, 0.003), pos=(0, 0, -0.04))
         for i, name in enumerate(EMOTES):
             emoteId = OTPLocalizer.EmoteFuncDict.get(name)
-            x = -self.width / 2 + (i % 2) * self.width
-            z = -0.2 - (i // 2) * 0.2
-            self.textButton(name, (x, 0, z), self.emote, emoteId, scale=(1.35, 1, 1.6), textScale=0.055, color=(0.6, 0.85, 1, 1))
+            x = (i % 2 - 0.5) * 0.7
+            z = -0.16 - (i // 2) * 0.18
+            self.textButton(name, (x, 0, z), self.emote, emoteId, width=0.64, height=0.14, textScale=0.05, tint=SKY)
 
     def speak(self, index):
         base.talkAssistant.sendOpenSpeedChat(1, index)
@@ -632,23 +668,26 @@ class BottomScreen(DirectObject):
         from toontown.suit import SuitDNA
         from toontown.toonbase import TTLocalizer
         avatar = base.localAvatar
+        self.paper()
         self.title('Progress')
         self.backButton()
-        jar = self.find('jar_gui', 'Jar')
-        DirectLabel(parent=self.page, relief=None, image=jar, image_scale=0.22, pos=(-self.width + 0.22, 0, 0.6))
-        self.label('Jellybeans: %d of %d' % (avatar.getMoney(), avatar.getMaxMoney()), (-self.width + 0.42, 0, 0.64), scale=0.06, align=TextNode.ALeft)
-        self.label('In the bank: %d' % avatar.getBankMoney(), (-self.width + 0.42, 0, 0.55), scale=0.055, align=TextNode.ALeft)
-        self.label('Laff: %d of %d' % (avatar.hp, avatar.maxHp), (-self.width + 0.42, 0, 0.46), scale=0.055, align=TextNode.ALeft)
+        box = self.panel((0, 0, 0.53), CONTENT * 2, 0.3, CREAM)
+        jar = box.attachNewNode('jar')
+        self.find('jar_gui', 'Jar').copyTo(jar)
+        jar.setScale(0.3)
+        jar.setPos(-CONTENT + 0.16, -1, 0)
+        left = -CONTENT + 0.32
+        self.label('Jellybeans: %d of %d' % (avatar.getMoney(), avatar.getMaxMoney()), (left, 0, 0.06), scale=0.055, parent=box, align=TextNode.ALeft)
+        self.label('In the bank: %d' % avatar.getBankMoney(), (left, 0, -0.02), scale=0.05, fg=SOFT, parent=box, align=TextNode.ALeft)
+        self.label('Laff: %d of %d' % (avatar.hp, avatar.maxHp), (left, 0, -0.1), scale=0.05, fg=SOFT, parent=box, align=TextNode.ALeft)
         icons = ('CorpIcon', 'LegalIcon', 'MoneyIcon', 'SalesIcon')
         for index, dept in enumerate(SuitDNA.suitDepts):
-            z = 0.25 - index * 0.25
-            DirectFrame(parent=self.page, relief=DGG.FLAT, frameColor=PANEL,
-                        frameSize=(-self.width + 0.06, self.width - 0.06, -0.11, 0.11), pos=(0, 0, z))
-            icon = self.find('cog_icons', icons[index])
-            holder = self.page.attachNewNode('dept')
-            icon.copyTo(holder)
-            holder.setPos(-self.width + 0.18, 0, z)
-            holder.setScale(0.15)
+            z = 0.22 - index * 0.24
+            row = self.panel((0, 0, z), CONTENT * 2, 0.21, WHITE)
+            holder = row.attachNewNode('dept')
+            self.find('cog_icons', icons[index]).copyTo(holder)
+            holder.setPos(-CONTENT + 0.13, -1, 0)
+            holder.setScale(0.14)
             deptName = SuitDNA.getDeptFullname(dept)
             parts = avatar.cogParts[index]
             if CogDisguiseGlobals.isSuitComplete(avatar.cogParts, dept):
@@ -663,21 +702,22 @@ class BottomScreen(DirectObject):
             else:
                 first = deptName
                 second = 'Suit parts: %d of %d' % (CogDisguiseGlobals.getTotalParts(parts), CogDisguiseGlobals.PartsPerSuit[index])
-            self.label(first, (-self.width + 0.32, 0, z + 0.02), scale=0.055, fg=DARK, align=TextNode.ALeft, shadow=None)
-            self.label(second, (-self.width + 0.32, 0, z - 0.06), scale=0.05, fg=(0.3, 0.3, 0.4, 1), align=TextNode.ALeft, shadow=None)
+            self.label(first, (-CONTENT + 0.27, 0, 0.015), scale=0.052, parent=row, align=TextNode.ALeft)
+            self.label(second, (-CONTENT + 0.27, 0, -0.06), scale=0.045, fg=SOFT, parent=row, align=TextNode.ALeft)
 
     # --- How the other toons help ---
 
     def buildHelp(self):
         from toontown.npcplayers import NPCSetupPanel
+        self.paper()
         self.title('Setup')
         self.backButton()
-        self.label(NPCSetupPanel.HEADING, (0, 0, 0.66), scale=0.06, wordwrap=22)
+        self.label(NPCSetupPanel.HEADING, (0, 0, 0.62), scale=0.052, wordwrap=24)
         self.helpButtons = {}
         for i, (mode, name, blurb) in enumerate(NPCSetupPanel.CHOICES):
             z = 0.36 - i * 0.36
-            self.helpButtons[mode] = self.textButton(name, (0, 0, z), self.pickHelp, mode, scale=(1.5, 1, 1.7), textScale=0.065)
-            self.label(blurb, (0, 0, z - 0.13), scale=0.045, wordwrap=28)
+            self.helpButtons[mode] = self.textButton(name, (0, 0, z), self.pickHelp, mode, width=0.8, height=0.15, textScale=0.06)
+            self.label(blurb, (0, 0, z - 0.135), scale=0.042, fg=SOFT, wordwrap=30)
         self.showHelpPicked()
 
     def pickHelp(self, mode):
@@ -690,4 +730,46 @@ class BottomScreen(DirectObject):
         from toontown.npcplayers import NPCSettings
         mode = NPCSettings.helpMode()
         for name, button in self.helpButtons.items():
-            button['image_color'] = (0.6, 1.0, 0.6, 1) if name == mode else (1, 1, 1, 1)
+            button['image_color'] = MINT if name == mode else WHITE
+
+
+_rounded = {}
+
+
+def roundedTexture(ratio):
+    """A white rounded card with a soft blue-grey edge, ratio wide for 1 high."""
+    ratio = max(0.2, round(ratio, 1))
+    if ratio in _rounded:
+        return _rounded[ratio]
+    height = 64
+    width = max(8, int(round(height * ratio)))
+    image = PNMImage(width, height, 4)
+    radius, edge, lip = height * 0.2, height * 0.045, height * 0.05
+    for y in range(height):
+        for x in range(width):
+            px, py = x + 0.5, y + 0.5
+            outside = roundedBox(px, py, width, height, radius)
+            # The face sits a little higher than the edge, like a button.
+            face = roundedBox(px, py + lip, width, height + lip, radius) if py < height - lip else outside + lip
+            alpha = min(1.0, max(0.0, 0.5 - outside))
+            mix = min(1.0, max(0.0, face + edge + 0.5))
+            shade = 1.0 - 0.06 * py / height
+            for channel, low in enumerate(EDGE):
+                value = shade * (1 - mix) + low * mix
+                [image.setRed, image.setGreen, image.setBlue][channel](x, y, value)
+            image.setAlpha(x, y, alpha)
+    texture = Texture('rounded%s' % ratio)
+    texture.load(image)
+    texture.setMinfilter(Texture.FTLinear)
+    texture.setMagfilter(Texture.FTLinear)
+    texture.setWrapU(Texture.WMClamp)
+    texture.setWrapV(Texture.WMClamp)
+    _rounded[ratio] = texture
+    return texture
+
+
+def roundedBox(px, py, width, height, radius):
+    """How far (px, py) is outside a rounded box (negative inside)."""
+    qx = abs(px - width / 2.0) - (width / 2.0 - radius)
+    qy = abs(py - height / 2.0) - (height / 2.0 - radius)
+    return math.hypot(max(qx, 0), max(qy, 0)) + min(max(qx, qy), 0) - radius

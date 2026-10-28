@@ -21,11 +21,11 @@ from toontown.toontowngui import TTDialog
 BUTTON_POS = (0.275, 0, 0.22)
 YELLOW = (1.0, 0.86, 0.12, 1)
 OUTLINE = (0.6, 0.38, 0.0, 1)
-# The window sits a little above the middle; its Close X stays low.
+# The window sits a little above the middle of the screen.
 WINDOW_Z = 0.1
 SQUARES = ('Red', 'Green', 'Purple', 'Blue', 'Pink', 'Yellow')
-SLOT_POS = ((-0.5, 0.13), (0, 0.13), (0.5, 0.13),
-            (-0.5, -0.33), (0, -0.33), (0.5, -0.33))
+SLOT_POS = ((-0.5, 0.22), (0, 0.22), (0.5, 0.22),
+            (-0.5, -0.24), (0, -0.24), (0.5, -0.24))
 _circle = []
 
 
@@ -160,10 +160,10 @@ class LooksWindow(DirectObject):
         if self.frame is not None:
             self.frame.destroy()
         self.frame = DirectFrame(parent=aspect2d, relief=None, image=self.bookImage, image_scale=(1.75, 1, 1.32), pos=(0, 0, WINDOW_Z), sortOrder=DGG.BACKGROUND_SORT_INDEX + 5, state=DGG.NORMAL)
-        DirectLabel(parent=self.frame, relief=None, pos=(0, 0, 0.47), text=TTLocalizer.LooksTitle, text_font=ToontownGlobals.getSignFont(), text_scale=0.1, text_fg=(0.16, 0.32, 0.72, 1))
-        DirectLabel(parent=self.frame, relief=None, pos=(0, 0, 0.4), text=TTLocalizer.LooksHelp, text_font=ToontownGlobals.getInterfaceFont(), text_scale=0.042, text_fg=(0.3, 0.3, 0.3, 1))
+        DirectLabel(parent=self.frame, relief=None, pos=(0, 0, 0.55), text=TTLocalizer.LooksTitle, text_font=ToontownGlobals.getSignFont(), text_scale=0.1, text_fg=(0.16, 0.32, 0.72, 1))
+        DirectLabel(parent=self.frame, relief=None, pos=(0, 0, 0.48), text=TTLocalizer.LooksHelp, text_font=ToontownGlobals.getInterfaceFont(), text_scale=0.042, text_fg=(0.3, 0.3, 0.3, 1))
         buttons = loader.loadModel('phase_3/models/gui/dialog_box_buttons_gui')
-        DirectButton(parent=self.frame, relief=None, image=(buttons.find('**/CloseBtn_UP'), buttons.find('**/CloseBtn_DN'), buttons.find('**/CloseBtn_Rllvr')), pos=(0.7, 0, -0.53 - WINDOW_Z), scale=0.95, text=TTLocalizer.LooksClose, text_scale=0.05, text_pos=(0, -0.1), text_fg=(0.3, 0.3, 0.3, 1), command=self.close)
+        DirectButton(parent=self.frame, relief=None, image=(buttons.find('**/CloseBtn_UP'), buttons.find('**/CloseBtn_DN'), buttons.find('**/CloseBtn_Rllvr')), pos=(0.72, 0, -0.5), scale=0.8, text=TTLocalizer.LooksClose, text_scale=0.05, text_pos=(0, -0.1), text_fg=(0.3, 0.3, 0.3, 1), command=self.close)
         buttons.removeNode()
         patGui = loader.loadModel('phase_3/models/gui/tt_m_gui_pat_mainGui')
         trashGui = loader.loadModel('phase_3/models/gui/trashcan_gui')
@@ -171,7 +171,7 @@ class LooksWindow(DirectObject):
         self.slots = []
         for slot in range(ToonLooks.SLOTS):
             self.slots.append(self.makeSlot(slot, patGui, trashGui, quitGui))
-        DirectLabel(parent=self.frame, relief=None, pos=(0, 0, -0.6), text=TTLocalizer.LooksKeep, text_font=ToontownGlobals.getInterfaceFont(), text_scale=0.038, text_fg=(0.35, 0.35, 0.35, 1))
+        DirectLabel(parent=self.frame, relief=None, pos=(0, 0, -0.53), text=TTLocalizer.LooksKeep, text_font=ToontownGlobals.getInterfaceFont(), text_scale=0.038, text_fg=(0.35, 0.35, 0.35, 1))
         for model in (patGui, trashGui, quitGui):
             model.removeNode()
 

@@ -14,7 +14,7 @@ import sys
 
 from direct.directnotify import DirectNotifyGlobal
 from direct.showbase.DirectObject import DirectObject
-from panda3d.core import (Camera, ConfigVariableString, NodePath, OrthographicLens, PGTop, Point3,
+from panda3d.core import (Camera, ConfigVariableBool, ConfigVariableString, NodePath, OrthographicLens, PGTop, Point3,
                           Texture)
 
 notify = DirectNotifyGlobal.directNotify.newCategory('SecondScreen')
@@ -65,6 +65,9 @@ class SecondScreen(DirectObject):
     # --- Finding the second display ---
 
     def detect(self):
+        # The launcher's MOBILE panel can turn the bottom screen off.
+        if not ConfigVariableBool('want-second-screen', True).getValue():
+            return None
         simulated = ConfigVariableString('second-screen-size', '').getValue().split()
         if len(simulated) == 2:
             return int(simulated[0]), int(simulated[1])
