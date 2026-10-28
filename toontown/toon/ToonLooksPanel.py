@@ -27,11 +27,13 @@ WINDOW_Z = 0.1
 SQUARES = ('Red', 'Green', 'Purple', 'Blue', 'Pink', 'Yellow')
 # Laid out the way Pick-A-Toon lays out its squares (AvatarChoice), at
 # SQUARE_SCALE of its size: the head in the middle, the name tilted with each
-# square, the trash can bottom right and the button bottom left, each pulled
-# in just enough to stay inside its tilted square.
+# square and the trash can bottom right, pulled in just enough to stay inside
+# its tilted square. The head sits on the middle of its square's picture and
+# Edit right under it.
 SQUARE_SCALE = 0.62
 NAME_POS = tuple((x * SQUARE_SCALE, z * SQUARE_SCALE) for x, y, z in AvatarChoice.NAME_POSITIONS)
-EDIT_POS = ((-0.11, -0.166), (-0.104, -0.156), (-0.112, -0.167), (-0.095, -0.143), (-0.095, -0.143), (-0.092, -0.138))
+MIDDLE_X = (-0.017, 0.01, -0.008, 0.009, -0.002, 0.013)
+EDIT_Z = (-0.17, -0.158, -0.17, -0.168, -0.154, -0.168)
 TRASH_POS = ((0.108, -0.151), (0.192, -0.104), (0.134, -0.14), (0.182, -0.108), (0.141, -0.135), (0.162, -0.12))
 SLOT_POS = ((-0.5, 0.22), (0, 0.22), (0.5, 0.22),
             (-0.5, -0.24), (0, -0.24), (0.5, -0.24))
@@ -200,7 +202,7 @@ class LooksWindow(DirectObject):
         if wearing:
             button['state'] = DGG.DISABLED
         head = hidden.attachNewNode('lookHead')
-        head.setPosHprScale(0, 5, -0.1 * SQUARE_SCALE, 180, 0, 0, 0.24 * SQUARE_SCALE, 0.24 * SQUARE_SCALE, 0.24 * SQUARE_SCALE)
+        head.setPosHprScale(MIDDLE_X[slot], 5, -0.1 * SQUARE_SCALE, 180, 0, 0, 0.24 * SQUARE_SCALE, 0.24 * SQUARE_SCALE, 0.24 * SQUARE_SCALE)
         head.reparentTo(button.stateNodePath[0], 20)
         for state in (1, 2, 3):
             head.instanceTo(button.stateNodePath[state], 20)
@@ -209,15 +211,15 @@ class LooksWindow(DirectObject):
         model.setupHead(dna, forGui=1)
         model.reparentTo(head)
         model.setScale(ToontownGlobals.toonBodyScales[dna.getAnimal()] / 0.75)
+        # Facing forward, so the head looks centered in its square.
         model.startBlink()
-        model.startLookAround()
         button.headModel = model
         nameX, nameZ = NAME_POS[slot]
         name = TTLocalizer.LooksNumber % (slot + 1)
         if wearing:
             name = '%s - %s' % (name, TTLocalizer.LooksWearing)
         DirectLabel(parent=button, relief=None, pos=(nameX, 0, nameZ), hpr=(0, 0, AvatarChoice.NAME_ROTATIONS[slot]), text=name, text_font=ToontownGlobals.getInterfaceFont(), text_scale=0.042, text_fg=(1, 0.95, 0.3, 1) if wearing else (1, 1, 1, 1), text_shadow=(0, 0, 0, 1))
-        editX, editZ = EDIT_POS[slot]
+        editX, editZ = MIDDLE_X[slot], EDIT_Z[slot]
         trashX, trashZ = TRASH_POS[slot]
         if not wearing:
             DirectButton(parent=button, relief=None, image=(trashGui.find('**/TrashCan_CLSD'), trashGui.find('**/TrashCan_OPEN'), trashGui.find('**/TrashCan_RLVR')), pos=(trashX, 0, trashZ), scale=0.22, command=self.askRemove, extraArgs=[slot])

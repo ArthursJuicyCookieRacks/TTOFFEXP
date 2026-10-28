@@ -333,15 +333,14 @@ class BottomScreen(DirectObject):
         self.laffMeter.reparentTo(self.page)
         self.laffMeter.setScale(0.17)
         self.laffMeter.start()
-        # The meter's face sits a little left of its middle.
-        self.laffMeter.setPos(0.03, 0, 0.54)
+        self.laffMeter.setPos(0.0, 0, 0.54)
         self.accept('toonLookChanged', self.rebuild)
-        beans = self.panel((0, 0, 0.22), 0.5, 0.13, CREAM, touchable=True)
+        beans = self.panel((0, 0, 0.22), 0.38, 0.13, CREAM, touchable=True)
         jar = beans.attachNewNode('jar')
         self.find('jar_gui', 'Jar').copyTo(jar)
         jar.setScale(0.18)
-        jar.setPos(-0.16, -1, 0.005)
-        self.beans = self.label('', (0.06, 0, -0.02), scale=0.065, parent=beans)
+        jar.setPos(-0.075, -1, 0.005)
+        self.beans = self.label('', (0.055, 0, -0.02), scale=0.065, parent=beans)
         self.tap(beans, self.show, 'progress')
         tiles = ((GOLD, self.find('inventory_icons', 'inventory_tart'), 1.25, 'gags'),
                  (SKY, self.find('stickerbook_gui', 'questCard'), 0.17, 'tasks'),
