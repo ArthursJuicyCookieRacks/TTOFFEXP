@@ -188,6 +188,11 @@ class YAMLBackend:
         self.dirty.discard(doId)
         self.deleted.add(doId)
         self.freeIds.append(doId)
+        # The id can be given to a new toon: a deleted toon's looks go too.
+        try:
+            os.remove(os.path.join(self.directory, 'looks', '%d.json' % doId))
+        except OSError:
+            pass
         self.infoDirty = True
         return True
 
