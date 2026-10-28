@@ -33,6 +33,7 @@ SQUARES = ('Red', 'Green', 'Purple', 'Blue', 'Pink', 'Yellow')
 SQUARE_SCALE = 0.62
 NAME_POS = tuple((x * SQUARE_SCALE, z * SQUARE_SCALE) for x, y, z in AvatarChoice.NAME_POSITIONS)
 MIDDLE_X = (-0.017, 0.01, -0.008, 0.009, -0.002, 0.013)
+HEAD_Z = 0.0
 EDIT_Z = (-0.17, -0.158, -0.17, -0.168, -0.154, -0.168)
 TRASH_POS = ((0.108, -0.151), (0.192, -0.104), (0.134, -0.14), (0.182, -0.108), (0.141, -0.135), (0.162, -0.12))
 SLOT_POS = ((-0.5, 0.22), (0, 0.22), (0.5, 0.22),
@@ -211,6 +212,13 @@ class LooksWindow(DirectObject):
         model.setupHead(dna, forGui=1)
         model.reparentTo(head)
         model.setScale(ToontownGlobals.toonBodyScales[dna.getAnimal()] / 0.75)
+        # Heads of different animals reach different heights above the neck,
+        # so each is centered by its own size, between the name and Edit.
+        bounds = model.getTightBounds(button.stateNodePath[0])
+        if bounds:
+            low, high = bounds
+            head.setX(head.getX() + MIDDLE_X[slot] - (low[0] + high[0]) / 2.0)
+            head.setZ(head.getZ() + HEAD_Z - (low[2] + high[2]) / 2.0)
         # Facing forward, so the head looks centered in its square.
         model.startBlink()
         button.headModel = model
