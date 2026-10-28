@@ -41,6 +41,9 @@ PINK = (1, 0.84, 0.94, 1)
 # The page's writing stays within this far of the middle, the home page's
 # buttons are TILE across, GRID apart.
 CONTENT = 0.7
+# How far left of the screen's middle the middle of the book's paper is, in
+# half screen widths.
+PAPER_SHIFT = 0.11
 TILE = 0.32
 GRID = 0.38
 NOT_STARTED = 'Game Not Started'
@@ -254,6 +257,10 @@ class BottomScreen(DirectObject):
         card = self.page.attachNewNode(cards.generate())
         card.setTexture(texture, 1)
         card.setBin('background', 0)
+        # The paper (spine shadow to grey edge) is a little left of the
+        # picture's middle: everything on it is moved over to match.
+        self.page.setX(-PAPER_SHIFT * self.width)
+        card.setX(PAPER_SHIFT * self.width)
 
     def panel(self, pos, width, height, tint=WHITE, parent=None, touchable=False, **kw):
         """A rounded card, width by height, centered on pos."""
@@ -264,7 +271,7 @@ class BottomScreen(DirectObject):
         frame.setTransparency(TransparencyAttrib.MAlpha)
         return frame
 
-    def iconTile(self, pos, tint, icon, iconScale, command, *args, size=TILE):
+    def iconTile(self, pos, tint, icon, iconScale, command, *args, size=TILE, nudge=(0, 0)):
         frame = self.panel(pos, size, size, tint, touchable=True)
         if icon is not None:
             holder = frame.attachNewNode('icon')
@@ -274,6 +281,8 @@ class BottomScreen(DirectObject):
             low, high = holder.getTightBounds(frame) or (Point3(0), Point3(0))
             holder.setX(holder.getX() - (low[0] + high[0]) / 2.0)
             holder.setZ(holder.getZ() - (low[2] + high[2]) / 2.0)
+            # For icons whose model is bigger than their picture.
+            holder.setPos(holder.getX() + nudge[0], -1, holder.getZ() + nudge[1])
         return self.tap(frame, command, *args)
 
     def textButton(self, text, pos, command, *args, width=0.62, height=0.14, textScale=0.055, tint=WHITE):
@@ -325,7 +334,7 @@ class BottomScreen(DirectObject):
         self.laffMeter.setScale(0.17)
         self.laffMeter.start()
         # The meter's face sits a little left of its middle.
-        self.laffMeter.setPos(0.25 * 0.17, 0, 0.54)
+        self.laffMeter.setPos(0.03, 0, 0.54)
         self.accept('toonLookChanged', self.rebuild)
         beans = self.panel((0, 0, 0.22), 0.5, 0.13, CREAM, touchable=True)
         jar = beans.attachNewNode('jar')
@@ -338,14 +347,14 @@ class BottomScreen(DirectObject):
                  (SKY, self.find('stickerbook_gui', 'questCard'), 0.17, 'tasks'),
                  (MINT, self.find('sos_textures', 'teleportIcon'), 0.18, 'map'),
                  (LILAC, self.find('sos_textures', 'district'), 0.18, 'districts'),
-                 (ROSE, self.find('stickerbook_gui', 'BookIcon_CLSD'), 0.22, None),
-                 (PINK, self.find('friendslist_gui', 'FriendsBox_Closed'), 0.45, 'friends'),
+                 (ROSE, self.find('stickerbook_gui', 'BookIcon_CLSD'), 0.22, None, (-0.056, 0.034)),
+                 (PINK, self.find('friendslist_gui', 'FriendsBox_Closed'), 0.6, 'friends'),
                  (SKY, self.chatIcon(), 0.9, 'chat'),
                  (GOLD, self.find('stickerbook_gui', 'CogArmIcon2'), 0.2, 'progress'),
                  (MINT, self.find('sos_textures', 'gui_gear'), 0.16, 'help'))
         self.extras = self.page.attachNewNode('extras')
         self.battleRow = self.page.attachNewNode('battle')
-        for i, (tint, icon, scale, name) in enumerate(tiles):
+        for i, (tint, icon, scale, name, *nudge) in enumerate(tiles):
             row, column = divmod(i, 3)
             pos = ((column - 1) * GRID, 0, -0.02 - row * GRID)
             if row:
@@ -353,7 +362,7 @@ class BottomScreen(DirectObject):
             if name:
                 self.iconTile(pos, tint, icon, scale, self.show, name)
             else:
-                self.iconTile(pos, tint, icon, scale, self.openBook)
+                self.iconTile(pos, tint, icon, scale, self.openBook, nudge=nudge[0])
             if row:
                 self.page = page
         self.battleShown = None
@@ -403,10 +412,12 @@ class BottomScreen(DirectObject):
         self.taps = [tap for tap in self.taps if not tap.node.isEmpty() and tap.node.hasParent()]
         page, self.page = self.page, self.battleRow
         suits = [suit for suit in getattr(battle, 'activeSuits', []) if suit is not None and not suit.isEmpty()]
-        box = self.panel((0, 0, -0.42), 1.36, 0.5, CREAM)
-        self.label('Cogs', (0, 0, 0.17), scale=0.06, parent=box)
-        for i, suit in enumerate(suits[:4]):
-            z = 0.07 - i * 0.09
+        suits = suits[:4]
+        height = 0.16 + 0.09 * max(1, len(suits))
+        box = self.panel((0, 0, -0.22 - height / 2.0), 1.36, height, CREAM)
+        self.label('Cogs', (0, 0, height / 2.0 - 0.075), scale=0.06, parent=box)
+        for i, suit in enumerate(suits):
+            z = height / 2.0 - 0.15 - i * 0.09
             hp, maxHp = getattr(suit, 'currHP', 0), max(1, getattr(suit, 'maxHP', 1))
             name = '%s (level %d)' % (suit.getName(), suit.getActualLevel()) if hasattr(suit, 'getActualLevel') else suit.getName()
             self.label(name, (-0.62, 0, z - 0.015), scale=0.045, parent=box, align=TextNode.ALeft)
@@ -503,7 +514,7 @@ class BottomScreen(DirectObject):
         holder.setScale(min(CONTENT * 2, 1.3))
         holder.setPos(0, 0, 0.02)
         questMap.container.instanceTo(holder)
-        self.textButton('World Map', (0.12, 0, -0.84), self.show, 'world', width=0.6, tint=MINT)
+        self.textButton('World Map', (0, 0, -0.84), self.show, 'world', width=0.6, tint=MINT)
 
     def buildWorld(self):
         self.paper()

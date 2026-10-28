@@ -184,14 +184,14 @@ class LooksWindow(DirectObject):
         if look is None:
             button['text'] = ('+', '+', '+', '+')
             button['text_scale'] = 0.16
-            button['text_pos'] = (0, -0.03)
+            button['text_pos'] = (0, -0.01)
             button['image_color'] = (1, 1, 1, 0.55)
-            DirectLabel(parent=button, relief=None, pos=(0, 0, -0.12), text=TTLocalizer.LooksNew, text_font=ToontownGlobals.getInterfaceFont(), text_scale=0.045, text_fg=(1, 1, 1, 1), text_shadow=(0, 0, 0, 1))
+            DirectLabel(parent=button, relief=None, pos=(0, 0, -0.115), text=TTLocalizer.LooksNew, text_font=ToontownGlobals.getInterfaceFont(), text_scale=0.045, text_fg=(1, 1, 1, 1), text_shadow=(0, 0, 0, 1))
             return button
         if wearing:
             button['state'] = DGG.DISABLED
         head = hidden.attachNewNode('lookHead')
-        head.setPosHprScale(0, 5, -0.05, 180, 0, 0, 0.15, 0.15, 0.15)
+        head.setPosHprScale(0, 5, -0.005, 180, 0, 0, 0.15, 0.15, 0.15)
         head.reparentTo(button.stateNodePath[0], 20)
         for state in (1, 2, 3):
             head.instanceTo(button.stateNodePath[state], 20)
@@ -203,12 +203,12 @@ class LooksWindow(DirectObject):
         model.startBlink()
         model.startLookAround()
         button.headModel = model
-        DirectLabel(parent=button, relief=None, pos=(0, 0, 0.115), text=TTLocalizer.LooksNumber % (slot + 1), text_font=ToontownGlobals.getInterfaceFont(), text_scale=0.04, text_fg=(1, 1, 1, 1), text_shadow=(0, 0, 0, 1))
+        DirectLabel(parent=button, relief=None, pos=(0, 0, 0.16), text=TTLocalizer.LooksNumber % (slot + 1), text_font=ToontownGlobals.getInterfaceFont(), text_scale=0.04, text_fg=(1, 1, 1, 1), text_shadow=(0, 0, 0, 1))
         if wearing:
-            DirectLabel(parent=button, relief=None, pos=(0, 0, -0.178), text=TTLocalizer.LooksWearing, text_font=ToontownGlobals.getInterfaceFont(), text_scale=0.045, text_fg=(1, 0.95, 0.3, 1), text_shadow=(0, 0, 0, 1))
+            DirectLabel(parent=button, relief=None, pos=(0, 0, -0.118), text=TTLocalizer.LooksWearing, text_font=ToontownGlobals.getInterfaceFont(), text_scale=0.045, text_fg=(1, 0.95, 0.3, 1), text_shadow=(0, 0, 0, 1))
         else:
-            DirectButton(parent=button, relief=None, image=(trashGui.find('**/TrashCan_CLSD'), trashGui.find('**/TrashCan_OPEN'), trashGui.find('**/TrashCan_RLVR')), pos=(0.14, 0, -0.16), scale=0.27, command=self.askRemove, extraArgs=[slot])
-        DirectButton(parent=button, relief=None, image=(quitGui.find('**/QuitBtn_UP'), quitGui.find('**/QuitBtn_DN'), quitGui.find('**/QuitBtn_RLVR')), image_scale=(0.75, 1, 1.1), pos=(-0.06 if not wearing else 0, 0, -0.235), scale=0.5, text=TTLocalizer.LooksEdit, text_font=ToontownGlobals.getInterfaceFont(), text_scale=0.1, text_pos=(0, -0.03), text_fg=(1, 1, 1, 1), text_shadow=(0, 0, 0, 1), command=self.edit, extraArgs=[slot])
+            DirectButton(parent=button, relief=None, image=(trashGui.find('**/TrashCan_CLSD'), trashGui.find('**/TrashCan_OPEN'), trashGui.find('**/TrashCan_RLVR')), pos=(0.165, 0, 0.165), scale=0.25, command=self.askRemove, extraArgs=[slot])
+        DirectButton(parent=button, relief=None, image=(quitGui.find('**/QuitBtn_UP'), quitGui.find('**/QuitBtn_DN'), quitGui.find('**/QuitBtn_RLVR')), image_scale=(0.75, 1, 1.1), pos=(0, 0, -0.175), scale=0.5, text=TTLocalizer.LooksEdit, text_font=ToontownGlobals.getInterfaceFont(), text_scale=0.1, text_pos=(0, -0.03), text_fg=(1, 1, 1, 1), text_shadow=(0, 0, 0, 1), command=self.edit, extraArgs=[slot])
         return button
 
     def destroyFrame(self):
