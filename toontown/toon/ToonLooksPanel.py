@@ -21,6 +21,8 @@ from toontown.toontowngui import TTDialog
 BUTTON_POS = (0.275, 0, 0.22)
 YELLOW = (1.0, 0.86, 0.12, 1)
 OUTLINE = (0.6, 0.38, 0.0, 1)
+# The window sits a little above the middle; its Close X stays low.
+WINDOW_Z = 0.1
 SQUARES = ('Red', 'Green', 'Purple', 'Blue', 'Pink', 'Yellow')
 SLOT_POS = ((-0.5, 0.13), (0, 0.13), (0.5, 0.13),
             (-0.5, -0.33), (0, -0.33), (0.5, -0.33))
@@ -28,10 +30,12 @@ _circle = []
 
 
 def circleTexture():
-    """A yellow circle with a darker rim, made once."""
+    """A yellow circle with a darker rim and a white plus, made once."""
     if _circle:
         return _circle[0]
     size = 128
+    # Half the plus's length and half its thickness, in pixels.
+    ARM, THICK = 36, 10
     image = PNMImage(size, size, 4)
     middle = (size - 1) / 2.0
     outer = size / 2.0 - 1
@@ -47,6 +51,15 @@ def circleTexture():
                 # A little lighter at the top, like the game's round buttons.
                 light = 0.18 * max(0.0, (middle - y) / middle)
                 color = [min(1.0, YELLOW[i] + light) for i in range(3)]
+            # The plus, drawn in so it sits exactly in the middle: white,
+            # with a thin darker edge like the game's button text.
+            dx, dy = abs(x - middle), abs(y - middle)
+            inside = max(min(ARM - dx, THICK - dy), min(THICK - dx, ARM - dy))
+            if inside > -2.5:
+                edge = max(0.0, min(1.0, inside + 2.5))
+                fill = max(0.0, min(1.0, inside + 0.5))
+                color = [color[i] * (1 - edge) + OUTLINE[i] * edge for i in range(3)]
+                color = [color[i] * (1 - fill) + fill for i in range(3)]
             image.setXelA(x, y, color[0], color[1], color[2], alpha)
     texture = Texture('looksButtonCircle')
     texture.load(image)
@@ -80,7 +93,7 @@ class LooksButton(DirectObject):
     def __init__(self):
         DirectObject.__init__(self)
         circle = circleTexture()
-        self.button = DirectButton(parent=base.a2dBottomLeft, relief=None, image=circle, image_scale=0.048, image1_scale=0.053, image2_scale=0.053, pos=BUTTON_POS, text='+', text_font=ToontownGlobals.getMinnieFont(), text_scale=0.085, text_pos=(0.0, -0.027), text_fg=(1, 1, 1, 1), text_shadow=(0.45, 0.28, 0, 1), command=self.open, sortOrder=DGG.FOREGROUND_SORT_INDEX)
+        self.button = DirectButton(parent=base.a2dBottomLeft, relief=None, image=circle, image_scale=0.048, image1_scale=0.053, image2_scale=0.053, pos=BUTTON_POS, command=self.open, sortOrder=DGG.FOREGROUND_SORT_INDEX)
         self.button.hide()
         self.window = None
         taskMgr.add(self.watch, 'looksButtonWatch')
@@ -146,11 +159,11 @@ class LooksWindow(DirectObject):
     def build(self):
         if self.frame is not None:
             self.frame.destroy()
-        self.frame = DirectFrame(parent=aspect2d, relief=None, image=self.bookImage, image_scale=(1.75, 1, 1.32), pos=(0, 0, 0.02), sortOrder=DGG.BACKGROUND_SORT_INDEX + 5, state=DGG.NORMAL)
+        self.frame = DirectFrame(parent=aspect2d, relief=None, image=self.bookImage, image_scale=(1.75, 1, 1.32), pos=(0, 0, WINDOW_Z), sortOrder=DGG.BACKGROUND_SORT_INDEX + 5, state=DGG.NORMAL)
         DirectLabel(parent=self.frame, relief=None, pos=(0, 0, 0.47), text=TTLocalizer.LooksTitle, text_font=ToontownGlobals.getSignFont(), text_scale=0.1, text_fg=(0.16, 0.32, 0.72, 1))
         DirectLabel(parent=self.frame, relief=None, pos=(0, 0, 0.4), text=TTLocalizer.LooksHelp, text_font=ToontownGlobals.getInterfaceFont(), text_scale=0.042, text_fg=(0.3, 0.3, 0.3, 1))
         buttons = loader.loadModel('phase_3/models/gui/dialog_box_buttons_gui')
-        DirectButton(parent=self.frame, relief=None, image=(buttons.find('**/CloseBtn_UP'), buttons.find('**/CloseBtn_DN'), buttons.find('**/CloseBtn_Rllvr')), pos=(0.7, 0, -0.55), scale=0.95, text=TTLocalizer.LooksClose, text_scale=0.05, text_pos=(0, -0.1), text_fg=(0.3, 0.3, 0.3, 1), command=self.close)
+        DirectButton(parent=self.frame, relief=None, image=(buttons.find('**/CloseBtn_UP'), buttons.find('**/CloseBtn_DN'), buttons.find('**/CloseBtn_Rllvr')), pos=(0.7, 0, -0.53 - WINDOW_Z), scale=0.95, text=TTLocalizer.LooksClose, text_scale=0.05, text_pos=(0, -0.1), text_fg=(0.3, 0.3, 0.3, 1), command=self.close)
         buttons.removeNode()
         patGui = loader.loadModel('phase_3/models/gui/tt_m_gui_pat_mainGui')
         trashGui = loader.loadModel('phase_3/models/gui/trashcan_gui')
