@@ -24,6 +24,10 @@ OUTLINE = (0.6, 0.38, 0.0, 1)
 # The window sits a little above the middle of the screen.
 WINDOW_Z = 0.1
 SQUARES = ('Red', 'Green', 'Purple', 'Blue', 'Pink', 'Yellow')
+# Each square is tilted its own way: where its Edit button and its trash can
+# fit inside it (measured from the squares' pictures).
+EDIT_POS = ((0.012, -0.168), (-0.032, -0.156), (0.028, -0.168), (-0.032, -0.164), (0.04, -0.148), (-0.028, -0.168))
+TRASH_POS = ((0.164, 0.096), (0.137, 0.144), (0.167, 0.129), (0.149, 0.138), (0.17, 0.102), (0.164, 0.138))
 SLOT_POS = ((-0.5, 0.22), (0, 0.22), (0.5, 0.22),
             (-0.5, -0.24), (0, -0.24), (0.5, -0.24))
 _circle = []
@@ -204,11 +208,13 @@ class LooksWindow(DirectObject):
         model.startLookAround()
         button.headModel = model
         DirectLabel(parent=button, relief=None, pos=(0, 0, 0.16), text=TTLocalizer.LooksNumber % (slot + 1), text_font=ToontownGlobals.getInterfaceFont(), text_scale=0.04, text_fg=(1, 1, 1, 1), text_shadow=(0, 0, 0, 1))
+        editX, editZ = EDIT_POS[slot]
+        trashX, trashZ = TRASH_POS[slot]
         if wearing:
-            DirectLabel(parent=button, relief=None, pos=(0, 0, -0.118), text=TTLocalizer.LooksWearing, text_font=ToontownGlobals.getInterfaceFont(), text_scale=0.045, text_fg=(1, 0.95, 0.3, 1), text_shadow=(0, 0, 0, 1))
+            DirectLabel(parent=button, relief=None, pos=(editX, 0, editZ + 0.05), text=TTLocalizer.LooksWearing, text_font=ToontownGlobals.getInterfaceFont(), text_scale=0.045, text_fg=(1, 0.95, 0.3, 1), text_shadow=(0, 0, 0, 1))
         else:
-            DirectButton(parent=button, relief=None, image=(trashGui.find('**/TrashCan_CLSD'), trashGui.find('**/TrashCan_OPEN'), trashGui.find('**/TrashCan_RLVR')), pos=(0.165, 0, 0.165), scale=0.25, command=self.askRemove, extraArgs=[slot])
-        DirectButton(parent=button, relief=None, image=(quitGui.find('**/QuitBtn_UP'), quitGui.find('**/QuitBtn_DN'), quitGui.find('**/QuitBtn_RLVR')), image_scale=(0.75, 1, 1.1), pos=(0, 0, -0.175), scale=0.5, text=TTLocalizer.LooksEdit, text_font=ToontownGlobals.getInterfaceFont(), text_scale=0.1, text_pos=(0, -0.03), text_fg=(1, 1, 1, 1), text_shadow=(0, 0, 0, 1), command=self.edit, extraArgs=[slot])
+            DirectButton(parent=button, relief=None, image=(trashGui.find('**/TrashCan_CLSD'), trashGui.find('**/TrashCan_OPEN'), trashGui.find('**/TrashCan_RLVR')), pos=(trashX, 0, trashZ), scale=0.22, command=self.askRemove, extraArgs=[slot])
+        DirectButton(parent=button, relief=None, image=(quitGui.find('**/QuitBtn_UP'), quitGui.find('**/QuitBtn_DN'), quitGui.find('**/QuitBtn_RLVR')), image_scale=(0.75, 1, 1.1), pos=(editX, 0, editZ), scale=0.5, text=TTLocalizer.LooksEdit, text_font=ToontownGlobals.getInterfaceFont(), text_scale=0.1, text_pos=(0, -0.03), text_fg=(1, 1, 1, 1), text_shadow=(0, 0, 0, 1), command=self.edit, extraArgs=[slot])
         return button
 
     def destroyFrame(self):
