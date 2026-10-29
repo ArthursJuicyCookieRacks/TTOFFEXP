@@ -5596,6 +5596,9 @@ ColorShopBody = 'Body'
 ColorShopLegs = 'Legs'
 ColorShopParts = 'Multi Color'
 ColorShopAll = 'Single Color'
+ClothesShopShirt = 'Shirt'
+ClothesShopShorts = 'Shorts'
+ClothesShopBottoms = 'Bottoms'
 ClothesShopShortsStyle = 'Shorts'
 ClothesShopShortsColor = 'Color'
 ClothesShopShirtsStyle = 'Shirts'
@@ -5885,6 +5888,8 @@ CagedToonThankYou = "It's great to be free!\x07Thanks for all your help!\x07I am
 CagedToonPromotion = "\x07Say--that V.P. Cog left behind your promotion papers.\x07I'll file them for you on the way out, so you'll get your promotion!"
 CagedToonLastPromotion = "\x07Wow, you've reached level %s on your Cog suit!\x07Cogs don't get promoted higher than that.\x07You can't upgrade your Cog suit anymore, but you can certainly keep rescuing Toons!"
 CagedToonHPBoost = "\x07You've rescued a lot of Toons from this HQ.\x07The Toon Council has decided to give you another Laff point. Congratulations!"
+CagedToonLevelPromotion = "\x07Say--that V.P. Cog left behind your promotion papers.\x07I'll file them for you on the way out, so you'll get your promotion!"
+CagedToonSuitPromotion = "\x07You've also earned a new Cog suit: you can now go undercover as a %s!"
 CagedToonMaxed = '\x07I see that you have a level %s Cog suit. Very impressive!\x07On behalf of the Toon Council, thank you for coming back to rescue more Toons!'
 CagedToonGoodbye = 'See ya!'
 CagedToonBattleThree = {10: 'Nice jump, %(toon)s.  Here are some pies!',
@@ -10029,4 +10034,11 @@ InteractivePropTrackBonusTerms = {0: 'Super Toon-Up!',
  5: 'Super Squirt!',
  6: ''}
 PlayingCardUnknown = 'Card Name is unknown'
+PlayingCardSuits = ('Hearts', 'Diamonds', 'Clubs', 'Spades')
+PlayingCardRanks = ('Ace', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Jack', 'Queen', 'King')
+
+
+def getPlayingCardName(suit, rank):
+    return '%s of %s' % (PlayingCardRanks[rank % len(PlayingCardRanks)], PlayingCardSuits[suit % len(PlayingCardSuits)])
+
 TouchControlsJump = 'Jump'
