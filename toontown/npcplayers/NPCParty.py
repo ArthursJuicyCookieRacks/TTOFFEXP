@@ -127,11 +127,12 @@ class NPCParty:
     def _objectsOfType(self, classes):
         # Scanning every distributed object several times per NPC per tick
         # showed up in profiles (a few ms per tick in a field office), so the
-        # typed lists are built once per frame.
-        frame = globalClock.getFrameCount()
+        # typed lists are cached.
+        # Rebuilt when an object comes or goes, or after half a second.
+        key = (len(self.air.doId2do), int(globalClock.getFrameTime() * 2))
         cache = getattr(self, '_typedCache', None)
-        if cache is None or cache[0] != frame:
-            cache = self._typedCache = (frame, {})
+        if cache is None or cache[0] != key:
+            cache = self._typedCache = (key, {})
         found = cache[1].get(classes)
         if found is None:
             found = cache[1][classes] = [obj for obj in list(self.air.doId2do.values()) if isinstance(obj, classes)]

@@ -98,3 +98,6 @@ mega-invasion-cog-type tm
 # Working (Custom) Addons!
 want-toonfest #t
 want-doomsday #f
+# Check a quarter of the cached render/transform states per frame instead of
+# all of them; the full sweep cost about a millisecond every frame.
+garbage-collect-states-rate 0.25

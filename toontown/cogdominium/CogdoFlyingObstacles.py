@@ -54,7 +54,9 @@ class CogdoFlyingObtacleFactory:
         p0.setFactory('PointParticleFactory')
         p0.setRenderer('SparkleParticleRenderer')
         p0.setEmitter('RingEmitter')
-        p0.setPoolSize(80)
+        # 48 instead of 80: the sparkle renderer rebuilds every particle each
+        # frame, and the fans were most of the game's particle time.
+        p0.setPoolSize(48)
         p0.setBirthRate(0.05)
         p0.setLitterSize(100)
         p0.setLitterSpread(0)

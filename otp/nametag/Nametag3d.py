@@ -39,6 +39,8 @@ class Nametag3d(Nametag):
         self.bbOffset = bbOffset
         self._doBillboard()
 
+    CLICK_REGION_EVERY = 3
+
     def tick(self):
         if not self.WANT_DYNAMIC_SCALING:
             scale = self.SCALING_FACTOR
@@ -57,6 +59,11 @@ class Nametag3d(Nametag):
         if path.isHidden() or (path.getTop() != NametagGlobals.camera.getTop() and
                                path.getTop() != render2d):
             self.stashClickRegion()
+        elif (globalClock.getFrameCount() + id(self)) % self.CLICK_REGION_EVERY:
+            # The region is refreshed every few frames, staggered across the
+            # nametags: with dozens of avatars about, the camera-space transform
+            # per nametag per frame was a measurable slice of the frame.
+            pass
         else:
             left, right, bottom, top = self.frame
             self.updateClickRegion(left*scale, right*scale,

@@ -576,9 +576,7 @@ class NPCFacilities:
     def entitiesFor(self, player):
         # The puzzles of the level the player is in (its rooms have zones of
         # their own, so the toon's zone says nothing).
-        for obj in list(self.air.doId2do.values()):
-            if not isinstance(obj, (DistributedMoleFieldAI, DistributedGolfGreenGameAI, DistributedMazeAI)):
-                continue
+        for obj in self.manager.party._objectsOfType((DistributedMoleFieldAI, DistributedGolfGreenGameAI, DistributedMazeAI)):
             level = getattr(obj, 'level', None)
             if obj.isDeleted() or not hasattr(obj, 'entId') or level is None:
                 continue
