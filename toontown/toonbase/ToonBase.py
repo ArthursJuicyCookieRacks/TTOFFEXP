@@ -173,7 +173,22 @@ class ToonBase(OTPBase.OTPBase):
         result = OTPBase.OTPBase.openMainWindow(self, *args, **kw)
         self.setCursorAndIcon()
         self.setupMouseWatcherPatterns()
+        # The driver's names are known once the window has drawn a frame.
+        from direct.task.TaskManagerGlobal import taskMgr as tasks
+        tasks.doMethodLater(1.0, self.logGraphicsDriver, 'logGraphicsDriver')
         return result
+
+    def logGraphicsDriver(self, task=None):
+        """The graphics card and driver, in the game log: drawing bugs
+        that show on one player's machine only come down to these."""
+        try:
+            gsg = self.win.getGsg() if self.win else None
+            if gsg is not None:
+                print('ToonBase: graphics %s | %s | %s | shaders %s' % (gsg.getDriverVendor(), gsg.getDriverRenderer(),
+                                                                       gsg.getDriverVersion(), gsg.getDriverShaderVersionMajor()))
+        except Exception as e:
+            print('ToonBase: graphics driver unknown (%s)' % e)
+        return None
 
     def windowEvent(self, win):
         OTPBase.OTPBase.windowEvent(self, win)
