@@ -57,6 +57,7 @@ NO_TOON = 'Toon Not Selected'
 SPEEDCHAT = ((100, 'Hi!'), (102, 'Hello!'), (300, 'Yay!'), (500, 'Thanks!'), (511, 'Can you help me?'), (200, 'Bye!'))
 EMOTES = ('Wave', 'Happy', 'Dance', 'Laugh')
 REFRESH = 1.0
+SURVIVAL_REFRESH = 0.2
 # Where the Shticker Book's map page puts each playground's name, and the
 # clouds over the ones not visited yet (in ToontownGlobals.Hoods order).
 MAP_LABELS = ((0.594, 0.0, -0.075), (0.0, 0.0, -0.1), (0.475, 0.0, 0.25), (0.1, 0.0, 0.15), (-0.3, 0.0, -0.375),
@@ -98,6 +99,18 @@ def currentStage():
     if avatar is not None and not avatar.isEmpty() and place is not None and hasattr(avatar, 'laffMeter'):
         return 'game'
     return 'noToon'
+
+
+def survivalGame():
+    """The Survival Mode game being played, if any (it runs from
+    Pick-A-Toon, before there is a toon in the world)."""
+    cr = getattr(base, 'cr', None)
+    chooser = getattr(cr, 'avChoice', None) if cr else None
+    launcher = getattr(chooser, 'survivalLauncher', None) if chooser else None
+    game = getattr(launcher, 'game', None) if launcher else None
+    if game is not None and getattr(game, 'player', None) is not None and getattr(game, 'gags', None) is not None:
+        return game
+    return None
 
 
 def currentPlace():
@@ -189,17 +202,18 @@ class BottomScreen(DirectObject):
         self.lastRefresh = globalClock.getRealTime()
 
     def update(self):
-        stage = currentStage()
+        stage = 'survival' if survivalGame() is not None else currentStage()
         if stage != self.stage:
             self.stage = stage
-            self.show({'notStarted': 'notStarted', 'noToon': 'noToon'}.get(stage, 'home'))
+            self.show({'notStarted': 'notStarted', 'noToon': 'noToon', 'survival': 'survival'}.get(stage, 'home'))
             return
-        if stage != 'game':
+        if stage not in ('game', 'survival'):
             return
         now = globalClock.getRealTime()
         if self.message is not None and now >= self.messageUntil and not self.message.isEmpty():
             self.message.hide()
-        if now - self.lastRefresh >= REFRESH:
+        # Ammo and laff move fast in Survival Mode: that page keeps up.
+        if now - self.lastRefresh >= (SURVIVAL_REFRESH if stage == 'survival' else REFRESH):
             self.lastRefresh = now
             refresh = getattr(self, 'refresh' + self.pageName[0].upper() + self.pageName[1:], None)
             if refresh is not None:
@@ -326,6 +340,87 @@ class BottomScreen(DirectObject):
 
     def buildNoToon(self):
         self.label(NO_TOON, (0, 0, -0.03), scale=0.17, wordwrap=8, fg=WHITE, shadow=(0.1, 0.2, 0.45, 0.9))
+
+    # --- Survival Mode: round, laff, jellybeans, tonics, gags and ammo ---
+
+    def buildSurvival(self):
+        from toontown.survival import SurvivalGlobals
+        from toontown.toon import LaffMeter
+        game = survivalGame()
+        self.paper()
+        self.title('Survival', font=self.signFont)
+        if game is None:
+            return
+        # The round on the left, the laff meter on the right.
+        self.label('Round', (-0.38, 0, 0.56), scale=0.07, font=self.signFont, fg=(0.8, 0.1, 0.1, 1))
+        self.roundLabel = self.label('', (-0.38, 0, 0.34), scale=0.2, font=self.signFont, fg=(0.8, 0.1, 0.1, 1))
+        self.laffMeter = LaffMeter.LaffMeter(game.dna, int(game.player.hp), int(game.player.maxHp))
+        self.laffMeter.reparentTo(self.page)
+        self.laffMeter.setScale(0.14)
+        self.laffMeter.setPos(0.33, 0, 0.44)
+        self.laffMeter.start()
+        # Jellybeans (the points) under them.
+        beans = self.panel((0, 0, 0.13), 0.5, 0.13, CREAM)
+        jar = beans.attachNewNode('jar')
+        self.find('jar_gui', 'Jar').copyTo(jar)
+        jar.setScale(0.18)
+        jar.setPos(-0.15, -1, 0.005)
+        self.beans = self.label('', (0.05, 0, -0.022), scale=0.07, parent=beans, font=self.signFont)
+        # Tonics.
+        tonics = self.panel((0, 0, -0.14), 1.3, 0.3, LILAC)
+        self.label('Tonics', (-0.6, 0, 0.085), scale=0.05, parent=tonics, align=TextNode.ALeft, fg=SOFT)
+        self.tonicLabels = [self.label('', (-0.6 + 0.65 * (i % 2), 0, -0.01 - 0.09 * (i // 2)), scale=0.05, parent=tonics,
+                                       align=TextNode.ALeft) for i in range(SurvivalGlobals.TONIC_LIMIT)]
+        # The gags: one row a slot, the held one lit.
+        self.gagRows = []
+        for i in range(SurvivalGlobals.GAG_SLOTS):
+            z = -0.47 - 0.3 * i
+            row = self.panel((0, 0, z), 1.3, 0.26, WHITE)
+            holder = row.attachNewNode('icon')
+            holder.setPos(-0.52, -1, 0)
+            name = self.label('', (-0.36, 0, 0.03), scale=0.055, parent=row, align=TextNode.ALeft)
+            slot = self.label('', (-0.36, 0, -0.065), scale=0.04, parent=row, align=TextNode.ALeft, fg=SOFT)
+            ammo = self.label('', (0.6, 0, -0.03), scale=0.085, parent=row, align=TextNode.ARight, font=self.signFont)
+            self.gagRows.append({'row': row, 'holder': holder, 'name': name, 'slot': slot, 'ammo': ammo, 'icon': None})
+        self.presentLabel = self.label('', (0, 0, -0.47 - 0.3 * SurvivalGlobals.GAG_SLOTS + 0.1), scale=0.045, fg=SOFT)
+        self.refreshSurvival()
+
+    def refreshSurvival(self):
+        from toontown.survival import SurvivalGlobals
+        game = survivalGame()
+        if game is None or not hasattr(self, 'gagRows'):
+            return
+        self.roundLabel['text'] = '%d' % max(1, game.roundNum)
+        if self.laffMeter is not None:
+            self.laffMeter.adjustFace(int(round(game.player.hp)), int(game.player.maxHp), quietly=1)
+        self.beans['text'] = '%d' % int(game.beans)
+        names = [name for key, name, cost, blurb in SurvivalGlobals.TONICS if key in game.tonics]
+        for i, label in enumerate(self.tonicLabels):
+            label['text'] = names[i] if i < len(names) else ('-' if i == 0 and not names else '')
+        gags = game.gags
+        for i, row in enumerate(self.gagRows):
+            gag = gags.gags[i] if i < len(gags.gags) else None
+            held = gag is not None and i == gags.current
+            row['row']['image_color'] = GOLD if held else (WHITE if gag else (0.93, 0.93, 0.93, 1))
+            if gag is None:
+                row['name']['text'] = 'Empty slot'
+                row['slot']['text'] = '%d' % (i + 1)
+                row['ammo']['text'] = ''
+                icon = None
+            else:
+                row['name']['text'] = gag.name
+                row['slot']['text'] = ('%d  held' if held else '%d') % (i + 1)
+                row['ammo']['text'] = '%d / %d' % (gag.clip, gag.reserve)
+                icon = ToontownBattleGlobals.AvPropsNew[gag.track][gag.level]
+            if icon != row['icon']:
+                row['icon'] = icon
+                row['holder'].getChildren().detach()
+                if icon is not None:
+                    picture = self.find('inventory_icons', icon)
+                    picture.copyTo(row['holder'])
+                    row['holder'].setScale(1.1)
+        gifts = getattr(gags, 'presentations', 0)
+        self.presentLabel['text'] = ('Presentations: %d' % gifts) if gifts else ''
 
     # --- The laff meter page ---
 

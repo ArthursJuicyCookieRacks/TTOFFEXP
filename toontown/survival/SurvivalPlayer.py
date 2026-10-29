@@ -38,9 +38,9 @@ KEYS = {
 GAMEPAD_BUTTONS = {
     'rtrigger': ('action', 'fire'),
     'face_a': ('key', 'jump'),
-    'face_x': ('action', 'use'),
+    'face_x': ('action', 'useOrReload'),
     'face_y': ('action', 'swap'),
-    'face_b': ('action', 'reload'),
+    
     'rshoulder': ('action', 'grenade'),
     'lshoulder': ('action', 'reload'),
     'rstick': ('action', 'bonk'),
@@ -56,6 +56,9 @@ GAMEPAD_BUTTONS = {
 GAMEPAD_LOOK_SPEED = 150.0
 GAMEPAD_LOOK_DEAD_ZONE = 0.15
 GAMEPAD_WALK_DEAD_ZONE = 0.3
+# X tapped uses; X held this long reloads.
+GAMEPAD_HOLD_TIME = 0.35
+SLIDE_TOKENS = ('slideLeft', 'slideRight')
 ACTIONS = {
     'fire': ('mouse1',),
     'reload': ('r',),
@@ -104,6 +107,9 @@ class SurvivalPlayer(DirectObject):
         self.touchMode = TouchControls.wantTouchControls()
         self.sprintLatched = False
         self.touch = None
+        self.xHeldSince = None
+        self.slideForcedOff = {}
+        self.moveState = 'idle'
 
     # --- Turning on and off ---
 
@@ -123,6 +129,7 @@ class SurvivalPlayer(DirectObject):
                 self.accept(key, self.__action, [action, True])
                 self.accept(key + '-up', self.__action, [action, False])
         self.walker.enableAvatarControls()
+        self.__allowSliding(True)
         if self.touchMode:
             from toontown.survival.SurvivalTouch import SurvivalTouch
             self.touch = SurvivalTouch(self, self.game)
@@ -143,6 +150,8 @@ class SurvivalPlayer(DirectObject):
         self.sprinting = False
         self.firing = False
         self.walker.disableAvatarControls()
+        self.__allowSliding(False)
+        taskMgr.remove('survivalHoldX')
         gamepad = getattr(base, 'gamepad', None)
         if gamepad is not None and gamepad.game is self:
             gamepad.setGame(None)
@@ -172,6 +181,20 @@ class SurvivalPlayer(DirectObject):
 
     # --- Input ---
 
+    def __allowSliding(self, allow):
+        """Every Toon.Toon forces slideLeft/slideRight off for good (the
+        playground has no strafing). In here the toon strafes, so the force
+        goes away while the game runs and comes back after."""
+        forcing = getattr(inputState, '_forcingOff', None)
+        if forcing is None:
+            return
+        if allow:
+            self.slideForcedOff = dict((token, forcing.pop(token)) for token in SLIDE_TOKENS if token in forcing)
+        else:
+            for token, sources in getattr(self, 'slideForcedOff', {}).items():
+                forcing.setdefault(token, set()).update(sources)
+            self.slideForcedOff = {}
+
     def __set(self, token, down):
         if token == 'sprint':
             self.sprinting = down
@@ -192,8 +215,25 @@ class SurvivalPlayer(DirectObject):
             self.using = down
             if down:
                 self.game.playerUses()
+        elif action == 'useOrReload':
+            if down:
+                self.xHeldSince = globalClock.getFrameTime()
+                taskMgr.doMethodLater(GAMEPAD_HOLD_TIME, self.__holdX, 'survivalHoldX')
+            else:
+                taskMgr.remove('survivalHoldX')
+                if self.xHeldSince is not None:
+                    # Let go before the hold time: a tap, which uses.
+                    self.xHeldSince = None
+                    self.using = False
+                    self.game.playerUses()
         elif down:
             self.game.playerAction(action)
+
+    def __holdX(self, task):
+        # X held: reload, and the release is not a tap any more.
+        self.xHeldSince = None
+        self.game.playerAction('reload')
+        return task.done
 
     def touchMove(self, x, y):
         """The Android stick (or a controller's): x, y in -1..1."""
@@ -285,9 +325,10 @@ class SurvivalPlayer(DirectObject):
         camera.reparentTo(self.head)
         camera.setPosHpr(0, 0, 0, 0, 0, 0)
         # Sprinting burns stamina; the stamina comes back when walking.
-        moving = inputState.isSet('forward')
+        forward = inputState.isSet('forward')
+        moving = forward or any(inputState.isSet(token) for token in ('reverse',) + SLIDE_TOKENS)
         boost = self.game.hasTonic('sprint')
-        if self.sprinting and moving and self.stamina > 0 and not self.down:
+        if self.sprinting and forward and self.stamina > 0 and not self.down:
             self.stamina -= dt / (2.0 if boost else 1.0)
             speed = G.SPRINT_SPEED * (1.2 if boost else 1.0)
         else:
@@ -296,6 +337,12 @@ class SurvivalPlayer(DirectObject):
         if self.down:
             speed = 0.0
         self.walker.setWalkSpeed(speed, G.JUMP_FORCE, speed * 0.6, 0)
+        if self.down or not moving:
+            self.moveState = 'idle'
+        elif speed > G.WALK_SPEED:
+            self.moveState = 'run'
+        else:
+            self.moveState = 'walk'
         # Laff comes back out of the cogs' reach.
         now = globalClock.getFrameTime()
         if not self.down and self.hp < self.maxHp:

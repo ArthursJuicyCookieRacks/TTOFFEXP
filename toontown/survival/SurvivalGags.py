@@ -100,6 +100,18 @@ FIT_SIZE = 0.85
 FIT_TRACKS = (G.DROP, G.LURE)
 FIT_PROPS = ('squirting-flower', 'stormcloud', 'geyser', 'firehose')
 ARMS_H = 14
+# The arms rig (camera space): where the arms ease to in each state, and
+# the bobs as (strides a second, side, up, roll degrees, sway) per gait.
+# Walk and run follow BO1's weapon bob: a slow figure of eight on a walk, a
+# faster and wider one on a sprint with the gag carried lower and tilted in.
+RIG_POSES = {'idle': ((0, 0, 0), (0, 0, 0)), 'walk': ((0, 0, -0.02), (0, 0, 0)),
+             'run': ((0.12, -0.05, -0.18), (5, -5, -7)), 'lowered': ((0.25, 0, -1.3), (10, -22, 4))}
+BOBS = {'idle': (0.45, 0.012, 0.01, 0.5, 0.0), 'walk': (1.8, 0.1, 0.06, 1.4, 0.0), 'run': (2.6, 0.12, 0.08, 2.0, 0.03)}
+RIG_EASE = 7.0
+RIG_EASE_DOWN = 9.0
+RIG_BOB_EASE = 5.0
+SWITCH_DOWN = 0.3
+SWITCH_UP = 0.3
 # Battle offsets for props that do not sit square in the hand.
 PROP_IN_HAND = {'water-gun': (Point3(0.28, 0.1, 0.08), (85.6, -4.44, 94.43))}
 # Sound gags ride inside the megaphone the way the battle shows them.
@@ -163,7 +175,11 @@ class ToonArms:
         shadow = getattr(self.toon, 'dropShadow', None)
         if shadow is not None and not shadow.isEmpty():
             shadow.hide()
-        self.toon.reparentTo(camera)
+        # The toon hangs off a rig under the camera; the rig carries the
+        # idle sway, the walk and run bobs and the reload/switch put-away,
+        # the toon under it keeps the hold pose (see animate()).
+        self.rig = camera.attachNewNode('survivalArmsRig')
+        self.toon.reparentTo(self.rig)
         self.toon.setScale(ARMS_SCALE)
         self.toon.setHpr(ARMS_H, 0, 0)
         self.toon.setDepthTest(1)
@@ -174,6 +190,76 @@ class ToonArms:
         self.anim = None
         self.hold = 0
         self.grow = 1.0
+        # Motion: the pose the rig eases toward ('idle', 'walk', 'run',
+        # 'lowered'), its current eased offset, and the bob's phase/weight.
+        self.motion = 'idle'
+        self.lowered = False
+        self.rigPos = Vec3(0)
+        self.rigHpr = Vec3(0)
+        self.bobPhase = 0.0
+        self.bobWeight = {'idle': 1.0, 'walk': 0.0, 'run': 0.0}
+        self.motionTrack = None
+
+    # --- Motion (idle sway, walk and run bobs, put-away) ---
+
+    def animate(self, dt, moveState):
+        """Every frame: ease the rig toward its pose and add the bob. The
+        bobs run on one phase, so walking into a run only changes the
+        pace and the stride, never jumps."""
+        dt = min(dt, 0.1)
+        if self.rig.isEmpty():
+            return
+        state = 'lowered' if self.lowered else (moveState if moveState in ('walk', 'run') else 'idle')
+        self.motion = state
+        pos, hpr = RIG_POSES[state]
+        k = min(1.0, dt * (RIG_EASE_DOWN if state == 'lowered' else RIG_EASE))
+        self.rigPos += (Vec3(*pos) - self.rigPos) * k
+        self.rigHpr += (Vec3(*hpr) - self.rigHpr) * k
+        # The bob: each gait's weight eases in and out, the phase keeps going.
+        want = state if state in ('walk', 'run') else 'idle'
+        if state == 'lowered':
+            want = None
+        for gait in self.bobWeight:
+            target = 1.0 if gait == want else 0.0
+            self.bobWeight[gait] += (target - self.bobWeight[gait]) * min(1.0, dt * RIG_BOB_EASE)
+        pace = sum(BOBS[gait][0] * self.bobWeight[gait] for gait in self.bobWeight)
+        self.bobPhase = (self.bobPhase + dt * pace * 2 * math.pi) % (2 * math.pi)
+        bobPos = Vec3(0)
+        bobHpr = Vec3(0)
+        for gait, weight in self.bobWeight.items():
+            if weight < 1e-3:
+                continue
+            pace, side, up, roll, sway = BOBS[gait]
+            # Side to side once a stride, up and down twice (a figure of
+            # eight, the way the shoulders swing on a walk).
+            bobPos += Vec3(math.sin(self.bobPhase) * side, 0, math.sin(self.bobPhase * 2) * up + abs(math.sin(self.bobPhase * 0.5)) * sway) * weight
+            bobHpr += Vec3(0, math.sin(self.bobPhase * 2 + 0.6) * roll * 0.5, math.sin(self.bobPhase) * roll) * weight
+        self.rig.setPos(self.rigPos + bobPos)
+        self.rig.setHpr(self.rigHpr + bobHpr)
+
+    def putAway(self, downTime, hold, upTime, atBottom=None):
+        """Lower the arms out of the view, do something (switch gags), and
+        bring them back: the reload and the gag switch (BO1 puts the gun
+        down and brings it back up)."""
+        if self.motionTrack:
+            self.motionTrack.finish()
+        def lower():
+            self.lowered = True
+        def raise_():
+            self.lowered = False
+        steps = [Func(lower), Wait(downTime + hold)]
+        if atBottom is not None:
+            steps.append(Func(atBottom))
+        steps += [Func(raise_), Wait(upTime)]
+        self.motionTrack = Sequence(*steps)
+        self.motionTrack.start()
+
+    def bringBack(self):
+        """A put-away cut short (the reload was cancelled): straight back up."""
+        if self.motionTrack:
+            self.motionTrack.pause()
+            self.motionTrack = None
+        self.lowered = False
 
     def joint(self, side, name):
         try:
@@ -295,13 +381,15 @@ class ToonArms:
         self.track.start()
 
     def destroy(self):
-        if self.arms is not None:
-            self.arms.destroy()
-            self.arms = None
+        if self.motionTrack:
+            self.motionTrack.pause()
+            self.motionTrack = None
         if self.track:
             self.track.finish()
             self.track = None
         self.toon.delete()
+        if not self.rig.isEmpty():
+            self.rig.removeNode()
 
 
 class Gag:
@@ -372,6 +460,7 @@ class GagHandler:
         self.bonkReady = 0.0
         self.presentations = 0
         self.flying = []
+        self.pendingSwitch = None
         self.showHeld()
 
     def destroy(self):
@@ -382,6 +471,9 @@ class GagHandler:
         if self.reloading:
             taskMgr.remove(self.reloading)
             self.reloading = None
+        if self.arms is not None:
+            self.arms.destroy()
+            self.arms = None
 
     # --- What is held ---
 
@@ -507,6 +599,18 @@ class GagHandler:
     def switchTo(self, index):
         if 0 <= index < len(self.gags) and index != self.current:
             self.cancelReload()
+            if self.arms is not None:
+                # Down with this gag, up with the new one.
+                self.pendingSwitch = index
+                self.arms.putAway(SWITCH_DOWN, 0.0, SWITCH_UP, atBottom=self.__switched)
+            else:
+                self.current = index
+                self.showHeld()
+
+    def __switched(self):
+        index = self.pendingSwitch
+        self.pendingSwitch = None
+        if index is not None and 0 <= index < len(self.gags):
             self.current = index
             self.showHeld()
 
@@ -550,6 +654,9 @@ class GagHandler:
         self.reloading = 'survivalReload'
         self.game.hud.setReloading(time)
         taskMgr.doMethodLater(time, self.__reloaded, self.reloading)
+        if self.arms is not None:
+            # The gag goes down for the reload and comes back up as it ends.
+            self.arms.putAway(time * 0.3, time * 0.35, time * 0.35)
 
     def __reloaded(self, task):
         self.reloading = None
@@ -567,6 +674,8 @@ class GagHandler:
             taskMgr.remove(self.reloading)
             self.reloading = None
             self.game.hud.setReloading(0)
+            if self.arms is not None:
+                self.arms.bringBack()
 
     # --- Firing ---
 
@@ -574,6 +683,9 @@ class GagHandler:
         gag = self.gag
         now = globalClock.getFrameTime()
         if gag is None or self.reloading or now < self.nextShot or self.player.down:
+            return False
+        if self.arms is not None and (self.arms.lowered or self.pendingSwitch is not None):
+            # The arms are down (a switch under way): no firing from the hip.
             return False
         if gag.clip <= 0:
             if not held:
@@ -638,6 +750,8 @@ class GagHandler:
                             'gag': gag, 'target': cog, 'end': point, 'spin': gag.track == G.THROW})
 
     def tick(self, dt):
+        if self.arms is not None:
+            self.arms.animate(dt, getattr(self.player, 'moveState', 'idle'))
         if not self.flying:
             return
         done = []

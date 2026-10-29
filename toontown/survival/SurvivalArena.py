@@ -30,6 +30,11 @@ SKY_COLOR = Vec4(0.22, 0.24, 0.36, 1)
 LOOPY_LANE_TUNNEL = (Point3(-239.67, 64.08, -6.18), -90)
 FISHERMAN = (Point3(-68, -2, -1.975), 27)
 GAZEBO = (Point3(-60.94, -8.8, -2), -178)
+# Where the accessory trunk stands: beside the fisherman (on his right,
+# the player's left facing him) and a step ahead, clear of the gazebo's
+# railing behind him so the open lid never reaches it.
+TRUNK_BESIDE = 6.0
+TRUNK_AHEAD = 3.0
 # The player starts on the grass in front of Toon Hall.
 PLAYER_START = (Point3(0, -20, 0), 0)
 # Cogs land out of sight, this far out from the middle and this far from
@@ -237,10 +242,16 @@ class SurvivalArena:
         return self.placeOnGround(origin[0], origin[1], h)
 
     def trunkSpot(self):
-        # Beside the fisherman, against the gazebo.
+        # Directly left of the fisherman as the player faces him (his own
+        # right), level with him and facing the same way, so the lid opens
+        # toward the gazebo behind without reaching it.
         origin, h = FISHERMAN
-        # Turned to face away from the gazebo, toward the playground.
-        return self.placeOnGround(origin[0] - 5.5, origin[1] - 2.0, 240)
+        right = Vec3(math.cos(math.radians(h)), math.sin(math.radians(h)), 0)
+        forward = Vec3(-math.sin(math.radians(h)), math.cos(math.radians(h)), 0)
+        spot = origin + right * TRUNK_BESIDE + forward * TRUNK_AHEAD
+        # The trunk model's open side is its -y, so it turns about to face
+        # the playground the way the fisherman does.
+        return self.placeOnGround(spot[0], spot[1], h + 180)
 
     def placeOnGround(self, x, y, h=0.0):
         z = self.groundZ(x, y)
