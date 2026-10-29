@@ -4234,6 +4234,14 @@ AvatarChoiceDeleteWrongConfirm = 'You didn\'t type the right thing.  To delete %
 AvatarChooserPickAToon = 'Pick  A  Toon  To  Play'
 AvatarChooserQuit = lQuit
 AvatarChooserQuestionable = '???'
+AvatarChooserSurvival = 'SURVIVAL'
+SurvivalTitle = 'Survival Mode'
+SurvivalPlay = 'Survival Mode'
+SurvivalDescription = 'Toontown Central after dark. Cogs fall from the sky in rounds, and every round brings more of them, tougher and faster. Your gags are your weapons and jellybeans buy more: Mickey upgrades a gag by the Loopy Lane tunnel, the trunk by the gazebo hands out a random one, and Fisherman Freddy sells Toon Tonics. Hold out as many rounds as you can.'
+SurvivalFriends = 'NPC toons with you:'
+SurvivalBestRound = 'Best round: %d'
+SurvivalBack = 'Back'
+SurvivalDefaultName = 'Toon'
 DateOfBirthEntryMonths = ['Jan',
  'Feb',
  'Mar',
@@ -4266,6 +4274,18 @@ InventoryPageTrackFull = 'You have all the gags in the %s track.'
 InventoryPagePluralPoints = 'You will get a new\n%(trackName)s gag when you\nget %(numPoints)s more %(trackName)s points.'
 InventoryPageSinglePoint = 'You will get a new\n%(trackName)s gag when you\nget %(numPoints)s more %(trackName)s point.'
 InventoryPageNoAccess = 'You do not have access to the %s track yet.'
+# Swapping a gag track (offline).
+TrackSwapButton = 'Swap Tracks'
+TrackSwapTitle = 'Swap Tracks'
+TrackSwapHelp = 'Give up one of your gag tracks for the one you never chose. You keep Throw and Squirt.'
+TrackSwapNew = 'You will get: %s'
+TrackSwapGiveUp = 'Give up which track?'
+TrackSwapWarning = 'Every swap wipes out ALL the experience of both tracks. A track you take back starts from nothing, even if it was maxed.'
+TrackSwapConfirm = 'Give up %(out)s for %(in)s?\n\nAll your %(out)s and %(in)s experience and gags will be gone for good.'
+TrackSwapDone = 'Done! You now have the %s track. Go buy some gags!'
+TrackSwapNotYet = 'Finish your gag track ToonTasks first.'
+TrackSwapLocked = 'This toon was maxed, so its tracks are set for good.'
+TrackSwapFailed = 'That swap could not be done.'
 NPCFriendPageTitle = 'SOS Toons'
 PartyDateFormat = '%(mm)s %(dd)d, %(yyyy).4d'
 PartyTimeFormat = '%d:%.2d %s'

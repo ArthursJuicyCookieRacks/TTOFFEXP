@@ -51,7 +51,11 @@ PRELOAD_PLAYGROUNDS = (ToontownGlobals.ToontownCentral, ToontownGlobals.DonaldsD
 # corner, say) and goes off by teleport; another comes in its place.
 STUCK_TRIES = 6
 MANAGER_TICK = 1.0
-WALK_TICK = 0.2
+# Position reports go out this often. The clients take a toon whose reports
+# are more than a quarter of a second apart to be standing still between
+# them (SmoothMover's position age), and the tick lands on a frame, so it
+# has to be well under that even at a low frame rate.
+WALK_TICK = 0.1
 # How long an area keeps its NPCs once the player has left it.
 LINGER = 60.0
 RUN_SPEED = ToontownGlobals.ToonForwardSpeed
@@ -116,7 +120,11 @@ STREET_BATTLES = ('DistributedBattleAI',)
 # A spawn spot is level ground: a step this far in any direction rises or
 # drops less than this.
 STAIR_STEP = 2.0
-STAIR_RISE = 0.35
+STAIR_RISE = 0.12
+# A new toon appears out of the player's sight: this far away, or off the
+# edge of their view, or behind something.
+VIEW_FAR = 110.0
+VIEW_HALF_ANGLE = 55.0
 # On a street the toons run about the road, where the cogs walk, the way
 # they do in a playground (Arthur): up to MAX_IN_ROAD of them; any more
 # keep to the sidewalks.
@@ -406,8 +414,10 @@ class NPCPlayerManagerAI:
                 some.remove(spot)
                 point = Point3(spot[0])
                 if scene is not None:
-                    ground = nav.standZ(point[0], point[1], point[2])
-                    if ground is None:
+                    # Never on the steps (Toontown Central's are ramps that
+                    # a toon stands inside of), nor on a slope.
+                    ground = nav.spawnZ(point[0], point[1], point[2])
+                    if ground is None or not self.levelGround(point[0], point[1], ground):
                         continue
                     point[2] = ground
                 self.spawn(area, point, spot[1], player, inRoad)
@@ -571,29 +581,63 @@ class NPCPlayerManagerAI:
                     d += 1.5
 
     def pickSpawnSpot(self, area, playerPos, playerZone, inRoad=True):
+        """A spot for a new toon: one where toons are known to stand, on
+        level ground that is no staircase, and out of the player's sight,
+        so no toon is ever seen to appear from nothing. None if there is
+        no such spot right now (the next tick tries again)."""
         nav = getNav()
         points = area.anchors + area.trail if inRoad or not area.sidewalks else area.sidewalks
         points = list(points)
         random.shuffle(points)
-        for point, zoneId in sorted(points[:12], key=lambda p: self.crowding(area, p[0])):
-            ground = nav.standZ(point[0], point[1], point[2])
-            if ground is not None and self.levelGround(point[0], point[1], ground):
-                return Point3(point[0], point[1], ground), zoneId
-        # Somewhere near the player, in sight of them.
-        for i in range(6):
-            angle = random.uniform(0, 2 * math.pi)
-            dist = random.uniform(8, 30)
-            target = Point3(playerPos[0] + dist * math.cos(angle), playerPos[1] + dist * math.sin(angle), playerPos[2])
-            path = nav.walkable(playerPos, target)
-            if path:
-                return path[-1], playerZone
+        for point, zoneId in sorted(points[:16], key=lambda p: self.crowding(area, p[0])):
+            ground = nav.spawnZ(point[0], point[1], point[2])
+            if ground is None or not self.levelGround(point[0], point[1], ground):
+                continue
+            spot = Point3(point[0], point[1], ground)
+            if self.inPlayerView(spot):
+                continue
+            return spot, zoneId
         return None
+
+    def inPlayerView(self, spot):
+        """Whether the player's game would show a toon at spot: within
+        VIEW_FAR, within the camera's field of view and with nothing in
+        the way. Without a client (no one is looking) nothing is in view."""
+        base = getClientBuiltin('base')
+        if base is None or not hasattr(base, 'camera') or getClientBuiltin('localAvatar') is None:
+            return False
+        try:
+            camera = base.camera
+            camPos = camera.getPos(base.render)
+            forward = camera.getQuat(base.render).getForward()
+        except Exception:
+            return False
+        offset = Point3(spot) - camPos
+        distance = offset.length()
+        if distance > VIEW_FAR:
+            return False
+        if distance > 0.01:
+            flat = Vec3(offset[0], offset[1], 0)
+            flatForward = Vec3(forward[0], forward[1], 0)
+            if flat.length() > 0.01 and flatForward.length() > 0.01:
+                flat.normalize()
+                flatForward.normalize()
+                if flat.dot(flatForward) < math.cos(math.radians(VIEW_HALF_ANGLE)):
+                    return False
+        # Something between the camera and the spot hides it.
+        nav = getNav()
+        eye = Point3(camPos[0], camPos[1], camPos[2] - 2.0)
+        if not nav.clearLine(eye, Point3(spot[0], spot[1], spot[2])):
+            return False
+        return True
 
     def levelGround(self, x, y, z):
         # Not on a staircase or a slope (Toontown Central's steps had toons
-        # starting on them): the ground a step away is at the same height.
+        # starting on them): the ground a step away, in every direction, is
+        # at the same height.
         nav = getNav()
-        for dx, dy in ((STAIR_STEP, 0), (-STAIR_STEP, 0), (0, STAIR_STEP), (0, -STAIR_STEP)):
+        for dx, dy in ((STAIR_STEP, 0), (-STAIR_STEP, 0), (0, STAIR_STEP), (0, -STAIR_STEP),
+                       (STAIR_STEP, STAIR_STEP), (-STAIR_STEP, STAIR_STEP), (STAIR_STEP, -STAIR_STEP), (-STAIR_STEP, -STAIR_STEP)):
             ground = nav.groundZ(x + dx, y + dy, z)
             if ground is None or abs(ground - z) > STAIR_RISE:
                 return False
@@ -616,6 +660,30 @@ class NPCPlayerManagerAI:
             npc.b_setCogIndex(ToontownGlobals.cogHQZoneId2deptIndex(area.areaId))
         area.npcs.append(npc)
         return npc
+
+    def teleportTo(self, npc, zoneId, spot, h=None, then=None):
+        """The toon teleports to spot the way players do: it appears there
+        with the teleport-in effect (a jump with no effect is only ever
+        made out of everyone's sight)."""
+        if npc.isDeleted():
+            return
+        if zoneId is not None and zoneId != npc.zoneId:
+            npc.b_setLocation(self.air.districtId, zoneId)
+        npc.walk = None
+        if h is None:
+            h = random.uniform(-180, 180)
+        npc.placeAt(spot[0], spot[1], spot[2], h)
+        npc.b_setAnimState('TeleportIn', 1.0)
+
+        def landed(task):
+            if not npc.isDeleted():
+                npc.b_setAnimState('Happy', 1.0)
+                if then is not None:
+                    then()
+            return Task.done
+
+        taskMgr.remove('npcTeleportIn-%d' % npc.doId)
+        taskMgr.doMethodLater(TELEPORT_TIME, landed, 'npcTeleportIn-%d' % npc.doId)
 
     def despawn(self, npc, quietly=False):
         area = getattr(npc, 'area', None)
@@ -1041,20 +1109,8 @@ class NPCPlayerManagerAI:
             npc.idleUntil = 0
             return
         # Too far to run: teleport over, the way friends did online.
-        if npc.zoneId != battle.zoneId:
-            npc.b_setLocation(self.air.districtId, battle.zoneId)
-        npc.walk = None
         h = -math.degrees(math.atan2(battle.pos[0] - spot[0], battle.pos[1] - spot[1]))
-        npc.placeAt(spot[0], spot[1], spot[2], h)
-        npc.b_setAnimState('TeleportIn', 1.0)
-
-        def landed(task):
-            if not npc.isDeleted():
-                npc.b_setAnimState('Happy', 1.0)
-                arrive()
-            return Task.done
-
-        taskMgr.doMethodLater(TELEPORT_TIME, landed, 'npcTeleportIn-%d' % npc.doId)
+        self.teleportTo(npc, battle.zoneId, spot, h, arrive)
 
     def npcLeftBattle(self, npc, battle):
         if npc.isDeleted():

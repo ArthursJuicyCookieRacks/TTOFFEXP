@@ -338,11 +338,8 @@ class NPCParty:
                 if npc.busy:
                     continue
                 self.notify.info('NPC %s follows %d to zone %d' % (npc.doId, player.doId, player.zoneId))
-                npc.b_setLocation(self.air.districtId, player.zoneId)
                 spot = self.spotNear(self.manager.getPlayerPos(player), 5.0)
-                npc.placeAt(spot[0], spot[1], spot[2], random.uniform(-180, 180))
-                npc.b_setAnimState('Happy', 1.0)
-                npc.walk = None
+                self.manager.teleportTo(npc, player.zoneId, spot)
                 continue
             if npc.busy:
                 continue
@@ -375,7 +372,9 @@ class NPCParty:
                 # the player went, jumps and all.
                 pass
             else:
-                npc.placeAt(target[0], target[1], target[2], npc.getH())
+                # Left too far behind to walk: it teleports to the player,
+                # the way a friend would.
+                self.manager.teleportTo(npc, None, target, npc.getH())
 
     def answerHandshakes(self, zoneIndex):
         for npc in self.members:

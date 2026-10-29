@@ -67,6 +67,7 @@ class LookEditor(DirectObject):
         self.hiddenGui = [child for child in aspect2d.getChildren() if not child.isHidden()]
         for child in self.hiddenGui:
             child.hide()
+        self.silenceGame()
         self.oldCameraParent = camera.getParent()
         self.oldCameraTransform = camera.getTransform()
         self.oldFov = base.camLens.getMinFov()
@@ -81,14 +82,79 @@ class LookEditor(DirectObject):
         camera.reparentTo(self.oldCameraParent)
         camera.setTransform(self.oldCameraTransform)
         base.camLens.setMinFov(self.oldFov)
+        self.unsilenceGame()
         for child in self.hiddenGui:
             if not child.isEmpty():
                 child.show()
         self.hiddenGui = []
 
+    def silenceGame(self):
+        """Only the Make-A-Toon room is heard while it is open.
+
+        The place's music stops (and starts again when the editor closes),
+        and every sound effect manager of the game is turned down to
+        nothing, so the place's ambient sounds, the toons about and
+        anything else going on behind the room stay quiet. The room's own
+        effects (the shops' buttons, the stand-in toon) go through a
+        manager of the editor's own, at the player's sound volume, which
+        loadSfx is pointed at while the room loads (see load).
+        """
+        self.pausedMusic = []
+        place = base.cr.playGame.getPlace() if getattr(base.cr, 'playGame', None) else None
+        placeLoader = getattr(place, 'loader', None)
+        for name in ('music', 'activityMusic', 'battleMusic'):
+            music = getattr(placeLoader, name, None)
+            if music is not None and music.status() == music.PLAYING:
+                music.stop()
+                self.pausedMusic.append(music)
+        self.oldSfxVolumes = [(manager, manager.getVolume()) for manager in base.sfxManagerList]
+        self.audio = AudioManager.createAudioManager()
+        self.audio.setVolume(self.oldSfxVolumes[0][1] if self.oldSfxVolumes else 1.0)
+        self.audio.setActive(base.sfxActive if hasattr(base, 'sfxActive') else True)
+        for manager, volume in self.oldSfxVolumes:
+            manager.stopAllSounds()
+            manager.setVolume(0.0)
+
+    def loadRoomSfx(self, *args, **kw):
+        # The room's sound effects, on the editor's own manager.
+        return base.loader.loadSound(self.audio, *args, **kw)
+
+    def unsilenceGame(self):
+        for manager, volume in getattr(self, 'oldSfxVolumes', ()):
+            manager.setVolume(volume)
+        self.oldSfxVolumes = []
+        audio = getattr(self, 'audio', None)
+        if audio is not None:
+            audio.stopAllSounds()
+            audio.shutdown()
+            self.audio = None
+        for music in getattr(self, 'pausedMusic', ()):
+            try:
+                base.playMusic(music, looping=1, volume=0.8)
+            except Exception:
+                pass
+        self.pausedMusic = []
+
     # --- Loading ---
 
     def load(self):
+        # The shops load their sound effects while they are made: through
+        # the editor's own manager (see silenceGame).
+        oldLoadSfx = base.loader.loadSfx
+        base.loader.loadSfx = self.loadRoomSfx
+        # The buttons' click and rollover sounds too (a button keeps the
+        # default sounds of the moment it is made).
+        self.oldGuiSounds = (DGG.getDefaultRolloverSound(), DGG.getDefaultClickSound())
+        DGG.setDefaultRolloverSound(self.loadRoomSfx('phase_3/audio/sfx/GUI_rollover.ogg'))
+        DGG.setDefaultClickSound(self.loadRoomSfx('phase_3/audio/sfx/GUI_create_toon_fwd.ogg'))
+        try:
+            self.loadRoom()
+        finally:
+            base.loader.loadSfx = oldLoadSfx
+            DGG.setDefaultRolloverSound(self.oldGuiSounds[0])
+            DGG.setDefaultClickSound(self.oldGuiSounds[1])
+
+    def loadRoom(self):
         self.room = loader.loadModel('phase_3/models/makeatoon/tt_m_ara_mat_room')
         self.room.reparentTo(self.stage)
         self.walls = {}

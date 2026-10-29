@@ -259,6 +259,11 @@ class DistributedToon(DistributedPlayer.DistributedPlayer, Toon.Toon, Distribute
     def generate(self):
         DistributedPlayer.DistributedPlayer.generate(self)
         DistributedSmoothNode.DistributedSmoothNode.generate(self)
+        # Offline the whole game runs in one process, so a long frame (a
+        # toon being loaded) holds up everyone's position reports at once.
+        # Gaps between reports up to this long are still smoothed over
+        # rather than taken for a toon that stopped and then dashed on.
+        self.smoother.setMaxPositionAge(config.GetFloat('smooth-max-position-age', 0.6))
         self.cr.toons[self.doId] = self
         if base.cr.trophyManager != None:
             base.cr.trophyManager.d_requestTrophyScore()
@@ -1303,6 +1308,17 @@ class DistributedToon(DistributedPlayer.DistributedPlayer, Toon.Toon, Distribute
         self.trackArray = trackArray
         if self.inventory:
             self.inventory.updateGUI()
+
+    # --- Swapping a gag track (offline; see TrackSwapPanel) ---
+
+    def setGagTracksLocked(self, locked):
+        self.gagTracksLocked = locked
+
+    def getGagTracksLocked(self):
+        return getattr(self, 'gagTracksLocked', 0)
+
+    def trackSwapResult(self, result):
+        messenger.send('trackSwapResult', [result])
 
     def getTrackAccess(self):
         return self.trackArray

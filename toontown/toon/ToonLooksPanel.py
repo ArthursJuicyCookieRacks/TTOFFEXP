@@ -22,8 +22,12 @@ from toontown.toontowngui import TTDialog
 BUTTON_POS = (0.275, 0, 0.22)
 YELLOW = (1.0, 0.86, 0.12, 1)
 OUTLINE = (0.6, 0.38, 0.0, 1)
-# The window sits a little above the middle of the screen.
+# The window sits a little above the middle of the screen, drawn this much
+# bigger than its layout.
 WINDOW_Z = 0.1
+WINDOW_SCALE = 1.3
+# The X that closes it, in the top right corner of the right-hand page.
+CLOSE_POS = (0.725, 0, 0.61)
 SQUARES = ('Red', 'Green', 'Purple', 'Blue', 'Pink', 'Yellow')
 # Laid out the way Pick-A-Toon lays out its squares (AvatarChoice), at
 # SQUARE_SCALE of its size: the head in the middle, the name tilted with each
@@ -144,6 +148,7 @@ class LooksWindow(DirectObject):
         self.editor = None
         self.dialog = None
         self.slots = []
+        self.switching = False
         self.place = currentPlace()
         self.place.fsm.request('stopped')
         localAvatar.stopSleepWatch()
@@ -165,17 +170,17 @@ class LooksWindow(DirectObject):
         base.playSfx(self.openSound)
         self.build()
         self.frame.setScale(0.2)
-        self.popIval = self.frame.scaleInterval(0.18, 1.0, startScale=0.2, blendType='easeOut')
+        self.popIval = self.frame.scaleInterval(0.18, WINDOW_SCALE, startScale=0.2, blendType='easeOut')
         self.popIval.start()
 
     def build(self):
         if self.frame is not None:
             self.frame.destroy()
-        self.frame = DirectFrame(parent=aspect2d, relief=None, image=self.bookImage, image_scale=(1.75, 1, 1.32), pos=(0, 0, WINDOW_Z), sortOrder=DGG.BACKGROUND_SORT_INDEX + 5, state=DGG.NORMAL)
+        self.frame = DirectFrame(parent=aspect2d, relief=None, image=self.bookImage, image_scale=(1.75, 1, 1.32), pos=(0, 0, WINDOW_Z), scale=WINDOW_SCALE, sortOrder=DGG.BACKGROUND_SORT_INDEX + 5, state=DGG.NORMAL)
         DirectLabel(parent=self.frame, relief=None, pos=(0, 0, 0.55), text=TTLocalizer.LooksTitle, text_font=ToontownGlobals.getSignFont(), text_scale=0.1, text_fg=(0.16, 0.32, 0.72, 1))
         DirectLabel(parent=self.frame, relief=None, pos=(0, 0, 0.48), text=TTLocalizer.LooksHelp, text_font=ToontownGlobals.getInterfaceFont(), text_scale=0.042, text_fg=(0.3, 0.3, 0.3, 1))
         buttons = loader.loadModel('phase_3/models/gui/dialog_box_buttons_gui')
-        DirectButton(parent=self.frame, relief=None, image=(buttons.find('**/CloseBtn_UP'), buttons.find('**/CloseBtn_DN'), buttons.find('**/CloseBtn_Rllvr')), pos=(0.72, 0, -0.5), scale=0.8, text=TTLocalizer.LooksClose, text_scale=0.05, text_pos=(0, -0.1), text_fg=(0.3, 0.3, 0.3, 1), command=self.close)
+        DirectButton(parent=self.frame, relief=None, image=(buttons.find('**/CloseBtn_UP'), buttons.find('**/CloseBtn_DN'), buttons.find('**/CloseBtn_Rllvr')), pos=CLOSE_POS, scale=0.8, command=self.close)
         buttons.removeNode()
         patGui = loader.loadModel('phase_3/models/gui/tt_m_gui_pat_mainGui')
         trashGui = loader.loadModel('phase_3/models/gui/trashcan_gui')
@@ -253,16 +258,41 @@ class LooksWindow(DirectObject):
     def pick(self, slot):
         if self.looks.looks[slot] is None:
             self.edit(slot)
-        elif slot != self.looks.wearing:
-            self.wearSlot(slot)
-            self.build()
+        elif slot != self.looks.wearing and not self.switching:
+            self.switchTo(slot)
+
+    def switchTo(self, slot):
+        """The toon leaves through the hole in the floor, the way it leaves
+        for another place, changes while out of sight and jumps back out
+        in the new look. The window closes for it."""
+        self.switching = True
+        taskMgr.remove('looksWindowGuard')
+        self.closeDialog()
+        self.destroyFrame()
+        base.playSfx(self.wearSound)
+        localAvatar.b_setAnimState('TeleportOut', 1, self.switchHidden, [slot])
+
+    def switchHidden(self, slot):
+        if self.onClosed is None:
+            return
+        self.wearSlot(slot)
+        localAvatar.b_setAnimState('TeleportIn', 1, self.switchDone)
+
+    def switchDone(self):
+        self.switching = False
+        if self.onClosed is None:
+            return
+        # Back on its feet, free to walk.
+        self.close(walk=False)
+        place = currentPlace()
+        if place is self.place and place.fsm.getCurrentState().getName() == 'stopped':
+            place.fsm.request('walk')
 
     def wearSlot(self, slot):
         # The worn look as it is now (a closet may have changed it), then the new one.
         self.looks.looks[self.looks.wearing] = ToonLooks.lookOf(localAvatar)
         if ToonLooks.wear(self.looks.looks[slot]):
             self.looks.wearing = slot
-            base.playSfx(self.wearSound)
         self.looks.save()
 
     def askRemove(self, slot):
@@ -327,7 +357,7 @@ class LooksWindow(DirectObject):
             self.editor = None
             editor.close(None)
         self.destroyFrame()
-        if walk:
+        if walk and not self.switching:
             base.playSfx(self.closeSound)
             localAvatar.b_setAnimState('CloseBook', 1, callback=self.walk)
         onClosed()

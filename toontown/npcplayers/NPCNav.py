@@ -129,6 +129,29 @@ class NPCNav:
             return None
         return ground
 
+    def onStairs(self, x, y, z):
+        """Whether the ground at (x, y) is a staircase (or a step), by the
+        name of the floor it belongs to. Stairs are built as ramps to walk
+        on, so a toon put on one stands inside the steps."""
+        ground, into = self.groundHit(x, y, z)
+        if into is None:
+            return False
+        node = into
+        while not node.isEmpty():
+            name = node.getName().lower()
+            if 'stair' in name or 'satir' in name or 'step' in name:
+                return True
+            node = node.getParent()
+        return False
+
+    def spawnZ(self, x, y, z):
+        """The ground to put a new toon on at (x, y): standZ, but None on a
+        staircase."""
+        ground = self.standZ(x, y, z)
+        if ground is None or self.onStairs(x, y, ground):
+            return None
+        return ground
+
     def clearLine(self, a, b):
         """Whether a toon can walk straight from a to b without hitting a wall."""
         scene = self.getScene()

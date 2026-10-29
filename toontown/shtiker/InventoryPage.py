@@ -4,6 +4,7 @@ from direct.gui.DirectGui import *
 from panda3d.core import *
 from toontown.toonbase import ToontownGlobals
 from toontown.toonbase import TTLocalizer
+from toontown.shtiker import TrackSwapPanel
 
 class InventoryPage(ShtikerPage.ShtikerPage):
 
@@ -12,6 +13,7 @@ class InventoryPage(ShtikerPage.ShtikerPage):
         self.currentTrackInfo = None
         self.onscreen = 0
         self.lastInventoryTime = globalClock.getRealTime()
+        self.swapPanel = None
         return
 
     def load(self):
@@ -30,11 +32,39 @@ class InventoryPage(ShtikerPage.ShtikerPage):
         tokenGui = loader.loadModel('phase_6/models/gui/ttr_m_tf_gui_tokens')
         self.tokenDisplay = DirectLabel(parent=self, relief=None, pos=(0.75, 0, -0.4), scale=0.4, text=str(base.localAvatar.getTokens()), text_scale=0.18, text_fg=(0.95, 0.95, 0, 1), text_shadow=(0, 0, 0, 1), text_pos=(0, -0.1, 0), image=tokenGui.find('**/jar'), text_font=ToontownGlobals.getSignFont())
         tokenGui.removeNode()
+        # Swapping a gag track (offline; see TrackSwapPanel).
+        gui = loader.loadModel('phase_3/models/gui/quit_button')
+        self.swapButton = DirectButton(parent=self, relief=None, image=(gui.find('**/QuitBtn_UP'), gui.find('**/QuitBtn_DN'), gui.find('**/QuitBtn_RLVR'), gui.find('**/QuitBtn_UP')), image_scale=(1.1, 1, 1.1), image3_color=(0.6, 0.6, 0.6, 0.7), pos=(-0.62, 0, 0.67), scale=0.9, text=TTLocalizer.TrackSwapButton, text_scale=0.05, text_pos=(0, -0.015), text_fg=(1, 1, 1, 1), text_shadow=(0, 0, 0, 1), text3_fg=(0.8, 0.8, 0.8, 1), command=self.openSwap)
+        gui.removeNode()
+        self.swapNote = DirectLabel(parent=self, relief=None, pos=(-0.62, 0, 0.595), text='', text_scale=0.035, text_fg=(0.4, 0.4, 0.4, 1), text_wordwrap=14)
         return
 
     def unload(self):
         del self.title
+        self.closeSwap()
         ShtikerPage.ShtikerPage.unload(self)
+
+    def updateSwapButton(self):
+        state = TrackSwapPanel.swapState(base.localAvatar)
+        self.swapButton['state'] = DGG.NORMAL if state == 'ready' else DGG.DISABLED
+        self.swapNote['text'] = {'notYet': TTLocalizer.TrackSwapNotYet, 'locked': TTLocalizer.TrackSwapLocked}.get(state, '')
+
+    def openSwap(self):
+        if self.swapPanel is not None or TrackSwapPanel.swapState(base.localAvatar) != 'ready':
+            return
+        self.swapPanel = TrackSwapPanel.TrackSwapPanel(aspect2d, self.swapDone)
+
+    def swapDone(self):
+        self.swapPanel = None
+        if hasattr(self, 'swapButton'):
+            self.updateSwapButton()
+
+    def closeSwap(self):
+        if self.swapPanel is not None:
+            panel = self.swapPanel
+            self.swapPanel = None
+            panel.onDone = None
+            panel.close()
 
     def __moneyChange(self, money, tokens):
         self.moneyDisplay['text'] = str(money)
@@ -52,9 +82,13 @@ class InventoryPage(ShtikerPage.ShtikerPage):
         self.accept('enterTrackFrame', self.updateTrackInfo)
         self.accept('exitTrackFrame', self.clearTrackInfo)
         self.accept(localAvatar.uniqueName('moneyChange'), self.__moneyChange)
+        self.updateSwapButton()
+        self.swapButton.show()
+        self.swapNote.show()
 
     def exit(self):
         ShtikerPage.ShtikerPage.exit(self)
+        self.closeSwap()
         self.clearTrackInfo(self.currentTrackInfo)
         self.ignore('enterBookDelete')
         self.ignore('exitBookDelete')
@@ -149,6 +183,8 @@ class InventoryPage(ShtikerPage.ShtikerPage):
         self.accept(localAvatar.uniqueName('moneyChange'), self.__moneyChange)
         self.reparentTo(aspect2d)
         self.title.hide()
+        self.swapButton.hide()
+        self.swapNote.hide()
         self.show()
 
     def hideInventoryOnscreen(self):

@@ -1,0 +1,252 @@
+"""Toontown Central after dark: the playground of Survival Mode.
+
+Only the playground is loaded, straight from its DNA, with no district,
+no Place and no doors or tunnels that do anything. The sky is the dark
+one and the whole scene is dimmed to moonlight. The stations (Mickey by
+the Loopy Lane tunnel, the trunk and the fisherman at the gazebo) stand
+where the real playground has those landmarks.
+"""
+
+import math
+import random
+
+from direct.directnotify import DirectNotifyGlobal
+from panda3d.core import (BitMask32, CollisionHandlerQueue, CollisionNode, CollisionRay, CollisionSegment, CollisionTraverser,
+                          CompassEffect, ModelPool, NodePath, Point3, TexturePool, Vec3, Vec4)
+
+from toontown.dna.DNAStorage import DNAStorage
+from toontown.hood import SkyUtil
+from toontown.npcplayers.NPCNav import getNav
+from toontown.toonbase import ToontownGlobals
+
+STORAGE_FILES = ('phase_4/dna/storage.xml', 'phase_4/dna/storage_TT.xml', 'phase_4/dna/storage_TT_sz.xml')
+DNA_FILE = 'phase_4/dna/toontown_central_sz.xml'
+SKY_FILE = 'phase_3.5/models/props/BR_sky'
+# Moonlight over the playground.
+NIGHT_SCALE = Vec4(0.42, 0.46, 0.62, 1)
+SKY_COLOR = Vec4(0.22, 0.24, 0.36, 1)
+
+# Where things are in the playground (from its DNA).
+LOOPY_LANE_TUNNEL = (Point3(-239.67, 64.08, -6.18), -90)
+FISHERMAN = (Point3(-68, -2, -1.975), 27)
+GAZEBO = (Point3(-60.94, -8.8, -2), -178)
+# The player starts on the grass in front of Toon Hall.
+PLAYER_START = (Point3(0, -20, 0), 0)
+# Cogs land out of sight, this far out from the middle and this far from
+# every toon.
+SPAWN_RING = (45.0, 130.0)
+SPAWN_CLEAR = 30.0
+VIEW_HALF_ANGLE = 60.0
+
+
+class SurvivalArena:
+    notify = DirectNotifyGlobal.directNotify.newCategory('SurvivalArena')
+
+    def __init__(self):
+        self.root = render.attachNewNode('survivalArena')
+        self.dnaStore = DNAStorage()
+        for name in STORAGE_FILES:
+            loader.loadDNA(name).store(self.dnaStore)
+        self.dnaStore.storeFont(ToontownGlobals.getInterfaceFont(), 'humanist')
+        self.dnaStore.storeFont(ToontownGlobals.getSignFont(), 'mickey')
+        self.dnaStore.storeFont(ToontownGlobals.getSuitFont(), 'suit')
+        tree = loader.loadDNA(DNA_FILE)
+        node = tree.generate(self.dnaStore)
+        if node.getNumParents() == 1:
+            self.geom = NodePath(node.getParent(0))
+        else:
+            self.geom = NodePath(node)
+        self.geom.reparentTo(self.root)
+        # Nothing leads anywhere: the tunnels' triggers go, the doors are
+        # plain geometry without a DistributedDoor behind them.
+        for trigger in self.geom.findAllMatches('**/tunnel_trigger*'):
+            trigger.stash()
+        for trigger in self.geom.findAllMatches('**/door_trigger*'):
+            trigger.stash()
+        for origin in self.geom.findAllMatches('**/suit_building_origin'):
+            origin.removeNode()
+        self.geom.flattenMedium()
+        gsg = base.win.getGsg()
+        if gsg:
+            self.geom.prepareScene(gsg)
+        self.root.setColorScale(NIGHT_SCALE)
+        self.sky = None
+        self.skyTask = None
+        self.startSky()
+        self.nav = getNav()
+        self.nav.sceneOverride = None
+        # A ray from high up, for the ground anywhere in the playground.
+        self.groundTrav = CollisionTraverser('survivalGround')
+        self.groundQueue = CollisionHandlerQueue()
+        self.groundRay = CollisionRay()
+        rayNode = CollisionNode('survivalGroundRay')
+        rayNode.addSolid(self.groundRay)
+        rayNode.setFromCollideMask(ToontownGlobals.FloorBitmask)
+        rayNode.setIntoCollideMask(BitMask32.allOff())
+        self.groundRayPath = self.root.attachNewNode(rayNode)
+        self.groundTrav.addCollider(self.groundRayPath, self.groundQueue)
+        # A segment along the aim line, for the wall or floor a gag lands on.
+        self.aimTrav = CollisionTraverser('survivalAim')
+        self.aimQueue = CollisionHandlerQueue()
+        self.aimSegment = CollisionSegment()
+        segNode = CollisionNode('survivalAimSegment')
+        segNode.addSolid(self.aimSegment)
+        segNode.setFromCollideMask(ToontownGlobals.WallBitmask | ToontownGlobals.FloorBitmask | ToontownGlobals.CameraBitmask)
+        segNode.setIntoCollideMask(BitMask32.allOff())
+        self.aimSegmentPath = self.root.attachNewNode(segNode)
+        self.aimTrav.addCollider(self.aimSegmentPath, self.aimQueue)
+
+    def startSky(self):
+        self.sky = loader.loadModel(SKY_FILE)
+        self.sky.setTag('sky', 'Survival')
+        self.sky.setScale(1.0)
+        self.sky.setDepthTest(0)
+        self.sky.setDepthWrite(0)
+        self.sky.setBin('background', 100)
+        self.sky.setColor(SKY_COLOR)
+        self.sky.reparentTo(camera)
+        self.sky.setZ(0.0)
+        self.sky.setHpr(0.0, 0.0, 0.0)
+        self.sky.node().setEffect(CompassEffect.make(NodePath(), CompassEffect.PRot | CompassEffect.PZ))
+        self.skyTask = taskMgr.add(self.__spinSky, 'survivalSky')
+        self.skyTask.h = 0
+        self.skyTask.cloud1 = self.sky.find('**/cloud1')
+        self.skyTask.cloud2 = self.sky.find('**/cloud2')
+
+    def __spinSky(self, task):
+        task.h += globalClock.getDt() * 0.25
+        if not task.cloud1.isEmpty():
+            task.cloud1.setH(task.h)
+        if not task.cloud2.isEmpty():
+            task.cloud2.setH(-task.h * 0.8)
+        return task.cont
+
+    def destroy(self):
+        if self.skyTask:
+            taskMgr.remove(self.skyTask)
+            self.skyTask = None
+        if self.sky:
+            self.sky.removeNode()
+            self.sky = None
+        self.root.removeNode()
+        try:
+            self.dnaStore.reset()
+        except Exception:
+            # The repo's DNAStorage.reset trips over itself; the store goes
+            # away with us either way.
+            pass
+        self.dnaStore = None
+        ModelPool.garbageCollect()
+        TexturePool.garbageCollect()
+
+    # --- Ground ---
+
+    def groundZ(self, x, y):
+        """The highest floor under (x, y), or None off the playground."""
+        self.groundRay.setOrigin(x, y, 80.0)
+        self.groundRay.setDirection(0, 0, -1)
+        self.groundQueue.clearEntries()
+        self.groundTrav.traverse(self.root)
+        best = None
+        for i in range(self.groundQueue.getNumEntries()):
+            hitZ = self.groundQueue.getEntry(i).getSurfacePoint(render).getZ()
+            if best is None or hitZ > best:
+                best = hitZ
+        return best
+
+    def rayHit(self, origin, direction, maxDist):
+        """The first wall or floor along the line: (distance, point) or None."""
+        end = origin + direction * maxDist
+        self.aimSegment.setPointA(origin)
+        self.aimSegment.setPointB(end)
+        self.aimQueue.clearEntries()
+        self.aimTrav.traverse(self.root)
+        best = None
+        for i in range(self.aimQueue.getNumEntries()):
+            point = self.aimQueue.getEntry(i).getSurfacePoint(render)
+            dist = (point - origin).length()
+            if best is None or dist < best[0]:
+                best = (dist, point)
+        return best
+
+    def spawnZ(self, x, y):
+        z = self.groundZ(x, y)
+        if z is None or z < -8 or self.nav.onStairs(x, y, z):
+            return None
+        return z
+
+    def clearLine(self, a, b):
+        return self.nav.clearLine(a, b)
+
+    def walkable(self, a, b):
+        return self.nav.walkable(a, b)
+
+    # --- Where the stations stand ---
+
+    def mickeySpot(self):
+        # Just inside the playground from the Loopy Lane tunnel mouth,
+        # facing the toons who walk up.
+        # The tunnel prop's own origin is far back inside the hill; the
+        # playground end is its tunnel_origin node, the one facing east.
+        best = None
+        for node in self.geom.findAllMatches('**/tunnel_origin'):
+            h = node.getH(render)
+            off = abs((h + 90 + 180) % 360 - 180)
+            if best is None or off < best[0]:
+                best = (off, node.getPos(render), h)
+        if best is not None and best[0] < 30:
+            pos, h = best[1], best[2]
+            forward = Vec3(-math.sin(math.radians(h)), math.cos(math.radians(h)), 0)
+            spot = pos + forward * 9.0
+            return self.placeOnGround(spot[0], spot[1], h)
+        origin, h = LOOPY_LANE_TUNNEL
+        pos, h = self.placeOnGround(origin[0] + 14.0, origin[1], -90)
+        if self.groundZ(pos[0], pos[1]) is None:
+            pos = Point3(pos[0], pos[1], origin[2])
+        return pos, h
+
+    def fishermanSpot(self):
+        origin, h = FISHERMAN
+        return self.placeOnGround(origin[0], origin[1], h)
+
+    def trunkSpot(self):
+        # Beside the fisherman, against the gazebo.
+        origin, h = FISHERMAN
+        return self.placeOnGround(origin[0] - 5.5, origin[1] - 2.0, 60)
+
+    def placeOnGround(self, x, y, h=0.0):
+        z = self.groundZ(x, y)
+        if z is None:
+            z = 0.0
+        return Point3(x, y, z), h
+
+    # --- Where cogs land ---
+
+    def inView(self, spot, eye, forward):
+        d = Vec3(spot - eye)
+        flat = math.hypot(d[0], d[1])
+        if flat < 1:
+            return True
+        angle = math.degrees(math.atan2(d[0], d[1]))
+        facing = math.degrees(math.atan2(forward[0], forward[1]))
+        if abs((angle - facing + 180) % 360 - 180) > VIEW_HALF_ANGLE:
+            return False
+        return self.clearLine(eye, Point3(spot[0], spot[1], spot[2] + 3))
+
+    def pickLanding(self, toons, eye, forward, tries=20):
+        """A spot on the ground the player cannot see, away from every
+        toon; None when none turns up this time."""
+        for i in range(tries):
+            angle = random.uniform(0, 2 * math.pi)
+            dist = random.uniform(*SPAWN_RING)
+            x, y = dist * math.cos(angle), dist * math.sin(angle)
+            z = self.spawnZ(x, y)
+            if z is None:
+                continue
+            spot = Point3(x, y, z)
+            if any((Point3(t[0], t[1], 0) - Point3(x, y, 0)).length() < SPAWN_CLEAR for t in toons):
+                continue
+            if self.inView(spot, eye, forward):
+                continue
+            return spot
+        return None

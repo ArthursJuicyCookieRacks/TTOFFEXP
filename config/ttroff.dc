@@ -978,6 +978,11 @@ dclass DistributedToon : DistributedPlayer {
   setTrackAccess(uint16 trackArray[] = [0,0,0,0,1,1,0]) required broadcast ownrecv db;
   setTrackProgress(int8 trackId = -1, uint32 progress = 0) required ownrecv db;
   setTrackBonusLevel(int8 trackArray[] = [-1,-1,-1,-1,-1,-1,-1]) required broadcast ownrecv db;
+  // Offline: swapping a gag track in the Shticker Book (see TrackSwapPanel),
+  // and the lock on it after ~maxToon.
+  requestTrackSwap(uint8 outTrack, uint8 inTrack) airecv clsend;
+  trackSwapResult(uint8 result) ownrecv;
+  setGagTracksLocked(uint8 locked) ownrecv db;
   setInventory(blob inventoryNetString = [0*7, 0*7, 0*7, 0*7, 1, 0*6, 1, 0*6, 0*7]) required broadcast db;
   setMaxNPCFriends(uint16 max = 16) required ownrecv db;
   setNPCFriendsDict(FriendEntry NPCFriendsList[] = []) required ownrecv db;
