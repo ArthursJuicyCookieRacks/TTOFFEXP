@@ -96,13 +96,7 @@ class ToonBase(OTPBase.OTPBase):
         self.wantKarts = self.config.ConfigVariableBool('want-karts', 1).getValue()
         self.wantNewSpecies = self.config.ConfigVariableBool('want-new-species', 0).getValue()
         self.inactivityTimeout = self.config.GetFloat('inactivity-timeout', ToontownGlobals.KeyboardTimeout)
-        if self.inactivityTimeout:
-            self.notify.debug('Enabling Panda timeout: %s' % self.inactivityTimeout)
-            self.mouseWatcherNode.setInactivityTimeout(self.inactivityTimeout)
-        self.mouseWatcherNode.setEnterPattern('mouse-enter-%r')
-        self.mouseWatcherNode.setLeavePattern('mouse-leave-%r')
-        self.mouseWatcherNode.setButtonDownPattern('button-down-%r')
-        self.mouseWatcherNode.setButtonUpPattern('button-up-%r')
+        self.setupMouseWatcherPatterns()
         self.randomMinigameAbort = self.config.ConfigVariableBool('random-minigame-abort', 0).getValue()
         self.randomMinigameDisconnect = self.config.ConfigVariableBool('random-minigame-disconnect', 0).getValue()
         self.randomMinigameNetworkPlugPull = self.config.ConfigVariableBool('random-minigame-netplugpull', 0).getValue()
@@ -159,9 +153,26 @@ class ToonBase(OTPBase.OTPBase):
         self.loadingScreen = None
         return
 
+    def setupMouseWatcherPatterns(self):
+        """The events the click regions of name tags and speech bubbles
+        (otp.margins.ClickablePopup) listen for. Opening the main window
+        again (switching full screen on or off) makes a new mouse watcher
+        without them, which left every speech bubble unclickable."""
+        if not self.mouseWatcherNode:
+            return
+        timeout = getattr(self, 'inactivityTimeout', 0)
+        if timeout:
+            self.notify.debug('Enabling Panda timeout: %s' % timeout)
+            self.mouseWatcherNode.setInactivityTimeout(timeout)
+        self.mouseWatcherNode.setEnterPattern('mouse-enter-%r')
+        self.mouseWatcherNode.setLeavePattern('mouse-leave-%r')
+        self.mouseWatcherNode.setButtonDownPattern('button-down-%r')
+        self.mouseWatcherNode.setButtonUpPattern('button-up-%r')
+
     def openMainWindow(self, *args, **kw):
         result = OTPBase.OTPBase.openMainWindow(self, *args, **kw)
         self.setCursorAndIcon()
+        self.setupMouseWatcherPatterns()
         return result
 
     def windowEvent(self, win):

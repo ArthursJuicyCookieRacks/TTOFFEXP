@@ -18,7 +18,12 @@ def setNametagCard(model, dimensions):
 mouseWatcher = None
 def setMouseWatcher(mw):
     global mouseWatcher
+    changed = mouseWatcher is not None and mw is not None and mw != mouseWatcher
     mouseWatcher = mw
+    if changed:
+        # A new window: the click regions already made move over to it.
+        from otp.margins import ClickablePopup
+        ClickablePopup.moveToMouseWatcher(mw)
 
 speechBalloon3d = None
 def setSpeechBalloon3d(sb3d):
