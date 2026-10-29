@@ -21,6 +21,12 @@ CHEST = 2.0
 HEADROOM = 12.0
 
 
+# A staircase changes height within a stride; a level floor with 'stair' in
+# its name (Bossbot HQ's courtyard) does not.
+STAIR_STEP = 2.0
+STAIR_RISE = 0.12
+
+
 class NPCNav:
 
     def __init__(self):
@@ -137,11 +143,22 @@ class NPCNav:
         if into is None:
             return False
         node = into
+        named = False
         while not node.isEmpty():
             name = node.getName().lower()
             if 'stair' in name or 'satir' in name or 'step' in name:
-                return True
+                named = True
+                break
             node = node.getParent()
+        if not named:
+            return False
+        # Bossbot HQ's whole courtyard floor is one collision named
+        # G_Stair_coll, so the name alone is not enough: a staircase is
+        # where the ground a step away is higher or lower.
+        for dx, dy in ((STAIR_STEP, 0), (-STAIR_STEP, 0), (0, STAIR_STEP), (0, -STAIR_STEP)):
+            near = self.groundZ(x + dx, y + dy, ground)
+            if near is None or abs(near - ground) > STAIR_RISE:
+                return True
         return False
 
     def spawnZ(self, x, y, z):

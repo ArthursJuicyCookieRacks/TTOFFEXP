@@ -1419,6 +1419,9 @@ def fightBoss(interior, bossClass, actions, timeout=2400, prelude={}):
             log('boss still in %s; place state %s, gag panel %s; %s' % (
                 boss.state, placeState(), townBattleState(), onDistrict(bossStatus, boss.doId)))
         during = lambda: prelude[boss.state](boss) if boss.state in prelude else None
+        if not getattr(boss, 'autoplayHandlersLogged', False):
+            boss.autoplayHandlersLogged = True
+            log('boss handlers: state %r, place %s, prelude %s, actions %s' % (boss.state, placeState(), sorted(prelude), sorted(actions)))
         during()
         if placeState() == 'battle':
             yield from fightBattle(during=during)

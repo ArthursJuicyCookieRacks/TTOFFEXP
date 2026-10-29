@@ -63,11 +63,18 @@ CAGE_NEAR = 9.0
 EVIDENCE_TIME = (1.5, 2.5)
 BONUS_TIME = (0.8, 1.4)
 # The witness stand (courtroom coordinates), where a toon out of evidence
-# runs to refill, close enough to touch it.
-WITNESS_STAND = (54.0, 100.0)
-WITNESS_NEAR = 8.0
+# runs to refill: the floor just in front of the stand (its own floor is a
+# raised step at y 84-100), close enough to touch its rail.
+WITNESS_STAND = (55, 78)
+WITNESS_NEAR = 10.0
 # Evidence on the CJ's scale pan, a big target.
 EVIDENCE_HIT_CHANCE = 0.55
+# The courtroom floor the toons throw from (the scale stands on the bench at
+# y 89): where they are spread out at the start of the round, and the middle
+# of their wandering.
+COURTROOM_X = (-45.0, 45.0)
+COURTROOM_Y = (-5.0, 55.0)
+COURTROOM_FLOOR = (0.0, 25.0)
 # One or two toons have the lawyers as their job: pies that stun them for
 # a while so they stop loading the cogs' pan.
 LAWYER_STUNNERS = (1, 2)
@@ -168,6 +175,7 @@ class NPCBossCrew:
         self.dizzy = False
         self.stunRestUntil = 0
         self.nextRoam = {}
+        self.placed = False
         self.nextHeal = 0
         self.animRefresh = {}
         self.doorWasOpen = False
@@ -205,9 +213,13 @@ class NPCBossCrew:
             self.stateSince = (state, now)
             # A new stretch: everyone gets going straight away.
             self.nextRoam = {}
+            self.placed = False
         try:
             members = self.members()
             pieRound = self.dept == 's' and state == 'BattleThree'
+            if self.dept == 'l' and state == 'BattleThree' and not self.placed:
+                self.placed = True
+                self.placeCourtroom(members)
             if pieRound:
                 self.watchDizzy(now)
                 self.markNear(members)
@@ -257,6 +269,12 @@ class NPCBossCrew:
 
     # --- Moving about ---
 
+    def inBattle(self, npc):
+        # A boss's cog battles are torn down, not finished: a toon keeps the
+        # battle's id after the battle itself is gone.
+        battleId = npc.getBattleId()
+        return battleId > 0 and battleId in self.air.doId2do
+
     def isStationed(self, npc):
         # On a crane, in a cannon, at a golf spot or a table's pitcher, where the
         # game holds it.
@@ -271,7 +289,7 @@ class NPCBossCrew:
     def canRoam(self, npc, now):
         if npc.walk is not None or npc.busy or now < self.nextRoam.get(npc.doId, 0):
             return False
-        if self.isStationed(npc) or npc.getBattleId() > 0 or getattr(npc, 'crew', None) is not None:
+        if self.isStationed(npc) or self.inBattle(npc) or getattr(npc, 'crew', None) is not None:
             # Held by the game, or fighting the cogs.
             self.nextRoam[npc.doId] = now + 1.0
             return False
@@ -285,6 +303,9 @@ class NPCBossCrew:
         center = self.bossPos()
         if center is None:
             return
+        if self.dept == 'l' and self.boss.getCurrentOrNextState() == 'BattleThree':
+            # The courtroom floor in front of the bench, not the bench.
+            center = Point3(COURTROOM_FLOOR[0], COURTROOM_FLOOR[1], 0)
         self.syncPos(npc)
         if not pieRound and random.random() < ROAM_EMOTE_CHANCE:
             from toontown.npcplayers.NPCPlayerManagerAI import IDLE_EMOTES
@@ -587,6 +608,54 @@ class NPCBossCrew:
                 self.chasing[npc.doId] = ('goon', goon.doId)
                 return True
         return False
+
+    def placeCourtroom(self, members):
+        """The cannon round lands each toon wherever its own shot went, on
+        the player's screen only; the district has no idea where. For the
+        evidence round every NPC gets a spot of its own on the courtroom
+        floor, spread out in front of the bench, the way the players land
+        all over it."""
+        nav = getNav()
+        taken = []
+        for npc in members:
+            spot = None
+            for i in range(12):
+                x = random.uniform(*COURTROOM_X)
+                y = random.uniform(*COURTROOM_Y)
+                if any(math.hypot(x - t[0], y - t[1]) < 7 for t in taken):
+                    continue
+                z = nav.standZ(x, y, 1.0)
+                if z is not None and abs(z) < 3.0:
+                    spot = Point3(x, y, z)
+                    break
+            if spot is None:
+                spot = Point3(random.uniform(-20, 20), random.uniform(10, 30), 0)
+            taken.append(spot)
+            npc.walk = None
+            self.manager.teleportTo(npc, None, spot, h=random.uniform(-30, 30))
+            self.wakeClient(npc)
+            self.nextRoam[npc.doId] = globalClock.getFrameTime() + random.uniform(2.0, 5.0)
+
+    def wakeClient(self, npc):
+        """The cannon stops the toon's smoothing on the player's screen when
+        it climbs in, and only a player's own toon gets it back: an NPC left
+        that way ignores every walk the district sends and stands where the
+        round left it. Smooth it again, out in the room."""
+        base = getClientBuiltin('base')
+        client = base.cr.doId2do.get(npc.doId) if base is not None and getattr(base, 'cr', None) else None
+        if client is None or client.isEmpty():
+            return
+        from otp.local import ExecutionContext
+        contexts = ExecutionContext.contexts
+        if contexts is None:
+            return
+        # The smoothing task belongs to the client's task manager, with the
+        # client's builtins, not to the district's.
+        with contexts.use(contexts.client):
+            if client.getParent() != base.render:
+                client.wrtReparentTo(base.render)
+            if not getattr(client, 'smoothStarted', 1):
+                client.startSmooth()
 
     def witnessTrip(self, npc, now):
         """Out of evidence, a CJ toon runs to the witness stand, touches it
