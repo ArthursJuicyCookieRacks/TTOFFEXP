@@ -242,8 +242,12 @@ class CogdoFlyingPowerup(CogdoFlyingGatherable):
         if self._isToonLocal:
             self._model.setAlphaScale(0.5)
             if Globals.Level.AddSparkleToPowerups:
-                self.f = self.find('**/particleEffect_sparkles')
-                self.f.hide()
+                # Only some power-ups get sparkles (the level's generator
+                # adds them to the laff and memo pickups, not to every
+                # kind), so a pickup without them has nothing to hide.
+                sparkles = self.find('**/particleEffect_sparkles')
+                if not sparkles.isEmpty():
+                    sparkles.hide()
 
     def pickUp(self, toon, elapsedSeconds = 0.0):
         if self.wasPickedUpByToon(toon) == True:
