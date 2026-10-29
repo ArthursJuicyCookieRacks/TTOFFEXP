@@ -81,6 +81,7 @@ class ToonHead(Actor.Actor):
     Muzzle.setMinfilter(Texture.FTLinear)
     Muzzle.setMagfilter(Texture.FTLinear)
     MuzzleSurprised = loader.loadTexture('phase_3/maps/muzzleShortSurprised.jpg')
+    DogLashTexture = None
     MuzzleSurprised.setMinfilter(Texture.FTLinear)
     MuzzleSurprised.setMagfilter(Texture.FTLinear)
     LeftA = Point3(0.06, 0.0, 0.14)
@@ -776,6 +777,13 @@ class ToonHead(Actor.Actor):
                 head.setHpr(hpr)
         return reachedTarget
 
+    @staticmethod
+    def dogLashTexture():
+        if ToonHead.DogLashTexture is None:
+            ToonHead.DogLashTexture = loader.loadTexture('phase_3/maps/avatar_palette_2tlla_1.jpg',
+                                                         'phase_3/maps/avatar_palette_2tlla_1_a.rgb')
+        return ToonHead.DogLashTexture
+
     def setupEyelashes(self, style):
         if style.getGender() == 'm':
             if self.__eyelashOpen:
@@ -808,6 +816,13 @@ class ToonHead(Actor.Actor):
                 # Fix eyelash positioning on dog toons
                 eyeOpen.setPos(0, -0.025, 0.025)
                 eyeClosed.setPos(0, -0.025, 0.025)
+                # dog-lashes.bam names its texture avatar_palette_2tlla_1.png,
+                # which the resources only have as a .jpg with an _a.rgb
+                # alpha file. Without it the lashes were drawn as blank white
+                # cards over a girl dog's eyes (white squares).
+                for lashes in (eyeOpen, eyeClosed):
+                    if not lashes.isEmpty() and lashes.findTexture('*') is None:
+                        lashes.setTexture(ToonHead.dogLashTexture(), 1)
             self.__eyelashOpen = eyeOpen.copyTo(head)
             self.__eyelashClosed = eyeClosed.copyTo(head)
             eyeOpen.removeNode()
