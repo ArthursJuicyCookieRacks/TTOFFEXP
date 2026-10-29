@@ -1047,6 +1047,13 @@ class CogdoFlyingPlayer(CogdoPlayer):
         (left, right), (back, forward), (down, up) = level.getBounds()
         endY = level._endPlatformModel.getY(clientRender())
         here = self.npc.getPos()
+        if self.gameTime() > CogdoFlyingGameGlobals.Gameplay.SecondsUntilGameOver and not self.memo.get('timedOut'):
+            # Out of time: like a player, it is put on the far platform and
+            # counts as landed, so the game ends instead of waiting on it.
+            self.memo['timedOut'] = True
+            self.npc.placeAt(random.uniform(-4, 4), endY + random.uniform(0, 4), CogdoFlyingGameGlobals.Level.EndPlatformHeight, 0)
+            self.send('requestAction', Actions.LandOnWinPlatform, 0)
+            return
         speed = CogdoFlyingGameGlobals.Gameplay.ToonVelMax['forward'] * self.memo.setdefault('pace', random.uniform(0.6, 0.95))
         if here[1] >= endY - 2.0:
             # Over the far platform: come down and land.

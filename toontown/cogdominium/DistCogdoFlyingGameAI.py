@@ -5,7 +5,10 @@ from toontown.cogdominium import CogdoFlyingGameGlobals as Globals
 Actions = Globals.AI.GameActions
 Gatherables = Globals.Level.GatherableTypes
 # Seconds past the game clock before the server ends the game itself.
-GameOverGrace = 60
+# How long after the clients' timers run out the game is ended regardless
+# of who has landed. Offline the clients are in the same process, so a short
+# grace is plenty; a minute of a timer stuck on 0 was reported.
+GameOverGrace = 15
 
 
 class DistCogdoFlyingGameAI(DistCogdoGameAI):

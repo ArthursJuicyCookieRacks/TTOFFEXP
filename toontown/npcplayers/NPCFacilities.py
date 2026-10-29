@@ -544,7 +544,14 @@ class NPCFacilities:
                     npc.job = None
                 continue
             if npc.crew is None and not npc.busy and npc.walk is None:
-                self.ride(npc)
+                if self.manager.party.isPlaying(npc):
+                    # A field office game (or a trolley game, a race, golf)
+                    # moves the toon itself; riding the floor it stands on
+                    # would pin it to the spot (the Lawbot flyers never
+                    # took off from the start platform).
+                    npc.ride = None
+                else:
+                    self.ride(npc)
         for npc in self.manager.party.members[:]:
             if getattr(npc, 'job', None) is None and npc.crew is None and not npc.busy and not npc.isDeleted():
                 self.findJob(npc)
