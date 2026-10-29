@@ -32,6 +32,30 @@ KEYS = {
     'jump': ('space',),
     'sprint': ('shift', 'lshift', 'rshift'),
 }
+# The controller (BO1's layout): the left stick walks, the right stick looks,
+# RT fires, A jumps, X reloads or uses, Y swaps gags, RB throws the
+# Presentation, R3 bonks, L3 sprints, the D-pad picks a gag, Start pauses.
+GAMEPAD_BUTTONS = {
+    'rtrigger': ('action', 'fire'),
+    'face_a': ('key', 'jump'),
+    'face_x': ('action', 'use'),
+    'face_y': ('action', 'swap'),
+    'face_b': ('action', 'reload'),
+    'rshoulder': ('action', 'grenade'),
+    'lshoulder': ('action', 'reload'),
+    'rstick': ('action', 'bonk'),
+    'lstick': ('key', 'sprint'),
+    'dpad_left': ('action', 'gag1'),
+    'dpad_right': ('action', 'gag2'),
+    'dpad_up': ('action', 'swap'),
+    'start': ('action', 'pause'),
+    'back': ('action', 'pause'),
+}
+# The right stick's top turn rate, degrees a second, with a curve that is
+# slow near the middle for fine aim.
+GAMEPAD_LOOK_SPEED = 150.0
+GAMEPAD_LOOK_DEAD_ZONE = 0.15
+GAMEPAD_WALK_DEAD_ZONE = 0.3
 ACTIONS = {
     'fire': ('mouse1',),
     'reload': ('r',),
@@ -78,6 +102,7 @@ class SurvivalPlayer(DirectObject):
         self.walker.placeOnFloor()
         self.mouseCentered = False
         self.touchMode = TouchControls.wantTouchControls()
+        self.sprintLatched = False
         self.touch = None
 
     # --- Turning on and off ---
@@ -103,6 +128,9 @@ class SurvivalPlayer(DirectObject):
             self.touch = SurvivalTouch(self, self.game)
         else:
             self.grabMouse(True)
+        gamepad = getattr(base, 'gamepad', None)
+        if gamepad is not None:
+            gamepad.setGame(self)
         taskMgr.add(self.__tick, 'survivalPlayer', priority=24)
 
     def disable(self):
@@ -115,6 +143,9 @@ class SurvivalPlayer(DirectObject):
         self.sprinting = False
         self.firing = False
         self.walker.disableAvatarControls()
+        gamepad = getattr(base, 'gamepad', None)
+        if gamepad is not None and gamepad.game is self:
+            gamepad.setGame(None)
         if self.touch:
             self.touch.destroy()
             self.touch = None
@@ -165,14 +196,56 @@ class SurvivalPlayer(DirectObject):
             self.game.playerAction(action)
 
     def touchMove(self, x, y):
-        """The Android stick: x, y in -1..1."""
-        inputState.set('forward', y > 0.3 and not self.down, inputSource=SOURCE)
-        inputState.set('reverse', y < -0.3 and not self.down, inputSource=SOURCE)
-        inputState.set('slideLeft', x < -0.3 and not self.down, inputSource=SOURCE)
-        inputState.set('slideRight', x > 0.3 and not self.down, inputSource=SOURCE)
+        """The Android stick (or a controller's): x, y in -1..1."""
+        dead = GAMEPAD_WALK_DEAD_ZONE
+        inputState.set('forward', y > dead and not self.down, inputSource=SOURCE)
+        inputState.set('reverse', y < -dead and not self.down, inputSource=SOURCE)
+        inputState.set('slideLeft', x < -dead and not self.down, inputSource=SOURCE)
+        inputState.set('slideRight', x > dead and not self.down, inputSource=SOURCE)
+        if self.sprintLatched and y <= dead:
+            # L3's sprint lasts while the stick is pushed forward (BO1).
+            self.sprintLatched = False
+            self.sprinting = False
 
     def touchLookBy(self, dx, dy):
         self.lookDelta += Vec3(dx * TOUCH_SENSITIVITY, dy * TOUCH_SENSITIVITY, 0)
+
+    # --- The controller (see toontown.toonbase.Gamepad.setGame) ---
+
+    def wantsPointer(self):
+        # A menu or the pause card up: the controller moves the pointer.
+        return self.game.paused or self.game.over
+
+    def gamepadActive(self, on):
+        if self.touch is not None:
+            if on:
+                self.touch.hideForGamepad()
+            else:
+                self.touch.showAfterGamepad()
+
+    def gamepadMove(self, x, y):
+        self.touchMove(x, y)
+
+    def gamepadLook(self, x, y, dt):
+        if max(abs(x), abs(y)) < GAMEPAD_LOOK_DEAD_ZONE:
+            return
+        speed = GAMEPAD_LOOK_SPEED * dt
+        self.lookDelta += Vec3(-x * abs(x) * speed, y * abs(y) * speed, 0)
+
+    def gamepadButton(self, name, down):
+        what = GAMEPAD_BUTTONS.get(name)
+        if what is None:
+            return
+        kind, token = what
+        if kind == 'key':
+            if token == 'sprint':
+                if down:
+                    self.sprintLatched = True
+                    self.sprinting = True
+                return
+            self.__set(token, down)
+        else:
+            self.__action(token, down)
 
     def press(self, token, down):
         """For the touch buttons and tests: a movement key."""

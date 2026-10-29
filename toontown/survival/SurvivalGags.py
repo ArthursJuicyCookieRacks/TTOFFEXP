@@ -13,7 +13,7 @@ import random
 from direct.directnotify import DirectNotifyGlobal
 from direct.interval.IntervalGlobal import (ActorInterval, Func, LerpPosInterval, LerpScaleInterval, Parallel,
                                             Sequence, SoundInterval, Wait)
-from panda3d.core import NodePath, Point3, Vec3, Vec4
+from panda3d.core import LMatrix4, NodePath, Point2, Point3, Vec3, Vec4
 
 from toontown.battle import BattleProps
 from toontown.battle.BattleSounds import globalBattleSoundCache
@@ -57,16 +57,16 @@ def soundFor(key):
 RIGHT, LEFT = 'right', 'left'
 BATTLE_POSES = {
     G.THROW: ('throw', 38, 45, 84, RIGHT),
-    (G.SQUIRT, 0): ('pushbutton', 30, 30, 62, LEFT),
+    (G.SQUIRT, 0): ('throw', 38, 38, 52, RIGHT),
     (G.SQUIRT, 1): ('spit', 20, 20, 95, RIGHT),
     (G.SQUIRT, 2): ('water-gun', 44, 44, 93, RIGHT),
     (G.SQUIRT, 3): ('hold-bottle', 44, 44, 96, RIGHT),
     (G.SQUIRT, 4): ('firehose', 30, 30, 72, RIGHT),
-    (G.SQUIRT, 5): ('pushbutton', 30, 30, 62, LEFT),
-    (G.SQUIRT, 6): ('pushbutton', 30, 30, 62, LEFT),
+    (G.SQUIRT, 5): ('throw', 38, 38, 52, RIGHT),
+    (G.SQUIRT, 6): ('throw', 38, 38, 52, RIGHT),
     G.SOUND: ('sound', 36, 40, 84, RIGHT),
-    G.DROP: ('pushbutton', 30, 30, 62, LEFT),
-    G.LURE: ('pushbutton', 30, 30, 62, LEFT),
+    G.DROP: ('throw', 38, 38, 52, RIGHT),
+    G.LURE: ('throw', 38, 38, 52, RIGHT),
 }
 # Where the glove that holds the gag sits in the view (camera space), per
 # hand, so the gag is big and low on the right like a BO1 view model.
@@ -79,9 +79,26 @@ VIEW_POSE = {'throw': (Point3(1.25, 4.8, -1.35), 15), 'water-gun': (Point3(1.0, 
              'firehose': (Point3(1.1, 4.6, -1.3), -10), 'sound': (Point3(1.4, 5.6, -1.5), 0),
              'pushbutton': (Point3(0.7, 4.4, -1.2), 20)}
 ARMS_SCALE = 0.8
-PIE_IN_VIEW_HPR = Vec3(0, 40, 0)
+# Only the arm, the glove and the gag show, like a BO1 view model: the arm
+# comes in from the lower right of the frame toward the glove, and runs on
+# past the frame's edge, so its cut-off shoulder is never in view.
+ARM_FROM = Vec3(0.55, -0.35, -0.76)
+# The shoulder must end up at least this far outside the frame (film units,
+# the frame is -1..1).
+SHOULDER_OUT = 1.15
+# How much the arm may be grown about the glove to reach past the edge.
+MAX_ARM_GROW = 2.6
+PIE_IN_VIEW_HPR = Vec3(0, 28, 0)
 # ...and sits a little past the glove, so the glove shows under its near edge.
 PIE_PAST_GLOVE = Vec3(0.1, 0.7, 0.05)
+# How deep a carried gag sits into the glove, as a share of its height.
+PALM_SINK = 0.05
+GLOVE_TOP = 0.12
+# Gags carried on the palm that come in all sizes (a safe, a piano, a storm
+# cloud, a geyser...) are fitted to one size in the view, a pie's.
+FIT_SIZE = 0.85
+FIT_TRACKS = (G.DROP, G.LURE)
+FIT_PROPS = ('squirting-flower', 'stormcloud', 'geyser', 'firehose')
 ARMS_H = 14
 # Battle offsets for props that do not sit square in the hand.
 PROP_IN_HAND = {'water-gun': (Point3(0.28, 0.1, 0.08), (85.6, -4.44, 94.43))}
@@ -156,6 +173,57 @@ class ToonArms:
         self.track = None
         self.anim = None
         self.hold = 0
+        self.grow = 1.0
+
+    def joint(self, side, name):
+        try:
+            node = self.toon.exposeJoint(None, 'torso', 'def_%s_%s' % (side, name), lodName='1000')
+        except TypeError:
+            node = self.toon.exposeJoint(None, 'torso', 'def_%s_%s' % (side, name))
+        return node
+
+    def aimArm(self, side):
+        """Turn the toon about the glove so the arm comes in from the lower
+        right of the frame (ARM_FROM, in camera space)."""
+        shoulder = self.joint(side, 'shoulder')
+        glove = self.hand(side)
+        if shoulder is None or shoulder.isEmpty():
+            return
+        self.toon.update(force=True)
+        want = Vec3(ARM_FROM)
+        want.normalize()
+        for i in range(3):
+            have = shoulder.getPos(camera) - glove.getPos(camera)
+            if have.length() < 1e-4:
+                return
+            have.normalize()
+            axis = have.cross(want)
+            angle = math.degrees(math.acos(max(-1.0, min(1.0, have.dot(want)))))
+            if axis.length() < 1e-5 or angle < 0.05:
+                break
+            axis.normalize()
+            # A turn in the camera's frame (the toon's parent) goes after
+            # the toon's own transform.
+            self.toon.setMat(self.toon.getMat() * LMatrix4.rotateMat(angle, axis))
+            self.toon.update(force=True)
+
+    def shoulderInView(self, side):
+        """Whether this side's shoulder (where the arm's sleeve is cut off)
+        shows on the screen."""
+        shoulder = self.joint(side, 'shoulder')
+        lens = base.camLens
+        p = shoulder.getPos(base.cam)
+        if p[1] <= lens.getNear():
+            return False
+        film = Point2()
+        lens.project(p, film)
+        return abs(film[0]) < SHOULDER_OUT and abs(film[1]) < SHOULDER_OUT
+
+    def placeGlove(self, side, glove):
+        self.toon.update(force=True)
+        here = self.hand(side).getPos(camera)
+        self.toon.setPos(self.toon.getPos() + (glove - here))
+        self.toon.update(force=True)
 
     def fold(self, side):
         """Fold the arm on this side into its shoulder, so only the arm
@@ -201,12 +269,18 @@ class ToonArms:
         self.end = min(end, max(1, self.toon.getNumFrames(anim) or 1) - 1)
         self.toon.pose(anim, hold)
         glove, pitch = VIEW_POSE.get(anim, VIEW_POSE['throw'])
-        self.toon.setHpr(ARMS_H, pitch, 0)
-        # Place the toon so the glove lands where the view wants it.
-        self.toon.setPos(0, 0, 0)
-        self.toon.update(force=True)
-        here = self.hand(side).getPos(camera)
-        self.toon.setPos(glove - here)
+        self.toon.setPosHpr(0, 0, 0, ARMS_H, pitch, 0)
+        self.toon.setScale(ARMS_SCALE)
+        self.aimArm(side)
+        # Place the toon so the glove lands where the view wants it, and
+        # grow the arm about the glove until its shoulder is out of the
+        # frame (the gag keeps its size: see grow).
+        self.placeGlove(side, glove)
+        self.grow = 1.0
+        while self.shoulderInView(side) and self.grow < MAX_ARM_GROW:
+            self.grow *= 1.08
+            self.toon.setScale(self.toon.getScale() * 1.08)
+            self.placeGlove(side, glove)
 
     def shoot(self, rate):
         """The arm goes through the battle motion (throw, squirt, shout,
@@ -311,6 +385,23 @@ class GagHandler:
 
     # --- What is held ---
 
+    def seatOnPalm(self, prop):
+        """Rest the prop on the glove: its bottom on the palm, centred over
+        the hand, instead of floating past it."""
+        hand = self.arms.hand(RIGHT)
+        low, high = prop.getTightBounds(camera)
+        if low is None:
+            return
+        palm = hand.getPos(camera)
+        centre = (low + high) * 0.5
+        # Over the palm in the view's x/y, bottom a little into the glove.
+        # The glove's top is about GLOVE_TOP toon units over the palm joint;
+        # resting there, the fingers show under the gag's near edge.
+        gloveTop = GLOVE_TOP * self.arms.toon.getScale()[0]
+        lift = Vec3(palm[0] - centre[0], palm[1] - centre[1],
+                    palm[2] + gloveTop - low[2] - PALM_SINK * (high[2] - low[2]))
+        prop.setPos(camera, prop.getPos(camera) + lift)
+
     @property
     def gag(self):
         return self.gags[self.current] if self.gags else None
@@ -325,30 +416,34 @@ class GagHandler:
             # In the toon's own glove, the way the battle holds it.
             self.arms.holdPose(gag.track, gag.level)
             extras = []
-            if self.arms.side == LEFT:
-                button = BattleProps.globalPropPool.getProp('button')
-                button.reparentTo(self.arms.hand(LEFT))
-                extras.append(button)
             if gag.track == G.SOUND:
                 megaphone = BattleProps.globalPropPool.getProp('megaphone')
                 megaphone.reparentTo(self.arms.hand(RIGHT))
-                megaphone.setScale(MEGAPHONE_SCALE)
+                megaphone.setScale(MEGAPHONE_SCALE / self.arms.grow)
                 extras.append(megaphone)
                 prop.reparentTo(self.arms.hand(RIGHT))
                 pos, hpr = INSTRUMENT_IN_MEGAPHONE
-                prop.setPosHpr(pos * MEGAPHONE_SCALE, Vec3(*hpr))
-                prop.setScale(INSTRUMENT_SCALE.get(gag.prop, 0.5) * MEGAPHONE_SCALE)
+                prop.setPosHpr(pos * MEGAPHONE_SCALE / self.arms.grow, Vec3(*hpr))
+                prop.setScale(INSTRUMENT_SCALE.get(gag.prop, 0.5) * MEGAPHONE_SCALE / self.arms.grow)
             else:
                 prop.reparentTo(self.arms.hand(RIGHT))
                 pos, hpr = PROP_IN_HAND.get(gag.prop, (Point3(0, 0, 0), (0, 0, 0)))
                 prop.setPosHpr(pos, Vec3(*hpr))
-                prop.setScale(HAND_SCALE.get(gag.prop, 1.0))
-                if gag.track == G.THROW:
-                    # A pie lies flat on the glove with its top tipped to
-                    # the player, the way the video shows it.
+                prop.setScale(HAND_SCALE.get(gag.prop, 1.0) / self.arms.grow)
+                if gag.track in FIT_TRACKS or gag.prop in FIT_PROPS:
+                    self.arms.toon.update(force=True)
+                    prop.setScale(1.0)
+                    low, high = prop.getTightBounds(camera)
+                    if low is not None:
+                        size = max(high - low)
+                        if size > 1e-4:
+                            prop.setScale(FIT_SIZE / size)
+                if gag.track == G.THROW or self.arms.anim == 'throw':
+                    # A pie (or a gag carried the same way) sits on the
+                    # glove's palm, tipped so the player sees its top.
                     self.arms.toon.update(force=True)
                     prop.setHpr(camera, PIE_IN_VIEW_HPR)
-                    prop.setPos(camera, prop.getPos(camera) + PIE_PAST_GLOVE)
+                    self.seatOnPalm(prop)
             for node in [prop] + extras:
                 node.setBin('fixed', 41)
                 node.setLightOff()

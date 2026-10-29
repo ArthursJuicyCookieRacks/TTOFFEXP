@@ -239,7 +239,8 @@ class SurvivalArena:
     def trunkSpot(self):
         # Beside the fisherman, against the gazebo.
         origin, h = FISHERMAN
-        return self.placeOnGround(origin[0] - 5.5, origin[1] - 2.0, 60)
+        # Turned to face away from the gazebo, toward the playground.
+        return self.placeOnGround(origin[0] - 5.5, origin[1] - 2.0, 240)
 
     def placeOnGround(self, x, y, h=0.0):
         z = self.groundZ(x, y)

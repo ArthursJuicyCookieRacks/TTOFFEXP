@@ -15,6 +15,11 @@ walks, and the right stick moves the pointer, which the triggers click.
 
 The controller takes over as soon as it is used, and on a touch screen the
 on-screen controls go away while it is; touching the screen brings them back.
+
+A game of its own (Survival Mode) can take the controller over whole with
+setGame(): it then gets the sticks and buttons directly (BO1's layout),
+except while it wants the pointer (a menu is up), when the controller works
+as above.
 """
 
 import struct
@@ -83,6 +88,9 @@ class Gamepad(DirectObject):
         self.running = False
         self.pointer = None
         self.cursor = None
+        self.game = None
+        self.gameButtons = set()
+        self.gameHeld = False
         manager = base.devices
         for device in manager.getDevices(InputDevice.DeviceClass.gamepad):
             self.connect(device)
@@ -93,6 +101,24 @@ class Gamepad(DirectObject):
         self.accept('mouse1', self.__touched)
         self.accept('sprint-stopped', self.__sprintStopped)
         taskMgr.add(self.__poll, 'gamepadPoll', sort=-45)
+
+    def setGame(self, game):
+        """A game that reads the controller itself: gamepadMove(x, y),
+        gamepadLook(x, y, dt), gamepadButton(name, down), gamepadActive(on)
+        and wantsPointer(). None gives the controller back to the keys."""
+        if self.game is not None and self.game is not game:
+            self.__letGameGo()
+        self.game = game
+        if game is not None and self.active:
+            game.gamepadActive(True)
+
+    def __letGameGo(self):
+        for name in self.gameButtons:
+            self.game.gamepadButton(name, False)
+        self.gameButtons = set()
+        if self.gameHeld:
+            self.game.gamepadMove(0, 0)
+            self.gameHeld = False
 
     def destroy(self):
         self.ignoreAll()
@@ -151,6 +177,21 @@ class Gamepad(DirectObject):
             if not self.active:
                 self.__takeOver()
 
+        if self.game is not None and not self.game.wantsPointer():
+            # The game's own layout: the keys and the pointer let go first.
+            self.__buttons(set())
+            self.__walk(0, 0)
+            self.gameHeld = True
+            for name in buttons - self.gameButtons:
+                self.game.gamepadButton(name, True)
+            for name in self.gameButtons - buttons:
+                self.game.gamepadButton(name, False)
+            self.gameButtons = buttons
+            self.game.gamepadMove(axes.get('left_x', 0), axes.get('left_y', 0))
+            self.game.gamepadLook(axes.get('right_x', 0), axes.get('right_y', 0), globalClock.getDt())
+            return task.cont
+        if self.game is not None:
+            self.__letGameGo()
         self.__buttons(buttons)
         self.__walk(axes.get('left_x', 0), axes.get('left_y', 0))
         self.__point(axes.get('right_x', 0), axes.get('right_y', 0), globalClock.getDt())
@@ -263,6 +304,8 @@ class Gamepad(DirectObject):
         touch = getattr(base, 'touchControls', None)
         if touch is not None:
             touch.hideForGamepad()
+        if self.game is not None:
+            self.game.gamepadActive(True)
 
     def __touched(self):
         if not self.active or self.clicking:
@@ -276,6 +319,8 @@ class Gamepad(DirectObject):
         touch = getattr(base, 'touchControls', None)
         if touch is not None:
             touch.showAfterGamepad()
+        if self.game is not None:
+            self.game.gamepadActive(False)
 
     def __showCursor(self, px, py):
         if sys.platform != 'android':

@@ -58,6 +58,18 @@ class SurvivalTouch(DirectObject):
             self.buttons.append(b)
         taskMgr.add(self.__tick, 'survivalTouch')
 
+    def hideForGamepad(self):
+        self.stick.hide()
+        self.lookPad.hide()
+        for b in self.buttons:
+            b.hide()
+
+    def showAfterGamepad(self):
+        self.stick.show()
+        self.lookPad.show()
+        for b in self.buttons:
+            b.show()
+
     def destroy(self):
         taskMgr.remove('survivalTouch')
         self.ignoreAll()
