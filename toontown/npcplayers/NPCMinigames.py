@@ -81,7 +81,7 @@ class NPCMinigames:
         for npc in members:
             byZone.setdefault(npc.zoneId, []).append(npc)
         live = set()
-        for obj in list(self.air.doId2do.values()):
+        for obj in self.manager.party._objectsOfType((DistributedMinigameAI, DistCogdoGameAI, PurchaseManagerAI)):
             npcs = byZone.get(getattr(obj, 'zoneId', None))
             if not npcs:
                 continue

@@ -37,7 +37,7 @@ class CogdoFlyingGatherableFactory:
         return CogdoFlyingPowerup(self._serialNum, type, self._powerUpModels[type])
 
     def createSparkles(self, color1, color2, amp):
-        self.f = ParticleEffect.ParticleEffect('particleEffect_sparkles')
+        f = ParticleEffect.ParticleEffect('particleEffect_sparkles')
         p0 = Particles.Particles('particles-1')
         p0.setFactory('PointParticleFactory')
         p0.setRenderer('SparkleParticleRenderer')
@@ -67,12 +67,12 @@ class CogdoFlyingGatherableFactory:
         force0.setVectorMasks(1, 1, 1)
         force0.setActive(1)
         f0.addForce(force0)
-        self.f.addForceGroup(f0)
+        f.addForceGroup(f0)
         p0.emitter.setRadius(2.0)
-        self.f.addParticles(p0)
-        self.f.setPos(0, 0, 0)
-        self.f.setHpr(0, random.random() * 180, random.random() * 180)
-        return self.f
+        f.addParticles(p0)
+        f.setPos(0, 0, 0)
+        f.setHpr(0, random.random() * 180, random.random() * 180)
+        return f
 
     def destroy(self):
         self._memoModel.removeNode()
@@ -83,9 +83,6 @@ class CogdoFlyingGatherableFactory:
             model.removeNode()
 
         del self._powerUpModels
-        if Globals.Level.AddSparkleToPowerups:
-            self.f.cleanup()
-            del self.f
 
 
 class CogdoFlyingGatherableBase:

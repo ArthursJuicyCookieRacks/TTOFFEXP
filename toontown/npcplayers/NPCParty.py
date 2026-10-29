@@ -121,9 +121,24 @@ class NPCParty:
 
     # --- Seats ---
 
+    ELEVATOR_CLASSES = (DistributedElevatorAI, DistributedElevatorFSMAI, DistributedGolfKartAI, DistributedTrolleyAI)
+    ACTIVITY_CLASSES = (DistributedGolfCourseAI, DistributedMinigameAI, DistributedRaceAI, DistCogdoGameAI)
+
+    def _objectsOfType(self, classes):
+        # Scanning every distributed object several times per NPC per tick
+        # showed up in profiles (a few ms per tick in a field office), so the
+        # typed lists are built once per frame.
+        frame = globalClock.getFrameCount()
+        cache = getattr(self, '_typedCache', None)
+        if cache is None or cache[0] != frame:
+            cache = self._typedCache = (frame, {})
+        found = cache[1].get(classes)
+        if found is None:
+            found = cache[1][classes] = [obj for obj in list(self.air.doId2do.values()) if isinstance(obj, classes)]
+        return found
+
     def getElevators(self):
-        return [obj for obj in list(self.air.doId2do.values())
-                if isinstance(obj, (DistributedElevatorAI, DistributedElevatorFSMAI, DistributedGolfKartAI, DistributedTrolleyAI))]
+        return list(self._objectsOfType(self.ELEVATOR_CLASSES))
 
     def fillSeats(self):
         for elevator in self.getElevators():
@@ -407,7 +422,7 @@ class NPCParty:
         return False
 
     def isPlaying(self, npc):
-        for obj in list(self.air.doId2do.values()):
+        for obj in self._objectsOfType(self.ACTIVITY_CLASSES):
             if getattr(obj, 'zoneId', None) != npc.zoneId:
                 continue
             if isinstance(obj, (DistributedGolfCourseAI, DistributedMinigameAI)) and npc.doId in obj.avIdList:
