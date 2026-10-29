@@ -22,7 +22,7 @@ from toontown.toontowngui import TTDialog
 # On the laff meter's bottom-right edge: half on the face's rim, half off,
 # below and right of the smile (the face is a circle of radius ~0.13 about
 # (0.13, 0.13) in a2dBottomLeft; no species' smile reaches this corner).
-BUTTON_POS = (0.255, 0, 0.02)
+BUTTON_POS = (0.255, 0, 0.065)
 YELLOW = (1.0, 0.86, 0.12, 1)
 OUTLINE = (0.6, 0.38, 0.0, 1)
 # The window sits a little above the middle of the screen, drawn this much
