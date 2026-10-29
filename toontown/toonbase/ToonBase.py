@@ -36,6 +36,12 @@ class ToonBase(OTPBase.OTPBase):
     def __init__(self):
         self.display = DisplayOptions()
         OTPBase.OTPBase.__init__(self)
+        # Drop shadows: every avatar casts a ray at the floor each frame.
+        # In a crowd (forty-odd NPC toons) that full pass over the scene cost
+        # several ms, so it runs every other frame once there are many; a
+        # shadow lags its toon by one frame at most.
+        self.shadowTrav = CrowdShadowTraverser('base.shadowTrav')
+        self.shadowTrav.setRespectPrevTransform(False)
         base.enableMusic(self.display.settings.getBool('game', 'music', True))
         base.enableSoundEffects(self.display.settings.getBool('game', 'sfx', True))
         self.disableShowbaseMouse()
@@ -583,3 +589,12 @@ class ToonBase(OTPBase.OTPBase):
         wp.setMinimized(True)
         base.win.requestProperties(wp)
 
+
+class CrowdShadowTraverser(CollisionTraverser):
+    """base.shadowTrav that skips every other frame when it has many rays."""
+    CROWD = 16
+
+    def traverse(self, root):
+        if self.getNumColliders() > self.CROWD and globalClock.getFrameCount() % 2:
+            return
+        CollisionTraverser.traverse(self, root)

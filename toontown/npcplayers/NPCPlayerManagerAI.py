@@ -1012,9 +1012,11 @@ class NPCPlayerManagerAI:
     # --- Battles ---
 
     def getBattles(self, streetOnly=False):
-        return [obj for obj in list(self.air.doId2do.values())
-                if isinstance(obj, DistributedBattleBaseAI)
-                and (not streetOnly or obj.__class__.__name__ in STREET_BATTLES)]
+        # Through the party's cached typed scan: walking every distributed
+        # object for each area each tick cost several ms a frame in a crowd.
+        battles = self.party._objectsOfType((DistributedBattleBaseAI,))
+        return [obj for obj in battles
+                if not obj.isDeleted() and (not streetOnly or obj.__class__.__name__ in STREET_BATTLES)]
 
     def crewFor(self, battle):
         crew = self.crews.get(battle.doId)

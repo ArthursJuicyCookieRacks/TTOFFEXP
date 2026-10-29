@@ -21,6 +21,9 @@ PLAIN_PROPS = re.compile(r'^prop_(tree|palm|crate|chimney|stovepipe|post|facade|
 # Of those, the ones that may be joined with their neighbours (the trees keep
 # their own nodes: event lighting finds them by name).
 JOINABLE_PROPS = re.compile(r'^prop_(palm|crate|chimney|stovepipe|post|facade|cellar_door)|^streetlight')
+# Big props whose meshes are dozens of separate pieces but only a few nodes
+# are looked up by name: (prop pattern, the group of plain meshes in it).
+PLAIN_MESH_GROUPS = ((re.compile(r'^prop_party_gate'), 'mesh_grp'),)
 
 
 def wanted():
@@ -36,6 +39,14 @@ def flatten(geom):
                 part.clearTag('DNARoot')
                 part.clearTag('DNACode')
         building.flattenStrong()
+    for pattern, meshGroup in PLAIN_MESH_GROUPS:
+        for prop in geom.findAllMatches('**/=DNARoot=prop'):
+            if pattern.match(prop.getName()):
+                for mesh in prop.findAllMatches('**/' + meshGroup):
+                    # The party gate's fences, poles and stairs: about 40
+                    # draws that become a handful (DistributedPartyGate looks
+                    # up the clock, locators and signs, which are elsewhere).
+                    mesh.flattenStrong()
     groups = {}
     for prop in geom.findAllMatches('**/=DNARoot=prop'):
         if not PLAIN_PROPS.match(prop.getName()) or not prop.find('**/=DNARoot').isEmpty():
