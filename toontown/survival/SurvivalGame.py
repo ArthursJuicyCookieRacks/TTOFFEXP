@@ -29,12 +29,19 @@ from toontown.suit import SuitDNA
 from toontown.toonbase import ToontownGlobals
 
 MUSIC = 'phase_8/audio/bgm/DL_nbrhood.ogg'
+SNATCHER_SOUND = 'phase_5/audio/sfx/lightning_1.ogg'
 ROUND_SOUND = 'phase_4/audio/sfx/SZ_DD_shipbell.ogg'
 BEAN_SOUND = 'phase_4/audio/sfx/SZ_DD_treasure.ogg'
 POWER_SOUND = 'phase_4/audio/sfx/MG_pairing_match.ogg'
 REVIVE_SOUND = 'phase_5/audio/sfx/AA_heal_tickle.ogg'
 PICKUP_RANGE = 3.5
 TOUCH_SETTING = ('survival', 'best-round')
+# Model, piece and scale of the picture over each drop.
+POWER_ICONS = {'maxgags': ('phase_3.5/models/gui/inventory_icons', '**/inventory_cake', 1.2),
+               'instapop': ('phase_3.5/models/gui/inventory_icons', '**/inventory_tnt', 1.2),
+               'toonado': ('phase_3.5/models/gui/inventory_icons', '**/inventory_storm_cloud', 1.2),
+               'doublebeans': ('phase_3.5/models/gui/jar_gui', None, 1.2),
+               'trunksale': ('phase_3.5/models/gui/inventory_icons', '**/inventory_screen', 1.2)}
 POWER_COLORS = {'maxgags': (0.4, 0.9, 1, 1), 'instapop': (1, 0.5, 0.2, 1), 'toonado': (1, 1, 0.3, 1),
                 'doublebeans': (1, 0.3, 0.3, 1), 'trunksale': (0.6, 1, 0.5, 1)}
 
@@ -69,11 +76,42 @@ class PowerDrop:
         self.glow.setScale(0.35)
         self.glow.setColor(*POWER_COLORS[key])
         self.glow.setZ(0.1)
+        # A spinning picture of the power-up hangs over the glow, as BO1's
+        # power-ups do, with its name above.
+        self.icon = None
+        try:
+            model, part, scale = POWER_ICONS[key]
+            icons = loader.loadModel(model)
+            icon = icons.find(part) if part else icons
+            if not icon.isEmpty():
+                self.icon = icon.copyTo(self.node)
+                # GUI icons are a few inches across: fit the picture to a
+                # fixed size in feet.
+                low, high = self.icon.getTightBounds()
+                size = max(high[0] - low[0], high[2] - low[2]) if low is not None else 1.0
+                self.icon.setScale(scale / max(size, 0.001))
+                self.icon.setZ(1.4)
+                # The icon is a flat card facing -Y; it spins upright (tick
+                # turns its heading), never lies flat, or it is seen edge-on.
+                self.icon.setLightOff()
+                self.icon.setColorScaleOff()
+                self.icon.setTransparency(1)
+                self.icon.setTwoSided(1)
+                self.icon.setBin('fixed', 49)
+                self.icon.setDepthWrite(0)
+            icons.removeNode()
+        except Exception:
+            self.icon = None
+        self.label.setZ(2.9)
+        self.label.setScale(0.8)
         self.phase = random.uniform(0, 6.28)
 
     def tick(self, now):
-        self.label.setZ(2.0 + 0.3 * math.sin(now * 3 + self.phase))
-        self.label.setH(self.label.getH() + 1.5)
+        bob = 0.3 * math.sin(now * 3 + self.phase)
+        self.label.setZ(2.9 + bob)
+        if self.icon is not None:
+            self.icon.setZ(1.4 + bob)
+            self.icon.setH(now * 90 % 360)
         left = self.until - now
         if left < G.DROP_BLINK:
             self.node.setColorScale(1, 1, 1, 0.3 + 0.7 * (0.5 + 0.5 * math.sin(now * 12)))
@@ -94,7 +132,11 @@ class SurvivalGame(DirectObject):
         self.doneEvent = doneEvent
         self.over = False
         self.paused = False
+        self.menuStation = None
         self.roundNum = 0
+        self.snatcherRound = False
+        self.nextSnatcherRound = random.randint(*G.FIRST_SNATCHER_ROUND)
+        self.lastPop = None
         self.beans = G.START_BEANS
         self.tonics = []
         self.secondWindBuys = 0
@@ -135,6 +177,7 @@ class SurvivalGame(DirectObject):
         base.camLens.setNear(0.3)
         start, h = G.PLAYER_START if hasattr(G, 'PLAYER_START') else (Point3(0, -20, 0), 0)
         start, h = self.arena.placeOnGround(start[0], start[1], h)
+        self.arena.buildReach(start)
         self.player = SurvivalPlayer(self, start, h)
         self.hud = SurvivalHUD(self, self.dna)
         self.gags = GagHandler(self, self.player)
@@ -205,17 +248,33 @@ class SurvivalGame(DirectObject):
     def startRound(self):
         self.roundNum += 1
         self.roundState = 'spawning'
-        self.toSpawn = G.cogsInRound(self.roundNum, self.npcCount)
+        self.snatcherRound = self.roundNum == self.nextSnatcherRound
+        if self.snatcherRound:
+            self.nextSnatcherRound = self.roundNum + random.randint(*G.SNATCHER_ROUND_GAP)
+            self.toSpawn = G.snatchersInRound(self.roundNum, self.npcCount)
+            self.count('snatcher rounds')
+        else:
+            self.toSpawn = G.cogsInRound(self.roundNum, self.npcCount)
         self.nextSpawn = globalClock.getFrameTime() + 1.0
         self.dropsThisRound = 0
         self.hud.setRound(self.roundNum)
-        base.playSfx(base.loader.loadSfx(ROUND_SOUND), volume=0.7)
+        self.arena.setFog(self.snatcherRound)
+        if self.snatcherRound:
+            self.hud.say('Gag-Snatchers!', 3.0)
+            base.playSfx(base.loader.loadSfx(SNATCHER_SOUND), volume=0.8)
+        else:
+            base.playSfx(base.loader.loadSfx(ROUND_SOUND), volume=0.7)
         self.notify.info('round %d: %d cogs, %d HP each, cap %d' % (self.roundNum, self.toSpawn, G.cogHp(self.roundNum), G.aliveCap(self.roundNum, self.npcCount)))
 
     def endRound(self):
         self.roundState = 'intermission'
         self.roundChangeAt = globalClock.getFrameTime() + G.INTERMISSION
         self.hud.say('Round %d cleared!' % self.roundNum, 3.0)
+        if self.snatcherRound:
+            # BO1: a Max Ammo where the last hound fell.
+            self.arena.setFog(False)
+            pos = self.lastPop if self.lastPop is not None else self.player.getPos()
+            self.drops.append(PowerDrop(self, 'maxgags', pos, globalClock.getFrameTime()))
         self.count('rounds cleared')
         # BO1: the fallen get up between rounds.
         for npc in self.npcs:
@@ -235,8 +294,10 @@ class SurvivalGame(DirectObject):
             if self.roundNum >= minRound:
                 looks = names
         name = random.choice(looks)
+        if self.snatcherRound:
+            name = random.choice(G.SNATCHER_LOOKS)
         self.cogSerial += 1
-        cog = SurvivalCog(self, name, landing, self.roundNum)
+        cog = SurvivalCog(self, name, landing, self.roundNum, snatcher=self.snatcherRound)
         self.cogs.append(cog)
         self.toSpawn -= 1
         self.nextSpawn = now + G.spawnDelay(self.roundNum) * random.uniform(0.7, 1.3)
@@ -310,6 +371,7 @@ class SurvivalGame(DirectObject):
 
     def cogPopped(self, cog, head=False, bonk=False):
         self.count('cogs popped')
+        self.lastPop = Point3(cog.pos)
         bonus = G.BEANS_BONK_KILL if bonk else (G.BEANS_HEAD_KILL if head else G.BEANS_KILL)
         if getattr(cog, 'lastHitByNPC', False):
             bonus = bonus // 2
@@ -547,7 +609,24 @@ class SurvivalGame(DirectObject):
     def resume(self):
         self.paused = False
         self.hud.closeCard()
+        if self.menuStation is not None:
+            station = self.menuStation
+            self.menuStation = None
+            station.closeMenu()
         self.player.grabMouse(True)
+
+    # A station's menu (Freddy's tonics) holds the game like the pause.
+
+    def menuOpened(self, station):
+        self.menuStation = station
+        self.paused = True
+        self.player.grabMouse(False)
+
+    def menuClosed(self, station):
+        if self.menuStation is station:
+            self.menuStation = None
+            if not self.over:
+                self.resume()
 
     def gameOver(self):
         if self.over:

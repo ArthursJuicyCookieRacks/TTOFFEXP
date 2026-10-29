@@ -48,22 +48,61 @@ def soundFor(key):
     name = FIRE_SOUNDS.get(key)
     return globalBattleSoundCache.getSound(name) if name else None
 
-# The toon's own arms in view: for each track the animation, the frame it
-# holds the gag at, the frames the shot plays through, and where the glove
-# sits in the view (relative to the camera) while holding.
-ARM_ANIMS = {G.THROW: ('throw', 36, 63, 84, Point3(0.55, 2.0, -0.55)),
-             G.LURE: ('throw', 36, 63, 84, Point3(0.55, 2.0, -0.55)),
-             G.SQUIRT: ('water-gun', 60, 60, 93, Point3(0.5, 1.9, -0.4)),
-             G.SOUND: ('sound', 36, 45, 84, Point3(0.45, 2.0, -0.25)),
-             G.DROP: ('toss', 27, 39, 63, Point3(0.55, 2.0, -0.6))}
-ARMS_SCALE = 0.3
-# Turned a little inward and tilted up, so the arm comes in from the lower
-# right of the view and the shoulder stays below the frame.
-ARMS_HPR = (12, 20, 0)
+# How a toon handles each gag in a real cog battle (toontown/battle/Movie*):
+# the animation, the frame it holds between shots, the frames one shot
+# plays, and the hand the gag sits in. Where a battle puts the gag on the
+# chest or presses a button (flower, storm cloud, geyser, drop, lure), the
+# button is in the left hand like the battle and the gag rides the right
+# so the player still sees it.
+RIGHT, LEFT = 'right', 'left'
+BATTLE_POSES = {
+    G.THROW: ('throw', 38, 45, 84, RIGHT),
+    (G.SQUIRT, 0): ('pushbutton', 30, 30, 62, LEFT),
+    (G.SQUIRT, 1): ('spit', 20, 20, 95, RIGHT),
+    (G.SQUIRT, 2): ('water-gun', 44, 44, 93, RIGHT),
+    (G.SQUIRT, 3): ('hold-bottle', 44, 44, 96, RIGHT),
+    (G.SQUIRT, 4): ('firehose', 30, 30, 72, RIGHT),
+    (G.SQUIRT, 5): ('pushbutton', 30, 30, 62, LEFT),
+    (G.SQUIRT, 6): ('pushbutton', 30, 30, 62, LEFT),
+    G.SOUND: ('sound', 36, 40, 84, RIGHT),
+    G.DROP: ('pushbutton', 30, 30, 62, LEFT),
+    G.LURE: ('pushbutton', 30, 30, 62, LEFT),
+}
+# Where the glove that holds the gag sits in the view (camera space), per
+# hand, so the gag is big and low on the right like a BO1 view model.
+# Where the glove that holds the gag sits in the view (camera space) and
+# how far the toon leans back under the camera, per animation: the gag is
+# big and low on the right like a BO1 view model, the shoulder stays below
+# the frame.
+VIEW_POSE = {'throw': (Point3(1.25, 4.8, -1.35), 15), 'water-gun': (Point3(1.0, 3.8, -0.95), 25),
+             'hold-bottle': (Point3(1.0, 4.0, -0.6), 10), 'spit': (Point3(1.0, 4.0, -0.7), 5),
+             'firehose': (Point3(1.1, 4.6, -1.3), -10), 'sound': (Point3(1.4, 5.6, -1.5), 0),
+             'pushbutton': (Point3(0.7, 4.4, -1.2), 20)}
+ARMS_SCALE = 0.8
+PIE_IN_VIEW_HPR = Vec3(0, 40, 0)
+# ...and sits a little past the glove, so the glove shows under its near edge.
+PIE_PAST_GLOVE = Vec3(0.1, 0.7, 0.05)
+ARMS_H = 14
+# Battle offsets for props that do not sit square in the hand.
+PROP_IN_HAND = {'water-gun': (Point3(0.28, 0.1, 0.08), (85.6, -4.44, 94.43))}
+# Sound gags ride inside the megaphone the way the battle shows them.
+INSTRUMENT_IN_MEGAPHONE = (Point3(-1.1, -1.4, 0.1), (145, 0, 0))
+# The megaphone is a big prop; this close to the camera it is shrunk.
+MEGAPHONE_SCALE = 0.6
+INSTRUMENT_SCALE = {'bikehorn': 0.5, 'whistle': 0.6, 'bugle': 0.6, 'aoogah': 0.6, 'elephant': 0.5, 'fog_horn': 0.5, 'singing': 0.5}
 HAND_SCALE = {'ship': 0.05, 'piano': 0.1, 'safe': 0.22, 'weight': 0.25, 'anvil': 0.3, 'sandbag': 0.6, 'flowerpot': 0.6,
-              'geyser': 0.1, 'stormcloud': 0.25, 'firehose': 0.5, 'wedding-cake': 0.8, 'birthday-cake': 0.9,
-              'singing': 0.5, 'fog_horn': 0.6, 'elephant': 0.5, 'aoogah': 0.6, 'bugle': 0.6, 'whistle': 0.7,
-              '1dollar': 0.6, 'glass': 0.6, 'bottle': 0.5, 'water-gun': 0.7, 'squirting-flower': 0.6}
+              'geyser': 0.1, 'stormcloud': 0.25, 'firehose': 1.0, 'wedding-cake': 1.0, 'birthday-cake': 1.0,
+              '1dollar': 0.8, 'glass': 1.4, 'bottle': 1.0, 'water-gun': 1.0, 'squirting-flower': 1.0}
+LEFT_ARM_JOINTS = ('def_left_shoulder', 'def_left_elbow', 'def_left_forearm', 'def_left_wrist', 'def_left_palm',
+                   'def_left_sleeve_short', 'def_left_sleeve_long', 'def_left_forSleeve', 'def_left_neg_sleeve',
+                   'def_left_collar', 'def_left_midA', 'def_left_midB', 'def_left_thumbB', 'def_left_thumbC',
+                   'def_joint_left_hold')
+RIGHT_ARM_JOINTS = tuple(j.replace('left', 'right') for j in LEFT_ARM_JOINTS)
+ARM_JOINTS = {LEFT: LEFT_ARM_JOINTS, RIGHT: RIGHT_ARM_JOINTS}
+
+
+def battlePose(track, level):
+    return BATTLE_POSES.get((track, level)) or BATTLE_POSES.get(track) or BATTLE_POSES[G.THROW]
 
 
 class ToonArms:
@@ -93,31 +132,23 @@ class ToonArms:
                 if node is None or node.isEmpty():
                     continue
                 for geom in node.findAllMatches('**/+GeomNode'):
-                    if not torso.isAncestorOf(geom):
+                    # The head hangs under the torso's neck, so it is hidden
+                    # whole; of the legs only what is not the torso.
+                    if part == 'head' or not torso.isAncestorOf(geom):
                         geom.hide()
             for name in ('**/torso-top', '**/torso-bot*', '**/neck'):
                 for piece in torso.findAllMatches(name):
                     piece.hide()
-        # Only the gag arm shows: the left arm folds away into its shoulder.
+        # Only the arm holding the gag shows; the other folds away (fold()).
         self.folded = []
-        for joint in ('def_left_shoulder', 'def_left_elbow', 'def_left_forearm', 'def_left_wrist', 'def_left_palm',
-                      'def_left_sleeve_short', 'def_left_sleeve_long', 'def_left_forSleeve', 'def_left_neg_sleeve',
-                      'def_left_collar', 'def_left_midA', 'def_left_midB', 'def_left_thumbB', 'def_left_thumbC',
-                      'def_joint_left_hold'):
-            for lod in self.toon.getLODNames():
-                try:
-                    node = self.toon.controlJoint(None, 'torso', joint, lodName=lod)
-                except Exception:
-                    node = None
-                if node is not None and not node.isEmpty():
-                    node.setScale(0.001)
-                    self.folded.append(node)
+        self.foldedSide = None
+        self.fold(LEFT)
         shadow = getattr(self.toon, 'dropShadow', None)
         if shadow is not None and not shadow.isEmpty():
             shadow.hide()
         self.toon.reparentTo(camera)
         self.toon.setScale(ARMS_SCALE)
-        self.toon.setHpr(*ARMS_HPR)
+        self.toon.setHpr(ARMS_H, 0, 0)
         self.toon.setDepthTest(1)
         self.toon.setBin('fixed', 40)
         self.toon.setLightOff()
@@ -126,29 +157,60 @@ class ToonArms:
         self.anim = None
         self.hold = 0
 
-    def hand(self):
-        hands = self.toon.getRightHands()
+    def fold(self, side):
+        """Fold the arm on this side into its shoulder, so only the arm
+        holding the gag is in view (BO1 shows one arm for one-handed
+        weapons); the other arm animates again."""
+        if side == self.foldedSide:
+            return
+        for joint, lod, node in self.folded:
+            try:
+                self.toon.releaseJoint('torso', joint, lodName=lod)
+            except TypeError:
+                self.toon.releaseJoint('torso', joint)
+            except Exception:
+                pass
+        self.folded = []
+        self.foldedSide = side
+        if side is None:
+            return
+        for joint in ARM_JOINTS[side]:
+            for lod in self.toon.getLODNames():
+                try:
+                    node = self.toon.controlJoint(None, 'torso', joint, lodName=lod)
+                except Exception:
+                    node = None
+                if node is not None and not node.isEmpty():
+                    node.setScale(0.001)
+                    self.folded.append((joint, lod, node))
+
+    def hand(self, side=RIGHT):
+        hands = self.toon.getLeftHands() if side == LEFT else self.toon.getRightHands()
         return hands[0] if hands else self.toon
 
-    def holdPose(self, track):
-        anim, hold, start, end, glove = ARM_ANIMS.get(track, ARM_ANIMS[G.THROW])
+    def holdPose(self, track, level=0):
+        anim, hold, start, end, side = battlePose(track, level)
         if self.track:
             self.track.finish()
             self.track = None
+        self.fold(RIGHT if side == LEFT else LEFT)
+        self.side = side
         self.anim = anim
         self.hold = hold
         self.start = start
         self.end = min(end, max(1, self.toon.getNumFrames(anim) or 1) - 1)
         self.toon.pose(anim, hold)
+        glove, pitch = VIEW_POSE.get(anim, VIEW_POSE['throw'])
+        self.toon.setHpr(ARMS_H, pitch, 0)
         # Place the toon so the glove lands where the view wants it.
         self.toon.setPos(0, 0, 0)
         self.toon.update(force=True)
-        here = self.hand().getPos(camera)
+        here = self.hand(side).getPos(camera)
         self.toon.setPos(glove - here)
 
     def shoot(self, rate):
-        """The arm goes through the throw (or squirt, shout, toss) and
-        comes back to the hold, within the gag's rate."""
+        """The arm goes through the battle motion (throw, squirt, shout,
+        button press) and comes back to the hold, within the gag's rate."""
         if self.anim is None:
             return
         if self.track:
@@ -260,14 +322,38 @@ class GagHandler:
             return
         prop = BattleProps.globalPropPool.getProp(gag.prop)
         if self.arms is not None:
-            # In the toon's own glove.
-            self.arms.holdPose(gag.track)
-            prop.reparentTo(self.arms.hand())
-            prop.setPosHpr(0, 0, 0, 0, 0, 0)
-            prop.setScale(HAND_SCALE.get(gag.prop, 1.0))
-            prop.setBin('fixed', 41)
-            prop.setLightOff()
-            prop.setColorScaleOff()
+            # In the toon's own glove, the way the battle holds it.
+            self.arms.holdPose(gag.track, gag.level)
+            extras = []
+            if self.arms.side == LEFT:
+                button = BattleProps.globalPropPool.getProp('button')
+                button.reparentTo(self.arms.hand(LEFT))
+                extras.append(button)
+            if gag.track == G.SOUND:
+                megaphone = BattleProps.globalPropPool.getProp('megaphone')
+                megaphone.reparentTo(self.arms.hand(RIGHT))
+                megaphone.setScale(MEGAPHONE_SCALE)
+                extras.append(megaphone)
+                prop.reparentTo(self.arms.hand(RIGHT))
+                pos, hpr = INSTRUMENT_IN_MEGAPHONE
+                prop.setPosHpr(pos * MEGAPHONE_SCALE, Vec3(*hpr))
+                prop.setScale(INSTRUMENT_SCALE.get(gag.prop, 0.5) * MEGAPHONE_SCALE)
+            else:
+                prop.reparentTo(self.arms.hand(RIGHT))
+                pos, hpr = PROP_IN_HAND.get(gag.prop, (Point3(0, 0, 0), (0, 0, 0)))
+                prop.setPosHpr(pos, Vec3(*hpr))
+                prop.setScale(HAND_SCALE.get(gag.prop, 1.0))
+                if gag.track == G.THROW:
+                    # A pie lies flat on the glove with its top tipped to
+                    # the player, the way the video shows it.
+                    self.arms.toon.update(force=True)
+                    prop.setHpr(camera, PIE_IN_VIEW_HPR)
+                    prop.setPos(camera, prop.getPos(camera) + PIE_PAST_GLOVE)
+            for node in [prop] + extras:
+                node.setBin('fixed', 41)
+                node.setLightOff()
+                node.setColorScaleOff()
+            self.viewExtras = extras
         else:
             pos, scale = VIEW_POS.get(gag.track, VIEW_POS[G.THROW])
             scale = VIEW_SCALE.get(gag.prop, scale)
@@ -295,11 +381,24 @@ class GagHandler:
                 self.viewProp.cleanup()
             self.viewProp.removeNode()
             self.viewProp = None
+        for node in getattr(self, 'viewExtras', ()):
+            if hasattr(node, 'cleanup'):
+                node.cleanup()
+            node.removeNode()
+        self.viewExtras = []
 
     def __kick(self):
         if self.arms is not None:
             gag = self.gag
             self.arms.shoot(gag.rate if gag else 0.4)
+            if gag is not None and gag.track == G.THROW and self.viewProp is not None and not self.viewProp.isEmpty():
+                # The pie leaves the glove for the throw and the next one
+                # is there when the arm comes back.
+                if self.viewTrack:
+                    self.viewTrack.finish()
+                prop = self.viewProp
+                self.viewTrack = Sequence(Func(prop.hide), Wait(min(max(gag.rate * 0.7, 0.12), 0.5)), Func(prop.show))
+                self.viewTrack.start()
             return
         if self.viewProp is None or self.viewProp.isEmpty():
             return

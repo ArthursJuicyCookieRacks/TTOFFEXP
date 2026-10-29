@@ -3969,12 +3969,11 @@ class DistributedToonAI(DistributedPlayerAI.DistributedPlayerAI, DistributedSmoo
         return getattr(self, 'gagTracksLocked', 0)
 
     def requestTrackSwap(self, outTrack, inTrack):
-        """The toon gives up outTrack for inTrack, the one track it never
-        chose. Throw and Squirt stay. Both tracks start from no experience
+        """The toon gives up outTrack for inTrack, a track it does not have
+        but the quest line has offered. Throw and Squirt stay. Both tracks start from no experience
         (and no gags): the one given up loses all it had, even if it was
         maxed, and gets it back from nothing if it is ever taken again.
-        Only once the gag track ToonTasks are all done (six tracks), and
-        never after ~maxToon."""
+        Never while a track is being trained, and never after ~maxToon."""
         avId = self.air.getAvatarIdFromSender()
         if avId != self.doId:
             self.air.writeServerEvent('suspicious', avId, 'requestTrackSwap for %d' % self.doId)
@@ -3988,9 +3987,12 @@ class DistributedToonAI(DistributedPlayerAI.DistributedPlayerAI, DistributedSmoo
         tracks = len(ToontownBattleGlobals.Tracks)
         if self.getGagTracksLocked():
             return TrackSwapLocked
-        if sum(1 for t in self.trackArray if t) < tracks - 1 or self.trackProgressId >= 0:
+        if self.trackProgressId >= 0:
             return TrackSwapNotYet
         if not (0 <= outTrack < tracks and 0 <= inTrack < tracks) or outTrack == inTrack:
+            return TrackSwapBadTrack
+        if inTrack not in Quests.tracksOfferedTo(self):
+            # Only a track the quest line has put in front of the toon.
             return TrackSwapBadTrack
         if outTrack in (ToontownBattleGlobals.THROW_TRACK, ToontownBattleGlobals.SQUIRT_TRACK):
             return TrackSwapBadTrack

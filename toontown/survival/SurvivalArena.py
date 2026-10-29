@@ -11,7 +11,7 @@ import math
 import random
 
 from direct.directnotify import DirectNotifyGlobal
-from panda3d.core import (BitMask32, CollisionHandlerQueue, CollisionNode, CollisionRay, CollisionSegment, CollisionTraverser,
+from panda3d.core import (Fog, BitMask32, CollisionHandlerQueue, CollisionNode, CollisionRay, CollisionSegment, CollisionTraverser,
                           CompassEffect, ModelPool, NodePath, Point3, TexturePool, Vec3, Vec4)
 
 from toontown.dna.DNAStorage import DNAStorage
@@ -63,6 +63,19 @@ class SurvivalArena:
             trigger.stash()
         for trigger in self.geom.findAllMatches('**/door_trigger*'):
             trigger.stash()
+        # What a DistributedDoor does to a door's parts when it generates
+        # (hideDoorParts): the black "hole" behind each leaf shows only
+        # while the door swings, and a door drawn on a flat keeps its leaves
+        # hidden. Without doors here nothing did this, so Toon HQ's doorway
+        # was a black hole.
+        for hole in self.geom.findAllMatches('**/doorFrameHole*'):
+            hole.hide()
+        for flat in self.geom.findAllMatches('**/door_flat*'):
+            suffix = flat.getName()[len('door_flat'):]
+            building = flat.getParent()
+            for leaf in ('leftDoor', 'rightDoor'):
+                for door in building.findAllMatches('**/%s%s' % (leaf, suffix)):
+                    door.hide()
         for origin in self.geom.findAllMatches('**/suit_building_origin'):
             origin.removeNode()
         self.geom.flattenMedium()
@@ -120,6 +133,20 @@ class SurvivalArena:
         if not task.cloud2.isEmpty():
             task.cloud2.setH(-task.h * 0.8)
         return task.cont
+
+    def setFog(self, on):
+        """The Gag-Snatcher rounds come in a fog (BO1's hound rounds)."""
+        if on:
+            fog = Fog('snatcherFog')
+            fog.setColor(0.18, 0.16, 0.22)
+            fog.setExpDensity(0.012)
+            self.root.setFog(fog)
+            if self.sky:
+                self.sky.setColorScale(0.6, 0.55, 0.7, 1)
+        else:
+            self.root.clearFog()
+            if self.sky:
+                self.sky.clearColorScale()
 
     def destroy(self):
         if self.skyTask:
@@ -233,13 +260,62 @@ class SurvivalArena:
             return False
         return self.clearLine(eye, Point3(spot[0], spot[1], spot[2] + 3))
 
+    REACH_STEP = 5.0
+    REACH_SPAN = 150.0
+
+    def buildReach(self, start):
+        """Flood the playground from where the player starts, one cell at
+        a time, over ground a toon can walk: the open playground. Cells
+        inside buildings, behind fences, on the hill or off the edge never
+        join, so cogs only ever land where the player could stand."""
+        step = self.REACH_STEP
+        half = int(self.REACH_SPAN / step)
+        z0 = self.spawnZ(start[0], start[1])
+        if z0 is None:
+            z0 = start[2]
+        origin = (int(round(start[0] / step)), int(round(start[1] / step)))
+        self.reach = {origin: Point3(origin[0] * step, origin[1] * step, z0)}
+        self.reachZ = {}
+        frontier = [origin]
+        while frontier:
+            cell = frontier.pop()
+            here = self.reach[cell]
+            for di, dj in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                nxt = (cell[0] + di, cell[1] + dj)
+                if nxt in self.reach or nxt in self.reachZ or abs(nxt[0]) > half or abs(nxt[1]) > half:
+                    continue
+                x, y = nxt[0] * step, nxt[1] * step
+                z = self.spawnZ(x, y)
+                self.reachZ[nxt] = z
+                if z is None or abs(z - here[2]) > 3.0:
+                    continue
+                there = Point3(x, y, z)
+                if not self.clearLine(here, there):
+                    continue
+                self.reach[nxt] = there
+                frontier.append(nxt)
+        self.reachList = list(self.reach.values())
+        self.notify.info('reach: %d cells' % len(self.reachList))
+
+    def landingSpots(self):
+        return getattr(self, 'reachList', None) or []
+
     def pickLanding(self, toons, eye, forward, tries=20):
-        """A spot on the ground the player cannot see, away from every
-        toon; None when none turns up this time."""
+        """A spot on the open playground the player cannot see, away from
+        every toon; None when none turns up this time."""
+        spots = self.landingSpots()
         for i in range(tries):
-            angle = random.uniform(0, 2 * math.pi)
-            dist = random.uniform(*SPAWN_RING)
-            x, y = dist * math.cos(angle), dist * math.sin(angle)
+            if spots:
+                cell = random.choice(spots)
+                x = cell[0] + random.uniform(-1.5, 1.5)
+                y = cell[1] + random.uniform(-1.5, 1.5)
+                dist = math.hypot(x, y)
+                if not SPAWN_RING[0] <= dist <= SPAWN_RING[1]:
+                    continue
+            else:
+                angle = random.uniform(0, 2 * math.pi)
+                dist = random.uniform(*SPAWN_RING)
+                x, y = dist * math.cos(angle), dist * math.sin(angle)
             z = self.spawnZ(x, y)
             if z is None:
                 continue
@@ -249,4 +325,28 @@ class SurvivalArena:
             if self.inView(spot, eye, forward):
                 continue
             return spot
+        return None
+
+    def landingNear(self, goal, eye, forward, near=14.0, far=30.0, tries=12):
+        """An open spot near a goal, out of the player's view, with a clear
+        walk to the goal; None if there is none this time."""
+        spots = self.landingSpots()
+        for i in range(tries):
+            if spots:
+                cell = random.choice(spots)
+                x, y = cell[0], cell[1]
+                if not near <= math.hypot(x - goal[0], y - goal[1]) <= far:
+                    continue
+            else:
+                angle = random.uniform(0, 2 * math.pi)
+                dist = random.uniform(near, far)
+                x, y = goal[0] + dist * math.cos(angle), goal[1] + dist * math.sin(angle)
+            z = self.spawnZ(x, y)
+            if z is None:
+                continue
+            spot = Point3(x, y, z)
+            if self.inView(spot, eye, forward):
+                continue
+            if self.clearLine(Point3(x, y, z + 2), Point3(goal[0], goal[1], z + 2)):
+                return spot
         return None

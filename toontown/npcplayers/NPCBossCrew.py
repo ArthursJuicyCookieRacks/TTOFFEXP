@@ -28,14 +28,14 @@ THROW_TIME = (1.6, 3.2)
 SLOW_TIME = (3.0, 6.0)
 SLOW_JOBS = (('l', 'BattleTwo'), ('c', 'BattleTwo'))
 # Swinging a crane over to a safe or a goon, and from there to the CFO.
-CRANE_TIME = (10.0, 18.0)
+CRANE_TIME = (4.0, 7.0)
 # Aiming a banquet table's water pitcher at the CEO.
 PITCHER_TIME = (4.0, 6.0)
 PITCHER_HIT_CHANCE = 0.45
 # How many NPCs take a pitcher; the rest golf, fetch toon-up food or keep
 # out of his way.
 PITCHERS = 3
-GOLF_TIME = (5.0, 9.0)
+GOLF_TIME = (4.0, 6.0)
 # Chances a pie does what it was thrown for.
 HIT_CHANCE = 0.4
 # The VP's underside opens while he shoots gears out of it; a pie thrown
@@ -58,12 +58,19 @@ SIDESTEP_CHANCE = 0.7
 SIDESTEP = (8.0, 12.0)
 # Out of pies: a run to the cage to refill, close enough to touch it.
 CAGE_NEAR = 9.0
-# A run to the witness stand for more evidence, and back.
-EVIDENCE_TRIP = (3.0, 6.0)
+# One evidence throw after another at the CJ's scale, and faster still
+# during the witness bonus, when evidence counts double.
+EVIDENCE_TIME = (1.5, 2.5)
+BONUS_TIME = (0.8, 1.4)
+# The witness stand (courtroom coordinates), where a toon out of evidence
+# runs to refill, close enough to touch it.
+WITNESS_STAND = (54.0, 100.0)
+WITNESS_NEAR = 8.0
 # Evidence on the CJ's scale pan, a big target.
 EVIDENCE_HIT_CHANCE = 0.55
-# How often a throw goes at one of the lawyers instead.
-LAWYER_CHANCE = 0.2
+# One or two toons have the lawyers as their job: pies that stun them for
+# a while so they stop loading the cogs' pan.
+LAWYER_STUNNERS = (1, 2)
 LAWYER_HIT_CHANCE = 0.5
 # The VP: only a few toons go for his stun (the rest wait to hit him while
 # he is dizzy), and they give him a while on his feet before trying again.
@@ -73,6 +80,12 @@ STUN_REST = (4.0, 8.0)
 # kept free for the player at the start.
 CRANE_HIT_CHANCE = 0.4
 CRANE_FOR_PLAYER = 30.0
+# The CFO's floor toons: they jump on the goons' heads to stun them for the
+# craners, and pick up the treasures the stunned goons leave when hurt.
+GOON_STOMP_RANGE = 6.0
+GOON_STOMP_CHANCE = 0.6
+TREASURE_BELOW = 0.6
+TREASURE_NEAR = 4.0
 # The CJ: how likely a toon fired from a cannon lands in a chair.
 CANNON_HIT_CHANCE = 0.3
 # The CEO: how many NPCs take a golf spot, and how likely a ball hits him.
@@ -149,7 +162,9 @@ class NPCBossCrew:
         self.foodNum = 1000
         self.stateSince = (None, 0)
         self.stunners = None
+        self.lawyerStunners = None
         self.stunOffsets = {}
+        self.chasing = {}
         self.dizzy = False
         self.stunRestUntil = 0
         self.nextRoam = {}
@@ -209,6 +224,12 @@ class NPCBossCrew:
                             self.goToStunSpot(npc, now)
                         else:
                             self.roam(npc, now)
+                    elif self.dept == 'm' and state == 'BattleThree':
+                        if not self.floorJob(npc, now):
+                            self.roam(npc, now)
+                    elif self.dept == 'l' and state == 'BattleThree':
+                        if not self.witnessTrip(npc, now):
+                            self.roam(npc, now)
                     else:
                         self.roam(npc, now)
             play = getattr(self, 'play%s%s' % (self.dept.upper(), state), None)
@@ -220,6 +241,8 @@ class NPCBossCrew:
                     pace = DIZZY_THROW_TIME
                 elif self.dept == 's' and state == 'BattleThree':
                     pace = STUN_THROW_TIME
+                elif self.dept == 'l' and state == 'BattleThree':
+                    pace = BONUS_TIME if getattr(boss, 'bonusState', False) else EVIDENCE_TIME
                 for npc in members:
                     if now >= self.nextAction.get(npc.doId, 0):
                         self.nextAction[npc.doId] = now + random.uniform(*pace)
@@ -494,6 +517,108 @@ class NPCBossCrew:
         npc.refilling = False
         npc.asSender(self.boss.touchCage)
         return False
+
+    def floorJob(self, npc, now):
+        """A CFO floor toon (no crane): stomps a goon when one walks near,
+        and goes for a treasure when hurt. True while it is on such a job."""
+        if self.isStationed(npc) or npc.busy:
+            return False
+        base = getClientBuiltin('base')
+        if base is None:
+            return False
+        boss = self.boss
+        self.syncPos(npc)
+        pos = npc.getPos()
+        job = self.chasing.get(npc.doId)
+        if job is not None:
+            kind, doId = job
+            if kind == 'goon':
+                goon = boss.air.doId2do.get(doId) if hasattr(boss, 'air') else self.air.doId2do.get(doId)
+                client = base.cr.doId2do.get(doId)
+                if goon is None or client is None or client.isEmpty() or goon.state not in ('Walk', 'Battle'):
+                    del self.chasing[npc.doId]
+                    return False
+                target = client.getPos(base.render)
+                if math.hypot(pos[0] - target[0], pos[1] - target[1]) < GOON_STOMP_RANGE:
+                    del self.chasing[npc.doId]
+                    npc.walk = None
+                    self.jump(npc)
+                    npc.asSender(goon.requestStunned, 0)
+                    self.count('cfo goon stomps')
+                    self.nextRoam[npc.doId] = now + 1.5
+                    return True
+            else:
+                treasure = boss.treasures.get(doId)
+                if treasure is None:
+                    del self.chasing[npc.doId]
+                    return False
+                target = treasure.pos
+                if math.hypot(pos[0] - target[0], pos[1] - target[1]) < TREASURE_NEAR:
+                    del self.chasing[npc.doId]
+                    npc.walk = None
+                    npc.asSender(treasure.requestGrab)
+                    self.count('cfo treasures')
+                    self.nextRoam[npc.doId] = now + 1.0
+                    return True
+            if npc.walk is not None and (Point3(npc.walk[0][-1]) - Point3(target[0], target[1], npc.walk[0][-1][2])).length() < 4.0:
+                return True
+            if now < self.nextRoam.get(npc.doId, 0):
+                return True
+            self.nextRoam[npc.doId] = now + 0.5
+            if self.walkToward(npc, pos, Point3(target[0], target[1], pos[2]), ToontownGlobals.ToonForwardSpeed):
+                return True
+            del self.chasing[npc.doId]
+            return False
+        if npc.walk is not None or now < self.nextRoam.get(npc.doId, 0):
+            return False
+        # Hurt: a treasure, when one lies about. Else a goon walking near.
+        if npc.hp < npc.maxHp * TREASURE_BELOW and getattr(boss, 'treasures', None):
+            nearest = min(boss.treasures.values(), key=lambda t: math.hypot(pos[0] - t.pos[0], pos[1] - t.pos[1]))
+            self.chasing[npc.doId] = ('treasure', nearest.doId)
+            return True
+        goons = [g for g in (boss.goons or []) if g.state in ('Walk', 'Battle')]
+        random.shuffle(goons)
+        for goon in goons:
+            client = base.cr.doId2do.get(goon.doId)
+            if client is None or client.isEmpty():
+                continue
+            gpos = client.getPos(base.render)
+            if math.hypot(pos[0] - gpos[0], pos[1] - gpos[1]) < 30 and random.random() < GOON_STOMP_CHANCE:
+                self.chasing[npc.doId] = ('goon', goon.doId)
+                return True
+        return False
+
+    def witnessTrip(self, npc, now):
+        """Out of evidence, a CJ toon runs to the witness stand, touches it
+        and runs back to its spot. True while it is on the run."""
+        if not getattr(npc, 'fetchingEvidence', False):
+            return False
+        if npc.walk is not None or npc.busy:
+            return True
+        self.syncPos(npc)
+        pos = npc.getPos()
+        if math.hypot(pos[0] - WITNESS_STAND[0], pos[1] - WITNESS_STAND[1]) < WITNESS_NEAR:
+            npc.fetchingEvidence = False
+            npc.asSender(self.boss.touchWitnessStand)
+            self.count('cj witness refills')
+            self.nextRoam[npc.doId] = now
+            return False
+        if now < self.nextRoam.get(npc.doId, 0):
+            return True
+        self.nextRoam[npc.doId] = now + 0.5
+        if self.walkToward(npc, pos, Point3(WITNESS_STAND[0], WITNESS_STAND[1], pos[2]), ToontownGlobals.ToonForwardSpeed):
+            return True
+        # No way over there from here: the evidence comes anyway.
+        npc.fetchingEvidence = False
+        npc.asSender(self.boss.touchWitnessStand)
+        return False
+
+    def isLawyerStunner(self, npc):
+        if self.lawyerStunners is None:
+            members = self.members()
+            count = min(len(members), random.randint(*LAWYER_STUNNERS))
+            self.lawyerStunners = set(n.doId for n in random.sample(members, count))
+        return npc.doId in self.lawyerStunners
 
     def sideStep(self, npc, bossClient, now):
         """A gear aimed at this toon: it runs sideways out of the line."""
@@ -819,21 +944,28 @@ class NPCBossCrew:
         boss = self.boss
         if npc.numPies <= 0:
             if not getattr(npc, 'fetchingEvidence', False):
-                # Off to the witness stand for more.
+                # Off to the witness stand for more (witnessTrip walks it).
                 npc.fetchingEvidence = True
-                self.nextAction[npc.doId] = globalClock.getFrameTime() + random.uniform(*EVIDENCE_TRIP)
-                return
-            npc.fetchingEvidence = False
-            npc.asSender(boss.touchWitnessStand)
+                npc.walk = None
+                self.nextRoam[npc.doId] = globalClock.getFrameTime()
+            return
+        if getattr(npc, 'fetchingEvidence', False):
             return
         if self.healPlayer(npc):
             return
         lawyers = [l for l in getattr(boss, 'lawyers', None) or [] if not l.isDeleted() and not l.stunned]
-        if lawyers and random.random() < LAWYER_CHANCE:
-            # A pie at a lawyer stops its evidence landing on the cogs' pan,
-            # and with every lawyer stunned the toons' evidence weighs more.
-            if random.random() < LAWYER_HIT_CHANCE:
-                npc.asSender(random.choice(lawyers).hitByToon)
+        if lawyers and self.isLawyerStunner(npc):
+            # The lawyer stunners' job: a pie at a lawyer stops its evidence
+            # landing on the cogs' pan, and with every lawyer stunned the
+            # toons' evidence weighs more. With all of them down they throw
+            # at the scale like everyone else.
+            lawyer = random.choice(lawyers)
+            hit = random.random() < LAWYER_HIT_CHANCE
+            where = self.lawyerPos(lawyer)
+            if where is not None:
+                self.throwAt(npc, where, ToontownGlobals.PieCodeLawyer, hit)
+            if hit:
+                npc.asSender(lawyer.hitByToon)
                 self.count('cj lawyer stuns')
             if npc.numPies != ToontownGlobals.FullPies:
                 npc.setNumPies(npc.numPies - 1)
@@ -847,6 +979,13 @@ class NPCBossCrew:
         if hit:
             npc.asSender(boss.hitBoss, 1)
             self.count('cj evidence hits')
+
+    def lawyerPos(self, lawyer):
+        base = getClientBuiltin('base')
+        client = base.cr.doId2do.get(lawyer.doId) if base else None
+        if client is None or client.isEmpty():
+            return None
+        return client.getPos(base.render) + Point3(0, 0, 3)
 
     def playLNearVictory(self, npc):
         self.playSNearVictory(npc)

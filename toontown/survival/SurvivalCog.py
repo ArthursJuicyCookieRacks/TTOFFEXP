@@ -37,8 +37,9 @@ class SurvivalCog:
     notify = DirectNotifyGlobal.directNotify.newCategory('SurvivalCog')
     gearSounds = None
 
-    def __init__(self, game, name, landing, roundNum):
+    def __init__(self, game, name, landing, roundNum, snatcher=False):
         self.game = game
+        self.snatcher = snatcher
         self.arena = game.arena
         self.suit = Suit.Suit()
         dna = SuitDNA.SuitDNA()
@@ -51,8 +52,13 @@ class SurvivalCog:
         self.suit.setColorScale(1, 1, 1, 1)
         self.name = name
         self.maxHp = G.cogHp(roundNum)
-        self.hp = self.maxHp
         self.speedClass = G.cogSpeedClass(roundNum, random.random())
+        if snatcher:
+            # Gag-Snatchers: small, quick and easier to pop.
+            self.maxHp = max(50, int(self.maxHp * G.SNATCHER_HP))
+            self.speedClass = 2
+            self.suit.setScale(G.SNATCHER_SCALE)
+        self.hp = self.maxHp
         self.speed = G.COG_SPEEDS[self.speedClass]
         self.radius = self.suit.getRadius()
         self.height = self.suit.height
@@ -160,20 +166,7 @@ class SurvivalCog:
 
     def __reland(self, goal):
         player = self.game.player
-        landing = None
-        for i in range(12):
-            angle = random.uniform(0, 2 * math.pi)
-            dist = random.uniform(14.0, 30.0)
-            x, y = goal[0] + dist * math.cos(angle), goal[1] + dist * math.sin(angle)
-            z = self.arena.spawnZ(x, y)
-            if z is None:
-                continue
-            spot = Point3(x, y, z)
-            if self.arena.inView(spot, player.getEye(), player.getForward()):
-                continue
-            if self.arena.clearLine(Point3(x, y, z + 2), Point3(goal[0], goal[1], z + 2)):
-                landing = spot
-                break
+        landing = self.arena.landingNear(goal, player.getEye(), player.getForward())
         if landing is None:
             self.lastProgress = globalClock.getFrameTime()
             return

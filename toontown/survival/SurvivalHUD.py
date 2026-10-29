@@ -41,29 +41,30 @@ class SurvivalHUD:
                                       scale=0.045, pos=(-0.05, -0.36), align=TextNode.ARight, mayChange=True)
         # Jellybeans, bottom right, a little up from the bottom.
         self.beanBox = DirectFrame(parent=base.a2dBottomRight, relief=DGG.FLAT, frameColor=PANEL,
-                                   frameSize=(-0.42, 0.02, -0.08, 0.08), pos=(-0.08, 0, 0.3))
+                                   frameSize=(-0.72, 0.02, -0.11, 0.11), pos=(-0.08, 0, 0.36))
         jar = loader.loadModel('phase_3.5/models/gui/jar_gui')
-        self.beanIcon = DirectLabel(parent=self.beanBox, relief=None, image=jar.find('**/Jar'), image_scale=0.14, pos=(-0.34, 0, -0.01))
+        self.beanIcon = DirectLabel(parent=self.beanBox, relief=None, image=jar.find('**/Jar'), image_scale=0.22, pos=(-0.58, 0, -0.01))
         jar.removeNode()
         self.beanText = OnscreenText(parent=self.beanBox, text='0', font=sign, fg=(1, 0.95, 0.4, 1), shadow=(0, 0, 0, 1),
-                                     scale=0.08, pos=(-0.04, -0.028), align=TextNode.ARight, mayChange=True)
-        # The held gag, bottom middle.
-        self.gagBox = DirectFrame(parent=base.a2dBottomCenter, relief=DGG.FLAT, frameColor=(0, 0, 0, 0.45),
-                                  frameSize=(-0.36, 0.36, -0.09, 0.09), pos=(0, 0, 0.13))
+                                     scale=0.1, pos=(-0.04, -0.035), align=TextNode.ARight, mayChange=True)
+        # The held gag, bottom right under the jellybeans.
+        self.gagBox = DirectFrame(parent=base.a2dBottomRight, relief=DGG.FLAT, frameColor=(0, 0, 0, 0.45),
+                                  frameSize=(-0.72, 0.02, -0.09, 0.09), pos=(-0.08, 0, 0.13))
         self.invModel = loader.loadModel('phase_3.5/models/gui/inventory_icons')
-        self.gagIcon = DirectLabel(parent=self.gagBox, relief=None, pos=(-0.27, 0, 0), image=None, image_scale=0.5)
+        self.gagIcon = DirectLabel(parent=self.gagBox, relief=None, pos=(-0.62, 0, 0), image=None, image_scale=0.5)
         self.gagName = OnscreenText(parent=self.gagBox, text='', font=face, fg=(1, 1, 1, 1), shadow=(0, 0, 0, 1),
-                                    scale=0.05, pos=(-0.16, 0.02), align=TextNode.ALeft, mayChange=True)
+                                    scale=0.05, pos=(-0.51, 0.02), align=TextNode.ALeft, mayChange=True)
         self.ammoText = OnscreenText(parent=self.gagBox, text='', font=sign, fg=(1, 1, 1, 1), shadow=(0, 0, 0, 1),
-                                     scale=0.075, pos=(0.33, -0.05), align=TextNode.ARight, mayChange=True)
+                                     scale=0.075, pos=(-0.02, -0.05), align=TextNode.ARight, mayChange=True)
         self.slotText = OnscreenText(parent=self.gagBox, text='', font=face, fg=(0.8, 0.8, 0.8, 1), shadow=(0, 0, 0, 1),
-                                     scale=0.04, pos=(-0.16, -0.045), align=TextNode.ALeft, mayChange=True)
+                                     scale=0.04, pos=(-0.51, -0.045), align=TextNode.ALeft, mayChange=True)
         self.reloadBar = DirectWaitBar(parent=self.gagBox, relief=DGG.FLAT, range=1.0, value=0,
-                                       frameSize=(-0.34, 0.34, -0.005, 0.005), pos=(0, 0, -0.085),
+                                       frameSize=(-0.69, -0.01, -0.005, 0.005), pos=(0, 0, -0.085),
                                        barColor=(1, 0.9, 0.3, 1), frameColor=(0, 0, 0, 0))
         self.reloadBar.hide()
+        self.reloadTrack = None
         self.grenadeText = OnscreenText(parent=self.gagBox, text='', font=face, fg=(1, 0.85, 0.4, 1), shadow=(0, 0, 0, 1),
-                                        scale=0.04, pos=(0.33, 0.045), align=TextNode.ARight, mayChange=True)
+                                        scale=0.04, pos=(-0.02, 0.045), align=TextNode.ARight, mayChange=True)
         # Power-ups along the top.
         self.powerText = OnscreenText(parent=base.a2dTopCenter, text='', font=sign, fg=(1, 0.9, 0.3, 1), shadow=(0, 0, 0, 1),
                                       scale=0.06, pos=(0, -0.09), mayChange=True)
@@ -83,7 +84,7 @@ class SurvivalHUD:
         self.setLaff(G.PLAYER_HP, G.PLAYER_HP)
 
     def destroy(self):
-        for track in (self.noticeTrack, self.hurtTrack):
+        for track in (self.noticeTrack, self.hurtTrack, self.reloadTrack):
             if track:
                 track.finish()
         self.closeCard()
@@ -141,8 +142,14 @@ class SurvivalHUD:
 
     def __animateReload(self, seconds):
         from direct.interval.LerpInterval import LerpFunc
-        LerpFunc(lambda v: self.reloadBar.__setitem__('value', v), fromData=0, toData=1, duration=seconds).start()
-        Sequence(Wait(seconds), Func(self.reloadBar.hide)).start()
+        if self.reloadTrack:
+            self.reloadTrack.finish()
+        self.reloadTrack = Sequence(LerpFunc(self.__setReload, fromData=0, toData=1, duration=seconds), Func(self.reloadBar.hide))
+        self.reloadTrack.start()
+
+    def __setReload(self, value):
+        if getattr(self.reloadBar, '_optionInfo', None) is not None:
+            self.reloadBar['value'] = value
 
     def setPowers(self, powers, now):
         parts = []

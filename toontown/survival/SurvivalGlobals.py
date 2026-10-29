@@ -66,6 +66,20 @@ def spawnDelay(roundNum):
     return max(0.25, 2.0 * 0.95 ** (roundNum - 1))
 
 
+# --- Gag-Snatcher rounds (BO1's hellhound rounds): the first between
+# rounds 5 and 7, then every 4 or 5 rounds. Small fast Flunkies with half
+# the HP, in a fog, fewer of them; a Max Gags drops where the last one pops.
+FIRST_SNATCHER_ROUND = (5, 7)
+SNATCHER_ROUND_GAP = (4, 5)
+SNATCHER_HP = 0.5
+SNATCHER_SCALE = 0.8
+SNATCHER_LOOKS = ('f', 'cc', 'sc', 'bf')
+
+
+def snatchersInRound(roundNum, npcs):
+    return min(24, 6 + 2 * (roundNum // 5)) + 2 * npcs
+
+
 # Cog speed classes (walk / jog / sprint) rolled per cog as BO1 does.
 COG_SPEEDS = (6.0, 10.0, 14.0)
 

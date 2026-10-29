@@ -36,7 +36,7 @@ class InventoryPage(ShtikerPage.ShtikerPage):
         gui = loader.loadModel('phase_3/models/gui/quit_button')
         self.swapButton = DirectButton(parent=self, relief=None, image=(gui.find('**/QuitBtn_UP'), gui.find('**/QuitBtn_DN'), gui.find('**/QuitBtn_RLVR'), gui.find('**/QuitBtn_UP')), image_scale=(1.1, 1, 1.1), image3_color=(0.6, 0.6, 0.6, 0.7), pos=(-0.62, 0, 0.67), scale=0.9, text=TTLocalizer.TrackSwapButton, text_scale=0.05, text_pos=(0, -0.015), text_fg=(1, 1, 1, 1), text_shadow=(0, 0, 0, 1), text3_fg=(0.8, 0.8, 0.8, 1), command=self.openSwap)
         gui.removeNode()
-        self.swapNote = DirectLabel(parent=self, relief=None, pos=(-0.62, 0, 0.595), text='', text_scale=0.035, text_fg=(0.4, 0.4, 0.4, 1), text_wordwrap=14)
+        self.swapNote = DirectLabel(parent=self, relief=None, pos=(-0.62, 0, 0.595), text="", text_scale=0.035, text_fg=(0.4, 0.4, 0.4, 1), text_wordwrap=14)
         return
 
     def unload(self):

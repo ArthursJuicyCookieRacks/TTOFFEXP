@@ -48,7 +48,7 @@ TILE = 0.32
 GRID = 0.38
 # How far each home icon's picture is moved after centering its bounds, in
 # page units (measured on the drawn page: a square is 131 pixels for TILE).
-ICON_NUDGES = {'book': (-0.056 + 0.0134, 0.034), 'map': (0, -0.011), 'friends': (-0.0085, -0.005)}
+ICON_NUDGES = {'book': ((-0.056 + 0.0134) * 0.34 / 0.22, 0.034 * 0.34 / 0.22), 'map': (0, -0.011), 'friends': (-0.0085, -0.005)}
 # The pages past the home page draw their writing and buttons this much
 # bigger than the home page's.
 BIG = 1.1
@@ -355,7 +355,7 @@ class BottomScreen(DirectObject):
                  (SKY, self.find('stickerbook_gui', 'questCard'), 0.17, 'tasks'),
                  (MINT, self.find('sos_textures', 'teleportIcon'), 0.18, 'map'),
                  (LILAC, self.find('sos_textures', 'district'), 0.18, 'districts'),
-                 (ROSE, self.find('stickerbook_gui', 'BookIcon_CLSD'), 0.22, None),
+                 (ROSE, self.find('stickerbook_gui', 'BookIcon_CLSD'), 0.34, None),
                  (PINK, self.find('friendslist_gui', 'FriendsBox_Closed'), 0.6, 'friends'),
                  (SKY, self.chatIcon(), 0.9, 'chat'),
                  (GOLD, self.find('stickerbook_gui', 'CogArmIcon2'), 0.2, 'progress'),

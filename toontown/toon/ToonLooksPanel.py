@@ -19,12 +19,15 @@ from toontown.toonbase import TTLocalizer
 from toontown.toonbase import ToontownGlobals
 from toontown.toontowngui import TTDialog
 
-BUTTON_POS = (0.275, 0, 0.22)
+# On the laff meter's bottom-right edge: half on the face's rim, half off,
+# below and right of the smile (the face is a circle of radius ~0.13 about
+# (0.13, 0.13) in a2dBottomLeft; no species' smile reaches this corner).
+BUTTON_POS = (0.255, 0, 0.02)
 YELLOW = (1.0, 0.86, 0.12, 1)
 OUTLINE = (0.6, 0.38, 0.0, 1)
 # The window sits a little above the middle of the screen, drawn this much
 # bigger than its layout.
-WINDOW_Z = 0.1
+WINDOW_Z = 0.0
 WINDOW_SCALE = 1.3
 # The X that closes it, in the top right corner of the right-hand page.
 CLOSE_POS = (0.725, 0, 0.61)
