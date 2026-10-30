@@ -16,6 +16,7 @@ server, which runs in the client's process offline, so it is saved and
 everyone sees it like a change made at the tailor.
 """
 
+import ast
 import builtins
 import json
 import os
@@ -130,6 +131,29 @@ class Looks:
         self.looks[slot] = None
         self.save()
         return True
+
+
+def savedAccessories(avId):
+    """{'hat': (...), 'glasses': (...)} a toon has on in its save, for the
+    heads drawn before the toon is in game (Pick-A-Toon)."""
+    from otp.local import LocalServer
+    from otp.local import LocalDCUtil
+    worn = {}
+    server = LocalServer.getInstance()
+    obj = server.database.get(avId) if server is not None and avId else None
+    if obj is None:
+        return worn
+    for kind in ('hat', 'glasses'):
+        name = 'set' + kind.capitalize()
+        data = obj.fields.get(name)
+        if data is None:
+            continue
+        try:
+            value = ast.literal_eval(LocalDCUtil.formatValue(obj.dclass.getFieldByName(name), data))
+            worn[kind] = tuple(value)
+        except (ValueError, SyntaxError, TypeError):
+            pass
+    return worn
 
 
 # --- Wearing a look ---

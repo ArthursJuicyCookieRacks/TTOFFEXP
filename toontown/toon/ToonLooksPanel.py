@@ -13,6 +13,7 @@ from direct.interval.IntervalGlobal import *
 from direct.showbase.DirectObject import DirectObject
 
 from toontown.login import AvatarChoice
+from toontown.toon import Toon
 from toontown.toon import ToonHead
 from toontown.toon import ToonLooks
 from toontown.toonbase import TTLocalizer
@@ -40,6 +41,8 @@ SQUARES = ('Red', 'Green', 'Purple', 'Blue', 'Pink', 'Yellow')
 SQUARE_SCALE = 0.62
 NAME_POS = tuple((x * SQUARE_SCALE, z * SQUARE_SCALE) for x, y, z in AvatarChoice.NAME_POSITIONS)
 MIDDLE_X = (-0.017, 0.01, -0.008, 0.009, -0.002, 0.013)
+# How much taller than the bare head a head with a hat may be.
+HAT_ROOM = 1.15
 HEAD_Z = 0.0
 EDIT_Z = (-0.17, -0.158, -0.17, -0.168, -0.154, -0.168)
 TRASH_POS = ((0.108, -0.151), (0.192, -0.104), (0.134, -0.14), (0.182, -0.108), (0.141, -0.135), (0.162, -0.12))
@@ -220,6 +223,14 @@ class LooksWindow(DirectObject):
         model.setupHead(dna, forGui=1)
         model.reparentTo(head)
         model.setScale(ToontownGlobals.toonBodyScales[dna.getAnimal()] / 0.75)
+        bare = model.getTightBounds(button.stateNodePath[0])
+        Toon.dressHead(model, dna, look.get('hat'), look.get('glasses'))
+        dressed = model.getTightBounds(button.stateNodePath[0])
+        if bare and dressed:
+            # A tall hat shrinks the head a little so both stay in the square.
+            grow = (dressed[1][2] - dressed[0][2]) / max(bare[1][2] - bare[0][2], 0.001)
+            if grow > HAT_ROOM:
+                head.setScale(head.getScale() * HAT_ROOM / grow)
         # Heads of different animals reach different heights above the neck,
         # so each is centered by its own size, between the name and Edit.
         bounds = model.getTightBounds(button.stateNodePath[0])

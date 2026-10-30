@@ -3357,5 +3357,43 @@ class Toon(Avatar.Avatar, ToonHead):
         self.stop()
 
 
+class _HeadDresser:
+    """Runs a toon's own hat and glasses code on a lone ToonHead (the heads
+    of Pick-A-Toon and My Looks), so each fits that head exactly as in game."""
+    accessoryHead = Toon.accessoryHead
+    fitAccessory = Toon.fitAccessory
+    generateHat = Toon.generateHat
+    generateGlasses = Toon.generateGlasses
+
+    def __init__(self, head, dna, hat, glasses):
+        self.head = head
+        self.style = dna
+        self.hat = tuple(hat or (0, 0, 0))
+        self.glasses = tuple(glasses or (0, 0, 0))
+        self.hatNodes = []
+        self.glassesNodes = []
+
+    def __getattr__(self, name):
+        # The fit tables, and the ears and eyelashes of the head itself.
+        if hasattr(Toon, name) and not callable(getattr(Toon, name)):
+            return getattr(Toon, name)
+        return getattr(self.head, name)
+
+    def getHat(self):
+        return self.hat
+
+    def getGlasses(self):
+        return self.glasses
+
+    def sendLogSuspiciousEvent(self, msg):
+        pass
+
+
+def dressHead(head, dna, hat=None, glasses=None):
+    dresser = _HeadDresser(head, dna, hat, glasses)
+    dresser.generateHat()
+    dresser.generateGlasses()
+
+
 loadModels()
 compileGlobalAnimList()
