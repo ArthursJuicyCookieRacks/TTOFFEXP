@@ -310,7 +310,8 @@ class DistributedBuilding(DistributedObject.DistributedObject):
          None]
         self.elevatorNodePath = hidden.attachNewNode('elevatorNodePath')
         if cogdo:
-            self.elevatorModel = loader.loadModel('phase_5/models/cogdominium/tt_m_ara_csa_elevatorB')
+            from toontown.cogdominium import CogdoUtil
+            self.elevatorModel = CogdoUtil.loadElevatorModel()
         else:
             self.elevatorModel = loader.loadModel('phase_4/models/modules/elevator')
             npc = self.elevatorModel.findAllMatches('**/floor_light_?;+s')

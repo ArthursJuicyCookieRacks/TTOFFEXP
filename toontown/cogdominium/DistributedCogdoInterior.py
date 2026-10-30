@@ -3,7 +3,7 @@ from direct.interval.IntervalGlobal import *
 from direct.distributed.ClockDelta import *
 from toontown.building.ElevatorConstants import *
 from toontown.toon import NPCToons
-from panda3d.core import NodePath
+from panda3d.core import CollisionNode, CollisionPolygon, NodePath
 from toontown.building import ElevatorUtils
 from toontown.toonbase import ToontownGlobals
 from toontown.toonbase import ToontownBattleGlobals
@@ -16,6 +16,7 @@ from toontown.battle import BattleBase
 from toontown.hood import ZoneUtil
 from toontown.cogdominium.CogdoLayout import CogdoLayout
 from toontown.cogdominium import CogdoGameConsts
+from toontown.cogdominium import CogdoUtil
 from toontown.cogdominium import CogdoBarrelRoom, CogdoBarrelRoomConsts
 from toontown.distributed import DelayDelete
 from toontown.toonbase import TTLocalizer
@@ -126,10 +127,10 @@ class DistributedCogdoInterior(DistributedObject.DistributedObject):
         DistributedObject.DistributedObject.generate(self)
         self.announceGenerateName = self.uniqueName('generate')
         self.accept(self.announceGenerateName, self.handleAnnounceGenerate)
-        self.elevatorModelIn = loader.loadModel('phase_5/models/cogdominium/tt_m_ara_csa_elevatorB')
+        self.elevatorModelIn = CogdoUtil.loadElevatorModel()
         self.leftDoorIn = self.elevatorModelIn.find('**/left_door')
         self.rightDoorIn = self.elevatorModelIn.find('**/right_door')
-        self.elevatorModelOut = loader.loadModel('phase_5/models/cogdominium/tt_m_ara_csa_elevatorB')
+        self.elevatorModelOut = CogdoUtil.loadElevatorModel()
         self.leftDoorOut = self.elevatorModelOut.find('**/left_door')
         self.rightDoorOut = self.elevatorModelOut.find('**/right_door')
 
@@ -680,6 +681,25 @@ class DistributedCogdoInterior(DistributedObject.DistributedObject):
         self.__closeInElevator()
         self._haveEntranceElevator.set(False)
         self._stashEntranceElevator.set(False)
+        self.__makeRestingFloor()
+
+    def __makeRestingFloor(self):
+        # After a game floor (flying, maze) the exit elevator stands in an
+        # empty room with no floor, so toons drifted up into the air on the
+        # walk over. Give that room a flat floor level with the elevator's.
+        self.__removeRestingFloor()
+        if self.floorModel or (self._wantBarrelRoom and self.barrelRoom.isLoaded()):
+            return
+        poly = CollisionPolygon(Point3(-30, -40, 0), Point3(30, -40, 0), Point3(30, 0, 0), Point3(-30, 0, 0))
+        node = CollisionNode('restingFloor')
+        node.addSolid(poly)
+        node.setIntoCollideMask(ToontownGlobals.FloorBitmask)
+        self._restingFloor = self.elevOut.attachNewNode(node)
+
+    def __removeRestingFloor(self):
+        if getattr(self, '_restingFloor', None) is not None:
+            self._restingFloor.removeNode()
+            self._restingFloor = None
 
     def _setAvPosToExit(self):
         base.localAvatar.setPos(self.elevOut, 0, -10, 0)
@@ -688,6 +708,7 @@ class DistributedCogdoInterior(DistributedObject.DistributedObject):
 
     def exitResting(self):
         self._setAvPosFDC.destroy()
+        self.__removeRestingFloor()
         self.waitMusic.stop()
 
     def enterReward(self, ts = 0):
