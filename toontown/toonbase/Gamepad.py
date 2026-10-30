@@ -179,7 +179,15 @@ class Gamepad(DirectObject):
 
         if self.game is not None and not self.game.wantsPointer():
             # The game's own layout: the keys and the pointer let go first.
-            self.__buttons(set())
+            if not self.gameHeld:
+                # A button still held from the menu layout (the Start that
+                # closed the pause card) is not a new press in the game's:
+                # otherwise holding Start paused and resumed every frame.
+                self.gameButtons = buttons & self.pressed
+                self.__buttons(set())
+            if self.cursor is not None:
+                # The pointer is only for menus (the pause card).
+                self.cursor.hide()
             self.__walk(0, 0)
             self.gameHeld = True
             for name in buttons - self.gameButtons:
@@ -190,8 +198,12 @@ class Gamepad(DirectObject):
             self.game.gamepadMove(axes.get('left_x', 0), axes.get('left_y', 0))
             self.game.gamepadLook(axes.get('right_x', 0), axes.get('right_y', 0), globalClock.getDt())
             return task.cont
-        if self.game is not None:
+        if self.game is not None and self.gameHeld:
+            # Likewise the Start that opened the pause card is not a press
+            # of Escape (which would close it again straight away).
+            held = buttons & self.gameButtons
             self.__letGameGo()
+            self.pressed = held
         self.__buttons(buttons)
         self.__walk(axes.get('left_x', 0), axes.get('left_y', 0))
         self.__point(axes.get('right_x', 0), axes.get('right_y', 0), globalClock.getDt())
