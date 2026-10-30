@@ -21,9 +21,9 @@ import random
 import time
 import string
 import copy
-# Imported always: the release build runs with -O (no __debug__) and
-# still reaches the code that uses it.
-from direct.showbase.PythonUtil import StackTrace
+# From DebugNames: PythonUtil has these only when __debug__ is on, and
+# release builds run with -O.
+from otp.otpbase.DebugNames import StackTrace
 from .PetMoverAI import PetMoverAI
 
 class DistributedPetAI(DistributedSmoothNodeAI.DistributedSmoothNodeAI, PetLookerAI.PetLookerAI, PetBase.PetBase):

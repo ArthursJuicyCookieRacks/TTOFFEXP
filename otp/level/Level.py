@@ -1,9 +1,10 @@
 from direct.directnotify import DirectNotifyGlobal
 import string
 from . import LevelConstants
-# Imported always: the release build runs with -O (no __debug__) and
-# still reaches the code that uses it.
-from direct.showbase.PythonUtil import lineInfo, uniqueElements
+# From DebugNames: PythonUtil has these only when __debug__ is on, and
+# release builds run with -O.
+from direct.showbase.PythonUtil import uniqueElements
+from otp.otpbase.DebugNames import lineInfo
 import types
 
 class Level:

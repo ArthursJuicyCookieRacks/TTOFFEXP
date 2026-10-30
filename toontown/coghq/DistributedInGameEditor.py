@@ -1,6 +1,7 @@
 from panda3d.core import *
 from direct.interval.IntervalGlobal import *
-from direct.showbase.PythonUtil import lineInfo, Functor
+from direct.showbase.PythonUtil import Functor
+from otp.otpbase.DebugNames import lineInfo
 from direct.directnotify import DirectNotifyGlobal
 from direct.distributed import DistributedObject
 from otp.level import Level
