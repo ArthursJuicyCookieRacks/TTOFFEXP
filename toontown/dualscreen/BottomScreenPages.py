@@ -120,6 +120,12 @@ def currentPlace():
         return None
 
 
+def isStreet(place):
+    # Each hood has its own Street subclass (TTStreet, DDStreet, ...).
+    from toontown.town.Street import Street
+    return isinstance(place, Street)
+
+
 def placeState():
     place = currentPlace()
     try:
@@ -156,6 +162,9 @@ class BottomScreen(DirectObject):
         self.lastRefresh = 0
         self.message = None
         self.messageUntil = 0
+        # The street the toon is on (its branch zone), to show its map the
+        # moment the toon arrives there.
+        self.street = None
         self.loadArt()
 
     def loadArt(self):
@@ -209,6 +218,8 @@ class BottomScreen(DirectObject):
             return
         if stage not in ('game', 'survival'):
             return
+        if stage == 'game':
+            self.followStreet()
         now = globalClock.getRealTime()
         if self.message is not None and now >= self.messageUntil and not self.message.isEmpty():
             self.message.hide()
@@ -218,6 +229,27 @@ class BottomScreen(DirectObject):
             refresh = getattr(self, 'refresh' + self.pageName[0].upper() + self.pageName[1:], None)
             if refresh is not None:
                 refresh()
+
+    def followStreet(self):
+        # Arthur: entering a street swaps the bottom screen to its map right
+        # away; leaving it takes the street map back to the laff meter.
+        place = currentPlace()
+        street = None
+        if isStreet(place):
+            street = ZoneUtil.getCanonicalBranchZone(place.getZoneId())
+        if street == self.street:
+            return
+        if street is not None:
+            questMap = getattr(base.localAvatar, 'questMap', None)
+            if questMap is None or not questMap.container['image']:
+                # The street's map is still loading: try again next frame.
+                return
+            self.street = street
+            self.show('map')
+        else:
+            self.street = None
+            if self.pageName == 'map':
+                self.show('home')
 
     def tapAt(self, point):
         for tap in reversed(self.taps):

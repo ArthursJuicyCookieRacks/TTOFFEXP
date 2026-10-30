@@ -23,8 +23,8 @@ REGEN_DELAY_LOW = 5.0
 REGEN_RATE = 25.0
 LOW_HP = 30
 # Walking, sprinting (and the sprint stamina in seconds) and jumping.
-WALK_SPEED = 16.0
-SPRINT_SPEED = 22.0
+WALK_SPEED = 18.0
+SPRINT_SPEED = 23.0
 SPRINT_TIME = 4.0
 SPRINT_RECOVER = 6.0
 JUMP_FORCE = 24.0
@@ -115,7 +115,7 @@ DOWN_LOSS = 0.05
 
 # --- Melee ---
 BONK_DAMAGE = 150
-BONK_REACH = 5.0
+BONK_REACH = 4.0
 BONK_TIME = 1.2
 
 # --- Stations ---
@@ -165,8 +165,8 @@ LURE = ToontownBattleGlobals.LURE_TRACK
 GAGS = {
     (THROW, 0): (30, 16, 48, 0.45, 0, 'tart'),
     (THROW, 1): (50, 16, 64, 0.4, 0, 'fruitpie-slice'),
-    (THROW, 2): (85, 10, 60, 0.5, 2, 'fruitpie'),
-    (THROW, 3): (135, 12, 72, 0.4, 0, 'creampie-slice'),
+    (THROW, 2): (85, 10, 60, 0.5, 0, 'creampie-slice'),
+    (THROW, 3): (135, 12, 72, 0.4, 2, 'fruitpie'),
     (THROW, 4): (200, 8, 48, 0.55, 2.5, 'creampie'),
     (THROW, 5): (500, 4, 32, 0.8, 4, 'birthday-cake'),
     (THROW, 6): (600, 3, 24, 0.9, 6, 'wedding-cake'),
@@ -192,6 +192,13 @@ GAGS = {
     (DROP, 5): (850, 2, 16, 1.2, 5, 'piano'),
     (DROP, 6): (900, 1, 36, 1.5, 9, 'ship'),
 }
+# Arthur (2026-10-30): Drop and Sound hit harder than the table above.
+DROP_SOUND_BOOST = 1.5
+for _key in list(GAGS):
+    if _key[0] in (DROP, SOUND):
+        _row = GAGS[_key]
+        GAGS[_key] = (int(_row[0] * DROP_SOUND_BOOST),) + _row[1:]
+del _key, _row
 # What the trunk hands out: every gag but the level 7s, no Toon-Up, no
 # Trap, Lure only as the Presentation.
 PRESENTATION = (LURE, 6)

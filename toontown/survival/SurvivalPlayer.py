@@ -258,7 +258,7 @@ class SurvivalPlayer(DirectObject):
 
     def wantsPointer(self):
         # A menu or the pause card up: the controller moves the pointer.
-        return self.game.paused or self.game.over
+        return self.game.paused or self.game.over or self.game.inMenu()
 
     def gamepadActive(self, on):
         if self.touch is not None:
@@ -320,7 +320,11 @@ class SurvivalPlayer(DirectObject):
         dt = globalClock.getDt()
         if self.game.paused:
             return task.cont
-        self.__readMouse()
+        inMenu = self.game.inMenu()
+        if inMenu:
+            self.lookDelta = Vec3(0)
+        else:
+            self.__readMouse()
         if self.lookDelta.lengthSquared() > 0:
             self.body.setH(self.body.getH() + self.lookDelta[0])
             self.pitch = max(-PITCH_LIMIT, min(PITCH_LIMIT, self.pitch + self.lookDelta[1]))
@@ -338,9 +342,9 @@ class SurvivalPlayer(DirectObject):
         else:
             self.stamina = min(G.SPRINT_TIME, self.stamina + dt * G.SPRINT_TIME / G.SPRINT_RECOVER)
             speed = G.WALK_SPEED
-        if self.down:
+        if self.down or inMenu:
             speed = 0.0
-        self.walker.setWalkSpeed(speed, G.JUMP_FORCE, speed * 0.6, 0)
+        self.walker.setWalkSpeed(speed, 0 if inMenu else G.JUMP_FORCE, speed * 0.6, 0)
         if self.down or not moving:
             self.moveState = 'idle'
         elif speed > G.WALK_SPEED:

@@ -104,6 +104,9 @@ GLOVE_TOP = 0.12
 # Gags carried on the palm that come in all sizes (a safe, a piano, a storm
 # cloud, a geyser...) are fitted to one size in the view, a pie's.
 FIT_SIZE = 0.85
+DROP_FIT_SIZE = 0.7
+# Facing the player a little, so a drop gag shows its front and its top.
+DROP_IN_VIEW_HPR = Vec3(-25, 12, 0)
 FIT_TRACKS = (G.DROP, G.LURE)
 FIT_PROPS = ('squirting-flower', 'stormcloud', 'geyser', 'firehose')
 ARMS_H = 14
@@ -624,7 +627,18 @@ class GagHandler:
                         size = max(high - low)
                         if size > 1e-4:
                             prop.setScale(FIT_SIZE / size)
-                if gag.track == G.THROW or self.arms.anim == 'throw':
+                if gag.track == G.DROP:
+                    # A drop gag stands upright on the open palm, a little
+                    # smaller than the glove so the fingers show round it.
+                    self.arms.toon.update(force=True)
+                    prop.setHpr(camera, DROP_IN_VIEW_HPR)
+                    low, high = prop.getTightBounds(camera)
+                    if low is not None:
+                        size = max(high - low)
+                        if size > 1e-4:
+                            prop.setScale(prop.getScale() * (DROP_FIT_SIZE / size))
+                    self.seatOnPalm(prop)
+                elif gag.track == G.THROW or self.arms.anim == 'throw':
                     # A pie (or a gag carried the same way) sits on the
                     # glove's palm, tipped so the player sees its top.
                     self.arms.toon.update(force=True)
@@ -954,7 +968,12 @@ class GagHandler:
         def land():
             eye = self.player.getEye()
             forward = self.player.getForward()
-            point, dist, cog = self.aimPoint(eye, forward, G.BONK_REACH)
+            point, dist, cog = self.aimPoint(eye, forward, G.BONK_REACH + 8.0)
+            # The reach counts from the cog's own body, not its middle (a big
+            # cog's middle is far inside it): a whack lands from about as
+            # far as a cog can swing at the toon.
+            if cog is not None and dist - cog.radius > G.BONK_REACH:
+                cog = None
             self.game.hud.bonk()
             if cog is not None:
                 base.playSfx(globalBattleSoundCache.getSound(MELEE_HIT_SOUND), volume=0.8)

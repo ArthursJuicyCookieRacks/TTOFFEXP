@@ -141,6 +141,8 @@ class SurvivalGame(DirectObject):
         self.beans = G.START_BEANS
         self.tonics = []
         self.secondWindBuys = 0
+        # While a Second Wind runs: when the player gets back up.
+        self.secondWindAt = None
         self.powers = {}
         self.cogs = []
         self.drops = []
@@ -304,6 +306,8 @@ class SurvivalGame(DirectObject):
         if self.lure:
             # A cog dropping in during a Presentation can't look away either.
             cog.lureTo(*self.lure)
+        elif self.secondWindAt is not None:
+            cog.fleeFrom(self.player.getPos(), self.secondWindAt)
         self.toSpawn -= 1
         self.nextSpawn = now + G.spawnDelay(self.roundNum) * random.uniform(0.7, 1.3)
 
@@ -491,13 +495,18 @@ class SurvivalGame(DirectObject):
 
     # --- What the player does ---
 
+    def inMenu(self):
+        # Freddy's tonic menu is up: the game carries on around the player
+        # (cogs keep coming and hitting), but the player's hands are busy.
+        return self.menuStation is not None
+
     def playerFires(self, held=False):
-        if self.over or self.paused:
+        if self.over or self.paused or self.inMenu():
             return False
         return self.gags.fire(held)
 
     def playerUses(self):
-        if self.over or self.paused or self.player.down:
+        if self.over or self.paused or self.inMenu() or self.player.down:
             return
         pos = self.player.getPos()
         for station in self.stations:
@@ -522,7 +531,7 @@ class SurvivalGame(DirectObject):
         if action == 'pause':
             self.togglePause()
             return
-        if self.paused or self.player.down:
+        if self.paused or self.inMenu() or self.player.down:
             return
         if action == 'reload':
             self.gags.reload()
@@ -547,11 +556,13 @@ class SurvivalGame(DirectObject):
 
     def __prompt(self):
         if self.player.down:
-            if self.hasTonic('wind'):
-                left = G.SECOND_WIND_DELAY - (globalClock.getFrameTime() - self.player.downSince)
+            if self.secondWindAt is not None:
+                left = self.secondWindAt - globalClock.getFrameTime()
                 return 'Second Wind in %d...' % max(0, int(left + 0.99))
             if any(not n.down for n in self.npcs):
                 return 'You went sad! Your friends are coming...'
+            return ''
+        if self.inMenu():
             return ''
         pos = self.player.getPos()
         for npc in self.npcs:
@@ -566,11 +577,23 @@ class SurvivalGame(DirectObject):
 
     def playerWentDown(self):
         self.count('player downs')
+        if self.menuStation is not None:
+            station = self.menuStation
+            self.menuStation = None
+            station.closeMenu()
         self.gags.cancelReload()
         self.beans = int(self.beans * (1 - G.DOWN_LOSS))
         self.hud.setBeans(self.beans)
         if self.hasTonic('wind'):
-            self.hud.say('You went sad! Second Wind kicks in soon.', 3.0)
+            # Second Wind: every cog runs off and every tonic is spent, then
+            # the toon gets back up on its own.
+            now = globalClock.getFrameTime()
+            self.secondWindAt = now + G.SECOND_WIND_DELAY
+            self.loseTonics()
+            for cog in self.cogs:
+                if not cog.dead:
+                    cog.fleeFrom(self.player.getPos(), self.secondWindAt)
+            self.hud.say('Second Wind! The cogs scatter. Your tonics are gone.', 3.0)
         elif any(not n.down for n in self.npcs):
             self.hud.say('You went sad! Hold on for your friends.', 3.0)
         else:
@@ -579,13 +602,16 @@ class SurvivalGame(DirectObject):
     def playerDownTick(self, dt):
         if self.over:
             return
-        since = globalClock.getFrameTime() - self.player.downSince
-        if self.hasTonic('wind') and since >= G.SECOND_WIND_DELAY:
-            self.tonics.remove('wind')
-            self.loseTonics()
-            self.player.getUp(G.PLAYER_HP)
-            self.hud.say('Second Wind! Your other tonics are gone.', 3.0)
-            self.count('second winds')
+        now = globalClock.getFrameTime()
+        since = now - self.player.downSince
+        if self.secondWindAt is not None:
+            # Nothing ends the game while a Second Wind runs (before, a toon
+            # with no friends left still lost on the first frame down).
+            if now >= self.secondWindAt:
+                self.secondWindAt = None
+                self.player.getUp(G.PLAYER_HP)
+                self.hud.say('Second Wind! Back on your feet.', 3.0)
+                self.count('second winds')
             return
         if since >= G.BLEED_OUT or not any(not n.down for n in self.npcs):
             self.gameOver()
@@ -593,6 +619,7 @@ class SurvivalGame(DirectObject):
     def revive(self, toon, by):
         base.playSfx(base.loader.loadSfx(REVIVE_SOUND), volume=0.6)
         if toon is self.player:
+            self.secondWindAt = None
             self.loseTonics(keepWind=True)
             self.player.getUp(G.PLAYER_HP // 2)
             self.hud.say('%s helped you up! Your tonics are gone.' % by.name, 3.0)
@@ -640,11 +667,11 @@ class SurvivalGame(DirectObject):
             station.closeMenu()
         self.player.grabMouse(True)
 
-    # A station's menu (Freddy's tonics) holds the game like the pause.
+    # A station's menu (Freddy's tonics) frees the mouse but does not stop
+    # the game: the cogs keep spawning and can hit the player there.
 
     def menuOpened(self, station):
         self.menuStation = station
-        self.paused = True
         self.player.grabMouse(False)
 
     def menuClosed(self, station):

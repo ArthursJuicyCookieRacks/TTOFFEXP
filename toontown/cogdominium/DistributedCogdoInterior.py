@@ -82,7 +82,7 @@ class DistributedCogdoInterior(DistributedObject.DistributedObject):
         self.elevatorMusic = base.loader.loadMusic('phase_7/audio/bgm/tt_elevator.ogg')
         self.fsm = ClassicFSM.ClassicFSM('DistributedCogdoInterior', [State.State('WaitForAllToonsInside', self.enterWaitForAllToonsInside, self.exitWaitForAllToonsInside, ['Elevator']),
          State.State('Elevator', self.enterElevator, self.exitElevator, ['Game']),
-         State.State('Game', self.enterGame, self.exitGame, ['Resting', 'Failed', 'BattleIntro']),
+         State.State('Game', self.enterGame, self.exitGame, ['Resting', 'Failed', 'BattleIntro', 'Elevator']),
          State.State('BarrelRoomIntro', self.enterBarrelRoomIntro, self.exitBarrelRoomIntro, ['CollectBarrels', 'Off']),
          State.State('CollectBarrels', self.enterCollectBarrels, self.exitCollectBarrels, ['BarrelRoomReward', 'Off']),
          State.State('BarrelRoomReward', self.enterBarrelRoomReward, self.exitBarrelRoomReward, ['Battle',
@@ -721,6 +721,7 @@ class DistributedCogdoInterior(DistributedObject.DistributedObject):
 
     def exitReward(self):
         self.notify.debug('exitReward')
+        taskMgr.remove(self.uniqueName('outroHold'))
         if self.penthouseOutroTrack:
             self.penthouseOutroTrack.finish()
             DelayDelete.cleanupDelayDeletes(self.penthouseOutroTrack)
@@ -782,9 +783,20 @@ class DistributedCogdoInterior(DistributedObject.DistributedObject):
         track.append(Sequence(Func(camera.wrtReparentTo, localAvatar), Func(camera.setPos, 0, -9, 9), Func(camera.lookAt, Point3(5, 15, 0)), Parallel(self.cage.posInterval(0.75, self.cagePos[1], blendType='easeOut'), SoundInterval(self.cageLowerSfx, duration=0.5)), Parallel(self.cageDoor.hprInterval(0.5, VBase3(0, 90, 0), blendType='easeOut'), Sequence(SoundInterval(self.cageDoorSfx), duration=0)), Wait(0.25), Func(self.shopOwnerNpc.wrtReparentTo, render), Func(self.shopOwnerNpc.setScale, 1), Func(self.shopOwnerNpc.loop, 'walk'), Func(self.shopOwnerNpc.headsUp, Point3(0, 10, 0)), ParallelEndTogether(self.shopOwnerNpc.posInterval(1.5, Point3(0, 10, 0)), self.shopOwnerNpc.hprInterval(0.5, VBase3(180, 0, 0), blendType='easeInOut')), Func(self.shopOwnerNpc.setChatAbsolute, TTLocalizer.CagedToonYippee, CFSpeech), ActorInterval(self.shopOwnerNpc, 'jump'), Func(self.shopOwnerNpc.loop, 'neutral'), Func(self.shopOwnerNpc.headsUp, localAvatar), Func(self.shopOwnerNpc.setLocalPageChat, speech, 0), Func(camera.lookAt, self.shopOwnerNpc, Point3(0, 0, 2))))
         self.activeIntervals[trackName] = track
         self.accept('doneChatPage', self.__outroPenthouseChatDone)
+        # The battle may still be handing the toon back to walking when the
+        # thank-you starts (the toon walked about while clicking through the
+        # SOS card's pages): hold the toon still until the thank-you is over.
+        taskMgr.add(self.__holdForOutro, self.uniqueName('outroHold'))
         return track
 
+    def __holdForOutro(self, task):
+        place = base.cr.playGame.getPlace()
+        if place and place.fsm.getCurrentState().getName() == 'walk':
+            place.fsm.request('stopped')
+        return task.cont
+
     def __outroPenthouseChatDone(self, elapsed = None):
+        taskMgr.remove(self.uniqueName('outroHold'))
         self.shopOwnerNpc.setChatAbsolute(TTLocalizer.CogdoExecutiveSuiteToonBye, CFSpeech)
         self.ignore('doneChatPage')
         track = Parallel(Sequence(ActorInterval(self.shopOwnerNpc, 'wave'), Func(self.shopOwnerNpc.loop, 'neutral')), Sequence(Wait(2.0), Func(self.exitCogdoBuilding), Func(base.camLens.setFov, ToontownGlobals.DefaultCameraFov)))

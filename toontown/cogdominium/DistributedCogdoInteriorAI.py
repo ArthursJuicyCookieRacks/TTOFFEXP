@@ -78,7 +78,7 @@ class DistributedCogdoInteriorAI(DistributedObjectAI):
         self.fsm = ClassicFSM.ClassicFSM('DistributedCogdoInteriorAI', [
             State.State('WaitForAllToonsInside', self.enterWaitForAllToonsInside, self.exitWaitForAllToonsInside, ['Elevator']),
             State.State('Elevator', self.enterElevator, self.exitElevator, ['Game']),
-            State.State('Game', self.enterGame, self.exitGame, ['Resting', 'Failed', 'BattleIntro']),
+            State.State('Game', self.enterGame, self.exitGame, ['Resting', 'Failed', 'BattleIntro', 'Elevator']),
             State.State('BattleIntro', self.enterBattleIntro, self.exitBattleIntro, ['Battle']),
             State.State('Battle', self.enterBattle, self.exitBattle, ['ReservesJoining', 'BattleDone']),
             State.State('ReservesJoining', self.enterReservesJoining, self.exitReservesJoining, ['Battle']),
@@ -338,8 +338,10 @@ class DistributedCogdoInteriorAI(DistributedObjectAI):
         if failed or not self.toons:
             self.b_setState('Failed')
         else:
-            self.d_setToons()
-            self.b_setState('Resting')
+            # The game's own exit is the way up (Arthur): everyone still in
+            # rides straight on to the next floor's battle, with no second
+            # elevator to walk into in an empty room.
+            self.handleAllAboard(list(self.toonIds))
 
     def __cleanupGame(self):
         if self.game:

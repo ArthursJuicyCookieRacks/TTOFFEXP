@@ -24,6 +24,7 @@ FLY_TIME = 3.2
 FLY_HEIGHT = 60.0
 # A cog in the way of another steps round it.
 CROWD_RADIUS = 3.0
+FLEE_DISTANCE = 45.0
 # How long a heading chosen to get round a wall is kept.
 STUCK_TIME = 15.0
 DETOUR_TIME = 0.8
@@ -372,6 +373,14 @@ class SurvivalCog:
         self.game.cogGone(self)
 
     # --- The lure ---
+
+    def fleeFrom(self, point, until):
+        # Second Wind: run straight away from the downed toon until it's up.
+        away = Vec3(self.pos[0] - point[0], self.pos[1] - point[1], 0)
+        if away.lengthSquared() < 0.01:
+            away = Vec3(1, 0, 0)
+        away.normalize()
+        self.lureTo(Point3(self.pos) + away * FLEE_DISTANCE, until)
 
     def lureTo(self, point, until):
         self.lure = Point3(point)
