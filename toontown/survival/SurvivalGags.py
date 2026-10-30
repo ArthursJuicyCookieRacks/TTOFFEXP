@@ -11,7 +11,7 @@ import math
 import random
 
 from direct.directnotify import DirectNotifyGlobal
-from direct.interval.IntervalGlobal import (ActorInterval, Func, LerpPosInterval, LerpScaleInterval, Parallel,
+from direct.interval.IntervalGlobal import (ActorInterval, Func, LerpPosHprInterval, LerpPosInterval, LerpScaleInterval, Parallel,
                                             Sequence, SoundInterval, Wait)
 from panda3d.core import LMatrix4, NodePath, Point2, Point3, Vec3, Vec4
 
@@ -42,6 +42,8 @@ VIEW_SCALE = {'ship': 0.05, 'piano': 0.15, 'safe': 0.3, 'weight': 0.35, 'anvil':
               'firehose': 0.3, 'wedding-cake': 0.35, 'birthday-cake': 0.4, 'singing': 0.4, 'fog_horn': 0.4,
               'elephant': 0.4, '1dollar': 0.4}
 CONE_HALF_ANGLE = 32.0
+MELEE_HIT_SOUND = 'MG_sfx_vine_game_bat_hit.ogg'
+MELEE_MISS_SOUND = 'AA_pie_throw_only.ogg'
 
 
 def soundFor(key):
@@ -64,7 +66,8 @@ BATTLE_POSES = {
     (G.SQUIRT, 4): ('firehose', 30, 30, 72, RIGHT),
     (G.SQUIRT, 5): ('throw', 38, 38, 52, RIGHT),
     (G.SQUIRT, 6): ('throw', 38, 38, 52, RIGHT),
-    G.SOUND: ('sound', 36, 40, 84, RIGHT),
+    # The megaphone is at the mouth on the frame the battle blasts (tSound).
+    G.SOUND: ('sound', 59, 50, 72, RIGHT),
     G.DROP: ('throw', 38, 38, 52, RIGHT),
     G.LURE: ('throw', 38, 38, 52, RIGHT),
 }
@@ -79,6 +82,10 @@ VIEW_POSE = {'throw': (Point3(1.25, 4.8, -1.35), 15), 'water-gun': (Point3(1.0, 
              'firehose': (Point3(1.1, 4.6, -1.3), -10), 'sound': (Point3(1.4, 5.6, -1.5), 0),
              'pushbutton': (Point3(0.7, 4.4, -1.2), 20)}
 ARMS_SCALE = 0.8
+# First person (sound gags): the eyes over the neck joint, toon units, and
+# where the camera sits from the eyes (camera space).
+EYE_OVER_NECK = 0.6
+SOUND_HAND_AT = Vec3(0.5, 2.4, -0.6)
 # Only the arm, the glove and the gag show, like a BO1 view model: the arm
 # comes in from the lower right of the frame toward the glove, and runs on
 # past the frame's edge, so its cut-off shoulder is never in view.
@@ -111,9 +118,23 @@ RIG_EASE = 7.0
 RIG_EASE_DOWN = 9.0
 RIG_BOB_EASE = 5.0
 SWITCH_DOWN = 0.3
+# The melee swing (camera space, about the camera): drawn back up and to
+# the right, then swung down across to the left, then back to the hold.
+WHACK_BACK = ((0.1, -0.2, 0.15), (-12, 12, -10))
+WHACK_THROUGH = ((-0.2, 0.35, 0.05), (24, 0, 15))
+WHACK_WINDUP = 0.1
+WHACK_STRIKE = 0.11
+WHACK_HOLD = 0.06
+WHACK_RECOVER = 0.3
 SWITCH_UP = 0.3
 # Battle offsets for props that do not sit square in the hand.
 PROP_IN_HAND = {'water-gun': (Point3(0.28, 0.1, 0.08), (85.6, -4.44, 94.43))}
+# Each level's instrument in the glove, as MovieSound places it (pos, hpr,
+# the scale it blasts at).
+INSTRUMENT_IN_HAND = {0: ((-1.1, -1.4, 0.1), (145, 0, 0), 0.65), 1: ((-1.2, -1.3, 0.1), (145, 0, 85), 0.2),
+                      2: ((-1.3, -1.4, 0.1), (145, 0, 85), 0.4), 3: ((-1.0, -1.5, 0.2), (145, 0, 85), 0.5),
+                      4: ((-0.6, -0.9, 0.15), (145, 0, 85), 0.15), 5: ((-0.8, -0.9, 0.2), (145, 0, 0), 0.15),
+                      6: ((-1.04, -1.17, 0.26), (145, 0, 90), 1.1)}
 # Sound gags ride inside the megaphone the way the battle shows them.
 INSTRUMENT_IN_MEGAPHONE = (Point3(-1.1, -1.4, 0.1), (145, 0, 0))
 # The megaphone is a big prop; this close to the camera it is shrunk.
@@ -179,7 +200,10 @@ class ToonArms:
         # idle sway, the walk and run bobs and the reload/switch put-away,
         # the toon under it keeps the hold pose (see animate()).
         self.rig = camera.attachNewNode('survivalArmsRig')
-        self.toon.reparentTo(self.rig)
+        # Between the rig and the toon: the melee swing (whack()).
+        self.swing = self.rig.attachNewNode('survivalArmsSwing')
+        self.swingTrack = None
+        self.toon.reparentTo(self.swing)
         self.toon.setScale(ARMS_SCALE)
         self.toon.setHpr(ARMS_H, 0, 0)
         self.toon.setDepthTest(1)
@@ -354,6 +378,25 @@ class ToonArms:
         self.start = start
         self.end = min(end, max(1, self.toon.getNumFrames(anim) or 1) - 1)
         self.toon.pose(anim, hold)
+        if getattr(self, 'hiddenHead', None) is not None:
+            self.hiddenHead.show()
+            self.hiddenHead = None
+        # The arm is aimed and grown for the rig at rest: a new gag arrives
+        # while the arms are lowered (a switch, the trunk), and aiming
+        # against the lowered, tilted rig left the arm bent and stretched
+        # once it came back up.
+        if self.swingTrack:
+            self.swingTrack.finish()
+            self.swingTrack = None
+        rigMat = self.rig.getMat()
+        self.rig.clearTransform()
+        if anim == 'sound':
+            # Sound gags are used the battle's way, the megaphone up at the
+            # mouth: the toon is put where its own eyes are the camera, so
+            # the view is the battle pose in first person.
+            self.firstPerson()
+            self.rig.setMat(rigMat)
+            return
         glove, pitch = VIEW_POSE.get(anim, VIEW_POSE['throw'])
         self.toon.setPosHpr(0, 0, 0, ARMS_H, pitch, 0)
         self.toon.setScale(ARMS_SCALE)
@@ -367,6 +410,25 @@ class ToonArms:
             self.grow *= 1.08
             self.toon.setScale(self.toon.getScale() * 1.08)
             self.placeGlove(side, glove)
+        self.rig.setMat(rigMat)
+
+    def firstPerson(self):
+        # Turned to face where the camera looks.
+        self.toon.setPosHpr(0, 0, 0, 0, 0, 0)
+        self.toon.setScale(ARMS_SCALE)
+        self.grow = 1.0
+        self.toon.update(force=True)
+        head = self.toon.find('**/1000/**/__Actor_head')
+        if head.isEmpty():
+            head = self.toon.find('**/__Actor_head')
+        # The camera is the toon's eyes: the head would fill the view, so
+        # it is hidden and the toon slides until the hand holding the
+        # megaphone to the mouth sits low in front of the camera.
+        if not head.isEmpty():
+            self.hiddenHead = head
+            head.hide()
+        hand = self.hand().getPos(self.swing)
+        self.toon.setPos(self.toon.getPos() - hand + SOUND_HAND_AT)
 
     def shoot(self, rate):
         """The arm goes through the battle motion (throw, squirt, shout,
@@ -378,9 +440,36 @@ class ToonArms:
         duration = min(max(rate * 0.8, 0.15), 0.6)
         self.track = Sequence(ActorInterval(self.toon, self.anim, startFrame=self.start, endFrame=self.end, duration=duration),
                               Func(self.toon.pose, self.anim, self.hold))
+        if self.anim == 'sound':
+            # The shout pushes the megaphone forward from the mouth and
+            # it settles back, as the battle toon leans into the blast.
+            if self.swingTrack:
+                self.swingTrack.finish()
+            self.swing.setPosHpr(0, 0, 0, 0, 0, 0)
+            self.swingTrack = Sequence(LerpPosHprInterval(self.swing, duration * 0.3, (0, 0.35, 0.05), (0, 4, 0), blendType='easeOut'),
+                                       LerpPosHprInterval(self.swing, duration * 0.7, (0, 0, 0), (0, 0, 0), blendType='easeInOut'))
+            self.swingTrack.start()
         self.track.start()
 
+    def whack(self, hit=None):
+        """The melee: the gag drawn back to the right and swung across the
+        view like a club, then back to the hold. hit() runs as it lands."""
+        if self.swingTrack:
+            self.swingTrack.finish()
+        windUp = LerpPosHprInterval(self.swing, WHACK_WINDUP, Point3(*WHACK_BACK[0]), Vec3(*WHACK_BACK[1]), blendType='easeOut')
+        strike = LerpPosHprInterval(self.swing, WHACK_STRIKE, Point3(*WHACK_THROUGH[0]), Vec3(*WHACK_THROUGH[1]), blendType='easeIn')
+        settle = LerpPosHprInterval(self.swing, WHACK_RECOVER, Point3(0, 0, 0), Vec3(0, 0, 0), blendType='easeInOut')
+        steps = [windUp, strike]
+        if hit is not None:
+            steps.append(Func(hit))
+        steps += [Wait(WHACK_HOLD), settle]
+        self.swingTrack = Sequence(*steps)
+        self.swingTrack.start()
+
     def destroy(self):
+        if self.swingTrack:
+            self.swingTrack.finish()
+            self.swingTrack = None
         if self.motionTrack:
             self.motionTrack.pause()
             self.motionTrack = None
@@ -509,14 +598,19 @@ class GagHandler:
             self.arms.holdPose(gag.track, gag.level)
             extras = []
             if gag.track == G.SOUND:
+                # Megaphone and instrument in the glove exactly as MovieSound
+                # puts them, at the size the instrument has when it blasts.
                 megaphone = BattleProps.globalPropPool.getProp('megaphone')
                 megaphone.reparentTo(self.arms.hand(RIGHT))
-                megaphone.setScale(MEGAPHONE_SCALE / self.arms.grow)
                 extras.append(megaphone)
                 prop.reparentTo(self.arms.hand(RIGHT))
-                pos, hpr = INSTRUMENT_IN_MEGAPHONE
-                prop.setPosHpr(pos * MEGAPHONE_SCALE / self.arms.grow, Vec3(*hpr))
-                prop.setScale(INSTRUMENT_SCALE.get(gag.prop, 0.5) * MEGAPHONE_SCALE / self.arms.grow)
+                pos, hpr, scale = INSTRUMENT_IN_HAND.get(gag.level, INSTRUMENT_IN_HAND[0])
+                prop.setPosHpr(Point3(*pos), Vec3(*hpr))
+                prop.setScale(Vec3(*scale) if isinstance(scale, tuple) else scale)
+                if gag.level == 6:
+                    # The Opera Singer's helmet sits over the eyes in first
+                    # person and hides the crosshair: only the megaphone shows.
+                    prop.hide()
             else:
                 prop.reparentTo(self.arms.hand(RIGHT))
                 pos, hpr = PROP_IN_HAND.get(gag.prop, (Point3(0, 0, 0), (0, 0, 0)))
@@ -631,17 +725,21 @@ class GagHandler:
         return gag
 
     def upgradeHeld(self):
-        gag = self.gag
-        if gag is None or gag.upgraded:
+        return self.upgradeGag(self.gag)
+
+    def upgradeGag(self, gag):
+        if gag is None or gag.upgraded or gag not in self.gags:
             return False
         gag.upgrade()
-        self.showHeld()
+        if gag is self.gag:
+            self.showHeld()
+        self.game.hud.setGag(self.gag, self.current, len(self.gags))
         return True
 
     def maxGags(self):
         for gag in self.gags:
             gag.maxOut()
-        self.presentations = min(self.presentations + 1, 2) if self.presentations else self.presentations
+        self.presentations = min(self.presentations + 1, G.PRESENTATION_MAX) if self.presentations else self.presentations
         self.game.hud.setGag(self.gag, self.current, len(self.gags))
 
     # --- Reloading ---
@@ -846,17 +944,27 @@ class GagHandler:
     # --- The bonk and the Presentation ---
 
     def bonk(self):
+        """The melee: a whack with the held gag, which uses none of it."""
         now = globalClock.getFrameTime()
         if now < self.bonkReady or self.player.down:
             return False
+        if self.arms is not None and (self.arms.lowered or self.pendingSwitch is not None):
+            return False
         self.bonkReady = now + G.BONK_TIME
-        eye = self.player.getEye()
-        forward = self.player.getForward()
-        point, dist, cog = self.aimPoint(eye, forward, G.BONK_REACH)
-        self.game.hud.bonk()
-        base.playSfx(globalBattleSoundCache.getSound('AA_heal_tickle.ogg'), volume=0.3)
-        if cog is not None:
-            self.game.damageCog(cog, G.BONK_DAMAGE, bonk=True)
+        def land():
+            eye = self.player.getEye()
+            forward = self.player.getForward()
+            point, dist, cog = self.aimPoint(eye, forward, G.BONK_REACH)
+            self.game.hud.bonk()
+            if cog is not None:
+                base.playSfx(globalBattleSoundCache.getSound(MELEE_HIT_SOUND), volume=0.8)
+                self.game.damageCog(cog, G.BONK_DAMAGE, bonk=True)
+            else:
+                base.playSfx(globalBattleSoundCache.getSound(MELEE_MISS_SOUND), volume=0.5)
+        if self.arms is not None:
+            self.arms.whack(land)
+        else:
+            land()
         return True
 
     def throwPresentation(self):

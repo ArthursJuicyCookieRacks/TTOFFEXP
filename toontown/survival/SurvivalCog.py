@@ -113,7 +113,10 @@ class SurvivalCog:
             self.prop = None
         self.suit.clearTransparency()
         self.state = 'chase'
-        self.__loop('walk' if self.speedClass == 0 else 'run', 1.0 if self.speedClass < 2 else 1.6)
+        if self.lure is not None:
+            self.__loop('run', 1.6)
+        else:
+            self.__loop('walk' if self.speedClass == 0 else 'run', 1.0 if self.speedClass < 2 else 1.6)
 
     def __loop(self, anim, rate=1.0):
         if self.anim != (anim, rate):
@@ -162,7 +165,10 @@ class SurvivalCog:
         elif now - self.lastProgress > STUCK_TIME and dist > 10.0 and self.lure is None:
             self.__reland(goal)
             return
-        self.__step(to / max(dist, 0.001), min(dist, self.speed * dt), now)
+        # A Presentation pulls hard: every cog hurries to it, so the ones
+        # across the playground get there before it pops.
+        speed = self.speed if self.lure is None else max(self.speed, G.COG_SPEEDS[-1])
+        self.__step(to / max(dist, 0.001), min(dist, speed * dt), now)
 
     def __reland(self, goal):
         player = self.game.player
@@ -236,7 +242,10 @@ class SurvivalCog:
         self.pos = new
         self.suit.setPos(new)
         self.__face(new + direction)
-        self.__loop('walk' if self.speedClass == 0 else 'run', 1.0 if self.speedClass < 2 else 1.6)
+        if self.lure is not None:
+            self.__loop('run', 1.6)
+        else:
+            self.__loop('walk' if self.speedClass == 0 else 'run', 1.0 if self.speedClass < 2 else 1.6)
 
     def __face(self, point):
         d = point - self.pos

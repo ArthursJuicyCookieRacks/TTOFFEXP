@@ -494,6 +494,11 @@ class DistributedCogdoInterior(DistributedObject.DistributedObject):
         for toon in self.toons:
             track.append(Func(toon.wrtReparentTo, render))
 
+        # The game before this floor can unload during the ride: finishing
+        # its end movie runs that movie's iris out after the one cleared at
+        # the start, and the screen stayed black for the rest of the office.
+        # The doors are open now, so the screen must be too.
+        track.append(Func(base.transitions.noTransitions))
         track.append(Func(callback))
         track.start(ts)
         self.activeIntervals[name] = track

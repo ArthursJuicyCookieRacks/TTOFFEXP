@@ -70,7 +70,10 @@ class CogdoGameMovie:
 
     def unload(self):
         if self._ival != None and self._ival.isPlaying():
-            self.finish()
+            # Stopped where it is: there is no self.finish (that raised), and
+            # finishing the ival would run its last steps, such as the
+            # flying game's iris out, after the next floor has started.
+            self._ival.pause()
         self._ival = None
         self._dialogueLabel.removeNode()
         del self._dialogueLabel

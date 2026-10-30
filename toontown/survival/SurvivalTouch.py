@@ -46,7 +46,7 @@ class SurvivalTouch(DirectObject):
         self.lookPad.bind(DGG.B1RELEASE, self.__endLook)
         self.buttons = []
         layout = (('FIRE', (-0.32, 0.55), 0.14, 'fire'), ('JUMP', (-0.62, 0.3), 0.1, 'jump'), ('USE', (-0.32, 0.95), 0.09, 'use'),
-                  ('RELOAD', (-0.62, 0.7), 0.09, 'reload'), ('SWAP', (-0.92, 0.5), 0.085, 'swap'), ('BONK', (-0.62, 1.0), 0.085, 'bonk'),
+                  ('RELOAD', (-0.62, 0.7), 0.09, 'reload'), ('SWAP', (-0.92, 0.5), 0.085, 'swap'), ('MELEE', (-0.62, 1.0), 0.085, 'bonk'),
                   ('GIFT', (-0.92, 0.8), 0.085, 'grenade'), ('II', (-0.12, 1.85), 0.06, 'pause'))
         for label, (x, z), radius, action in layout:
             b = DirectFrame(parent=base.a2dBottomRight, relief=None, state=DGG.NORMAL, sortOrder=-5, pos=(x, 0, z),

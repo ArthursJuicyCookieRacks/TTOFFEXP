@@ -98,6 +98,7 @@ class MickeyStation(Station):
             self.floatText('Not enough jellybeans!', (1, 0.4, 0.4, 1))
             return False
         self.busy = True
+        self.working = gag
         self.game.gags.cancelReload()
         self.game.gags.hideHeld()
         # Mickey only has walk, run and neutral: he paces while he works.
@@ -111,9 +112,11 @@ class MickeyStation(Station):
         self.busy = False
         if self.char is not None and not self.char.isEmpty():
             self.char.loop('neutral')
-        self.game.gags.upgradeHeld()
+        gag = getattr(self, 'working', None) or self.game.gags.gag
+        self.working = None
+        self.game.gags.upgradeGag(gag)
         self.game.gags.showHeld()
-        self.game.hud.say('Upgraded: %s!' % self.game.gags.gag.name, 2.5)
+        self.game.hud.say('Upgraded: %s!' % gag.name, 2.5)
         self.game.count('upgrades')
 
     def destroy(self):
@@ -188,6 +191,19 @@ class TrunkStation(Station):
             return False
         if self.offer is not None:
             track, level = self.offer
+            if self.offer == G.PRESENTATION:
+                # Not a gag slot: it goes in the Presentation pocket.
+                gags = self.game.gags
+                if gags.presentations >= G.PRESENTATION_MAX:
+                    self.floatText('Your pockets are full!', (1, 0.4, 0.4, 1))
+                    return False
+                self.__clearOffer()
+                gags.presentations += 1
+                self.game.hud.setGag(gags.gag, gags.current, len(gags.gags))
+                self.game.hud.say('Got a Presentation! Press the Presentation button to throw it.', 2.5)
+                self.game.count('trunk gags')
+                self.readyAt = now + G.TRUNK_REUSE
+                return True
             self.__clearOffer()
             gag = self.game.gags.give(track, level)
             self.game.hud.say('Got a %s!' % gag.name, 2.0)
@@ -230,7 +246,7 @@ class TrunkStation(Station):
         if self.shown is not None:
             self.shown.removeNode()
         track, level = key
-        name = G.GAGS[key][5]
+        name = '1dollar' if key == G.PRESENTATION else G.GAGS[key][5]
         prop = BattleProps.globalPropPool.getProp(name)
         prop.reparentTo(self.stage)
         # Every gag shown the same size, fitted to the trunk's opening.
@@ -239,6 +255,9 @@ class TrunkStation(Station):
         size = max(high[0] - low[0], high[1] - low[1], high[2] - low[2]) if low is not None else 1.0
         prop.setScale(self.SHOW_SIZE / max(size, 0.01))
         prop.setH(random.uniform(-40, 40))
+        if key == G.PRESENTATION:
+            # The flat bill turns to face whoever looks at the trunk.
+            prop.setBillboardPointEye()
         # Up out of the trunk and hanging there.
         prop.setPos(0, 0, 0)
         LerpPosInterval(prop, 0.18, Point3(0, 0, 1.6), startPos=Point3(0, 0, 0), blendType='easeOut').start()

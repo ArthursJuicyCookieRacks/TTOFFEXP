@@ -33,7 +33,7 @@ KEYS = {
     'sprint': ('shift', 'lshift', 'rshift'),
 }
 # The controller (BO1's layout): the left stick walks, the right stick looks,
-# RT fires, A jumps, X reloads or uses, Y swaps gags, RB throws the
+# RT fires, A jumps, X reloads (tap) or uses (hold), Y swaps gags, RB throws the
 # Presentation, R3 bonks, L3 sprints, the D-pad picks a gag, Start pauses.
 GAMEPAD_BUTTONS = {
     'rtrigger': ('action', 'fire'),
@@ -56,7 +56,7 @@ GAMEPAD_BUTTONS = {
 GAMEPAD_LOOK_SPEED = 150.0
 GAMEPAD_LOOK_DEAD_ZONE = 0.15
 GAMEPAD_WALK_DEAD_ZONE = 0.3
-# X tapped uses; X held this long reloads.
+# X tapped reloads; X held this long uses.
 GAMEPAD_HOLD_TIME = 0.35
 SLIDE_TOKENS = ('slideLeft', 'slideRight')
 ACTIONS = {
@@ -222,17 +222,21 @@ class SurvivalPlayer(DirectObject):
             else:
                 taskMgr.remove('survivalHoldX')
                 if self.xHeldSince is not None:
-                    # Let go before the hold time: a tap, which uses.
+                    # Let go before the hold time: a tap, which reloads.
                     self.xHeldSince = None
+                    self.game.playerAction('reload')
+                else:
+                    # The end of a hold: the use (a revive) stops.
                     self.using = False
-                    self.game.playerUses()
         elif down:
             self.game.playerAction(action)
 
     def __holdX(self, task):
-        # X held: reload, and the release is not a tap any more.
+        # X held: use (and keep using, for a revive, until it is let go);
+        # the release is not a tap any more.
         self.xHeldSince = None
-        self.game.playerAction('reload')
+        self.using = True
+        self.game.playerUses()
         return task.done
 
     def touchMove(self, x, y):

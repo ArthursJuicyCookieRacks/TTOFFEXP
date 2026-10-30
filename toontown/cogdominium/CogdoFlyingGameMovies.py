@@ -140,5 +140,14 @@ class CogdoFlyingGameFinish(CogdoGameMovie):
 
         self._ival = Sequence(showExitIval, Func(self._exit.open), Func(showPlayersLeaving), Wait(Globals.Gameplay.FinishDurationSeconds - exitDur - 1.0), Func(base.transitions.irisOut), Wait(1.0))
 
+    def end(self):
+        # The game can end before this movie does (the next floor's
+        # elevator already showing). Finishing it then would run its iris
+        # out over the elevator and leave the screen black, so it just stops.
+        if self._ival is not None and self._ival.isPlaying():
+            self._ival.pause()
+        elif self._ival is not None:
+            self._ival.finish()
+
     def unload(self):
         CogdoGameMovie.unload(self)

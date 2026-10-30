@@ -15,7 +15,7 @@ from direct.directnotify import DirectNotifyGlobal
 from direct.interval.IntervalGlobal import Func, LerpColorScaleInterval, LerpPosInterval, Sequence, Wait
 from direct.showbase.DirectObject import DirectObject
 from direct.showbase.PythonUtil import Functor
-from panda3d.core import CollisionTraverser, Point3, TextNode, Vec3, Vec4
+from panda3d.core import ClockObject, CollisionTraverser, Point3, TextNode, Vec3, Vec4
 
 from toontown.survival import SurvivalGlobals as G
 from toontown.survival.SurvivalArena import SurvivalArena
@@ -133,6 +133,7 @@ class SurvivalGame(DirectObject):
         self.over = False
         self.paused = False
         self.menuStation = None
+        self.frozenAt = None
         self.roundNum = 0
         self.snatcherRound = False
         self.nextSnatcherRound = random.randint(*G.FIRST_SNATCHER_ROUND)
@@ -204,6 +205,7 @@ class SurvivalGame(DirectObject):
         self.roundChangeAt = globalClock.getFrameTime() + 4.0
 
     def destroy(self):
+        self.thawClock()
         self.over = True
         taskMgr.remove('survivalGame')
         self.ignoreAll()
@@ -299,6 +301,9 @@ class SurvivalGame(DirectObject):
         self.cogSerial += 1
         cog = SurvivalCog(self, name, landing, self.roundNum, snatcher=self.snatcherRound)
         self.cogs.append(cog)
+        if self.lure:
+            # A cog dropping in during a Presentation can't look away either.
+            cog.lureTo(*self.lure)
         self.toSpawn -= 1
         self.nextSpawn = now + G.spawnDelay(self.roundNum) * random.uniform(0.7, 1.3)
 
@@ -602,11 +607,31 @@ class SurvivalGame(DirectObject):
             self.resume()
             return
         self.paused = True
+        self.freezeClock()
         self.player.grabMouse(False)
         self.hud.showCard('Paused', ['Round %d' % self.roundNum, '%d cogs popped' % self.stats.get('cogs popped', 0)],
                           [('Resume', self.resume), ('Quit', self.quit)])
 
+    def freezeClock(self):
+        # The pause stops the game clock itself, so every animation, gag in
+        # flight, cog attack, reload and timer holds on the exact frame and
+        # carries on from it: nothing catches up when the game resumes.
+        if self.frozenAt is not None:
+            return
+        self.frozenAt = globalClock.getFrameTime()
+        globalClock.setMode(ClockObject.MSlave)
+        globalClock.setFrameTime(self.frozenAt)
+        globalClock.setDt(0)
+
+    def thawClock(self):
+        if self.frozenAt is None:
+            return
+        globalClock.setRealTime(self.frozenAt)
+        globalClock.setMode(ClockObject.MNormal)
+        self.frozenAt = None
+
     def resume(self):
+        self.thawClock()
         self.paused = False
         self.hud.closeCard()
         if self.menuStation is not None:
@@ -651,6 +676,7 @@ class SurvivalGame(DirectObject):
         messenger.send(self.doneEvent, [{'mode': 'again', 'npcs': self.npcCount}])
 
     def quit(self):
+        self.thawClock()
         messenger.send(self.doneEvent, [{'mode': 'quit'}])
 
     @staticmethod

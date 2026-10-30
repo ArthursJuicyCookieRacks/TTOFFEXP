@@ -114,7 +114,7 @@ BEANS_TOONADO = 400
 DOWN_LOSS = 0.05
 
 # --- Melee ---
-BONK_DAMAGE = 100
+BONK_DAMAGE = 150
 BONK_REACH = 5.0
 BONK_TIME = 1.2
 
@@ -194,8 +194,9 @@ GAGS = {
 }
 # What the trunk hands out: every gag but the level 7s, no Toon-Up, no
 # Trap, Lure only as the Presentation.
-TRUNK_GAGS = [key for key in GAGS if key[1] < 6]
 PRESENTATION = (LURE, 6)
+TRUNK_GAGS = [key for key in GAGS if key[1] < 6] + [PRESENTATION]
+PRESENTATION_MAX = 2
 PRESENTATION_LURE = 15.0
 PRESENTATION_RANGE = 40.0
 PRESENTATION_DAMAGE = 500

@@ -591,10 +591,36 @@ class ToonBase(OTPBase.OTPBase):
 
 
 class CrowdShadowTraverser(CollisionTraverser):
-    """base.shadowTrav that skips every other frame when it has many rays."""
+    """base.shadowTrav that skips every other frame when it has many rays.
+
+    Only the drop shadows skip. The local toon's walker also puts its floor
+    lifter (gravity) and event sphere here; those run every frame in their
+    own pass, or the gravity handler only falls on every other frame and a
+    jump near a crowd floats down at half gravity."""
     CROWD = 16
 
+    def __init__(self, name):
+        CollisionTraverser.__init__(self, name)
+        self.always = CollisionTraverser(name + '-always')
+        self.always.setRespectPrevTransform(False)
+
+    def addCollider(self, collider, handler):
+        if type(handler) in (CollisionHandlerGravity, CollisionHandlerEvent):
+            self.always.addCollider(collider, handler)
+        else:
+            CollisionTraverser.addCollider(self, collider, handler)
+
+    def removeCollider(self, collider):
+        removed = self.always.removeCollider(collider)
+        return CollisionTraverser.removeCollider(self, collider) or removed
+
+    def clearColliders(self):
+        self.always.clearColliders()
+        CollisionTraverser.clearColliders(self)
+
     def traverse(self, root):
+        if self.always.getNumColliders():
+            self.always.traverse(root)
         if self.getNumColliders() > self.CROWD and globalClock.getFrameCount() % 2:
             return
         CollisionTraverser.traverse(self, root)

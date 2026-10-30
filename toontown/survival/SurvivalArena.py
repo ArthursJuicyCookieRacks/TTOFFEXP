@@ -309,6 +309,76 @@ class SurvivalArena:
         self.reachList = list(self.reach.values())
         self.notify.info('reach: %d cells' % len(self.reachList))
 
+    def nearestCell(self, p):
+        step = self.REACH_STEP
+        cell = (int(round(p[0] / step)), int(round(p[1] / step)))
+        reach = getattr(self, 'reach', None) or {}
+        if cell in reach:
+            return cell
+        best, bestDist = None, None
+        for r in range(1, 4):
+            for di in range(-r, r + 1):
+                for dj in range(-r, r + 1):
+                    c = (cell[0] + di, cell[1] + dj)
+                    if c in reach:
+                        d = di * di + dj * dj
+                        if bestDist is None or d < bestDist:
+                            best, bestDist = c, d
+            if best is not None:
+                return best
+        return None
+
+    def path(self, a, b):
+        """Points to walk from a to b over the open playground's cells
+        (breadth first, eight ways), ending at b itself; [b] when the way
+        is clear or the grid doesn't know either end."""
+        if self.walkable(a, b):
+            return [Point3(b)]
+        reach = getattr(self, 'reach', None) or {}
+        start, goal = self.nearestCell(a), self.nearestCell(b)
+        if start is None or goal is None or start == goal:
+            return [Point3(b)]
+        came = {start: None}
+        frontier = [start]
+        while frontier and goal not in came:
+            nxt = []
+            for cell in frontier:
+                for di, dj in ((1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1)):
+                    c = (cell[0] + di, cell[1] + dj)
+                    if c in came or c not in reach:
+                        continue
+                    if di and dj and ((cell[0] + di, cell[1]) not in reach or (cell[0], cell[1] + dj) not in reach):
+                        continue
+                    came[c] = cell
+                    nxt.append(c)
+            frontier = nxt
+        if goal not in came:
+            return [Point3(b)]
+        cells = []
+        c = goal
+        while c is not None:
+            cells.append(c)
+            c = came[c]
+        cells.reverse()
+        points = [reach[c] for c in cells[1:-1]]
+        # Skip the corners a straight walk can cut.
+        out = []
+        here = Point3(a)
+        i = 0
+        while i < len(points):
+            j = len(points) - 1
+            while j > i and not self.walkable(here, points[j]):
+                j -= 1
+            out.append(points[j])
+            here = points[j]
+            i = j + 1
+        out.append(Point3(b))
+        return out
+
+    def randomSpot(self):
+        spots = self.landingSpots()
+        return Point3(random.choice(spots)) if spots else None
+
     def landingSpots(self):
         return getattr(self, 'reachList', None) or []
 
