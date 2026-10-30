@@ -1,6 +1,7 @@
 from direct.showbase.DirectObject import DirectObject
-if __debug__:
-    from direct.showbase.PythonUtil import lineInfo
+# Imported always: the release build runs with -O (no __debug__) and
+# still reaches the code that uses it.
+from direct.showbase.PythonUtil import lineInfo
 import string
 from direct.directnotify import DirectNotifyGlobal
 

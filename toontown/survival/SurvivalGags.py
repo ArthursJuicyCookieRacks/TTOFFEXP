@@ -85,7 +85,7 @@ ARMS_SCALE = 0.8
 # First person (sound gags): the eyes over the neck joint, toon units, and
 # where the camera sits from the eyes (camera space).
 EYE_OVER_NECK = 0.6
-SOUND_HAND_AT = Vec3(0.5, 2.4, -0.6)
+SOUND_HAND_AT = Vec3(0.6, 3.4, -0.85)
 # Only the arm, the glove and the gag show, like a BO1 view model: the arm
 # comes in from the lower right of the frame toward the glove, and runs on
 # past the frame's edge, so its cut-off shoulder is never in view.

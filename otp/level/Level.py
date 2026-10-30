@@ -1,8 +1,9 @@
 from direct.directnotify import DirectNotifyGlobal
 import string
 from . import LevelConstants
-if __debug__:
-    from direct.showbase.PythonUtil import lineInfo, uniqueElements
+# Imported always: the release build runs with -O (no __debug__) and
+# still reaches the code that uses it.
+from direct.showbase.PythonUtil import lineInfo, uniqueElements
 import types
 
 class Level:

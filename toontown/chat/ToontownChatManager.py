@@ -1,7 +1,8 @@
 import sys
 from direct.showbase import DirectObject
-if __debug__:
-    from direct.showbase.PythonUtil import traceFunctionCall
+# Imported always: the release build runs with -O (no __debug__) and
+# still reaches the code that uses it.
+from direct.showbase.PythonUtil import traceFunctionCall
 from otp.otpbase import OTPGlobals
 from otp.otpbase import OTPLocalizer
 from toontown.toonbase import TTLocalizer

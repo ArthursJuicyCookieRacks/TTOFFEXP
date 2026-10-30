@@ -11,8 +11,9 @@ from toontown.toontowngui import TTDialog
 from toontown.toontowngui.TeaserPanel import TeaserPanel
 from toontown.parties.InviteVisual import InviteVisual
 from . import CatalogItem
-if __debug__:
-    from direct.showbase.PythonUtil import StackTrace
+# Imported always: the release build runs with -O (no __debug__) and
+# still reaches the code that uses it.
+from direct.showbase.PythonUtil import StackTrace
 
 class MailboxScreen(DirectObject.DirectObject):
     notify = directNotify.newCategory('MailboxScreen')

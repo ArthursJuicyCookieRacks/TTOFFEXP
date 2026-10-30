@@ -21,8 +21,9 @@ import random
 import time
 import string
 import copy
-if __debug__:
-    from direct.showbase.PythonUtil import StackTrace
+# Imported always: the release build runs with -O (no __debug__) and
+# still reaches the code that uses it.
+from direct.showbase.PythonUtil import StackTrace
 from .PetMoverAI import PetMoverAI
 
 class DistributedPetAI(DistributedSmoothNodeAI.DistributedSmoothNodeAI, PetLookerAI.PetLookerAI, PetBase.PetBase):

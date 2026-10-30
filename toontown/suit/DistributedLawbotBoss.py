@@ -4,8 +4,9 @@ from direct.interval.IntervalGlobal import *
 from toontown.battle.BattleProps import *
 from direct.distributed.ClockDelta import *
 from direct.showbase.PythonUtil import Functor
-if __debug__:
-    from direct.showbase.PythonUtil import StackTrace
+# Imported always: the release build runs with -O (no __debug__) and
+# still reaches the code that uses it.
+from direct.showbase.PythonUtil import StackTrace
 from direct.gui.DirectGui import *
 from panda3d.core import *
 from direct.fsm import FSM
