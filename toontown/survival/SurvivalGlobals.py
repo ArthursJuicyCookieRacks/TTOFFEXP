@@ -137,7 +137,7 @@ DOWN_LOSS = 0.05
 
 # --- Melee ---
 BONK_DAMAGE = 150
-BONK_REACH = 4.0
+BONK_REACH = 5.0
 BONK_TIME = 1.2
 
 # --- Stations ---
@@ -145,7 +145,9 @@ TRUNK_COST = 950
 TRUNK_SALE_COST = 10
 TRUNK_CYCLE = 4.0
 TRUNK_OFFER = 10.0
-TRUNK_REUSE = 3.0
+# A moment after a gag is taken (or sinks back) before the trunk opens
+# again, so one press doesn't take a gag and buy another.
+TRUNK_REUSE = 0.4
 # The Doodle (BO1's teddy bear): never in the first 3 goes, then the odds
 # climb; the trunk shuts for a while and the beans come back.
 DOODLE_ODDS = ((3, 0.0), (7, 0.15), (12, 0.3), (999, 0.5))
@@ -225,12 +227,35 @@ del _key, _row
 # Trap, Lure only as the Presentation.
 PRESENTATION = (LURE, 6)
 TRUNK_GAGS = [key for key in GAGS if key[1] < 6] + [PRESENTATION]
-PRESENTATION_MAX = 2
+# The Presentation (BO1's special grenade): three of them when the trunk
+# gives it, and a Max Gags fills them back to three from then on.
+PRESENTATION_MAX = 3
 PRESENTATION_LURE = 15.0
 PRESENTATION_RANGE = 40.0
 PRESENTATION_DAMAGE = 500
 PRESENTATION_POP = 8.0
 STARTING_GAG = (THROW, 0)
+
+# --- TNT (BO1's frag grenades) ---
+# Two more every round, four at most; a Max Gags fills them up. Thrown in
+# an arc, it bounces and goes off TNT_FUSE seconds after leaving the hand.
+# BO1 frags kill outright in the early rounds and fall off as the zombies'
+# health grows past them (around round 10): the blast's middle does
+# 150 + 100 a round (most 1500), the edge a quarter of it. Like a frag,
+# it can hurt the toon who threw it.
+TNT_PER_ROUND = 2
+TNT_MAX = 4
+TNT_FUSE = 2.2
+TNT_RADIUS = 15.0
+TNT_THROW_SPEED = 38.0
+TNT_THROW_UP = 12.0
+TNT_GRAVITY = 64.0
+TNT_SELF_DAMAGE = 60
+TNT_SELF_RADIUS = 8.0
+
+
+def tntDamage(roundNum):
+    return min(1500, 150 + 100 * roundNum)
 GAG_SLOTS = 2
 RELOAD_TIME = 1.8
 # Throw and Squirt fly this fast; Drop gags fall onto the aim point.

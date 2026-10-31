@@ -64,7 +64,7 @@ class SurvivalHUD:
         self.reloadBar.hide()
         self.reloadTrack = None
         self.grenadeText = OnscreenText(parent=self.gagBox, text='', font=face, fg=(1, 0.85, 0.4, 1), shadow=(0, 0, 0, 1),
-                                        scale=0.04, pos=(-0.02, 0.045), align=TextNode.ARight, mayChange=True)
+                                        scale=0.045, pos=(-0.02, 0.115), align=TextNode.ARight, mayChange=True)
         # Power-ups along the top.
         self.powerText = OnscreenText(parent=base.a2dTopCenter, text='', font=sign, fg=(1, 0.9, 0.3, 1), shadow=(0, 0, 0, 1),
                                       scale=0.06, pos=(0, -0.09), mayChange=True)
@@ -128,8 +128,15 @@ class SurvivalHUD:
         self.gagName.setText(gag.name)
         self.ammoText.setText('%d / %d' % (gag.clip, gag.reserve))
         self.slotText.setText(' '.join(('[%d]' if i == index else '%d') % (i + 1) for i in range(count)))
-        gifts = getattr(self.game.gags, 'presentations', 0) if self.game.gags else 0
-        self.grenadeText.setText(('Presentation x%d' % gifts) if gifts else '')
+        gags = self.game.gags
+        gifts = getattr(gags, 'presentations', 0) if gags else 0
+        tnt = getattr(gags, 'tnt', 0) if gags else 0
+        parts = []
+        if tnt:
+            parts.append('TNT x%d' % tnt)
+        if gifts:
+            parts.append('Presentation x%d' % gifts)
+        self.grenadeText.setText('   '.join(parts))
 
     def setReloading(self, seconds):
         if seconds <= 0:

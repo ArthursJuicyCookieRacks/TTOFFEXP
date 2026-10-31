@@ -37,16 +37,17 @@ KEYS = {
     'sprint': ('shift', 'lshift', 'rshift'),
 }
 # The controller (BO1's layout): the left stick walks, the right stick looks,
-# RT fires, A jumps, X reloads (tap) or uses (hold), Y swaps gags, RB throws the
-# Presentation, R3 bonks, L3 sprints, the D-pad picks a gag, Start pauses.
+# RT fires, A jumps, X reloads (tap) or uses (hold), Y swaps gags, RB throws
+# TNT (BO1's lethal grenade), LB the Presentation (BO1's special grenade),
+# R3 bonks, L3 sprints, the D-pad picks a gag, Start pauses.
 GAMEPAD_BUTTONS = {
     'rtrigger': ('action', 'fire'),
     'face_a': ('key', 'jump'),
     'face_x': ('action', 'useOrReload'),
     'face_y': ('action', 'swap'),
     
-    'rshoulder': ('action', 'grenade'),
-    'lshoulder': ('action', 'reload'),
+    'rshoulder': ('action', 'tnt'),
+    'lshoulder': ('action', 'grenade'),
     'rstick': ('action', 'bonk'),
     'lstick': ('key', 'sprint'),
     'dpad_left': ('action', 'gag1'),
@@ -69,9 +70,12 @@ ACTIONS = {
     'use': ('e', 'f'),
     'gag1': ('1',),
     'gag2': ('2',),
-    'swap': ('q', 'wheel_up', 'wheel_down'),
+    # BO1 on a computer: G throws the lethal grenade (TNT), Q the special
+    # one (the Presentation); the wheel or Tab swaps gags.
+    'swap': ('tab', 'wheel_up', 'wheel_down'),
     'bonk': ('v', 'mouse3'),
-    'grenade': ('g', 'mouse2'),
+    'tnt': ('g',),
+    'grenade': ('q',),
     'pause': ('escape',),
 }
 

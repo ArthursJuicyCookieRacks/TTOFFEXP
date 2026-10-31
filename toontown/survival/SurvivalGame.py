@@ -269,6 +269,7 @@ class SurvivalGame(DirectObject):
             self.toSpawn = G.cogsInRound(self.roundNum, self.npcCount)
         self.nextSpawn = globalClock.getFrameTime() + 1.0
         self.dropsThisRound = 0
+        self.gags.addTnt(G.TNT_PER_ROUND)
         self.hud.setRound(self.roundNum)
         self.arena.setFog(self.snatcherRound)
         if self.snatcherRound:
@@ -599,6 +600,8 @@ class SurvivalGame(DirectObject):
                 self.gags.bonk()
         elif action == 'grenade':
             self.gags.throwPresentation()
+        elif action == 'tnt':
+            self.gags.throwTnt()
 
     def __prompt(self):
         if self.player.down:
