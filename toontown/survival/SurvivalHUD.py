@@ -81,9 +81,11 @@ class SurvivalHUD:
         self.hurtFrame.hide()
         self.hurtTrack = None
         self.card = None
+        self.downFrames = None
         self.setLaff(G.PLAYER_HP, G.PLAYER_HP)
 
     def destroy(self):
+        self.setDowned(False)
         for track in (self.noticeTrack, self.hurtTrack, self.reloadTrack):
             if track:
                 track.finish()
@@ -195,6 +197,68 @@ class SurvivalHUD:
             self.hurtFrame['frameColor'] = (0.6, 0, 0, 0.18)
         elif not self.hurtTrack or not self.hurtTrack.isPlaying():
             self.hurtFrame.hide()
+
+    # --- Downed (BO1's last stand) ---
+
+    @staticmethod
+    def vignetteTexture(size=128):
+        """A red ring, clear in the middle and thick at the edges."""
+        from panda3d.core import PNMImage, Texture
+        image = PNMImage(size, size, 4)
+        half = (size - 1) / 2.0
+        for y in range(size):
+            for x in range(size):
+                dx, dy = (x - half) / half, (y - half) / half
+                d = min(1.0, (dx * dx + dy * dy) ** 0.5 / 1.2)
+                a = max(0.0, (d - 0.3) / 0.7) ** 1.25
+                image.setXelA(x, y, 0.8, 0.0, 0.0, min(0.95, a * 1.1))
+        tex = Texture('survivalDownVignette')
+        tex.load(image)
+        tex.setWrapU(Texture.WMClamp)
+        tex.setWrapV(Texture.WMClamp)
+        return tex
+
+    def setDowned(self, on):
+        """Going sad: the world goes grey and a red edge beats like a heart
+        (BO1's downed screen), until the toon is back up."""
+        if not on:
+            taskMgr.remove('survivalDownPulse')
+            if self.downFrames is not None:
+                for frame in self.downFrames:
+                    frame.destroy()
+                self.downFrames = None
+            return
+        if self.downFrames is not None:
+            return
+        # Grey over everything, drawn under the HUD (render2d's back).
+        grey = DirectFrame(parent=render2d, relief=DGG.FLAT, frameColor=(0.42, 0.42, 0.44, 0.55), frameSize=(-1, 1, -1, 1),
+                           sortOrder=-30)
+        grey.setBin('background', 0)
+        grey.setDepthWrite(0)
+        ring = DirectFrame(parent=render2d, relief=DGG.FLAT, frameColor=(1, 1, 1, 1), frameSize=(-1, 1, -1, 1),
+                           image=self.vignetteTexture(), image_scale=(1, 1, 1), sortOrder=-29)
+        ring.setTransparency(1)
+        ring['frameColor'] = (0, 0, 0, 0)
+        ring.setBin('background', 1)
+        ring.setDepthWrite(0)
+        self.downFrames = [grey, ring]
+        self.downStart = globalClock.getFrameTime()
+        taskMgr.add(self.__downPulse, 'survivalDownPulse')
+
+    def __downPulse(self, task):
+        import math
+        if self.downFrames is None:
+            return task.done
+        grey, ring = self.downFrames
+        t = globalClock.getFrameTime() - self.downStart
+        # A heartbeat: two quick beats, then a rest; quicker as time runs out.
+        rate = 0.9 + min(1.0, t / G.BLEED_OUT) * 0.6
+        beat = (t * rate) % 1.0
+        pulse = math.exp(-((beat - 0.08) / 0.06) ** 2) + 0.7 * math.exp(-((beat - 0.3) / 0.06) ** 2)
+        ring.setColorScale(1, 1, 1, 0.45 + 0.55 * min(1.0, pulse))
+        ring.setScale(1.0 + 0.04 * pulse)
+        grey['frameColor'] = (0.45 + 0.12 * pulse, 0.36, 0.38, 0.5 + 0.08 * pulse)
+        return task.cont
 
     def ring(self, reach):
         pass

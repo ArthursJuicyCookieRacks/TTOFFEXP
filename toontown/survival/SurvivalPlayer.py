@@ -511,6 +511,7 @@ class SurvivalPlayer(DirectObject):
         self.lastHurt = globalClock.getFrameTime()
         self.head.setZ(G.EYE_HEIGHT)
         self.game.hud.setLaff(self.hp, self.maxHp)
+        self.game.hud.setDowned(False)
 
     def setMaxHp(self, maxHp):
         self.maxHp = maxHp

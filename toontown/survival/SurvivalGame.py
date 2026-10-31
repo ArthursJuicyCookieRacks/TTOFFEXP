@@ -605,11 +605,8 @@ class SurvivalGame(DirectObject):
 
     def __prompt(self):
         if self.player.down:
-            if self.secondWindAt is not None:
-                left = self.secondWindAt - globalClock.getFrameTime()
-                return 'Second Wind in %d...' % max(0, int(left + 0.99))
-            if any(not n.down for n in self.npcs):
-                return 'You went sad! Your friends are coming...'
+            if self.secondWindAt is not None or any(not n.down for n in self.npcs):
+                return 'You are being tooned up'
             return ''
         if self.inMenu():
             return ''
@@ -631,6 +628,7 @@ class SurvivalGame(DirectObject):
             self.menuStation = None
             station.closeMenu()
         self.gags.cancelReload()
+        self.hud.setDowned(True)
         self.beans = int(self.beans * (1 - G.DOWN_LOSS))
         self.hud.setBeans(self.beans)
         if self.hasTonic('wind'):
@@ -644,7 +642,8 @@ class SurvivalGame(DirectObject):
                     cog.fleeFrom(self.player.getPos(), self.secondWindAt)
             self.hud.say('Second Wind! The cogs scatter. Your tonics are gone.', 3.0)
         elif any(not n.down for n in self.npcs):
-            self.hud.say('You went sad! Hold on for your friends.', 3.0)
+            # The prompt in the middle says it ("You are being tooned up").
+            pass
         else:
             self.gameOver()
 
@@ -747,6 +746,7 @@ class SurvivalGame(DirectObject):
             return
         self.over = True
         self.paused = True
+        self.hud.setDowned(False)
         for npc in self.npcs:
             npc.stopSteps()
         self.player.grabMouse(False)
