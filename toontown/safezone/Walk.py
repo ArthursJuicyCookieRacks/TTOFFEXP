@@ -11,6 +11,9 @@ from otp.otpbase import OTPGlobals
 # of forward must follow the first.
 SprintFactor = 1.5
 SprintDoubleTap = 0.3
+# How long a sprinting toon can stand still before it goes back to walking.
+SprintStopStill = 0.25
+SprintStartGrace = 1.5
 
 class Walk(StateData.StateData):
     notify = DirectNotifyGlobal.directNotify.newCategory('Walk')
@@ -109,16 +112,39 @@ class Walk(StateData.StateData):
             base.localAvatar.controlManager.setSpeeds(OTPGlobals.ToonForwardSpeed * SprintFactor, OTPGlobals.ToonJumpForce,
                                                       OTPGlobals.ToonReverseSpeed, OTPGlobals.ToonRotateSpeed)
             self.accept('running-off', self.__stopSprint)
+            self.stillSince = None
+            self.sprintMoved = False
             # Letting go of forward (or the stick) stops the sprint.
             taskMgr.add(self.__watchSprint, 'walkSprintWatch')
         else:
             self.fsm.request('slowWalking')
 
     def __watchSprint(self, task):
-        if getattr(self, 'sprintByKey', False) and not inputState.isSet('forward'):
+        # Standing still ends a sprint, however it was started (the double
+        # tap or the controller's run button): moving again walks until run
+        # is pressed again.
+        if self.__moving():
+            self.stillSince = None
+            self.sprintMoved = True
+            return task.cont
+        now = globalClock.getFrameTime()
+        if getattr(self, 'stillSince', None) is None:
+            self.stillSince = now
+        # Run pressed while standing gets a moment to start moving.
+        wait = SprintStopStill if getattr(self, 'sprintMoved', False) else SprintStartGrace
+        if getattr(self, 'sprintByKey', False) or now - self.stillSince >= wait:
             self.__stopSprint()
             return task.done
         return task.cont
+
+    @staticmethod
+    def __moving():
+        if inputState.isSet('forward'):
+            return True
+        controls = getattr(base.localAvatar.controlManager, 'currentControls', None)
+        speed = abs(getattr(controls, 'speed', 0.0) or 0.0)
+        slide = abs(getattr(controls, 'slideSpeed', 0.0) or 0.0)
+        return speed > 0.1 or slide > 0.1
 
     def __stopSprint(self):
         if self.fsm.getCurrentState().getName() == 'sprinting':
