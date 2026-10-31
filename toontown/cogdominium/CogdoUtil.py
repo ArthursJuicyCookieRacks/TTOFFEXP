@@ -155,3 +155,24 @@ def rotateTable(table, angle):
             t.append(row)
 
     return t
+
+
+# The tag on the entrance elevator while the toons ride up in it.
+RIDING_TAG = 'cogdoRidingElevator'
+
+
+def isRidingElevator(toon):
+    np = toon.getParent()
+    while not np.isEmpty():
+        if np.hasPythonTag(RIDING_TAG):
+            return True
+        np = np.getParent()
+    return False
+
+
+def takeToon(toon):
+    """Puts a toon in the game's world. The game can load while the toons
+    still ride up in the elevator (so its room is there when the doors
+    open); a riding toon stays in the elevator, which lets it out."""
+    if not isRidingElevator(toon):
+        toon.reparentTo(render)

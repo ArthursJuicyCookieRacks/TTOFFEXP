@@ -793,7 +793,13 @@ def playCogdoFlying(dist):
     # Flies straight to the far platform, as landing on it would.
     player = dist.game.localPlayer
     yield sleep(3)
-    player.setCheckpointPlatform(player._level.endPlatform)
+    end = player._level.endPlatform
+    player.setCheckpointPlatform(end)
+    loc = end.getModel().find('**/spawn_loc')
+    if not loc.isEmpty():
+        localAvatar.setPos(base.render, loc.getPos(base.render))
+        player._cameraMgr.update(0.0)
+        player._level.update(0.0)
     player.request('WaitingForWin')
 
 

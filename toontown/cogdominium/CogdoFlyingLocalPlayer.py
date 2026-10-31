@@ -708,15 +708,26 @@ class CogdoFlyingLocalPlayer(CogdoFlyingPlayer):
         else:
             return False
 
+    # The keys that start flying from a platform. The original game used
+    # Control; the jump button (Space, the controller's A, the touch Jump
+    # button) is what flies once in the air, so it takes off too.
+    FLY_KEYS = ('space', 'control', 'lcontrol')
+
+    def acceptFlyKeys(self):
+        for key in self.FLY_KEYS:
+            self.acceptOnce(key, self.pressedControlWhileRunning)
+
+    def ignoreFlyKeys(self):
+        for key in self.FLY_KEYS:
+            self.ignore(key)
+
     def pressedControlWhileRunning(self):
         if self.isFuelLeft() and self.state == 'Running':
             self.notify.debug('Pressed Control and have fuel')
             self.request('FlyingUp')
         else:
-            self.ignore('control')
-            self.ignore('lcontrol')
-            self.acceptOnce('control', self.pressedControlWhileRunning)
-            self.acceptOnce('lcontrol', self.pressedControlWhileRunning)
+            self.ignoreFlyKeys()
+            self.acceptFlyKeys()
 
     def setPropellerState(self, propState):
         if not self.hasPickedUpFirstPropeller:
@@ -874,10 +885,8 @@ class CogdoFlyingLocalPlayer(CogdoFlyingPlayer):
             self._collideSfx.play()
         self.orthoWalk.start()
         self.setPropellerState(CogdoFlyingLocalPlayer.PropStates.Normal)
-        self.ignore('control')
-        self.ignore('lcontrol')
-        self.acceptOnce('control', self.pressedControlWhileRunning)
-        self.acceptOnce('lcontrol', self.pressedControlWhileRunning)
+        self.ignoreFlyKeys()
+        self.acceptFlyKeys()
 
     def filterRunning(self, request, args):
         if request == self.state:
@@ -889,8 +898,7 @@ class CogdoFlyingLocalPlayer(CogdoFlyingPlayer):
     def exitRunning(self):
         CogdoFlyingLocalPlayer.notify.debug("exit%s: '%s' -> '%s'" % (self.oldState, self.oldState, self.newState))
         self.orthoWalk.stop()
-        self.ignore('control')
-        self.ignore('lcontrol')
+        self.ignoreFlyKeys()
 
     def enterOutOfTime(self):
         CogdoFlyingLocalPlayer.notify.info("enter%s: '%s' -> '%s'" % (self.newState, self.oldState, self.newState))

@@ -292,6 +292,12 @@ class DistributedCogdoInteriorAI(DistributedObjectAI):
         self.d_setToons()
         self.__resetResponses()
         self.d_setState('Elevator')
+        if self.currentFloor != self.bossFloor:
+            # The floor's game is made while the toons ride up, so their
+            # game loads its room behind the closed doors and the doors
+            # open onto it (it showed an empty grey space before, until
+            # the game came after the ride). It starts once they are out.
+            self.__makeGame()
         self.timer.startCallback(BattleBase.ELEVATOR_T + ElevatorData[ELEVATOR_NORMAL]['openTime'] + BattleBase.SERVER_BUFFER_TIME,
                                  self.__serverElevatorDone)
 
@@ -313,11 +319,16 @@ class DistributedCogdoInteriorAI(DistributedObjectAI):
             # The executive suite has no game: the boss greets the toons.
             taskMgr.doMethodLater(BattleBase.SERVER_BUFFER_TIME, self.__startBattleIntro, self.taskName('battle-intro'))
             return
+        self.__makeGame()
+        self.game.start()
+
+    def __makeGame(self):
+        if self.game:
+            return
         gameClass = FloorGames.get(self.FOType, DistCogdoMazeGameAI)
         self.gameMemos = 0
         self.game = gameClass(self.air, self)
         self.game.generateWithRequired(self.zoneId)
-        self.game.start()
 
     def __startBattleIntro(self, task):
         self.b_setState('BattleIntro')
@@ -506,6 +517,8 @@ class DistributedCogdoInteriorAI(DistributedObjectAI):
         pass
 
     def enterFailed(self):
+        # A game made for a ride nobody finished.
+        self.__cleanupGame()
         # Everyone is out; the field office stays.
         taskMgr.doMethodLater(10, self.__doDeleteInterior, self.taskName('deleteInterior'))
 
