@@ -61,7 +61,13 @@ class NPCMinigames:
 
     def destroy(self):
         taskMgr.remove(self.taskName)
-        self.players = {}
+        self.dropPlayers(list(self.players))
+
+    def dropPlayers(self, keys):
+        for key in keys:
+            player = self.players.pop(key, None)
+            if player is not None and hasattr(player, 'destroy'):
+                player.destroy()
 
     def __tick(self, task):
         try:
@@ -75,7 +81,7 @@ class NPCMinigames:
     def update(self):
         members = [npc for npc in self.manager.party.members if not npc.isDeleted()]
         if not members:
-            self.players = {}
+            self.dropPlayers(list(self.players))
             return
         byZone = {}
         for npc in members:
@@ -109,9 +115,7 @@ class NPCMinigames:
             elif isinstance(obj, PurchaseManagerAI):
                 for npc in npcs:
                     self.shop(npc, obj)
-        for key in list(self.players):
-            if key not in live:
-                del self.players[key]
+        self.dropPlayers([key for key in self.players if key not in live])
 
     # --- The gag shop ---
 
@@ -1027,15 +1031,375 @@ def Globals_ToonRunSpeed():
     return CogdoMazeGameGlobals.ToonRunSpeed
 
 
+# Milliseconds a tick (for the whole game) spent planning NPC flights.
+PLAN_BUDGET = 0.005
+
+
+class FlightNav:
+    """Lines of flight checked against the client's flying level, the way
+    the player's own collisions would stop it: the scenery and platforms of
+    the quadrants around (memos and obstacles share the wall mask, so those
+    are left out; the moving obstacles are dodged by where they are)."""
+
+    def __init__(self):
+        from panda3d.core import CollisionTraverser, CollisionHandlerQueue, CollisionNode, CollisionSegment, BitMask32
+        from otp.otpbase import OTPGlobals
+        from toontown.toonbase import ToontownGlobals
+        self.segment = CollisionSegment(0, 0, 0, 0, 1, 0)
+        node = CollisionNode('npcFlightCheck')
+        node.addSolid(self.segment)
+        node.setFromCollideMask(OTPGlobals.WallBitmask | OTPGlobals.FloorBitmask | ToontownGlobals.CeilingBitmask)
+        node.setIntoCollideMask(BitMask32.allOff())
+        self.np = clientRender().attachNewNode(node)
+        self.queue = CollisionHandlerQueue()
+        self.trav = CollisionTraverser('npcFlight')
+        self.trav.addCollider(self.np, self.queue)
+
+    def destroy(self):
+        self.trav.clearColliders()
+        self.np.removeNode()
+
+    def roots(self, level, lo, hi):
+        roots = [level.startPlatform.getModel(), level.endPlatform.getModel()]
+        for quadrant in level.quadrants:
+            y = level.convertQuadNumToY(quadrant.serialNum)
+            if y - level.quadLengthUnits < hi and y + level.quadLengthUnits > lo:
+                # Its scenery, even while the quadrant is stashed out of
+                # sight: an NPC ahead of the player still has to go around.
+                roots.append(quadrant._model)
+        return [root for root in roots if not root.isEmpty()]
+
+    def blocked(self, level, a, b, roots=None):
+        if self.np.isEmpty():
+            return False
+        if roots is None:
+            roots = self.roots(level, min(a[1], b[1]), max(a[1], b[1]))
+        self.segment.setPointA(a)
+        self.segment.setPointB(b)
+        for root in roots:
+            self.queue.clearEntries()
+            self.trav.traverse(root)
+            if self.queue.getNumEntries():
+                return True
+        return False
+
+    def floorAt(self, level, p, above=10.0, below=6.0):
+        # The top of whatever is under p (a platform's floor), or None.
+        a = Point3(p[0], p[1], p[2] + above)
+        b = Point3(p[0], p[1], p[2] - below)
+        self.segment.setPointA(a)
+        self.segment.setPointB(b)
+        best = None
+        for root in self.roots(level, p[1] - 1.0, p[1] + 1.0):
+            self.queue.clearEntries()
+            self.trav.traverse(root)
+            for i in range(self.queue.getNumEntries()):
+                z = self.queue.getEntry(i).getSurfacePoint(clientRender())[2]
+                if best is None or z > best:
+                    best = z
+        return best
+
+    def nearObstacle(self, level, a, b, radius=4.5):
+        from toontown.cogdominium.CogdoFlyingObstacles import CogdoFlyingWhirlwind, CogdoFlyingMinion
+        ab = Vec3(b - a)
+        length = ab.length()
+        if length < 0.01:
+            return False
+        ab /= length
+        for quadrant in level.quadrants:
+            y = level.convertQuadNumToY(quadrant.serialNum)
+            if abs(y - a[1]) > level.quadLengthUnits:
+                continue
+            for obstacle in quadrant.obstacles:
+                if not isinstance(obstacle, (CogdoFlyingWhirlwind, CogdoFlyingMinion)):
+                    continue
+                node = getattr(obstacle, 'suit', None) if isinstance(obstacle, CogdoFlyingMinion) else obstacle.model
+                if node is None or node.isEmpty():
+                    continue
+                pos = node.getPos(clientRender())
+                if isinstance(obstacle, CogdoFlyingMinion):
+                    pos.setZ(pos[2] + 3.0)
+                t = max(0.0, min(length, Vec3(pos - a).dot(ab)))
+                flat = Vec3(pos - (a + ab * t))
+                if isinstance(obstacle, CogdoFlyingWhirlwind):
+                    # A tall tube: only how far to the side counts.
+                    flat.setZ(0)
+                if flat.length() < radius:
+                    return True
+        return False
+
+
+class FlightPlanner:
+    """A way through the level from one platform to the next: a search over
+    a coarse grid of the corridor, each step checked against the scenery,
+    then pulled straight wherever the way is clear. It runs a few
+    milliseconds a tick, so a long search never stalls the game; the toons
+    wait on their platform meanwhile, as a player would look ahead."""
+
+    GRID = 5.0
+    # Greedier than a shortest-path search: a good way, found fast.
+    WEIGHT = 1.8
+    MAX_NODES = 6000
+    MOVES = [(dx, dy, dz) for dx in (-1, 0, 1) for dy in (-1, 0, 1) for dz in (-1, 0, 1)
+             if (dx, dy, dz) != (0, 0, 0) and abs(dx) + abs(dy) + abs(dz) <= 2]
+
+    def __init__(self, nav, level, start, goal):
+        self.nav = nav
+        self.level = level
+        self.start = Point3(start)
+        self.goal = Point3(goal)
+        (left, right), (back, forward), (down, up) = level.getBounds()
+        lo, hi = min(start[1], goal[1]) - 20.0, max(start[1], goal[1]) + 20.0
+        self.limits = ((left + 2.0, right - 2.0), (lo, hi), (down + 2.0, up - 2.0))
+        self.roots = nav.roots(level, lo, hi)
+        self.path = None
+        self.failed = False
+        self.seen = 0
+        self.work = self.search()
+
+    def step(self, budget):
+        if self.path is not None or self.failed:
+            return True
+        deadline = globalClock.getRealTime() + budget
+        try:
+            while globalClock.getRealTime() < deadline:
+                next(self.work)
+        except StopIteration:
+            pass
+        return self.path is not None or self.failed
+
+    def clear(self, a, b):
+        return not self.nav.blocked(self.level, a, b, self.roots)
+
+    def point(self, cell):
+        return Point3(cell[0] * self.GRID, cell[1] * self.GRID, cell[2] * self.GRID)
+
+    def inside(self, cell):
+        p = self.point(cell)
+        (x0, x1), (y0, y1), (z0, z1) = self.limits
+        return x0 <= p[0] <= x1 and y0 <= p[1] <= y1 and z0 <= p[2] <= z1
+
+    def cellOf(self, p):
+        return (int(round(p[0] / self.GRID)), int(round(p[1] / self.GRID)), int(round(p[2] / self.GRID)))
+
+    def search(self):
+        import heapq
+        if self.clear(self.start, self.goal):
+            self.path = [self.start, self.goal]
+            return
+        yield
+        # Toons take off straight up and come straight down onto a
+        # platform: the grid starts and ends a little above each.
+        startRise = self.rise(self.start)
+        goalRise = self.rise(self.goal)
+        yield
+        startCells = self.near(startRise)
+        yield
+        goalCells = set(self.near(goalRise))
+        yield
+        if not startCells or not goalCells:
+            self.failed = True
+            return
+        goalPoint = self.goal
+        frontier = []
+        came = {}
+        cost = {}
+        for cell in startCells:
+            g = (self.point(cell) - startRise).length()
+            cost[cell] = g
+            came[cell] = None
+            heapq.heappush(frontier, (g + self.WEIGHT * (self.point(cell) - goalPoint).length(), cell))
+        seen = 0
+        while frontier:
+            f, cell = heapq.heappop(frontier)
+            if cell in goalCells:
+                path = [self.goal, goalRise]
+                while cell is not None:
+                    path.append(self.point(cell))
+                    cell = came[cell]
+                path.append(startRise)
+                path.append(self.start)
+                path.reverse()
+                yield
+                self.path = self.smooth(path)
+                return
+            seen += 1
+            self.seen = seen
+            if seen > self.MAX_NODES:
+                break
+            here = self.point(cell)
+            for move in self.MOVES:
+                nxt = (cell[0] + move[0], cell[1] + move[1], cell[2] + move[2])
+                if not self.inside(nxt):
+                    continue
+                g = cost[cell] + self.GRID * math.sqrt(move[0] ** 2 + move[1] ** 2 + move[2] ** 2)
+                if g >= cost.get(nxt, 1e9):
+                    continue
+                there = self.point(nxt)
+                if not self.clear(here, there):
+                    continue
+                cost[nxt] = g
+                came[nxt] = cell
+                heapq.heappush(frontier, (g + self.WEIGHT * (there - goalPoint).length(), nxt))
+            yield
+        self.failed = True
+
+    def rise(self, p):
+        for height in (12.0, 9.0, 6.0, 3.0):
+            q = Point3(p[0], p[1], p[2] + height)
+            if self.clear(p, q):
+                return q
+        return Point3(p)
+
+    def near(self, p):
+        base = self.cellOf(p)
+        cells = []
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                for dz in (-1, 0, 1, 2):
+                    cell = (base[0] + dx, base[1] + dy, base[2] + dz)
+                    if self.inside(cell) and self.clear(p, self.point(cell)):
+                        cells.append(cell)
+        return cells
+
+    def smooth(self, path):
+        out = [path[0]]
+        i = 0
+        while i < len(path) - 1:
+            j = len(path) - 1
+            while j > i + 1 and not self.clear(path[i], path[j]):
+                j -= 1
+            out.append(path[j])
+            i = j
+        return out
+
+
 class CogdoFlyingPlayer(CogdoPlayer):
-    """The Lawbot flight, flown by each NPC on its own: forward through the
-    level at its own pace and height, swinging over to memos ahead of it,
-    and landing on the far platform at the end."""
+    """The Lawbot flight, flown by each NPC the way a player flies it: it
+    takes the propeller off the start platform, then flies from platform to
+    platform on a way clear of the stacks and walls, dodging whirlwinds and
+    minions, landing on each platform to refuel, picking up the memos near
+    its way, and landing on the far platform at the end."""
+
+    MEMO_REACH = 9.0
+
+    def tick(self, now):
+        # The ways are planned during the rules too, before anyone flies.
+        if not self.game.started and not self.game.finished:
+            client = self.client()
+            level = getattr(getattr(client, 'game', None), 'level', None)
+            if level is not None:
+                self.pump(level, self.flight(level, level._endPlatformModel.getY(clientRender())), now)
+        CogdoPlayer.tick(self, now)
+
+    def nav(self):
+        nav = self.memo.get('nav')
+        if nav is None or nav.np.isEmpty():
+            nav = self.memo['nav'] = FlightNav()
+        return nav
+
+    def destroy(self):
+        nav = self.memo.pop('nav', None)
+        if nav is not None:
+            nav.destroy()
+
+    def setBlades(self, fuel):
+        States = CogdoFlyingGameGlobals.Gameplay.FuelStates
+        G = CogdoFlyingGameGlobals.Gameplay
+        if fuel is None:
+            state = States.FuelNoPropeller
+        elif fuel <= 0.0:
+            state = States.FuelEmpty
+        elif fuel < G.FuelVeryLowAmt:
+            state = States.FuelVeryLow
+        elif fuel < G.FuelLowAmt:
+            state = States.FuelLow
+        else:
+            state = States.FuelNormal
+        if self.memo.get('blades') != state:
+            self.memo['blades'] = state
+            self.send('requestAction', CogdoFlyingGameGlobals.AI.GameActions.SetBlades, int(state))
+
+    def gatherablesOf(self, level, kind):
+        for quadrant in level.quadrants:
+            for g in quadrant.gatherables:
+                if g.type == kind:
+                    try:
+                        yield g, g.getPos(clientRender())
+                    except Exception:
+                        continue
+
+    def flight(self, level, endY):
+        """The legs of the flight, shared by the game's NPCs: the start
+        platform, a spot on each platform in turn and the far one last, and
+        the planned way between each and the next."""
+        flights = self.minigames.__dict__.setdefault('flights', {})
+        flight = flights.get(self.game.doId)
+        if flight is None:
+            for doId in list(flights):
+                del flights[doId]
+            nav = self.nav()
+            start = level.startPlatform.getSpawnPosForPlayer(1, clientRender())
+            floor = nav.floorAt(level, start)
+            spots = [Point3(start[0], start[1], (start[2] if floor is None else floor) + 1.0)]
+            middle = []
+            for quadrant in level.quadrants:
+                for platform in quadrant.platforms.values():
+                    spot = platform.getSpawnPosForPlayer(1, clientRender())
+                    if spot[1] < endY - 10.0:
+                        # Just above the platform's floor, which can sit a
+                        # little higher than its spawn mark.
+                        floor = nav.floorAt(level, spot)
+                        middle.append(Point3(spot[0], spot[1], (spot[2] if floor is None else floor) + 1.0))
+            middle.sort(key=lambda p: p[1])
+            spots += middle
+            spots.append(Point3(0, endY + 2.0, CogdoFlyingGameGlobals.Level.EndPlatformHeight + 1.0))
+            flight = flights[self.game.doId] = {'spots': spots, 'plans': {}, 'pumped': None}
+        return flight
+
+    def pump(self, level, flight, now):
+        # Plans every leg ahead of time, a few milliseconds a tick for the
+        # whole game, the nearest legs first (from the rules screen on).
+        if flight['pumped'] == now:
+            return
+        flight['pumped'] = now
+        spots = flight['spots']
+        for leg in range(len(spots) - 1):
+            plan = flight['plans'].get(leg)
+            if plan is None:
+                plan = flight['plans'][leg] = FlightPlanner(self.nav(), level, spots[leg], spots[leg + 1])
+            if not plan.step(PLAN_BUDGET):
+                return
+
+    def ownSpot(self, spot, final):
+        # Each toon lands a little apart from the others.
+        npcs = self.npcs()
+        index = npcs.index(self.npc.doId) if self.npc.doId in npcs else 0
+        angle = index * 2.1 + 0.5
+        reach = 3.5 if final else 1.6
+        return Point3(spot[0] + reach * math.cos(angle), spot[1] + reach * math.sin(angle), spot[2])
+
+    def flyTo(self, level, here, aim, speed, climbing=True):
+        delta = Vec3(aim - here)
+        distance = delta.length()
+        if distance <= speed * TICK:
+            step = Point3(aim)
+        else:
+            delta.normalize()
+            step = here + delta * speed * TICK
+        if delta[2] > 0.3 and self.memo.get('fuel'):
+            # Climbing burns fuel, as for a player (it refuels on landing).
+            self.memo['fuel'] = max(0.05, self.memo['fuel'] - CogdoFlyingGameGlobals.Gameplay.FuelBurnRate * TICK * 1.5)
+            self.setBlades(self.memo['fuel'])
+        h = -math.degrees(math.atan2(delta[0], delta[1])) if math.hypot(delta[0], delta[1]) > 0.3 else self.npc.getH()
+        self.npc.moveTo(step[0], step[1], step[2], h)
+        return distance <= speed * TICK
 
     def play(self, now):
         game = self.game
         client = self.client()
-        Actions = CogdoFlyingGameGlobals.AI.GameActions
+        G = CogdoFlyingGameGlobals
+        Actions = G.AI.GameActions
         players = self.players()
         if self.npc.doId in game.landed:
             if self.npc.doId not in game.winDone and all(p in game.winDone for p in players):
@@ -1044,63 +1408,121 @@ class CogdoFlyingPlayer(CogdoPlayer):
         level = getattr(getattr(client, 'game', None), 'level', None)
         if level is None:
             return
-        (left, right), (back, forward), (down, up) = level.getBounds()
         endY = level._endPlatformModel.getY(clientRender())
+        flight = self.flight(level, endY)
+        self.pump(level, flight, now)
         here = self.npc.getPos()
-        if self.gameTime() > CogdoFlyingGameGlobals.Gameplay.SecondsUntilGameOver and not self.memo.get('timedOut'):
+        if self.gameTime() > G.Gameplay.SecondsUntilGameOver and not self.memo.get('timedOut'):
             # Out of time: like a player, it is put on the far platform and
             # counts as landed, so the game ends instead of waiting on it.
             self.memo['timedOut'] = True
-            self.npc.placeAt(random.uniform(-4, 4), endY + random.uniform(0, 4), CogdoFlyingGameGlobals.Level.EndPlatformHeight, 0)
+            self.npc.placeAt(random.uniform(-4, 4), endY + random.uniform(0, 4), G.Level.EndPlatformHeight, 0)
             self.send('requestAction', Actions.LandOnWinPlatform, 0)
             return
-        speed = CogdoFlyingGameGlobals.Gameplay.ToonVelMax['forward'] * self.memo.setdefault('pace', random.uniform(0.6, 0.95))
-        if here[1] >= endY - 2.0:
-            # Over the far platform: come down and land.
-            if self.moveTo(Point3(here[0], endY + random.uniform(0, 4), CogdoFlyingGameGlobals.Level.EndPlatformHeight),
-                           speed=speed, flat=False) or here[2] <= CogdoFlyingGameGlobals.Level.EndPlatformHeight + 1.0:
-                if self.after('land', (0.5, 2.0), now):
-                    self.send('requestAction', Actions.LandOnWinPlatform, 0)
+        speed = G.Gameplay.ToonVelMax['forward'] * self.memo.setdefault('pace', random.uniform(0.85, 1.0))
+        mode = self.memo.setdefault('mode', 'propeller')
+        if mode == 'propeller':
+            # On the start platform first, like everyone: run to a
+            # propeller and strap it on.
+            if 'fuel' not in self.memo:
+                self.memo['fuel'] = None
+                self.setBlades(None)
+            prop = self.memo.get('prop')
+            if prop is None:
+                near = [(g.serialNum, p) for g, p in self.gatherablesOf(level, G.Level.GatherableTypes.Propeller)
+                        if abs(p[1] - here[1]) < 25.0 and abs(p[2] - here[2]) < 4.0]
+                near.sort(key=lambda sp: (sp[1] - here).length())
+                prop = self.memo['prop'] = near[0] if near else (None, Point3(here))
+            serial, pos = prop
+            if self.moveTo(Point3(pos[0], pos[1], here[2]), speed=RUN_SPEED * 0.8) and self.after('strapOn', (0.3, 1.2), now):
+                if serial is not None:
+                    self.send('requestPickUp', serial, G.Level.GatherableTypes.Propeller)
+                self.memo['fuel'] = 1.0
+                self.setBlades(1.0)
+                self.memo['leg'] = 0
+                self.memo['mode'] = 'plan'
             return
-        target = self.memo.get('target')
-        if target is not None:
-            serial, pos = target
-            if serial in game.memoPickups or pos[1] < here[1] - 1.0:
-                target = None
-        if target is None:
-            target = self.nextMemo(level, here, left, right, down, up)
-            self.memo['target'] = target
-        if target is not None:
-            serial, pos = target
-            if self.moveTo(pos, speed=speed, flat=False) or (pos - here).length() < 2.0:
+        if mode == 'rest':
+            if now >= self.memo.get('restUntil', 0):
+                self.memo['mode'] = 'plan'
+            return
+        leg = self.memo.get('leg', 0)
+        spots = flight['spots']
+        final = leg + 1 >= len(spots) - 1
+        goal = self.ownSpot(spots[min(leg + 1, len(spots) - 1)], final)
+        if mode == 'plan':
+            plan = flight['plans'].get(leg)
+            if plan is None or not (plan.path is not None or plan.failed):
+                return
+            if plan.failed:
+                # No way found: up over everything and across, as a last
+                # resort (it still lands on the platform).
+                top = level.getBounds()[2][1] - 3.0
+                self.memo['path'] = [Point3(here[0], here[1], top), Point3(goal[0], goal[1], top), goal]
+            else:
+                # The shared way, from its own spot to its own spot.
+                self.memo['path'] = list(plan.path[1:-1]) + [goal]
+            self.memo['mode'] = 'fly'
+            return
+        # Flying the leg.
+        detour = self.memo.get('detour')
+        if detour is not None:
+            serial, pos, back = detour
+            if serial in game.memoPickups or self.flyTo(level, here, pos, speed):
                 if serial not in game.memoPickups:
-                    self.send('requestPickUp', serial, CogdoFlyingGameGlobals.Level.GatherableTypes.Memo)
-                self.memo['target'] = None
+                    self.send('requestPickUp', serial, G.Level.GatherableTypes.Memo)
+                # Back to where it left its way, which it knows is clear.
+                self.memo['detour'] = None
+                self.memo.setdefault('path', []).insert(0, back)
             return
-        # Nothing to pick up ahead: fly on at its own height and lane.
-        lane = self.memo.setdefault('lane', (random.uniform(left * 0.6, right * 0.6), random.uniform(down + 0.3 * (up - down), down + 0.7 * (up - down))))
-        self.moveTo(Point3(lane[0], min(here[1] + 10.0, endY), lane[1]), speed=speed, flat=False)
+        path = self.memo.get('path') or [goal]
+        aim = path[0]
+        if self.nav().nearObstacle(level, here, aim if (aim - here).length() < 8.0 else here + (aim - here) * (8.0 / (aim - here).length())):
+            # A whirlwind or minion in the way: hold back until it moves.
+            if now - self.memo.setdefault('heldSince', now) < 3.0:
+                return
+        self.memo.pop('heldSince', None)
+        if now >= self.memo.get('memoCheck', 0):
+            self.memo['memoCheck'] = now + 0.4
+            memo = self.nearMemo(level, here)
+            if memo is not None:
+                self.memo['detour'] = (memo[0], memo[1], Point3(here))
+                return
+        if self.flyTo(level, here, aim, speed):
+            path.pop(0)
+            self.memo['path'] = path
+            if not path:
+                self.npc.placeAt(goal[0], goal[1], goal[2] - 1.0, self.npc.getH())
+                if final:
+                    self.memo['mode'] = 'landed'
+                    self.send('requestAction', Actions.LandOnWinPlatform, 0)
+                    return
+                self.memo['fuel'] = 1.0
+                self.setBlades(1.0)
+                self.memo['leg'] = leg + 1
+                self.memo['mode'] = 'rest'
+                self.memo['restUntil'] = now + random.uniform(0.3, 1.0)
 
-    def nextMemo(self, level, here, left, right, down, up):
+    def nearMemo(self, level, here):
+        # Memos within reach of its way, and not behind anything.
         taken = set(self.game.memoPickups)
-        others = set(p.memo.get('target', (None,))[0] for p in self.minigames.players.values()
-                     if p.game is self.game and p is not self and p.memo.get('target'))
+        others = set(p.memo.get('detour', (None,))[0] for p in self.minigames.players.values()
+                     if p.game is self.game and p is not self and p.memo.get('detour'))
         best = None
-        for quadrant in level.quadrants:
-            for g in quadrant.gatherables:
-                if g.type != CogdoFlyingGameGlobals.Level.GatherableTypes.Memo or g.serialNum in taken or g.serialNum in others:
-                    continue
-                try:
-                    pos = g.getPos(clientRender())
-                except Exception:
-                    continue
-                ahead = pos[1] - here[1]
-                if ahead < 2.0 or ahead > 40.0 or abs(pos[0] - here[0]) > 25.0:
-                    continue
-                score = ahead + abs(pos[0] - here[0]) + abs(pos[2] - here[2]) + random.uniform(0, 8)
-                if best is None or score < best[0]:
-                    best = (score, g.serialNum, Point3(pos))
-        return (best[1], best[2]) if best else None
+        for g, pos in self.gatherablesOf(level, CogdoFlyingGameGlobals.Level.GatherableTypes.Memo):
+            if g.serialNum in taken or g.serialNum in others:
+                continue
+            d = (pos - here).length()
+            if d > self.MEMO_REACH or pos[1] < here[1] - 2.0:
+                continue
+            if best is None or d < best[0]:
+                best = (d, g.serialNum, Point3(pos))
+        if best is None:
+            return None
+        nav = self.nav()
+        if nav.blocked(level, here, best[2]) or nav.nearObstacle(level, here, best[2]):
+            return None
+        return best[1], best[2]
 
     def freeMemo(self, client):
         level = getattr(getattr(client, 'game', None), 'level', None)
