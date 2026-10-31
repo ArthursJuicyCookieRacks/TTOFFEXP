@@ -56,6 +56,28 @@ def _gradientTexture(name, radial):
     return tex
 
 
+class _BoxMaker:
+    # Five faces of a box (no floor), as one GeomNode.
+
+    def __init__(self, x0, x1, y0, y1, z0, z1):
+        self.bounds = (x0, x1, y0, y1, z0, z1)
+
+    def generate(self):
+        x0, x1, y0, y1, z0, z1 = self.bounds
+        node = NodePath('box')
+        cm = CardMaker('side')
+        for frame, pos, hpr in (((x0, x1, z0, z1), (0, y1, 0), (0, 0, 0)),
+                                ((y0, y1, z0, z1), (x0, 0, 0), (90, 0, 0)),
+                                ((y0, y1, z0, z1), (x1, 0, 0), (90, 0, 0)),
+                                ((x0, x1, y0, y1), (0, 0, z1), (0, -90, 0))):
+            cm.setFrame(*frame)
+            face = node.attachNewNode(cm.generate())
+            face.setPos(*pos)
+            face.setHpr(*hpr)
+        node.flattenStrong()
+        return node.node()
+
+
 class CogdoCraneRoom:
     """The Vend-A-Stomper room: the crane room model from the original game
     (tt_m_ara_ccg_level), dressed as the Cashbot field office concept art
@@ -78,6 +100,7 @@ class CogdoCraneRoom:
         self._loadPiles(rng)
         self._loadCeiling(rng)
         self._loadStomper()
+        self._loadElevators()
         self._loadCollisions()
         return self.root
 
@@ -159,13 +182,22 @@ class CogdoCraneRoom:
         # A door at the far end of each hallway: the cogs walk out of it.
         self.hallwayDoors = []
         door = loader.loadModel('phase_5/models/cogdominium/tt_m_ara_csa_exitDoor')
+        box = _BoxMaker(-4.7, 4.7, 0.6, 17.5, 0, 10)
         for angle in Consts.LaneAngles:
             d = door.copyTo(self.root)
             pos = Consts.lanePoint(angle, Consts.HallwayDistance + 2)
             d.setPos(pos)
-            d.setH(angle + 180)
+            # Facing into the room; the little room behind it goes back into
+            # the junk.
+            d.setH(angle)
             d.setScale(0.7)
             self.hallwayDoors.append(d)
+            # The room behind the door is drawn from outside only: a dark
+            # box inside it, so the door opens onto the dark, not the junk.
+            inside = d.attachNewNode(box.generate())
+            inside.setColor(0.08, 0.07, 0.07, 1)
+            inside.setTwoSided(True)
+            inside.setLightOff()
         door.removeNode()
 
     def _inPlayArea(self, x, y, margin=0.0):
@@ -183,6 +215,17 @@ class CogdoCraneRoom:
             along = -x * math.sin(rad) + y * math.cos(rad)
             across = x * math.cos(rad) + y * math.sin(rad)
             if 0 < along < Consts.HallwayDistance + 4 and abs(across) < Consts.HallwayHalfWidth - margin:
+                return True
+        return False
+
+    def _inDoorway(self, x, y):
+        # Inside the little room behind a hallway's door (the door model
+        # has one, about 12 deep): kept clear of junk.
+        for angle in Consts.LaneAngles:
+            rad = math.radians(angle)
+            along = -x * math.sin(rad) + y * math.cos(rad)
+            across = x * math.cos(rad) + y * math.sin(rad)
+            if Consts.HallwayDistance - 1 < along < Consts.HallwayDistance + 18 and abs(across) < 7.5:
                 return True
         return False
 
@@ -240,7 +283,7 @@ class CogdoCraneRoom:
 
     def _fillCell(self, parent, model, pick, rng, x, y, depth):
         half = CellSize / 2.0
-        if depth >= 3 and rng.random() < 0.22:
+        if depth >= 3 and rng.random() < 0.22 and not self._inDoorway(x, y):
             name, scales, height, weight = pick(BackProps)
             prop = model(name).copyTo(parent)
             prop.setPos(x + rng.uniform(-half, half) * 0.5, y + rng.uniform(-half, half) * 0.5, 0)
@@ -249,10 +292,18 @@ class CogdoCraneRoom:
             return
         # A few stacks in every cell, taller away from the floor, like a
         # skyline.
-        for stack in range(3 if depth else 2):
-            sx = x + rng.uniform(-half, half) * 0.8
-            sy = y + rng.uniform(-half, half) * 0.8
-            if not depth and self._inPlayArea(sx, sy, margin=-1.5):
+        # The cells at the edge of the floor have the walls toons bump
+        # into, so they are filled up to the edge, with no floor showing
+        # between an invisible wall and the junk.
+        for stack in range(3 if depth else 5):
+            for attempt in range(8):
+                sx = x + rng.uniform(-half, half) * 0.9
+                sy = y + rng.uniform(-half, half) * 0.9
+                if self._inDoorway(sx, sy):
+                    continue
+                if depth or not self._inPlayArea(sx, sy, margin=-1.0):
+                    break
+            else:
                 continue
             top = Consts.PileHeights[min(depth, len(Consts.PileHeights) - 1)] * rng.uniform(0.6, 1.25)
             if sx < Consts.BeltSideX:
@@ -320,6 +371,20 @@ class CogdoCraneRoom:
         ceiling.flattenStrong()
         arm.removeNode()
         magnet.removeNode()
+
+    def _loadElevators(self):
+        # The room's walls have doorways for the elevators. The exit's
+        # stands closed at the far end, as in the other field offices; the
+        # entrance's own stands in once the ride up is over and the
+        # elevator the toons came in is put away.
+        from toontown.cogdominium import CogdoUtil
+        self.exitElevator = CogdoUtil.loadElevatorModel()
+        self.exitElevator.reparentTo(self.root)
+        self.exitElevator.setPosHpr(*Consts.ExitPosHpr)
+        self.entranceElevator = CogdoUtil.loadElevatorModel()
+        self.entranceElevator.reparentTo(self.root)
+        self.entranceElevator.setPosHpr(*Consts.ElevatorPosHpr)
+        self.entranceElevator.stash()
 
     def _loadStomper(self):
         self.stomper = loader.loadModel(Consts.StomperModel)

@@ -3035,6 +3035,16 @@ class DistributedToonAI(DistributedPlayerAI.DistributedPlayerAI, DistributedSmoo
     def doResistanceEffect(self, msgIndex):
         msgType, itemIndex = ResistanceChat.decodeId(msgIndex)
         msgValue = ResistanceChat.getItemValue(msgIndex)
+        if msgType == ResistanceChat.RESISTANCE_MINI_RESTOCK:
+            # A mini Gag-up: a couple of the track's smallest gags.
+            tracks = list(range(len(ToontownBattleGlobals.Tracks))) if msgValue == -1 else [msgValue]
+            for track in tracks:
+                for level in ResistanceChat.MiniRestockLevels:
+                    for i in range(ResistanceChat.MiniRestockAmount):
+                        self.inventory.addItems(track, level, 1)
+            self.d_setInventory(self.inventory.makeNetString())
+            return
+        msgType = ResistanceChat.MiniOf.get(msgType, msgType)
         if msgType == ResistanceChat.RESISTANCE_TOONUP:
             self.toonUp(msgValue)
             self.notify.debug('Toon-up for ' + self.name)

@@ -97,7 +97,7 @@ class DistCogdoCraneGame(CogdoCraneGameBase, DistCogdoGame):
         self.coinSfx = loader.loadSfx('phase_4/audio/sfx/MG_maze_pickup.ogg')
         self.crushSfx = loader.loadSfx('phase_5/audio/sfx/AA_drop_safe.ogg')
         self.hitSfx = loader.loadSfx('phase_5/audio/sfx/AA_drop_sandbag.ogg')
-        self.music = loader.loadMusic('phase_9/audio/bgm/encntr_suit_CBHQ_nbrhood.ogg')
+        self.music = loader.loadMusic('phase_5/audio/bgm/ttr_s_ara_csa_stomperRoom.ogg')
         self._loadGui()
 
     def exitLoaded(self):
@@ -176,6 +176,8 @@ class DistCogdoCraneGame(CogdoCraneGameBase, DistCogdoGame):
             self._introMovie = None
         DistCogdoGame.exitIntro(self)
         self.stashEntranceElevator()
+        if self.room:
+            self.room.entranceElevator.unstash()
 
     def enterGame(self):
         DistCogdoGame.enterGame(self)

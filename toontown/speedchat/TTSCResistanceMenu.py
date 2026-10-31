@@ -26,13 +26,17 @@ class TTSCResistanceMenu(SCMenu):
             return
 
         phrases = lt.resistanceMessages
-        for menuIndex in ResistanceChat.resistanceMenu:
+        for menuIndex in ResistanceChat.allMenus:
             menu = SCMenu()
             for itemIndex in ResistanceChat.getItems(menuIndex):
                 textId = ResistanceChat.encodeId(menuIndex, itemIndex)
                 charges = lt.getResistanceMessageCharges(textId)
                 if charges > 0:
                     menu.append(TTSCResistanceTerminal(textId, charges))
+            if menuIndex in ResistanceChat.miniMenu and not len(menu):
+                # Mini Unites only show once you have some.
+                menu.destroy()
+                continue
 
             textId = ResistanceChat.encodeId(menuIndex, 0)
             menuName = ResistanceChat.getMenuName(textId)

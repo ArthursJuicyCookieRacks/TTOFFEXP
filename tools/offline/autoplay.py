@@ -43,6 +43,10 @@ trolley-ask-company 0
 npc-specials 0
 npc-elevator-ask 0
 ''' % {'db': DB})
+if os.environ.get('AUTOPLAY_AUDIO'):
+    # Real sound objects (OpenAL; ALSOFT_DRIVERS=null needs no sound card),
+    # so a test can see which music is playing.
+    loadPrcFileData('autoplay-audio', 'audio-library-name p3openal_audio')
 os.environ.setdefault('TTR_PLAYCOOKIE', 'autoplay')
 os.environ.setdefault('TTR_GAMESERVER', '127.0.0.1')
 
@@ -813,6 +817,19 @@ def playCogdoCrane(dist):
         crane = None
     else:
         yield until(walking, 30, 'walking in the crane room')
+        # Out of the elevator to the machine on foot: nothing in the way.
+        start = localAvatar.getPos(render)
+        localAvatar.headsUp(render, Point3(0, 0, 0))
+        token = inputState.force('forward', True, 'autoplay')
+        path = []
+        for i in range(12):
+            yield sleep(0.5)
+            path.append(localAvatar.getPos(render))
+        token.release()
+        log('walked from the elevator: %s' % ', '.join('(%.0f, %.0f)' % (p[0], p[1]) for p in [start] + path))
+        if (path[-1] - start).length() < 20:
+            base.screenshot(os.path.join(shots, 'cash-09-stuck.png'), defaultFilename=0)
+            raise StepFailed('the toon got stuck walking in from the elevator at %s' % path[-1])
         # Off the floor into a pile: the game puts the toon back.
         before = localAvatar.getPos(render)
         localAvatar.setPos(render, 62, 3, 0)
@@ -823,12 +840,18 @@ def playCogdoCrane(dist):
         log('put back on the floor from a pile at %s' % back)
         here = localAvatar.getPos(render)
         cranes = sorted(dist.cranes.values(), key=lambda c: (c.root.getPos(render) - here).length())
-        crane = None
+        # Walking in may already have stepped onto a crane.
+        crane = next((c for c in cranes if c.avId == localAvatar.doId), None)
+        if crane:
+            log('walked onto crane %d' % crane.index)
+            yield sleep(2)
+            crane._DistCogdoCrane__startPilot()
+            cranes = []
         for c in cranes:
             if c.state == 'Free':
                 crane = c
                 break
-        if crane:
+        if crane and crane.avId != localAvatar.doId:
             localAvatar.setPos(render, Point3(*Consts.craneWorld(crane.index, 0, -8), 0))
             localAvatar.headsUp(crane.root)
             crane.d_requestControl()
@@ -885,6 +908,38 @@ def scenarioCogdo(track='s'):
 
     block, zoneId = onDistrict(takeOver)
     log('the %s cogs made block %d in zone %d a field office' % (track, block, zoneId))
+    if os.environ.get('AUTOPLAY_MUSIC_LOG') and not getattr(base, '_musicLogged', False):
+        # Which music starts and stops, for checking the field office's.
+        base._musicLogged = True
+        play = base.playMusic
+
+        def playMusic(music, *args, **kw):
+            log('music: play %s' % (music.getName() if music else None))
+            base._lastMusic = music
+            return play(music, *args, **kw)
+        base.playMusic = playMusic
+        from otp.avatar.Avatar import Avatar
+        playDialogue = Avatar.playDialogue
+
+        def logDialogue(av, type, length):
+            arr = av.getDialogueArray()
+            log('dialogue: %s %s %s (%s sounds)' % (av.getName(), type, length, arr and len(arr)))
+            return playDialogue(av, type, length)
+        Avatar.playDialogue = logDialogue
+
+        def report(task):
+            music = getattr(base, '_lastMusic', None)
+            from panda3d.core import StringStream
+            for mgr in [base.musicManager] + list(base.sfxManagerList):
+                ss = StringStream()
+                mgr.write(ss)
+                log('sounds: ' + ss.getData().decode(errors='replace').replace('\n', ' | ')[:400])
+            log('music: %s is %s; place %s; musicActive %s sfxActive %s vol %.2f/%.2f' % (
+                music and music.getName(), music and music.status(), placeState(),
+                base.musicManager.getActive(), base.sfxManagerList[0].getActive(),
+                base.musicManager.getVolume(), base.sfxManagerList[0].getVolume()))
+            return task.again
+        taskMgr.doMethodLater(6, report, 'autoplayMusicReport')
     # Gags enough for the executive suite.
     onDistrict(restock, localAvatar.doId)
     yield from teleport(street - street % 1000, zoneId)
@@ -940,12 +995,45 @@ def scenarioCogdo(track='s'):
             yield from fightBattle()
         elif state == 'Reward':
             # Reading the shopkeeper's thank-you.
+            if not getattr(interior, '_autoplayRewardShot', False):
+                interior._autoplayRewardShot = True
+                yield sleep(6)
+                shots = os.environ.get('AUTOPLAY_SHOTS', '/tmp')
+                os.makedirs(shots, exist_ok=True)
+                base.screenshot(os.path.join(shots, 'fo-reward.png'), defaultFilename=0)
             messenger.send('doneChatPage', [0])
             yield sleep(1)
         else:
             yield sleep(0.5)
     yield until(walking, 180, 'walking after the field office')
     log('back outside in zone %d with %d SOS cards' % (localAvatar.zoneId, len(localAvatar.NPCFriendsDict)))
+    log('unites: %s' % localAvatar.resistanceMessages)
+    if os.environ.get('AUTOPLAY_UNITE_SHOTS'):
+        # The SpeedChat Unites menu, then a mini Toon-up said out loud.
+        from toontown.chat import ResistanceChat
+        from otp.otpbase import OTPLocalizer
+        shots = os.environ.get('AUTOPLAY_SHOTS', '/tmp')
+        os.makedirs(shots, exist_ok=True)
+        sc = localAvatar.chatMgr.chatInputSpeedChat
+        sc.show()
+        yield sleep(0.5)
+        menu = sc.speedChat
+        for holder in list(menu):
+            if getattr(holder, 'getTitle', None) and holder.getTitle() == OTPLocalizer.SCMenuResistance:
+                holder.showMenu()
+                yield sleep(0.5)
+                for sub in list(holder.getMenu()):
+                    if getattr(sub, 'getTitle', None) and sub.getTitle() == ResistanceChat.resistanceDict[ResistanceChat.RESISTANCE_MINI_TOONUP]['menuName']:
+                        sub.showMenu()
+                yield sleep(0.5)
+        base.screenshot(os.path.join(shots, 'unites-menu.png'), defaultFilename=0)
+        sc.hide()
+        mini = [textId for textId, charges in localAvatar.resistanceMessages
+                if ResistanceChat.isMini(textId) and charges > 0]
+        if mini:
+            base.localAvatar.d_reqSCResistance(mini[0])
+            yield sleep(1.0)
+            base.screenshot(os.path.join(shots, 'unites-mini-used.png'), defaultFilename=0)
 
     def isToonBlock(air):
         return air.buildingManagers[street].getBuilding(block).isToonBlock()

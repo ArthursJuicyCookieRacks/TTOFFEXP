@@ -632,6 +632,11 @@ class DistCogdoCrane(DistributedObject.DistributedObject, FSM.FSM):
         np = entry.getIntoNodePath()
         doId = int(np.getNetTag('object'))
         obj = base.cr.doId2do.get(doId)
+        # Never a bag another crane holds: offline every crane runs on this
+        # client, and an NPC's magnet brushing a player's bag took it
+        # (the AI said no, and the bag fell).
+        if obj and obj.state in ('Grabbed', 'LocalGrabbed'):
+            return
         if obj and obj.state != 'LocalDropped' and (obj.state != 'Dropped' or obj.craneId != self.doId):
             obj.d_requestGrab(self.avId)
             obj.demand('LocalGrabbed', self.avId, self.doId)
@@ -786,8 +791,14 @@ class DistCogdoCrane(DistributedObject.DistributedObject, FSM.FSM):
                 self.__turnOffMagnet()
                 pilot['mode'] = 'fetch'
                 pilot['target'] = None
-                pilot['until'] = now + random.uniform(1.5, 3.0)
+                pilot['until'] = now + random.uniform(0.6, 1.4)
         return Task.cont
+
+    def __cogTakenByOther(self, cog):
+        for crane in self.craneGame.cranes.values():
+            if crane is not self and crane.pilot and crane.pilot.get('cog') is cog and crane.heldObject:
+                return True
+        return False
 
     def __bagFree(self, bag):
         return not bag.avId or bag.avId == self.avId
@@ -832,6 +843,9 @@ class DistCogdoCrane(DistributedObject.DistributedObject, FSM.FSM):
             if not GameConsts.inCraneReach(self.index, p[0], p[1], slack=-1.0):
                 continue
             eta = (dc - ambush) / speed
+            # Leave a cog another crane is already after to that crane.
+            if self.__cogTakenByOther(cog):
+                eta += 30
             if best is None or eta < best[0]:
                 best = (eta, cog, p, ambush)
         if best is None:
@@ -841,7 +855,7 @@ class DistCogdoCrane(DistributedObject.DistributedObject, FSM.FSM):
         if pilot['cog'] is not best[1]:
             pilot['cog'] = best[1]
             # NPC toons misjudge it now and then, as players do.
-            miss = 1.6 if self.avId == base.localAvatar.doId else random.choice((1.8, 2.5, 4.5))
+            miss = 1.6 if self.avId == base.localAvatar.doId else random.choice((1.0, 1.6, 2.4))
             pilot['error'] = (random.uniform(-miss, miss), random.uniform(-miss, miss))
         return best[1], best[2]
 
@@ -999,7 +1013,9 @@ class DistCogdoCrane(DistributedObject.DistributedObject, FSM.FSM):
             self.craneGame.toCraneMode()
             self.camPivot.setH(self.arm.getH() * self.cameraFollow)
             camera.reparentTo(self.camPivot)
-            camera.setPosHpr(0, -20, -5, 0, -20, 0)
+            # Back and up a little from the CFO crane camera, so the machine
+            # and both lanes fit in the view.
+            camera.setPosHpr(0, -27, -1, 0, -24, 0)
             self.tube.stash()
             localAvatar.setPosHpr(self.controls, 0, 0, 0, 0, 0, 0)
             localAvatar.sendCurrentPosition()

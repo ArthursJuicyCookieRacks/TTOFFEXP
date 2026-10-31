@@ -507,7 +507,13 @@ class DistributedCogdoInteriorAI(DistributedObjectAI):
             if info:
                 savedBy.append([v, info[0], info[1]])
             toon = self.air.doId2do.get(v)
-            if toon:
+            if toon and self.FOType == 'm':
+                # A Cashbot office's thank-you: a set of mini Unites.
+                from toontown.chat import ResistanceChat
+                tier = next(tier for most, tier in SOSTiers if self.bldg.difficulty <= most)
+                for textId in ResistanceChat.getMiniRewardIds(tier):
+                    toon.addResistanceMessage(textId)
+            elif toon:
                 # The shopkeeper's thank-you: their friend's SOS card.
                 toon.attemptAddNPCFriend(self.sosNpcId)
         self.bldg.fsm.request('waitForVictorsFromCogdo', [victors, savedBy])

@@ -62,6 +62,56 @@ resistanceDict = {RESISTANCE_TOONUP: {'menuName': TTL.ResistanceToonupMenu,
                                 6,
                                 7]}}
 
+# Mini Unites: very small versions of the regular ones, the reward for a
+# Cashbot field office. They stay out of resistanceMenu so getRandomId and
+# the full restock never hand them out.
+RESISTANCE_MINI_TOONUP = 3
+RESISTANCE_MINI_RESTOCK = 4
+RESISTANCE_MINI_MONEY = 5
+miniMenu = [RESISTANCE_MINI_TOONUP, RESISTANCE_MINI_RESTOCK, RESISTANCE_MINI_MONEY]
+allMenus = resistanceMenu + miniMenu
+# What each mini kind is a small copy of.
+MiniOf = {RESISTANCE_MINI_TOONUP: RESISTANCE_TOONUP,
+          RESISTANCE_MINI_RESTOCK: RESISTANCE_RESTOCK,
+          RESISTANCE_MINI_MONEY: RESISTANCE_MONEY}
+# How small a mini Unite's sparkles are.
+MiniEffectScale = 0.4
+resistanceDict[RESISTANCE_MINI_TOONUP] = {'menuName': getattr(TTL, 'ResistanceMiniToonupMenu', 'Mini Toon-up'),
+ 'itemText': getattr(TTL, 'ResistanceMiniToonupItem', 'Mini %s Toon-up'),
+ 'chatText': getattr(TTL, 'ResistanceMiniToonupChat', 'Toons of the World, a little Toon-up!'),
+ 'values': [5, 10, 15],
+ 'items': [0, 1, 2]}
+resistanceDict[RESISTANCE_MINI_RESTOCK] = {'menuName': getattr(TTL, 'ResistanceMiniRestockMenu', 'Mini Gag-up'),
+ 'itemText': getattr(TTL, 'ResistanceMiniRestockItem', 'Mini Gag-up %s'),
+ 'chatText': getattr(TTL, 'ResistanceMiniRestockChat', 'Toons of the World, a little Gag-up!'),
+ 'values': resistanceDict[RESISTANCE_RESTOCK]['values'],
+ 'extra': resistanceDict[RESISTANCE_RESTOCK]['extra'],
+ 'items': resistanceDict[RESISTANCE_RESTOCK]['items']}
+resistanceDict[RESISTANCE_MINI_MONEY] = {'menuName': getattr(TTL, 'ResistanceMiniMoneyMenu', 'Mini Jellybeans'),
+ 'itemText': getattr(TTL, 'ResistanceMiniMoneyItem', 'Mini %s Jellybeans'),
+ 'chatText': getattr(TTL, 'ResistanceMiniMoneyChat', 'Toons of the World, a little something!'),
+ 'values': [25, 50, 75],
+ 'items': [0, 1, 2]}
+
+# Mini Gag-up: this many of each of a track's three smallest gags.
+MiniRestockLevels = (0, 1, 2)
+MiniRestockAmount = 2
+
+
+def isMini(textId):
+    return decodeId(textId)[0] in miniMenu
+
+
+def getMiniRewardIds(tier):
+    """The Cashbot field office reward: one of each mini kind, a bit
+    bigger for a harder building (tier 0, 1 or 2)."""
+    tier = max(0, min(2, tier))
+    restock = random.choice(resistanceDict[RESISTANCE_MINI_RESTOCK]['items'][:-1])
+    return [encodeId(RESISTANCE_MINI_TOONUP, tier),
+            encodeId(RESISTANCE_MINI_RESTOCK, restock),
+            encodeId(RESISTANCE_MINI_MONEY, tier)]
+
+
 def encodeId(menuIndex, itemIndex):
     textId = menuIndex * 100
     textId += resistanceDict[menuIndex]['items'][itemIndex]
@@ -98,10 +148,11 @@ def getItemText(textId):
     menuIndex, itemIndex = decodeId(textId)
     value = resistanceDict[menuIndex]['values'][itemIndex]
     text = resistanceDict[menuIndex]['itemText']
-    if menuIndex == RESISTANCE_TOONUP:
+    kind = MiniOf.get(menuIndex, menuIndex)
+    if kind == RESISTANCE_TOONUP:
         if value == -1:
             value = TTL.ResistanceToonupItemMax
-    elif menuIndex == RESISTANCE_RESTOCK:
+    elif kind == RESISTANCE_RESTOCK:
         value = resistanceDict[menuIndex]['extra'][itemIndex]
     return text % str(value)
 
@@ -127,6 +178,8 @@ def doEffect(textId, speakingToon, nearbyToons):
     from direct.particles import Particles
     menuIndex, itemIndex = decodeId(textId)
     itemValue = getItemValue(textId)
+    mini = menuIndex in miniMenu
+    menuIndex = MiniOf.get(menuIndex, menuIndex)
     if menuIndex == RESISTANCE_TOONUP:
         effect = BattleParticles.loadParticleFile('resistanceEffectSparkle.ptf')
         fadeColor = VBase4(1, 0.5, 1, 1)
@@ -179,6 +232,8 @@ def doEffect(textId, speakingToon, nearbyToons):
         fadeColor = VBase4(0, 0, 1, 1)
     else:
         return
+    if mini:
+        effect.setScale(MiniEffectScale)
     recolorToons = Parallel()
     for toonId in nearbyToons:
         toon = base.cr.doId2do.get(toonId)

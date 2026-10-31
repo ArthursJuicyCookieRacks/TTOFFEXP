@@ -28,7 +28,7 @@ RoomHalfSize = (76.5, 76.5)
 # The open floor in the middle, and the pockets in front of the elevator
 # the toons come up in and the exit door: (x, y, half width, half depth).
 PlayHalfSize = (50.0, 50.0)
-Pockets = ((0, -66, 15, 12), (0, 66, 15, 12))
+Pockets = ((0, -63, 15, 14), (0, 63, 15, 14))
 CeilingHeight = 51.0
 # How tall the piles grow, by how far a cell is from the open floor.
 PileHeights = (8.0, 15.0, 22.0, 30.0, 38.0, 42.0)
@@ -37,8 +37,8 @@ BeltSideX = -50.0
 BeltSideMaxHeight = 24.0
 WallColor = (0.86, 0.5, 0.5)
 FloorColorScale = (1.25, 1.22, 1.22, 1)
-ElevatorPosHpr = (0, -74.5, 0, 0, 0, 0)
-ExitPosHpr = (0, 74.5, 0, 180, 0, 0)
+ElevatorPosHpr = (0, -74.5, 0, 180, 0, 0)
+ExitPosHpr = (0, 74.5, 0, 0, 0, 0)
 StomperModel = 'phase_5/models/cogdominium/ttoff_m_ara_ccg_stompOMatic'
 HangingMagnets = (Point3(-30, 64, 40), Point3(-10, 68, 37), Point3(26, 64, 39),
                   Point3(66, 22, 41), Point3(64, -30, 38))
