@@ -10,7 +10,7 @@ from toontown.toonbase import ToontownGlobals
 
 # The props the junk piles are made of: model, scale range, how tall one is
 # at scale 1, and how often it comes up. Safes are most of it, as in the
-# concept art; the money and piggy banks are scattered through.
+# concept art; the money is scattered through.
 PileProps = (
     ('phase_10/models/cogHQ/CBSafe', (0.45, 0.75), 8.1, 10),
     ('phase_5/models/cogdominium/tt_m_ara_ccg_safesA', (0.55, 0.8), 24.8, 6),
@@ -22,7 +22,6 @@ PileProps = (
     ('phase_10/models/cashbotHQ/GoldBarStack', (0.3, 0.45), 6.8, 1),
     ('phase_5/models/cogdominium/tt_m_ara_cmg_cabinetSmFalling', (0.9, 1.2), 5.1, 2),
     ('phase_5/models/cogdominium/ttr_r_ara_cig_fileCabinet', (0.6, 0.8), 8.0, 2),
-    ('phase_3/models/char/pig-heads-1000', (2.0, 2.8), 1.6, 2),
 )
 # Props for the back of the piles, far from the floor: big and few.
 BackProps = (
@@ -60,7 +59,7 @@ def _gradientTexture(name, radial):
 class CogdoCraneRoom:
     """The Vend-A-Stomper room: the crane room model from the original game
     (tt_m_ara_ccg_level), dressed as the Cashbot field office concept art
-    shows it. Piles of safes, money and piggy banks fill the room up to a
+    shows it. Piles of safes and money fill the room up to a
     lit floor in the middle, where the Stomp-O-Matic stands; four hallways
     cut through the piles corner to corner, and the cogs come out of their
     doors along lit lanes to the machine."""
@@ -273,12 +272,6 @@ class CogdoCraneRoom:
                     prop.setPos(sx, sy, z - 11.5 * scale)
                     prop.setScale(scale)
                     z += 12.5 * scale
-                elif 'pig-heads' in name:
-                    # A piggy bank: a big pink pig's head.
-                    prop.setColor(0.98, 0.62, 0.72, 1)
-                    prop.setPos(sx, sy, z + 0.9 * scale)
-                    prop.setScale(scale)
-                    z += height * scale
                 else:
                     prop.setPos(sx, sy, z)
                     prop.setScale(scale)
