@@ -79,7 +79,10 @@ LOG_OPTIONS = {} if 'android' in PLATFORMS else {
 
 
 # The name and icon the game shows on the phone's home screen.
-APP_LABEL = 'Toontown'
+# A TTDEV build (TTR_APP_NAME/TTR_APP_ID, set by the build workflow) is a
+# separate app that installs beside the normal one.
+APP_LABEL = os.environ.get('TTR_APP_NAME') or 'Toontown'
+APP_ID = os.environ.get('TTR_APP_ID') or 'com.ttroffline.game'
 ICON_DIR = os.path.join('tools', 'offline', 'art', 'app-icon')
 ICONS = [os.path.join(ICON_DIR, 'icon-%d.png' % size) for size in (16, 32, 48, 72, 96, 128, 144, 192, 256)]
 
@@ -127,7 +130,7 @@ setup(
     version=VERSION,
     options={
         'build_apps': {
-            'application_id': 'com.ttroffline.game',
+            'application_id': APP_ID,
             'gui_apps': {
                 'TTR-Offline': 'toontown/toonbase/OfflineStart.py',
             },
