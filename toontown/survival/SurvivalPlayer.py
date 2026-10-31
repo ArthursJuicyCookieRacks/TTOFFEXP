@@ -22,6 +22,10 @@ SOURCE = 'survival'
 MOUSE_SENSITIVITY = 0.12
 TOUCH_SENSITIVITY = 160.0
 PITCH_LIMIT = 80.0
+# The toon's own footsteps, the loops the playground uses.
+WALK_STEPS = 'phase_3.5/audio/sfx/AV_footstep_walkloop.ogg'
+RUN_STEPS = 'phase_3.5/audio/sfx/AV_footstep_runloop.ogg'
+STEP_VOLUME = 0.6
 
 # Survival Mode's own keys (BO1 layout). Android gets buttons for these.
 KEYS = {
@@ -92,6 +96,11 @@ class SurvivalPlayer(DirectObject):
         self.reviveProgress = 0.0
         self.stamina = G.SPRINT_TIME
         self.sprinting = False
+        # Sprinting now; the meter ran dry (wait for a fresh press); when
+        # the last sprint was.
+        self.sprintActive = False
+        self.sprintSpent = False
+        self.lastSprint = -100.0
         self.firing = False
         self.using = False
         self.enabled = False
@@ -101,7 +110,7 @@ class SurvivalPlayer(DirectObject):
         self.walker.setWallBitMask(ToontownGlobals.WallBitmask)
         self.walker.setFloorBitMask(ToontownGlobals.FloorBitmask)
         self.walker.initializeCollisions(base.cTrav, self.body, avatarRadius=1.4, floorOffset=0.025, reach=4.0)
-        self.walker.setWalkSpeed(G.WALK_SPEED, G.JUMP_FORCE, G.WALK_SPEED * 0.6, 0)
+        self.walker.setWalkSpeed(G.WALK_SPEED, G.JUMP_FORCE, G.WALK_SPEED * G.REVERSE_SCALE, 0)
         self.walker.placeOnFloor()
         self.mouseCentered = False
         self.touchMode = TouchControls.wantTouchControls()
@@ -110,6 +119,14 @@ class SurvivalPlayer(DirectObject):
         self.xHeldSince = None
         self.slideForcedOff = {}
         self.moveState = 'idle'
+        self.stepSounds = {}
+        self.stepPlaying = None
+        for key, path in (('walk', WALK_STEPS), ('run', RUN_STEPS)):
+            sound = base.loader.loadSfx(path)
+            if sound:
+                sound.setLoop(True)
+                sound.setVolume(STEP_VOLUME)
+                self.stepSounds[key] = sound
 
     # --- Turning on and off ---
 
@@ -159,6 +176,7 @@ class SurvivalPlayer(DirectObject):
             self.touch.destroy()
             self.touch = None
         self.grabMouse(False)
+        self.__footsteps(off=True)
         taskMgr.remove('survivalPlayer')
 
     def destroy(self):
@@ -197,7 +215,7 @@ class SurvivalPlayer(DirectObject):
 
     def __set(self, token, down):
         if token == 'sprint':
-            self.sprinting = down
+            self.setSprint(down)
             return
         if token == 'jump' and down and not self.down:
             inputState.set('jump', True, inputSource=SOURCE)
@@ -205,6 +223,12 @@ class SurvivalPlayer(DirectObject):
             return
         if token != 'jump':
             inputState.set(token, down and not self.down, inputSource=SOURCE)
+
+    def setSprint(self, down):
+        if down and not self.sprinting:
+            # A fresh press: a spent sprint may go again.
+            self.sprintSpent = False
+        self.sprinting = down
 
     def __action(self, action, down):
         if action == 'fire':
@@ -249,7 +273,7 @@ class SurvivalPlayer(DirectObject):
         if self.sprintLatched and y <= dead:
             # L3's sprint lasts while the stick is pushed forward (BO1).
             self.sprintLatched = False
-            self.sprinting = False
+            self.setSprint(False)
 
     def touchLookBy(self, dx, dy):
         self.lookDelta += Vec3(dx * TOUCH_SENSITIVITY, dy * TOUCH_SENSITIVITY, 0)
@@ -285,7 +309,7 @@ class SurvivalPlayer(DirectObject):
             if token == 'sprint':
                 if down:
                     self.sprintLatched = True
-                    self.sprinting = True
+                    self.setSprint(True)
                 return
             self.__set(token, down)
         else:
@@ -319,6 +343,7 @@ class SurvivalPlayer(DirectObject):
     def __tick(self, task):
         dt = globalClock.getDt()
         if self.game.paused:
+            self.__footsteps(off=True)
             return task.cont
         inMenu = self.game.inMenu()
         if inMenu:
@@ -332,25 +357,45 @@ class SurvivalPlayer(DirectObject):
         self.head.setP(self.pitch)
         camera.reparentTo(self.head)
         camera.setPosHpr(0, 0, 0, 0, 0, 0)
-        # Sprinting burns stamina; the stamina comes back when walking.
+        # BO1's sprint: forward only, burns the meter, and once the meter
+        # runs dry the sprint stops until the button is let go and pressed
+        # again (with at least SPRINT_MIN back in the meter).
         forward = inputState.isSet('forward')
         moving = forward or any(inputState.isSet(token) for token in ('reverse',) + SLIDE_TOKENS)
-        boost = self.game.hasTonic('sprint')
-        if self.sprinting and forward and self.stamina > 0 and not self.down:
-            self.stamina -= dt / (2.0 if boost else 1.0)
-            speed = G.SPRINT_SPEED * (1.2 if boost else 1.0)
+        soda = self.game.hasTonic('sprint')
+        speedScale = G.SPRINT_SODA_SPEED if soda else 1.0
+        sprintTime = G.SPRINT_TIME * (G.SPRINT_SODA_TIME if soda else 1.0)
+        now = globalClock.getFrameTime()
+        wantSprint = self.sprinting and forward and not self.down and not inMenu and not self.sprintSpent
+        if wantSprint and not self.sprintActive and self.stamina < G.SPRINT_MIN:
+            wantSprint = False
+        if wantSprint and self.stamina > 0:
+            self.sprintActive = True
+            self.stamina = max(0.0, self.stamina - dt)
+            self.lastSprint = now
+            speed = G.SPRINT_SPEED * speedScale
+            if self.stamina <= 0:
+                # Out of breath: no more until the button is pressed again.
+                self.sprintSpent = True
+                self.sprintActive = False
         else:
-            self.stamina = min(G.SPRINT_TIME, self.stamina + dt * G.SPRINT_TIME / G.SPRINT_RECOVER)
-            speed = G.WALK_SPEED
+            self.sprintActive = False
+            if now - self.lastSprint > G.SPRINT_RECOVER_PAUSE:
+                self.stamina = min(sprintTime, self.stamina + dt * sprintTime / G.SPRINT_RECOVER)
+            speed = G.WALK_SPEED * speedScale
+        self.stamina = min(self.stamina, sprintTime)
+        reverse = G.WALK_SPEED * speedScale * G.REVERSE_SCALE
         if self.down or inMenu:
             speed = 0.0
-        self.walker.setWalkSpeed(speed, 0 if inMenu else G.JUMP_FORCE, speed * 0.6, 0)
-        if self.down or not moving:
+            reverse = 0.0
+        self.walker.setWalkSpeed(speed, 0 if inMenu else G.JUMP_FORCE, reverse, 0)
+        if self.down or not moving or speed <= 0:
             self.moveState = 'idle'
-        elif speed > G.WALK_SPEED:
+        elif self.sprintActive:
             self.moveState = 'run'
         else:
             self.moveState = 'walk'
+        self.__footsteps()
         # Laff comes back out of the cogs' reach.
         now = globalClock.getFrameTime()
         if not self.down and self.hp < self.maxHp:
@@ -363,6 +408,18 @@ class SurvivalPlayer(DirectObject):
         if self.down:
             self.game.playerDownTick(dt)
         return task.cont
+
+    def __footsteps(self, off=False):
+        want = None
+        if not off and self.moveState in self.stepSounds and not getattr(self.walker, 'isAirborne', False):
+            want = self.moveState
+        if want == self.stepPlaying:
+            return
+        if self.stepPlaying is not None:
+            self.stepSounds[self.stepPlaying].stop()
+        self.stepPlaying = want
+        if want is not None:
+            self.stepSounds[want].play()
 
     # --- Where it is ---
 

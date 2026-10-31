@@ -30,11 +30,17 @@ from toontown.toonbase import ToontownGlobals
 
 MUSIC = 'phase_8/audio/bgm/DL_nbrhood.ogg'
 SNATCHER_SOUND = 'phase_5/audio/sfx/lightning_1.ogg'
-ROUND_SOUND = 'phase_4/audio/sfx/SZ_DD_shipbell.ogg'
+# The round changes to the jingle a trolley game ends with (Arthur).
+ROUND_SOUND = 'phase_4/audio/sfx/MG_win.ogg'
 BEAN_SOUND = 'phase_4/audio/sfx/SZ_DD_treasure.ogg'
 POWER_SOUND = 'phase_4/audio/sfx/MG_pairing_match.ogg'
 REVIVE_SOUND = 'phase_5/audio/sfx/AA_heal_tickle.ogg'
 PICKUP_RANGE = 3.5
+# The player's body can't go into a cog's: it is pushed out to this far
+# past the cog's radius.
+PLAYER_RADIUS = 1.3
+# Only the nearest few cogs are heard stepping.
+STEP_COGS = 5
 TOUCH_SETTING = ('survival', 'best-round')
 # Model, piece and scale of the picture over each drop.
 POWER_ICONS = {'maxgags': ('phase_3.5/models/gui/inventory_icons', '**/inventory_cake', 1.2),
@@ -163,6 +169,8 @@ class SurvivalGame(DirectObject):
         self.cogSerial = 0
         self.lastBonk = -10.0
         self.music = None
+        self.stepCogs = set()
+        self.nextStepPick = 0.0
         self.nextPrompt = 0.0
         self.card = None
         self.build()
@@ -326,9 +334,16 @@ class SurvivalGame(DirectObject):
                     self.__spawnOne(now)
             elif not any(not c.dead for c in self.cogs):
                 self.endRound()
+        if now >= self.nextStepPick:
+            self.nextStepPick = now + 0.3
+            eye = self.player.getPos()
+            near = sorted((c for c in self.cogs if not c.dead and c.state == 'chase'),
+                          key=lambda c: (c.pos[0] - eye[0]) ** 2 + (c.pos[1] - eye[1]) ** 2)
+            self.stepCogs = set(near[:STEP_COGS])
         for cog in list(self.cogs):
             if not cog.dead:
                 cog.tick(dt, now)
+        self.__keepOutOfCogs()
         for npc in self.npcs:
             npc.tick(dt, now)
         for station in self.stations:
@@ -359,7 +374,38 @@ class SurvivalGame(DirectObject):
             self.hud.lowLaff(self.player.hp < G.LOW_HP and not self.player.down)
         return task.cont
 
+    def __keepOutOfCogs(self):
+        """The player can't walk through a cog: a body that ends up inside
+        one is pushed back out, the way the walls push."""
+        player = self.player
+        if player is None:
+            return
+        body = player.body
+        pos = body.getPos(render)
+        moved = False
+        for cog in self.cogs:
+            if cog.dead or cog.state not in ('chase', 'swing'):
+                continue
+            if abs(cog.pos[2] - pos[2]) > cog.height:
+                continue
+            away = Vec3(pos[0] - cog.pos[0], pos[1] - cog.pos[1], 0)
+            room = cog.radius + PLAYER_RADIUS
+            d = away.length()
+            if d >= room:
+                continue
+            if d < 0.01:
+                away = -player.getFlatForward()
+                d = 1.0
+            away *= (room - d) / d
+            pos = Point3(pos[0] + away[0], pos[1] + away[1], pos[2])
+            moved = True
+        if moved:
+            body.setPos(render, pos)
+
     # --- What the cogs ask ---
+
+    def wantCogSteps(self, cog):
+        return cog in self.stepCogs
 
     def nearestToon(self, pos):
         best, bestDist = None, 1e9
@@ -635,6 +681,8 @@ class SurvivalGame(DirectObject):
             return
         self.paused = True
         self.freezeClock()
+        for npc in self.npcs:
+            npc.stopSteps()
         self.player.grabMouse(False)
         self.hud.showCard('Paused', ['Round %d' % self.roundNum, '%d cogs popped' % self.stats.get('cogs popped', 0)],
                           [('Resume', self.resume), ('Quit', self.quit)])
@@ -685,6 +733,8 @@ class SurvivalGame(DirectObject):
             return
         self.over = True
         self.paused = True
+        for npc in self.npcs:
+            npc.stopSteps()
         self.player.grabMouse(False)
         best = self.loadBest()
         reached = self.roundNum

@@ -118,7 +118,7 @@ class SurvivalTouch(DirectObject):
                 x, z = x / d, z / d
             self.thumb.setPos(x * STICK_RADIUS, 0, z * STICK_RADIUS)
             self.player.touchMove(x, z)
-            self.player.sprinting = d > 0.95
+            self.player.setSprint(d > 0.95)
         if self.looking:
             cur = (mouse[0], mouse[1])
             if self.lastLook is not None:

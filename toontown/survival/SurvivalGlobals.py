@@ -22,11 +22,25 @@ REGEN_DELAY = 3.0
 REGEN_DELAY_LOW = 5.0
 REGEN_RATE = 25.0
 LOW_HP = 30
-# Walking, sprinting (and the sprint stamina in seconds) and jumping.
+# Walking, sprinting and jumping, from BO1's player movement (Arthur,
+# 2026-10-31: "study the movement completely"). BO1 walks at 190 units a
+# second with a pistol; backpedalling is 0.7 of that, strafing 0.8 (the
+# walker's 0.75 is close), and a sprint is 1.5x forward only. A sprint
+# lasts 4 seconds; once it runs dry it has to be let go and pressed again,
+# and needs a second's worth back before it starts. Stamin-Up (Sprint
+# Soda) doubles the sprint time and adds 7% to every speed. The toon walk
+# keeps Arthur's 18 (2026-10-30) and everything else follows BO1's ratios.
 WALK_SPEED = 18.0
-SPRINT_SPEED = 23.0
+REVERSE_SCALE = 0.7
+SPRINT_SCALE = 1.5
+SPRINT_SPEED = WALK_SPEED * SPRINT_SCALE
 SPRINT_TIME = 4.0
-SPRINT_RECOVER = 6.0
+SPRINT_MIN = 1.0
+# Seconds to fill an empty sprint meter, after a short breather.
+SPRINT_RECOVER = 5.0
+SPRINT_RECOVER_PAUSE = 0.6
+SPRINT_SODA_SPEED = 1.07
+SPRINT_SODA_TIME = 2.0
 JUMP_FORCE = 24.0
 EYE_HEIGHT = 3.6
 # Downed: a teammate's revive takes this long (hold); bleed out ends it.
@@ -80,8 +94,16 @@ def snatchersInRound(roundNum, npcs):
     return min(24, 6 + 2 * (roundNum // 5)) + 2 * npcs
 
 
-# Cog speed classes (walk / jog / sprint) rolled per cog as BO1 does.
-COG_SPEEDS = (6.0, 10.0, 14.0)
+# Cog speed classes (walk / jog / sprint) rolled per cog as BO1 does. BO1's
+# shamblers move at about a third of a walking player, its runners about
+# half, and even its sprinters stay a little slower than a player walking
+# forward, which is why "training" works: walk and they follow, stop or
+# backpedal and they catch up. Sprinting pulls well away from all of them.
+COG_SPEEDS = (WALK_SPEED * 0.33, WALK_SPEED * 0.55, WALK_SPEED * 0.85)
+# The walk and run cycles play at the speed the cog really moves: one walk
+# cycle covers about this many feet at play rate 1, one run cycle this many.
+COG_WALK_STRIDE = 5.0
+COG_RUN_STRIDE = 10.0
 
 
 def cogSpeedClass(roundNum, roll):
