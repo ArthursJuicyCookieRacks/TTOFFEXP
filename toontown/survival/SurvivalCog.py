@@ -25,8 +25,20 @@ FLY_HEIGHT = 60.0
 # A cog in the way of another steps round it.
 CROWD_RADIUS = 3.0
 FLEE_DISTANCE = 45.0
+# A cog that hasn't got closer for this long, or hasn't moved a few feet
+# in STILL_TIME, is stuck and flies back in somewhere better.
+STUCK_TIME = 20.0
+STILL_TIME = 4.0
+STILL_DISTANCE = 3.0
+# How often a cog looks again for its way to the toon.
+ROUTE_EVERY = 0.35
+# How far ahead along its route a cog looks for a corner it can cut.
+ROUTE_LOOKAHEAD = 5
+# Footsteps: heard this far, by the nearest few cogs.
+STEP_SOUND = 'phase_5/audio/sfx/ENC_cogside_step.ogg'
+STEP_HEAR = 45.0
+STEP_VOLUME = 0.35
 # How long a heading chosen to get round a wall is kept.
-STUCK_TIME = 15.0
 DETOUR_TIME = 0.8
 GROUND_EVERY = 0.1
 HEAD_FRACTION = 0.72
@@ -79,6 +91,13 @@ class SurvivalCog:
         self.pos = Point3(landing)
         self.bestDist = 1e9
         self.lastProgress = 0.0
+        self.route = None
+        self.routed = False
+        self.nextRoute = 0.0
+        self.stillFrom = None
+        self.stillSince = 0.0
+        self.stepPhase = random.random()
+        self.stepSound = None
         self.suit.setPos(landing)
         self.suit.setH(random.uniform(0, 360))
         self.__flyIn(landing)
@@ -114,10 +133,34 @@ class SurvivalCog:
             self.prop = None
         self.suit.clearTransparency()
         self.state = 'chase'
-        if self.lure is not None:
-            self.__loop('run', 1.6)
+        self.__moveAnim(self.speed if self.lure is None else max(self.speed, G.COG_SPEEDS[-1]))
+
+    def __moveAnim(self, speed):
+        """Walk or run with the feet keeping up with the ground: the cycle
+        plays as fast as the cog really moves, never faster."""
+        if speed <= G.COG_SPEEDS[0] * 1.2:
+            self.__loop('walk', round(speed / G.COG_WALK_STRIDE, 2))
         else:
-            self.__loop('walk' if self.speedClass == 0 else 'run', 1.0 if self.speedClass < 2 else 1.6)
+            self.__loop('run', round(speed / G.COG_RUN_STRIDE, 2))
+
+    def __footstep(self, speed, dt):
+        # A step sound every half cycle, from the nearest few cogs only.
+        if not self.game.wantCogSteps(self):
+            return
+        stride = G.COG_WALK_STRIDE if speed <= G.COG_SPEEDS[0] * 1.2 else G.COG_RUN_STRIDE
+        self.stepPhase += dt * speed / stride * 2.0
+        if self.stepPhase < 1.0:
+            return
+        self.stepPhase -= 1.0
+        if self.stepSound is None:
+            self.stepSound = base.loader.loadSfx(STEP_SOUND)
+        if self.stepSound:
+            dist = (camera.getPos(render) - self.suit.getPos(render)).length()
+            volume = STEP_VOLUME * max(0.0, 1.0 - dist / STEP_HEAR)
+            if volume > 0.01:
+                self.stepSound.setVolume(volume)
+                self.stepSound.setPlayRate(random.uniform(0.9, 1.1))
+                self.stepSound.play()
 
     def __loop(self, anim, rate=1.0):
         if self.anim != (anim, rate):
@@ -133,6 +176,8 @@ class SurvivalCog:
         if self.lure is not None and now > self.lureUntil:
             self.lure = None
         if self.state == 'swing':
+            # Standing to swing isn't being stuck.
+            self.stillSince = now
             if self.swingAt is not None and now >= self.swingAt:
                 self.swingAt = None
                 self.__hit()
@@ -141,12 +186,14 @@ class SurvivalCog:
             return
         goal = self.__goal(now)
         if goal is None:
+            self.stillSince = now
             self.__loop('neutral')
             return
         to = Point3(goal[0], goal[1], 0) - Point3(self.pos[0], self.pos[1], 0)
         dist = to.length()
         reach = G.COG_REACH + (self.radius if self.lure is None else 0.5)
         if dist <= reach and self.lure is None:
+            self.stillSince = now
             self.__face(goal)
             if now >= self.nextSwing:
                 self.__swing(now)
@@ -154,6 +201,7 @@ class SurvivalCog:
                 self.__loop('neutral')
             return
         if dist <= 1.0:
+            self.stillSince = now
             self.__loop('neutral')
             return
         # A cog that gets nowhere for a while (a fence, a hedge, a corner)
@@ -163,22 +211,92 @@ class SurvivalCog:
             self.lastProgress = now
         elif not self.lastProgress:
             self.lastProgress = now
-        elif now - self.lastProgress > STUCK_TIME and dist > 10.0 and self.lure is None:
+        if self.stillFrom is None or (Point3(self.pos) - self.stillFrom).length() > STILL_DISTANCE:
+            self.stillFrom = Point3(self.pos)
+            self.stillSince = now
+        # (Getting no closer is not enough: a cog chasing a toon who runs
+        # off gets further away while walking fine.)
+        if self.lure is None and dist > 10.0 and now - self.stillSince > STILL_TIME:
             self.__reland(goal)
             return
         # A Presentation pulls hard: every cog hurries to it, so the ones
         # across the playground get there before it pops.
         speed = self.speed if self.lure is None else max(self.speed, G.COG_SPEEDS[-1])
-        self.__step(to / max(dist, 0.001), min(dist, speed * dt), now)
+        way = self.__waypoint(goal, now)
+        toWay = Point3(way[0], way[1], 0) - Point3(self.pos[0], self.pos[1], 0)
+        wayDist = toWay.length()
+        if wayDist < 0.05:
+            toWay, wayDist = to, dist
+        self.__step(toWay / max(wayDist, 0.001), min(wayDist if way is goal else max(wayDist, speed * dt), speed * dt), now,
+                    routed=self.routed)
+        self.__moveAnim(speed)
+        self.__footstep(speed, dt)
+
+    def __clearWide(self, a, b):
+        """A walk from a to b with room for the cog's body: the middle line
+        and one either side of it."""
+        arena = self.arena
+        lift = 2.0
+        pa = Point3(a[0], a[1], a[2] + lift)
+        pb = Point3(b[0], b[1], a[2] + lift)
+        if not arena.clearLine(pa, pb):
+            return False
+        d = Vec3(pb - pa)
+        d.setZ(0)
+        if d.lengthSquared() < 0.01:
+            return True
+        d.normalize()
+        side = Vec3(-d[1], d[0], 0) * max(0.8, self.radius * 0.7)
+        return arena.clearLine(pa + side, pb + side) and arena.clearLine(pa - side, pb - side)
+
+    def __waypoint(self, goal, now):
+        """Where to walk next: straight at the goal when there is room,
+        otherwise the furthest open cell along the playground's shortest
+        way to it (round the gazebo, the fences, the trees)."""
+        if now < self.nextRoute:
+            return self.route if self.route is not None else goal
+        self.nextRoute = now + ROUTE_EVERY * random.uniform(0.85, 1.15)
+        self.route = None
+        self.routed = True
+        if self.__clearWide(self.pos, goal):
+            return goal
+        flow, goalCell = self.arena.flowTo(goal)
+        cell = self.arena.nearestCell(self.pos)
+        if not flow or cell is None or cell not in flow:
+            # Off the map: feel along the walls the old way.
+            self.routed = False
+            return goal
+        chain = []
+        c = flow.get(cell)
+        while c is not None and len(chain) < ROUTE_LOOKAHEAD:
+            chain.append(c)
+            c = flow.get(c)
+        if not chain:
+            # In the toon's own cell: straight at it.
+            return goal
+        pick = chain[0]
+        for c in reversed(chain[1:]):
+            if self.arena.clearLine(Point3(self.pos[0], self.pos[1], self.pos[2] + 2), Point3(self.arena.cellPoint(c)) + Vec3(0, 0, 2)):
+                pick = c
+                break
+        self.route = Point3(self.arena.cellPoint(pick))
+        return self.route
 
     def __reland(self, goal):
         player = self.game.player
         landing = self.arena.landingNear(goal, player.getEye(), player.getForward())
         if landing is None:
-            self.lastProgress = globalClock.getFrameTime()
+            toons = [t.getPos() for t in [player] + self.game.npcs]
+            landing = self.arena.pickLanding(toons, player.getEye(), player.getForward())
+        if landing is None:
+            # Nowhere out of sight this time: try again in a moment.
+            self.stillSince = globalClock.getFrameTime() - STILL_TIME + 1.0
             return
         self.bestDist = 1e9
         self.lastProgress = 0.0
+        self.stillFrom = None
+        self.route = None
+        self.nextRoute = 0.0
         self.detour = None
         self.pos = landing
         self.state = 'landing'
@@ -197,12 +315,16 @@ class SurvivalCog:
             return None
         return self.target.getPos()
 
-    def __step(self, direction, length, now):
+    def __step(self, direction, length, now, routed=False):
         pos = self.pos
-        if self.detour is not None and now < self.detourUntil:
+        if routed:
+            # The way was checked (a clear walk, or the playground's cells):
+            # no feeling for walls, which mistook Toon Hall's steps for one.
+            self.detour = None
+        elif self.detour is not None and now < self.detourUntil:
             direction = self.detour
         ahead = Point3(pos + direction * max(length, 2.5))
-        if not self.arena.clearLine(Point3(pos[0], pos[1], pos[2] + 2), Point3(ahead[0], ahead[1], pos[2] + 2)):
+        if not routed and not self.arena.clearLine(Point3(pos[0], pos[1], pos[2] + 2), Point3(ahead[0], ahead[1], pos[2] + 2)):
             # A wall: try the ways round it and keep the first that is clear.
             found = None
             for angle in (45, -45, 90, -90, 135, -135):
@@ -224,6 +346,9 @@ class SurvivalCog:
             if other is self or other.dead or other.state == 'landing':
                 continue
             gap = Point3(other.pos[0], other.pos[1], 0) - Point3(pos[0], pos[1], 0)
+            if gap.length() < CROWD_RADIUS + 1.0:
+                # Waiting behind the crowd isn't being stuck.
+                self.stillSince = now
             if gap.length() < CROWD_RADIUS and gap.dot(direction) > 0:
                 side = Vec3(-gap[1], gap[0], 0)
                 side.normalize()
@@ -243,10 +368,6 @@ class SurvivalCog:
         self.pos = new
         self.suit.setPos(new)
         self.__face(new + direction)
-        if self.lure is not None:
-            self.__loop('run', 1.6)
-        else:
-            self.__loop('walk' if self.speedClass == 0 else 'run', 1.0 if self.speedClass < 2 else 1.6)
 
     def __face(self, point):
         d = point - self.pos

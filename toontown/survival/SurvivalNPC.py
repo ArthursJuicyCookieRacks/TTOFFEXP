@@ -35,6 +35,10 @@ THROW_TIME = (1.1, 1.9)
 THROW_FLIGHT = 0.45
 HIT_CHANCE = 0.8
 HP = 100
+# Their footsteps, the toon loops, quieter the further off they are.
+STEP_SOUNDS = {'walk': 'phase_3.5/audio/sfx/AV_footstep_walkloop.ogg', 'run': 'phase_3.5/audio/sfx/AV_footstep_runloop.ogg'}
+STEP_HEAR = 40.0
+STEP_VOLUME = 0.45
 
 
 class SurvivalNPC:
@@ -123,6 +127,32 @@ class SurvivalNPC:
 
     # --- Animation ---
 
+    def __steps(self):
+        anim = self.anim[0] if self.anim and not self.anim[2] else None
+        want = anim if anim in STEP_SOUNDS and not self.down else None
+        playing = getattr(self, 'stepPlaying', None)
+        sounds = self.__dict__.setdefault('stepSounds', {})
+        if want != playing:
+            if playing is not None:
+                sounds[playing].stop()
+            self.stepPlaying = want
+            if want is not None:
+                if want not in sounds:
+                    sound = base.loader.loadSfx(STEP_SOUNDS[want])
+                    sound.setLoop(True)
+                    sounds[want] = sound
+                sounds[want].setVolume(0)
+                sounds[want].play()
+        if want is not None:
+            dist = (camera.getPos(render) - self.toon.getPos(render)).length()
+            sounds[want].setVolume(STEP_VOLUME * max(0.0, 1.0 - dist / STEP_HEAR))
+
+    def stopSteps(self):
+        playing = getattr(self, 'stepPlaying', None)
+        if playing is not None:
+            self.stepSounds[playing].stop()
+            self.stepPlaying = None
+
     def __loop(self, anim, rate=1.0, once=False):
         if self.anim == (anim, rate, once):
             return
@@ -141,6 +171,7 @@ class SurvivalNPC:
     # --- Each frame ---
 
     def tick(self, dt, now):
+        self.__steps()
         if self.down:
             if self.toon.getCurrentAnim() is None:
                 self.toon.pose('lose', self.toon.getNumFrames('lose') - 1)
@@ -422,6 +453,7 @@ class SurvivalNPC:
         return 'Hold Use: help %s up (%.1f s)' % (self.name, left)
 
     def destroy(self):
+        self.stopSteps()
         self.__stopThrow()
         self.toon.stopBlink()
         self.toon.delete()

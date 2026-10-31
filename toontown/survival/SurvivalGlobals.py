@@ -22,11 +22,25 @@ REGEN_DELAY = 3.0
 REGEN_DELAY_LOW = 5.0
 REGEN_RATE = 25.0
 LOW_HP = 30
-# Walking, sprinting (and the sprint stamina in seconds) and jumping.
+# Walking, sprinting and jumping, from BO1's player movement (Arthur,
+# 2026-10-31: "study the movement completely"). BO1 walks at 190 units a
+# second with a pistol; backpedalling is 0.7 of that, strafing 0.8 (the
+# walker's 0.75 is close), and a sprint is 1.5x forward only. A sprint
+# lasts 4 seconds; once it runs dry it has to be let go and pressed again,
+# and needs a second's worth back before it starts. Stamin-Up (Sprint
+# Soda) doubles the sprint time and adds 7% to every speed. The toon walk
+# keeps Arthur's 18 (2026-10-30) and everything else follows BO1's ratios.
 WALK_SPEED = 18.0
-SPRINT_SPEED = 23.0
+REVERSE_SCALE = 0.7
+SPRINT_SCALE = 1.5
+SPRINT_SPEED = WALK_SPEED * SPRINT_SCALE
 SPRINT_TIME = 4.0
-SPRINT_RECOVER = 6.0
+SPRINT_MIN = 1.0
+# Seconds to fill an empty sprint meter, after a short breather.
+SPRINT_RECOVER = 5.0
+SPRINT_RECOVER_PAUSE = 0.6
+SPRINT_SODA_SPEED = 1.07
+SPRINT_SODA_TIME = 2.0
 JUMP_FORCE = 24.0
 EYE_HEIGHT = 3.6
 # Downed: a teammate's revive takes this long (hold); bleed out ends it.
@@ -80,8 +94,16 @@ def snatchersInRound(roundNum, npcs):
     return min(24, 6 + 2 * (roundNum // 5)) + 2 * npcs
 
 
-# Cog speed classes (walk / jog / sprint) rolled per cog as BO1 does.
-COG_SPEEDS = (6.0, 10.0, 14.0)
+# Cog speed classes (walk / jog / sprint) rolled per cog as BO1 does. BO1's
+# shamblers move at about a third of a walking player, its runners about
+# half, and even its sprinters stay a little slower than a player walking
+# forward, which is why "training" works: walk and they follow, stop or
+# backpedal and they catch up. Sprinting pulls well away from all of them.
+COG_SPEEDS = (WALK_SPEED * 0.33, WALK_SPEED * 0.55, WALK_SPEED * 0.85)
+# The walk and run cycles play at the speed the cog really moves: one walk
+# cycle covers about this many feet at play rate 1, one run cycle this many.
+COG_WALK_STRIDE = 5.0
+COG_RUN_STRIDE = 10.0
 
 
 def cogSpeedClass(roundNum, roll):
@@ -115,7 +137,7 @@ DOWN_LOSS = 0.05
 
 # --- Melee ---
 BONK_DAMAGE = 150
-BONK_REACH = 4.0
+BONK_REACH = 5.0
 BONK_TIME = 1.2
 
 # --- Stations ---
@@ -123,12 +145,17 @@ TRUNK_COST = 950
 TRUNK_SALE_COST = 10
 TRUNK_CYCLE = 4.0
 TRUNK_OFFER = 10.0
-TRUNK_REUSE = 3.0
+# A moment after a gag is taken (or sinks back) before the trunk opens
+# again, so one press doesn't take a gag and buy another.
+TRUNK_REUSE = 0.4
 # The Doodle (BO1's teddy bear): never in the first 3 goes, then the odds
 # climb; the trunk shuts for a while and the beans come back.
 DOODLE_ODDS = ((3, 0.0), (7, 0.15), (12, 0.3), (999, 0.5))
 DOODLE_SHUT = 30.0
 MICKEY_COST = 5000
+# The trolley out of Toontown Central wins the game.
+ESCAPE_COST = 100000
+ESCAPE_RANGE = 10.0
 MICKEY_TIME = 5.0
 UPGRADE_MULT = {1: 2, 2: 2, 3: 2, 4: 3, 5: 3, 6: 3, 7: 5}
 
@@ -147,7 +174,11 @@ DROP_CHANCE = 0.03
 DROP_CHANCE_STEP = 0.03
 DROPS_PER_ROUND = 4
 DROP_LIFE = 26.0
-DROP_BLINK = 6.0
+# BO1: solid for a while, then a slow blink that gets quicker and quicker
+# until it's gone.
+DROP_BLINK = 11.0
+DROP_BLINK_SLOW = 0.5
+DROP_BLINK_FAST = 0.08
 POWER_TIME = 30.0
 POWERUPS = ('maxgags', 'instapop', 'toonado', 'doublebeans', 'trunksale')
 POWERUP_NAMES = {'maxgags': 'Max Gags', 'instapop': 'Insta-Pop', 'toonado': 'Toonado',
@@ -203,12 +234,35 @@ del _key, _row
 # Trap, Lure only as the Presentation.
 PRESENTATION = (LURE, 6)
 TRUNK_GAGS = [key for key in GAGS if key[1] < 6] + [PRESENTATION]
-PRESENTATION_MAX = 2
+# The Presentation (BO1's special grenade): three of them when the trunk
+# gives it, and a Max Gags fills them back to three from then on.
+PRESENTATION_MAX = 3
 PRESENTATION_LURE = 15.0
 PRESENTATION_RANGE = 40.0
 PRESENTATION_DAMAGE = 500
 PRESENTATION_POP = 8.0
 STARTING_GAG = (THROW, 0)
+
+# --- TNT (BO1's frag grenades) ---
+# Two more every round, four at most; a Max Gags fills them up. Thrown in
+# an arc, it bounces and goes off TNT_FUSE seconds after leaving the hand.
+# BO1 frags kill outright in the early rounds and fall off as the zombies'
+# health grows past them (around round 10): the blast's middle does
+# 150 + 100 a round (most 1500), the edge a quarter of it. Like a frag,
+# it can hurt the toon who threw it.
+TNT_PER_ROUND = 2
+TNT_MAX = 4
+TNT_FUSE = 2.2
+TNT_RADIUS = 15.0
+TNT_THROW_SPEED = 38.0
+TNT_THROW_UP = 12.0
+TNT_GRAVITY = 64.0
+TNT_SELF_DAMAGE = 60
+TNT_SELF_RADIUS = 8.0
+
+
+def tntDamage(roundNum):
+    return min(1500, 150 + 100 * roundNum)
 GAG_SLOTS = 2
 RELOAD_TIME = 1.8
 # Throw and Squirt fly this fast; Drop gags fall onto the aim point.

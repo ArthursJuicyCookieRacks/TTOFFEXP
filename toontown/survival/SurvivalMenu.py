@@ -108,6 +108,10 @@ class SurvivalLauncher(DirectObject):
         self.chooser.enter()
         if self.music:
             self.music.play()
+        if status['mode'] == 'exit':
+            # Escaped on the trolley: straight back to Pick-A-Toon.
+            self.finish()
+            return
         self.showMenu()
 
     def finish(self):

@@ -161,6 +161,7 @@ class TrunkStation(Station):
         self.stage = self.node.attachNewNode('trunkStage')
         self.stage.setPos(0, 0, 1.6)
         self.uses = 0
+        self.saleOpen = False
         self.offer = None
         self.offerUntil = 0.0
         self.shutUntil = 0.0
@@ -192,15 +193,12 @@ class TrunkStation(Station):
         if self.offer is not None:
             track, level = self.offer
             if self.offer == G.PRESENTATION:
-                # Not a gag slot: it goes in the Presentation pocket.
+                # Not a gag slot: three Presentations, and every Max Gags
+                # from now on fills them back up.
                 gags = self.game.gags
-                if gags.presentations >= G.PRESENTATION_MAX:
-                    self.floatText('Your pockets are full!', (1, 0.4, 0.4, 1))
-                    return False
                 self.__clearOffer()
-                gags.presentations += 1
-                self.game.hud.setGag(gags.gag, gags.current, len(gags.gags))
-                self.game.hud.say('Got a Presentation! Press the Presentation button to throw it.', 2.5)
+                gags.givePresentations()
+                self.game.hud.say('Got the Presentation! Three of them: LB, or Q, throws one.', 3.0)
                 self.game.count('trunk gags')
                 self.readyAt = now + G.TRUNK_REUSE
                 return True
@@ -217,6 +215,7 @@ class TrunkStation(Station):
             return False
         self.busy = True
         self.uses += 1
+        self.saleOpen = self.game.power('trunksale')
         self.__openLid(True)
         base.playSfx(self.bell, volume=0.4)
         # The gags come up out of the trunk one after another, each a
@@ -225,8 +224,11 @@ class TrunkStation(Station):
         self.cycleTrack = Sequence(Wait(0.5))
         total = sum(0.5 + 0.09 * i for i in range(self.STEPS))
         last = None
+        # Never a gag the toon already has (BO1's box never gives a gun
+        # you're holding), the last one up included.
+        choices = [k for k in G.TRUNK_GAGS if not self.game.gags.holds(k)] or list(G.TRUNK_GAGS)
         for i in range(self.STEPS):
-            key = random.choice([k for k in G.TRUNK_GAGS if k != last] or G.TRUNK_GAGS)
+            key = random.choice([k for k in choices if k != last] or choices)
             last = key
             self.cycleTrack.append(Func(self.__show, key))
             self.cycleTrack.append(Wait(G.TRUNK_CYCLE * (0.5 + 0.09 * i) / total))
@@ -273,6 +275,9 @@ class TrunkStation(Station):
             if self.uses <= limit:
                 doodle = self.uses > 3 and random.random() < odds
                 break
+        if self.saleOpen:
+            # A Trunk Sale never ends with the trunk shutting itself.
+            doodle = False
         if doodle:
             # A Doodle pops out instead: the beans come back and the trunk
             # shuts for a while.
@@ -447,4 +452,44 @@ class FishermanStation(Station):
         self.closeMenu()
         self.toon.stopBlink()
         self.toon.delete()
+        Station.destroy(self)
+
+
+class TrolleyStation(Station):
+    """The way out: the Toontown Central trolley takes the toons away for
+    100,000 jellybeans, and that wins the game."""
+
+    def __init__(self, game):
+        station = game.arena.geom.find('**/*trolley_station*')
+        self.trolley = station
+        self.car = station.find('**/trolley_car') if not station.isEmpty() else station
+        pos = self.car.getPos(game.arena.root) if not self.car.isEmpty() else Point3(0, 0, -1000)
+        Station.__init__(self, game, pos, 0, 'trolley')
+        self.ride = None
+
+    def near(self, pos):
+        if self.car.isEmpty():
+            return False
+        return (Point3(pos[0], pos[1], 0) - Point3(self.node.getX(), self.node.getY(), 0)).length() < G.ESCAPE_RANGE
+
+    def prompt(self):
+        if self.ride is not None:
+            return ''
+        return 'Use: Escape Toontown Central for %s jellybeans' % format(G.ESCAPE_COST, ',')
+
+    def use(self):
+        if self.ride is not None or self.car.isEmpty():
+            return False
+        if not self.game.spend(G.ESCAPE_COST):
+            self.floatText('Not enough jellybeans!', (1, 0.4, 0.4, 1))
+            return False
+        from toontown.survival.SurvivalEscape import TrolleyRide
+        self.ride = TrolleyRide(self.game, self.trolley, self.car)
+        self.game.escape(self.ride)
+        return True
+
+    def destroy(self):
+        if self.ride is not None:
+            self.ride.destroy()
+            self.ride = None
         Station.destroy(self)
