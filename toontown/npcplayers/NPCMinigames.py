@@ -1033,6 +1033,8 @@ def Globals_ToonRunSpeed():
 
 # Milliseconds a tick (for the whole game) spent planning NPC flights.
 PLAN_BUDGET = 0.005
+# How much a flyer pays per grid step for each unit away from its lane.
+LANE_PULL = 0.12
 
 
 class FlightNav:
@@ -1143,7 +1145,9 @@ class FlightPlanner:
     MOVES = [(dx, dy, dz) for dx in (-1, 0, 1) for dy in (-1, 0, 1) for dz in (-1, 0, 1)
              if (dx, dy, dz) != (0, 0, 0) and abs(dx) + abs(dy) + abs(dz) <= 2]
 
-    def __init__(self, nav, level, start, goal):
+    def __init__(self, nav, level, start, goal, lane=None):
+        # lane: (x, z) the toon likes to fly at, so each finds its own way.
+        self.lane = lane
         self.nav = nav
         self.level = level
         self.start = Point3(start)
@@ -1233,6 +1237,8 @@ class FlightPlanner:
                 if not self.inside(nxt):
                     continue
                 g = cost[cell] + self.GRID * math.sqrt(move[0] ** 2 + move[1] ** 2 + move[2] ** 2)
+                if self.lane is not None:
+                    g += LANE_PULL * (abs(nxt[0] * self.GRID - self.lane[0]) + abs(nxt[2] * self.GRID - self.lane[1]))
                 if g >= cost.get(nxt, 1e9):
                     continue
                 there = self.point(nxt)
@@ -1357,27 +1363,64 @@ class CogdoFlyingPlayer(CogdoPlayer):
             flight = flights[self.game.doId] = {'spots': spots, 'plans': {}, 'pumped': None}
         return flight
 
+    def route(self, level, flight):
+        """Its own flight: its spot on the start platform, the platforms it
+        means to land on (not always every one: some it flies past) and
+        its spot on the far one, with the lane it likes to fly in."""
+        route = self.memo.get('route')
+        if route is None:
+            spots = flight['spots']
+            npcs = self.npcs()
+            index = npcs.index(self.npc.doId) if self.npc.doId in npcs else 0
+            rng = random.Random(self.npc.doId * 7 + self.game.doId)
+
+            def own(spot, reach):
+                angle = index * 2.1 + 0.5
+                return Point3(spot[0] + reach * math.cos(angle), spot[1] + reach * math.sin(angle), spot[2])
+
+            route = [own(spots[0], 1.6)]
+            skipped = False
+            for spot in spots[1:-1]:
+                if not skipped and rng.random() < 0.3:
+                    # Flies past this one (never two in a row: fuel).
+                    skipped = True
+                    continue
+                skipped = False
+                route.append(own(spot, 1.6))
+            route.append(own(spots[-1], 3.5))
+            (left, right), _, (down, up) = level.getBounds()
+            self.memo['lane'] = (rng.uniform(left * 0.4, right * 0.4), rng.uniform(down + 0.3 * (up - down), down + 0.75 * (up - down)))
+            self.memo['route'] = route
+            self.memo['plans'] = {}
+        return route
+
     def pump(self, level, flight, now):
-        # Plans every leg ahead of time, a few milliseconds a tick for the
-        # whole game, the nearest legs first (from the rules screen on).
+        # Plans every flyer's legs ahead of time, a few milliseconds a tick
+        # for the whole game, the nearest legs first (from the rules on).
         if flight['pumped'] == now:
             return
         flight['pumped'] = now
-        spots = flight['spots']
-        for leg in range(len(spots) - 1):
-            plan = flight['plans'].get(leg)
-            if plan is None:
-                plan = flight['plans'][leg] = FlightPlanner(self.nav(), level, spots[leg], spots[leg + 1])
-            if not plan.step(PLAN_BUDGET):
-                return
+        flyers = [p for p in self.minigames.players.values() if p.game is self.game and isinstance(p, CogdoFlyingPlayer)]
+        routes = [(p, p.route(level, flight)) for p in flyers]
+        legs = max(len(r) for p, r in routes) - 1 if routes else 0
+        deadline = globalClock.getRealTime() + PLAN_BUDGET
+        for leg in range(legs):
+            for p, route in routes:
+                if leg >= len(route) - 1:
+                    continue
+                plan = p.memo['plans'].get(leg)
+                if plan is None:
+                    plan = p.memo['plans'][leg] = FlightPlanner(p.nav(), level, route[leg], route[leg + 1], p.memo['lane'])
+                left = deadline - globalClock.getRealTime()
+                if left <= 0 or not plan.step(left):
+                    return
 
-    def ownSpot(self, spot, final):
-        # Each toon lands a little apart from the others.
-        npcs = self.npcs()
-        index = npcs.index(self.npc.doId) if self.npc.doId in npcs else 0
-        angle = index * 2.1 + 0.5
-        reach = 3.5 if final else 1.6
-        return Point3(spot[0] + reach * math.cos(angle), spot[1] + reach * math.sin(angle), spot[2])
+    def setAnim(self, name):
+        # Up in the air a flyer hangs in its jump pose under the propeller,
+        # as the player's own toon does; on a platform it stands.
+        if self.memo.get('anim') != name:
+            self.memo['anim'] = name
+            self.npc.b_setAnimState(name, 1.0)
 
     def flyTo(self, level, here, aim, speed, climbing=True):
         delta = Vec3(aim - here)
@@ -1443,15 +1486,16 @@ class CogdoFlyingPlayer(CogdoPlayer):
                 self.memo['mode'] = 'plan'
             return
         if mode == 'rest':
+            self.setAnim('Happy')
             if now >= self.memo.get('restUntil', 0):
                 self.memo['mode'] = 'plan'
             return
         leg = self.memo.get('leg', 0)
-        spots = flight['spots']
-        final = leg + 1 >= len(spots) - 1
-        goal = self.ownSpot(spots[min(leg + 1, len(spots) - 1)], final)
+        route = self.route(level, flight)
+        final = leg + 1 >= len(route) - 1
+        goal = route[min(leg + 1, len(route) - 1)]
         if mode == 'plan':
-            plan = flight['plans'].get(leg)
+            plan = self.memo['plans'].get(leg)
             if plan is None or not (plan.path is not None or plan.failed):
                 return
             if plan.failed:
@@ -1460,11 +1504,11 @@ class CogdoFlyingPlayer(CogdoPlayer):
                 top = level.getBounds()[2][1] - 3.0
                 self.memo['path'] = [Point3(here[0], here[1], top), Point3(goal[0], goal[1], top), goal]
             else:
-                # The shared way, from its own spot to its own spot.
-                self.memo['path'] = list(plan.path[1:-1]) + [goal]
+                self.memo['path'] = list(plan.path[1:])
             self.memo['mode'] = 'fly'
             return
         # Flying the leg.
+        self.setAnim('jumpAirborne')
         detour = self.memo.get('detour')
         if detour is not None:
             serial, pos, back = detour
@@ -1493,6 +1537,7 @@ class CogdoFlyingPlayer(CogdoPlayer):
             self.memo['path'] = path
             if not path:
                 self.npc.placeAt(goal[0], goal[1], goal[2] - 1.0, self.npc.getH())
+                self.setAnim('Happy')
                 if final:
                     self.memo['mode'] = 'landed'
                     self.send('requestAction', Actions.LandOnWinPlatform, 0)
