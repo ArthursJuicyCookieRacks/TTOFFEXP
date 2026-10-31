@@ -89,10 +89,19 @@ class SurvivalArena:
                     door.hide()
         for origin in self.geom.findAllMatches('**/suit_building_origin'):
             origin.removeNode()
+        # The playground's moving props, as SafeZoneLoader makes them: the
+        # trash cans, hydrants and mailboxes dance, the Pet Shop's fish
+        # swims, Toon HQ's periscope and telescope look about.
+        self.animProps = self.__makeAnimatedProps()
         self.geom.flattenMedium()
         gsg = base.win.getGsg()
         if gsg:
             self.geom.prepareScene(gsg)
+        for prop in self.animProps:
+            try:
+                prop.enter()
+            except Exception:
+                self.notify.warning('could not start %s' % prop.__class__.__name__)
         self.root.setColorScale(NIGHT_SCALE)
         self.sky = None
         self.skyTask = None
@@ -119,6 +128,23 @@ class SurvivalArena:
         segNode.setIntoCollideMask(BitMask32.allOff())
         self.aimSegmentPath = self.root.attachNewNode(segNode)
         self.aimTrav.addCollider(self.aimSegmentPath, self.aimQueue)
+
+    def __makeAnimatedProps(self):
+        import importlib
+        props = []
+        for node in self.geom.findAllMatches('**/animated_prop_*'):
+            name = node.getName()
+            if name.startswith('animated_prop_generic'):
+                className = 'GenericAnimatedProp'
+            else:
+                className = name[len('animated_prop_'):-len('_DNARoot')]
+            try:
+                module = importlib.import_module('toontown.hood.' + className)
+                props.append(getattr(module, className)(node))
+            except Exception:
+                self.notify.warning('no animated prop for %s' % name)
+        self.notify.info('%d animated props' % len(props))
+        return props
 
     def startSky(self):
         self.sky = loader.loadModel(SKY_FILE)
@@ -160,6 +186,13 @@ class SurvivalArena:
                 self.sky.clearColorScale()
 
     def destroy(self):
+        for prop in getattr(self, 'animProps', ()):
+            try:
+                prop.exit()
+                prop.delete()
+            except Exception:
+                pass
+        self.animProps = []
         if self.skyTask:
             taskMgr.remove(self.skyTask)
             self.skyTask = None
