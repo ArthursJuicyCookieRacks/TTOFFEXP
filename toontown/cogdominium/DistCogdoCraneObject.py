@@ -57,6 +57,14 @@ class DistCogdoCraneObject(DistributedSmoothNode.DistributedSmoothNode, FSM.FSM)
         self.craneGame = None
         return
 
+    def announceGenerate(self):
+        DistributedSmoothNode.DistributedSmoothNode.announceGenerate(self)
+        # This client runs every crane object's physics (offline, the NPC
+        # toons' cranes too), so position reports coming back over the
+        # wire are old news: applying them made the bags jump back and
+        # forth between where they were and where they are.
+        self.localControl = True
+
     def setupPhysics(self, name):
         an = ActorNode('%s-%s' % (name, self.doId))
         anp = NodePath(an)
@@ -76,7 +84,7 @@ class DistCogdoCraneObject(DistributedSmoothNode.DistributedSmoothNode, FSM.FSM)
     def activatePhysics(self):
         if not self.physicsActivated:
             self.craneGame.physicsMgr.attachPhysicalNode(self.node())
-            base.cTrav.addCollider(self.collisionNodePath, self.handler)
+            self.craneGame.physicsTrav.addCollider(self.collisionNodePath, self.handler)
             self.physicsActivated = 1
             self.accept(self.collideName + '-floor', self.__hitFloor)
             self.accept(self.collideName + '-goon', self.__hitGoon)
@@ -86,7 +94,7 @@ class DistCogdoCraneObject(DistributedSmoothNode.DistributedSmoothNode, FSM.FSM)
     def deactivatePhysics(self):
         if self.physicsActivated:
             self.craneGame.physicsMgr.removePhysicalNode(self.node())
-            base.cTrav.removeCollider(self.collisionNodePath)
+            self.craneGame.physicsTrav.removeCollider(self.collisionNodePath)
             self.physicsActivated = 0
             self.ignore(self.collideName + '-floor')
             self.ignore(self.collideName + '-goon')

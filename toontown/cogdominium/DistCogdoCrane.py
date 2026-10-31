@@ -20,7 +20,7 @@ from toontown.toonbase import TouchControls
 
 class DistCogdoCrane(DistributedObject.DistributedObject, FSM.FSM):
     notify = DirectNotifyGlobal.directNotify.newCategory('DistCogdoCrane')
-    firstMagnetBit = 12
+    firstMagnetBit = 21
     craneMinY = 8
     craneMaxY = 25
     armMinH = -45
@@ -49,6 +49,11 @@ class DistCogdoCrane(DistributedObject.DistributedObject, FSM.FSM):
         self.links = []
         self.activeLinks = []
         self.collisions = NodePathCollection()
+        # One client runs every crane's cable here (the NPC toons' too). A
+        # link's shell is an inverted sphere, which every link of another
+        # crane is outside of, so each crane's cable collides in a
+        # traversal of its own (see DistCogdoCraneGame._doPhysics).
+        self.linkTrav = CollisionTraverser('craneLinks')
         self.physicsActivated = 0
         self.snifferActivated = 0
         self.magnetOn = 0
@@ -224,7 +229,7 @@ class DistCogdoCrane(DistributedObject.DistributedObject, FSM.FSM):
         if not self.physicsActivated:
             for an, anp, cnp in self.activeLinks:
                 self.craneGame.physicsMgr.attachPhysicalNode(an)
-                base.cTrav.addCollider(cnp, self.handler)
+                self.linkTrav.addCollider(cnp, self.handler)
 
             self.collisions.unstash()
             self.physicsActivated = 1
@@ -233,7 +238,7 @@ class DistCogdoCrane(DistributedObject.DistributedObject, FSM.FSM):
         if self.physicsActivated:
             for an, anp, cnp in self.activeLinks:
                 self.craneGame.physicsMgr.removePhysicalNode(an)
-                base.cTrav.removeCollider(cnp)
+                self.linkTrav.removeCollider(cnp)
 
             self.collisions.stash()
             self.physicsActivated = 0
@@ -378,10 +383,7 @@ class DistCogdoCrane(DistributedObject.DistributedObject, FSM.FSM):
         z = float(linkNum + 1) / float(self.numLinks) * self.cableLength
         anp.setPos(self.crane.getPos())
         anp.setZ(-z)
-        # One client runs every crane's cable here (the NPC toons' too), so
-        # each crane's links get bits of their own, or one crane's links
-        # would bump into the others' shells and fly off.
-        mask = BitMask32.bit(self.firstMagnetBit + self.index * self.numLinks + linkNum)
+        mask = BitMask32.bit(self.firstMagnetBit + linkNum)
         cn.setFromCollideMask(mask)
         cn.setIntoCollideMask(BitMask32(0))
         shellNode = CollisionNode('shell%s' % linkNum)
@@ -620,7 +622,6 @@ class DistCogdoCrane(DistributedObject.DistributedObject, FSM.FSM):
 
     def __sniffedSomething(self, entry):
         np = entry.getIntoNodePath()
-        self.notify.info('crane %s sniffed %s' % (self.index, np))
         doId = int(np.getNetTag('object'))
         obj = base.cr.doId2do.get(doId)
         if obj and obj.state != 'LocalDropped' and (obj.state != 'Dropped' or obj.craneId != self.doId):
@@ -718,12 +719,6 @@ class DistCogdoCrane(DistributedObject.DistributedObject, FSM.FSM):
         if game is None or pilot is None or not game.isPlaying():
             return Task.cont
         now = globalClock.getFrameTime()
-        if now - pilot.get('logAt', 0) > 2:
-            pilot['logAt'] = now
-            self.notify.info('pilot %s: mode %s held %s trolley %s gripper %s cogs %s' % (
-                self.index, pilot['mode'], self.heldObject and self.heldObject.doId, self.crane.getPos(render),
-                self.gripper.getPos(render) if self.gripper else None,
-                [(c.state, c.predictPos(0)) for c in game.cogs.values()]))
         if now < pilot['until']:
             return Task.cont
         held = self.heldObject
@@ -746,7 +741,6 @@ class DistCogdoCrane(DistributedObject.DistributedObject, FSM.FSM):
                 if not self.magnetOn:
                     self.__turnOnMagnet()
                     pilot['magnetAt'] = now
-                    self.notify.info('crane %s magnet on over %s at %s, magnet %s' % (self.index, bag.doId, bag.getPos(render), self.gripper.getPos(render) if self.gripper else None))
                 elif now - pilot.get('magnetAt', now) > 2.5:
                     # Missed it: let go and come round again.
                     self.__turnOffMagnet()
@@ -778,7 +772,7 @@ class DistCogdoCrane(DistributedObject.DistributedObject, FSM.FSM):
                 self.__turnOffMagnet()
                 pilot['mode'] = 'fetch'
                 pilot['target'] = None
-                pilot['until'] = now + random.uniform(1.2, 2.2)
+                pilot['until'] = now + random.uniform(1.5, 3.0)
         return Task.cont
 
     def __bagFree(self, bag):
@@ -816,7 +810,9 @@ class DistCogdoCrane(DistributedObject.DistributedObject, FSM.FSM):
             return None, None
         if pilot['cog'] is not best[1]:
             pilot['cog'] = best[1]
-            pilot['error'] = (random.uniform(-1.6, 1.6), random.uniform(-1.6, 1.6))
+            # NPC toons misjudge it now and then, as players do.
+            miss = 1.6 if self.avId == base.localAvatar.doId else random.choice((1.8, 2.5, 4.5))
+            pilot['error'] = (random.uniform(-miss, miss), random.uniform(-miss, miss))
         return best[1], best[2]
 
     def setCraneGameId(self, craneGameId):
@@ -901,6 +897,9 @@ class DistCogdoCrane(DistributedObject.DistributedObject, FSM.FSM):
             smoother.clearPositions(1)
 
     def setCablePos(self, changeSeq, y, h, links, timestamp):
+        if self.craneGame and self.craneGame.runsHere(self.avId):
+            # Our own report, back again: this client is moving the cable.
+            return
         self.changeSeq = changeSeq
         if self.smoothStarted:
             now = globalClock.getFrameTime()

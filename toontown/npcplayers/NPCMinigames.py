@@ -1623,10 +1623,6 @@ class CogdoCranePlayer(CogdoPlayer):
         game = self.game
         if game.finished:
             return
-        if now - self.memo.get('logAt', 0) > 3:
-            self.memo['logAt'] = now
-            goal = self.memo.get('goal')
-            self.minigames.notify.info('crane NPC %s at %s goal %s' % (self.npc.doId, self.npc.getPos(), goal and (goal.index, goal.state, goal.avId)))
         mine = self.myCrane()
         if mine is not None:
             if not self.memo.get('seated'):

@@ -593,10 +593,24 @@ class DistributedBuilding(DistributedObject.DistributedObject):
         frontNP.node().setEffect(DecalEffect.make())
         suitBuildingNP.setName('cb' + str(self.block) + ':_landmark__DNARoot')
         suitBuildingNP.setPosHprScale(nodePath, 15.463, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0)
+        if chr(self.track) == 'm':
+            self.retextureCashbotFieldOffice(suitBuildingNP)
         suitBuildingNP.flattenMedium()
         suitBuildingNP.setColorScale(0.6, 0.6, 0.6, 1.0)
         self.loadElevator(suitBuildingNP, cogdo=True)
         return suitBuildingNP
+
+    # A Cashbot field office shares the Mover & Shaker building: it gets
+    # Arthur's green Loan Shark poster and trim in place of the Sellbot ones.
+    CashbotFieldOfficeTextures = {'cogdominium_palette_3cmla_4': 'phase_5/maps/ttoff_cogdominium_palette_cashbot_4.jpg',
+                                  'cogdominium_palette_3cmla_5': 'phase_5/maps/ttoff_cogdominium_palette_cashbot_5.jpg'}
+
+    def retextureCashbotFieldOffice(self, np):
+        for name, path in self.CashbotFieldOfficeTextures.items():
+            old = np.findTexture(name)
+            new = loader.loadTexture(path)
+            if old and new:
+                np.replaceTexture(old, new)
 
     def animToToon(self, timeStamp):
         self.stopTransition()

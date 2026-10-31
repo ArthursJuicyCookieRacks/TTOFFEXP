@@ -38,7 +38,6 @@ class DistCogdoCraneAI(DistributedObjectAI, FSM.FSM):
     def requestControl(self):
         avId = self.air.getAvatarIdFromSender()
         game = self.craneGame
-        self.notify.info('crane %s requestControl from %s: state %s avId %s playing %s' % (self.index, avId, self.state, self.avId, game and game.isPlaying(avId)))
         if game is None or not game.isPlaying(avId) or game.finished:
             return
         if self.state == 'Free' and self.avId == 0 and not self.__craneOf(avId):

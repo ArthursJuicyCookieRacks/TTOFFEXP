@@ -20,6 +20,10 @@ from toontown.toonbase import ToontownGlobals
 
 # Seconds the rules stay up before the game starts anyway.
 IntroDuration = 30
+# The cables' and bags' physics step at most this long, up to this many
+# steps a frame.
+PhysicsStep = 1.0 / 60
+PhysicsMaxSteps = 6
 
 
 class DistCogdoCraneGame(CogdoCraneGameBase, DistCogdoGame):
@@ -36,6 +40,7 @@ class DistCogdoCraneGame(CogdoCraneGameBase, DistCogdoGame):
         self.barrelsLeft = GameConsts.NumBarrels
         self.coins = 0
         self.heldObject = None
+        self.stunCount = 0
         self.room = None
         self.gui = None
         self._stompIval = None
@@ -86,6 +91,9 @@ class DistCogdoCraneGame(CogdoCraneGameBase, DistCogdoGame):
         gravity = LinearVectorForce(0, 0, GameConsts.Gravity)
         fn.addForce(gravity)
         self.physicsMgr.addLinearForce(gravity)
+        # The cables and money bags collide in their own traversal, run
+        # with every physics step (see _doPhysics).
+        self.physicsTrav = PM.CollisionTraverser('cranePhysics')
         self.stompSfx = loader.loadSfx('phase_9/audio/sfx/CHQ_FACT_stomper_large.ogg')
         self.raiseSfx = loader.loadSfx('phase_9/audio/sfx/CHQ_FACT_stomper_raise.ogg')
         self.coinSfx = loader.loadSfx('phase_4/audio/sfx/MG_maze_pickup.ogg')
@@ -212,14 +220,24 @@ class DistCogdoCraneGame(CogdoCraneGameBase, DistCogdoGame):
         self.timer.unstash()
 
     def _doPhysics(self, task):
-        self.physicsMgr.doPhysics(globalClock.getDt())
+        # In small steps: at a low frame rate one big step lets the cables
+        # whip about and the bags on them swing wildly.
+        dt = min(globalClock.getDt(), 0.25)
+        steps = max(1, min(PhysicsMaxSteps, int(math.ceil(dt / PhysicsStep))))
+        cranes = [crane for crane in self.cranes.values() if crane.physicsActivated]
+        for i in range(steps):
+            self.physicsMgr.doPhysics(dt / steps)
+            for crane in cranes:
+                crane.linkTrav.traverse(crane.hinge)
+            self.physicsTrav.traverse(render)
         return Task.cont
 
     def _checkHits(self, task):
-        # A money bag that the local client runs (the player's, or an NPC
-        # toon's) knocks over any cog it comes close enough to.
+        # A money bag dropped by a crane the local client runs (the
+        # player's, or an NPC toon's) knocks over a cog it lands on. One
+        # still on the magnet, or lying on the floor, does nothing.
         for bag in list(self.moneyBags.values()):
-            if not bag.isRunHere() or bag.state not in ('LocalGrabbed', 'Grabbed', 'LocalDropped', 'Dropped', 'SlidingFloor'):
+            if not bag.isRunHere() or bag.state not in ('LocalDropped', 'Dropped'):
                 continue
             pos = bag.getPos(render)
             for cog in list(self.cogs.values()):
@@ -266,13 +284,12 @@ class DistCogdoCraneGame(CogdoCraneGameBase, DistCogdoGame):
 
     def runsHere(self, avId):
         # Whose cranes and money bags this client runs: its own toon's, and
-        # offline every other toon in the game is an NPC with no client of
-        # its own, so theirs too.
-        if not avId:
-            return False
-        return avId == base.localAvatar.doId or avId in self.getToonIds()
+        # offline every other toon at a crane is an NPC with no client of
+        # its own, so theirs too. (Only toons in the game can take one.)
+        return bool(avId)
 
     def cogStunned(self, cog):
+        self.stunCount += 1
         base.playSfx(self.hitSfx, node=cog)
 
     # --- Crane modes, for the cranes ---

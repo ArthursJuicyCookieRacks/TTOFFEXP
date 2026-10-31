@@ -845,7 +845,7 @@ def playCogdoCrane(dist):
             base.screenshot(os.path.join(shots, 'cash-%02d-play.png' % (10 + n)), defaultFilename=0)
             if n % 2 == 1:
                 shotFrom('cash-%02d-over.png' % (10 + n), Point3(0, -60, 45), Point3(0, 0, 0))
-            log('crane game: %d barrels, %d coins, %d cogs out' % (dist.barrelsLeft, dist.coins, len(dist.cogs)))
+            log('crane game: %d barrels, %d coins, %d cogs out, %d stunned' % (dist.barrelsLeft, dist.coins, len(dist.cogs), dist.stunCount))
         yield sleep(0.5)
     log('crane game over: %d barrels left' % dist.barrelsLeft)
     yield sleep(4 if video else 1)
@@ -867,6 +867,8 @@ def scenarioCogdo(track='s'):
 
     block, zoneId = onDistrict(takeOver)
     log('the %s cogs made block %d in zone %d a field office' % (track, block, zoneId))
+    # Gags enough for the executive suite.
+    onDistrict(restock, localAvatar.doId)
     yield from teleport(street - street % 1000, zoneId)
     def ours(do):
         return getattr(do, 'bldg', None) and do.bldg.block == block
@@ -875,6 +877,12 @@ def scenarioCogdo(track='s'):
     elevator = findObject('DistributedCogdoElevatorExt', ours)
     yield until(lambda: elevator.fsm.getCurrentState().getName() == 'waitEmpty', 60,
                 'the field office elevator to open (it is %s)' % elevator.fsm.getCurrentState().getName())
+    door = elevator.getElevatorModel()
+    if door and not door.isEmpty():
+        # The front of the field office, from out in the street.
+        for i, y in enumerate((-55, 55)):
+            shotFrom('fo-exterior-%s-%d.png' % (track, i), render.getRelativePoint(door, Point3(0, y, 14)),
+                     render.getRelativePoint(door, Point3(0, 0, 20)))
     yield from boardElevator('DistributedCogdoElevatorExt', ours)
     yield until(lambda: placeName() == 'CogdoInterior', 120, 'inside the field office')
     interior = findObject('DistributedCogdoInterior')
