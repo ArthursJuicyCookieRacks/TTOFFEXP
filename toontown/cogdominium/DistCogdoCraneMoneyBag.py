@@ -11,7 +11,7 @@ class DistCogdoCraneMoneyBag(DistCogdoCraneObject):
     grabPos = (0, 0, GameConsts.Settings.MoneyBagGrabHeight.get())
     craneFrictionCoef = 0.2
     craneSlideSpeed = 11
-    craneRotateSpeed = 16
+    craneRotateSpeed = 22
     wantsWatchDrift = 0
 
     def __init__(self, cr):

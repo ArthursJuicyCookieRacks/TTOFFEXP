@@ -12,7 +12,10 @@ from toontown.toonbase import TTLocalizer
 from otp.otpbase import OTPGlobals
 from toontown.cogdominium import CogdoCraneGameConsts as GameConsts
 import math
+import os
 import random
+
+PILOT_DEBUG = bool(os.environ.get('CRANE_PILOT_DEBUG'))
 from panda3d.physics import ActorNode, PhysicsCollisionHandler
 from otp.nametag import NametagGlobals
 from panda3d.direct import SmoothMover
@@ -23,11 +26,14 @@ class DistCogdoCrane(DistributedObject.DistributedObject, FSM.FSM):
     firstMagnetBit = 21
     craneMinY = 8
     craneMaxY = 25
-    armMinH = -45
-    armMaxH = 45
+    armMinH = -GameConsts.CraneMaxH
+    armMaxH = GameConsts.CraneMaxH
+    # How much of the arm's swing the crane camera turns with.
+    cameraFollow = 0.75
     shadowOffset = 7
     emptySlideSpeed = 10
-    emptyRotateSpeed = 20
+    # The arm swings a long way here, so it turns faster than a CFO crane.
+    emptyRotateSpeed = 26
     lookAtPoint = Point3(0.3, 0, 0.1)
     lookAtUp = Vec3(0, -1, 0)
     neutralStickHinge = VBase3(0, 90, 0)
@@ -63,6 +69,7 @@ class DistCogdoCrane(DistributedObject.DistributedObject, FSM.FSM):
         self.controls = self.root.attachNewNode('controls')
         self.controls.setPos(0, -4.9, 0)
         self.arm = self.hinge.attachNewNode('arm')
+        self.camPivot = self.hinge.attachNewNode('camPivot')
         self.crane = self.arm.attachNewNode('crane')
         self.cable = self.hinge.attachNewNode('cable')
         self.topLink = self.crane.attachNewNode('topLink')
@@ -542,6 +549,7 @@ class DistCogdoCrane(DistributedObject.DistributedObject, FSM.FSM):
         h = self.arm.getH() - xd * self.rotateSpeed * dt
         limitH = max(min(h, self.armMaxH), self.armMinH)
         self.arm.setH(limitH)
+        self.camPivot.setH(limitH * self.cameraFollow)
         y = self.crane.getY() + yd * self.slideSpeed * dt
         limitY = max(min(y, self.craneMaxY), self.craneMinY)
         atLimit = (limitH != h or limitY != y)
@@ -686,7 +694,7 @@ class DistCogdoCrane(DistributedObject.DistributedObject, FSM.FSM):
     def __startPilot(self):
         self.__stopPilot()
         self.pilot = {'mode': 'fetch', 'target': None, 'until': globalClock.getFrameTime() + random.uniform(0.6, 1.4),
-                      'error': (0, 0), 'cog': None}
+                      'error': (0, 0), 'cog': None, 'ambush': {}}
         taskMgr.add(self.__pilotTask, self.uniqueName('pilot'))
 
     def __stopPilot(self):
@@ -703,7 +711,8 @@ class DistCogdoCrane(DistributedObject.DistributedObject, FSM.FSM):
         d = max(min(d, self.craneMaxY), self.craneMinY)
         dh = self.arm.getH() - h
         dd = d - self.crane.getY()
-        xd = max(-1.0, min(1.0, dh / 4.0))
+        # Gently with a bag on, so it doesn't swing out.
+        xd = max(-1.0, min(1.0, dh / (10.0 if self.heldObject else 4.0)))
         yd = max(-1.0, min(1.0, dd / 2.0))
         if abs(dh) > 0.6 or abs(dd) > 0.3:
             self.__moveCraneArcHinge(xd, yd)
@@ -757,17 +766,22 @@ class DistCogdoCrane(DistributedObject.DistributedObject, FSM.FSM):
         cog, aim = self.__pickCog(pilot)
         if cog is None:
             # Nothing coming yet: wait over the middle of the lane's reach.
-            angle = GameConsts.LaneAngles[self.index]
-            p = GameConsts.lanePoint(angle, GameConsts.CraneLaneDistance)
-            self.__pilotSteer(p[0], p[1])
+            self.__pilotSteer(*GameConsts.craneWorld(self.index, 0, 2))
             return Task.cont
-        over = self.__pilotSteer(aim[0] + pilot['error'][0], aim[1] + pilot['error'][1])
-        # Let go when the cog will be under the bag as it lands.
         bagPos = held.getPos(render)
         fall = math.sqrt(max(0.0, 2.0 * max(bagPos[2], 0.5) / -GameConsts.Gravity))
         land = cog.predictPos(fall)
+        over = self.__pilotSteer(aim[0] + pilot['error'][0], aim[1] + pilot['error'][1])
+        if PILOT_DEBUG and now > pilot.get('debugAt', 0):
+            pilot['debugAt'] = now + 1.0
+            self.notify.info('pilot %d: cog %s aim %s land %s bag %s over %s arm %.0f' % (
+                self.index, cog.doId, (round(aim[0], 1), round(aim[1], 1)), land and (round(land[0], 1), round(land[1], 1)),
+                (round(bagPos[0], 1), round(bagPos[1], 1), round(bagPos[2], 1)), over, self.arm.getH()))
+        # Let go when the cog will be under the bag as it lands.
         if over and land is not None:
-            dx, dy = land[0] - bagPos[0], land[1] - bagPos[1]
+            # Where the NPC thinks the cog will be: off by its misjudgment.
+            dx = land[0] + pilot['error'][0] - bagPos[0]
+            dy = land[1] + pilot['error'][1] - bagPos[1]
             if dx * dx + dy * dy < 2.2 ** 2:
                 self.__turnOffMagnet()
                 pilot['mode'] = 'fetch'
@@ -793,21 +807,37 @@ class DistCogdoCrane(DistributedObject.DistributedObject, FSM.FSM):
         return best[1] if best else None
 
     def __pickCog(self, pilot):
-        # The cog to lead: the one that reaches the middle of the reach
-        # first, aimed where it will be by the time the trolley gets there.
+        # The cog to ambush: the one that reaches a spot in reach first.
+        # The spot is fixed ahead of the cog on its lane (where the lane
+        # passes closest to the crane, or a little ahead of the cog if it
+        # is past that), so the bag hangs still over it as the cog walks in.
+        now = globalClock.getFrameTime()
+        speed = GameConsts.CogWalkSpeed
+        hinge = self.hinge.getPos(render)
         best = None
         for cog in self.craneGame.cogs.values():
-            if not cog.canBeHit():
+            if not cog.canBeHit() or cog.state != 'Walk':
                 continue
-            for lead in (1.0, 2.0, 3.0, 4.0):
-                p = cog.predictPos(lead)
-                if p is not None and GameConsts.inCraneReach(self.index, p[0], p[1], slack=-1.0):
-                    if best is None or lead < best[0]:
-                        best = (lead, cog, p)
-                    break
+            dc = GameConsts.HallwayDistance - (now - cog.walkStart) * speed
+            angle = GameConsts.LaneAngles[cog.entranceId]
+            u = GameConsts.lanePoint(angle, 1)
+            # Distance along the lane closest to the hinge.
+            foot = hinge[0] * u[0] + hinge[1] * u[1]
+            ambush = pilot['ambush'].get(cog.doId)
+            if ambush is None or ambush >= dc - 1.0:
+                ambush = min(foot, dc - speed * 2.5)
+            if ambush < GameConsts.MachineDistance + 2:
+                continue
+            p = GameConsts.lanePoint(angle, ambush)
+            if not GameConsts.inCraneReach(self.index, p[0], p[1], slack=-1.0):
+                continue
+            eta = (dc - ambush) / speed
+            if best is None or eta < best[0]:
+                best = (eta, cog, p, ambush)
         if best is None:
             pilot['cog'] = None
             return None, None
+        pilot['ambush'] = {best[1].doId: best[3]}
         if pilot['cog'] is not best[1]:
             pilot['cog'] = best[1]
             # NPC toons misjudge it now and then, as players do.
@@ -967,7 +997,8 @@ class DistCogdoCrane(DistributedObject.DistributedObject, FSM.FSM):
         self.grabTrack = self.makeToonGrabInterval(toon)
         if avId == localAvatar.doId:
             self.craneGame.toCraneMode()
-            camera.reparentTo(self.hinge)
+            self.camPivot.setH(self.arm.getH() * self.cameraFollow)
+            camera.reparentTo(self.camPivot)
             camera.setPosHpr(0, -20, -5, 0, -20, 0)
             self.tube.stash()
             localAvatar.setPosHpr(self.controls, 0, 0, 0, 0, 0, 0)

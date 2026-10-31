@@ -87,20 +87,20 @@ def lerpDifficulty(range, difficulty):
 
 # --- The cranes and money bags ---
 
-# The cranes: one beside each lane, about a third of the way out, facing
-# across it. Each crane's arm swings from a hinge behind its controls, so
-# the magnet reaches a stretch of its lane a little ahead of the toon.
-CraneLaneDistance = 26.0
-CraneLaneOffset = 3.0
+# The cranes: one on each side of the machine, between two lanes, all
+# four facing it. Each crane's arm swings from a hinge behind its controls
+# and reaches the stretch of both lanes either side of it (from about 11 to
+# 33 out), so every lane has two cranes on it. The arm turns a long way
+# either side, and the crane camera turns with it.
+CraneDistance = 14.0
 CraneHingeY = -17.6
+CraneMaxH = 110
+CraneHeadings = (0, 90, 180, 270)
 CranePosHprs = []
-for _a in LaneAngles:
-    _rad = math.radians(_a)
-    _u = (-math.sin(_rad), math.cos(_rad))
-    _n = (math.cos(_rad), math.sin(_rad))
-    CranePosHprs.append((_u[0] * CraneLaneDistance + _n[0] * CraneLaneOffset,
-                         _u[1] * CraneLaneDistance + _n[1] * CraneLaneOffset,
-                         0, _a + 90, 0, 0))
+for _h in CraneHeadings:
+    # Out from the machine opposite the way the crane faces.
+    _p = lanePoint(_h, -CraneDistance)
+    CranePosHprs.append((_p[0], _p[1], 0, _h, 0, 0))
 
 
 def craneLocal(index, x, y):
@@ -127,14 +127,14 @@ def craneAim(index, x, y):
 
 def inCraneReach(index, x, y, slack=0.0):
     h, d = craneAim(index, x, y)
-    return abs(h) <= 45 + slack * 2 and CraneMinY - slack <= d <= CraneMaxY + slack
+    return abs(h) <= CraneMaxH + slack * 2 and CraneMinY - slack <= d <= CraneMaxY + slack
 
 
 # Two money bags lie beside each crane, either side of its controls.
 MoneyBagPosHprs = []
 for _i in range(len(CranePosHprs)):
     for _s in (-1, 1):
-        _x, _y = craneWorld(_i, 10 * _s, -3)
+        _x, _y = craneWorld(_i, 7 * _s, -3)
         MoneyBagPosHprs.append([_x, _y, 0, CranePosHprs[_i][3] + 90 * _s, 0, 0])
 BagReturnDelay = 3.0
 CraneMinY = 8

@@ -10,7 +10,7 @@ from direct.interval.IntervalGlobal import (Func, LerpHprInterval, LerpPosInterv
 from direct.task.Task import Task
 from otp.otpbase import OTPGlobals
 from toontown.cogdominium.DistCogdoGame import DistCogdoGame
-from toontown.cogdominium.CogdoGameRulesPanel import CogdoGameRulesPanel
+from toontown.cogdominium import CogdoCraneGameMovies
 from toontown.cogdominium.CogdoCraneRoom import CogdoCraneRoom
 from toontown.cogdominium import CogdoCraneGameConsts as GameConsts
 from toontown.cogdominium.CogdoCraneGameBase import CogdoCraneGameBase
@@ -18,8 +18,6 @@ from toontown.toonbase import ToontownTimer
 from toontown.toonbase import TTLocalizer as TTL
 from toontown.toonbase import ToontownGlobals
 
-# Seconds the rules stay up before the game starts anyway.
-IntroDuration = 30
 # The cables' and bags' physics step at most this long, up to this many
 # steps a frame.
 PhysicsStep = 1.0 / 60
@@ -44,7 +42,7 @@ class DistCogdoCraneGame(CogdoCraneGameBase, DistCogdoGame):
         self.room = None
         self.gui = None
         self._stompIval = None
-        self._introIval = None
+        self._introMovie = None
 
     def getTitle(self):
         return TTL.CogdoCraneGameTitle
@@ -104,9 +102,10 @@ class DistCogdoCraneGame(CogdoCraneGameBase, DistCogdoGame):
 
     def exitLoaded(self):
         self._finishStomp()
-        if self._introIval:
-            self._introIval.finish()
-            self._introIval = None
+        if self._introMovie:
+            self._introMovie.end()
+            self._introMovie.unload()
+            self._introMovie = None
         self.music.stop()
         self._unloadGui()
         self.fnp.removeNode()
@@ -161,29 +160,20 @@ class DistCogdoCraneGame(CogdoCraneGameBase, DistCogdoGame):
         self.geomRoot.reparentTo(render)
 
     def enterIntro(self):
-        base.cr.playGame.getPlace().fsm.request('Game')
-        self._rulesDoneEvent = self.uniqueName('cogdoGameRulesDone')
-        self.accept(self._rulesDoneEvent, self._handleRulesDone)
-        self._rulesPanel = CogdoGameRulesPanel('CogdoGameRulesPanel', self.getTitle(),
-                                               '%s\n\n%s' % (self.getInstructions(), TTL.CogdoCraneGameHowTo % (GameConsts.CoinsPerStomp, TTL.CogdoStomperName)),
-                                               self._rulesDoneEvent, timeout=IntroDuration)
-        self._rulesPanel.load()
-        self._rulesPanel.enter()
-        # A slow look round the room while the rules are up.
-        camera.wrtReparentTo(render)
-        self._introIval = Sequence(
-            Func(camera.setPos, 0, -62, 22), Func(camera.lookAt, 0, 0, 6),
-            LerpPosInterval(camera, 6, PM.Point3(-40, -40, 26), blendType='easeInOut'),
-            Func(camera.lookAt, 0, 0, 6),
-            Parallel(LerpPosInterval(camera, 8, PM.Point3(40, -45, 30), blendType='easeInOut'),
-                     LerpHprInterval(camera, 8, PM.VBase3(42, -22, 0), blendType='easeInOut')))
-        self._introIval.start()
+        # The title and clock in the panel, and the Loan Shark and the Toon
+        # Resistance talking in its bubble a page at a time, as the other
+        # field offices do it.
+        DistCogdoGame.enterIntro(self, CogdoCraneGameMovies.IntroDurationSeconds)
+        self._introMovie = CogdoCraneGameMovies.CogdoCraneGameIntro(self.doId)
+        self._introMovie.load(self.sceneRoot)
+        self._introMovie.play()
         base.playMusic(self.music, looping=1, volume=0.8)
 
     def exitIntro(self):
-        if self._introIval:
-            self._introIval.finish()
-            self._introIval = None
+        if self._introMovie:
+            self._introMovie.end()
+            self._introMovie.unload()
+            self._introMovie = None
         DistCogdoGame.exitIntro(self)
         self.stashEntranceElevator()
 
@@ -191,6 +181,8 @@ class DistCogdoCraneGame(CogdoCraneGameBase, DistCogdoGame):
         DistCogdoGame.enterGame(self)
         self._physicsTask = taskMgr.add(self._doPhysics, self.uniqueName('physics'), priority=25)
         self._hitTask = taskMgr.add(self._checkHits, self.uniqueName('hits'), priority=26)
+        self._lastGoodPos = None
+        self._roomTask = taskMgr.add(self._keepInRoom, self.uniqueName('keepInRoom'), priority=40)
         self._startTimer()
         self.gui.show()
         self._placeToons()
@@ -211,6 +203,23 @@ class DistCogdoCraneGame(CogdoCraneGameBase, DistCogdoGame):
             if toon.isLocal():
                 toon.setPosHpr(render, x, GameConsts.ElevatorPosHpr[1] + 10, 0, 0, 0, 0)
                 toon.sendCurrentPosition()
+
+    def _keepInRoom(self, task):
+        # The walls round the piles are only boxes, and a toon running fast
+        # at a low frame rate, or squeezed into a corner, can come out the
+        # far side of one. Anywhere off the floor, the hallways and the
+        # pockets, it goes back to where it last stood on them.
+        toon = base.localAvatar
+        if toon.isEmpty() or self.room is None:
+            return Task.cont
+        pos = toon.getPos(render)
+        if self.room._inPlayArea(pos[0], pos[1], margin=-1.5) and pos[2] < 6:
+            self._lastGoodPos = pos
+        elif self._lastGoodPos is not None:
+            toon.setPos(render, self._lastGoodPos)
+        else:
+            toon.setPos(render, 0, GameConsts.ElevatorPosHpr[1] + 10, 0)
+        return Task.cont
 
     def _startTimer(self):
         timeLeft = GameConsts.GameDuration - (globalClock.getFrameTime() - self.getStartTime())
@@ -249,6 +258,7 @@ class DistCogdoCraneGame(CogdoCraneGameBase, DistCogdoGame):
     def exitGame(self):
         taskMgr.remove(self._physicsTask)
         taskMgr.remove(self._hitTask)
+        taskMgr.remove(self._roomTask)
         self.timer.stop()
         self.timer.stash()
         DistCogdoGame.exitGame(self)

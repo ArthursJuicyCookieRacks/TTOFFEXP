@@ -807,6 +807,14 @@ def playCogdoCrane(dist):
         crane = None
     else:
         yield until(walking, 30, 'walking in the crane room')
+        # Off the floor into a pile: the game puts the toon back.
+        before = localAvatar.getPos(render)
+        localAvatar.setPos(render, 62, 3, 0)
+        yield sleep(0.5)
+        back = localAvatar.getPos(render)
+        if (back - before).length() > 2:
+            raise StepFailed('the toon stayed in the pile at %s' % back)
+        log('put back on the floor from a pile at %s' % back)
         here = localAvatar.getPos(render)
         cranes = sorted(dist.cranes.values(), key=lambda c: (c.root.getPos(render) - here).length())
         crane = None
@@ -846,6 +854,10 @@ def playCogdoCrane(dist):
             if n % 2 == 1:
                 shotFrom('cash-%02d-over.png' % (10 + n), Point3(0, -60, 45), Point3(0, 0, 0))
             log('crane game: %d barrels, %d coins, %d cogs out, %d stunned' % (dist.barrelsLeft, dist.coins, len(dist.cogs), dist.stunCount))
+            for c in sorted(dist.cranes.values(), key=lambda c: c.index):
+                pilot = getattr(c, 'pilot', None) or {}
+                log('  crane %d: %s, held %s, arm %.0f, trolley %.1f, magnet %s' % (
+                    c.index, pilot.get('mode'), c.heldObject and c.heldObject.doId, c.arm.getH(), c.crane.getY(), c.magnetOn))
         yield sleep(0.5)
     log('crane game over: %d barrels left' % dist.barrelsLeft)
     yield sleep(4 if video else 1)
@@ -877,6 +889,7 @@ def scenarioCogdo(track='s'):
     elevator = findObject('DistributedCogdoElevatorExt', ours)
     yield until(lambda: elevator.fsm.getCurrentState().getName() == 'waitEmpty', 60,
                 'the field office elevator to open (it is %s)' % elevator.fsm.getCurrentState().getName())
+    introShot = [0, 0.0]
     door = elevator.getElevatorModel()
     if door and not door.isEmpty():
         # The front of the field office, from out in the street.
@@ -898,6 +911,13 @@ def scenarioCogdo(track='s'):
             nextReport = time.time() + 15
             log('field office state %s, floor %d, place %s, game %s' % (
                 state, interior.currentFloor, placeState(), game and cogdoGameState(game)))
+        if os.environ.get('AUTOPLAY_INTRO_SHOTS') and not played and (game is None or cogdoGameState(game) in ('Loaded', 'Visible', 'Intro')) \
+                and time.time() > introShot[1] and introShot[0] < 16:
+            # The way in and the intro, every couple of seconds.
+            base.screenshot(os.path.join(os.environ.get('AUTOPLAY_SHOTS', '/tmp'), 'cash-%02d-intro-%s.png' % (
+                introShot[0], cogdoGameState(game) if game else placeState())), defaultFilename=0)
+            introShot[0] += 1
+            introShot[1] = time.time() + (0.6 if game is None or cogdoGameState(game) != 'Intro' else 2.5)
         if game and game.doId not in played and cogdoGameState(game) == 'Game':
             played.add(game.doId)
             log('playing', game.__class__.__name__)
