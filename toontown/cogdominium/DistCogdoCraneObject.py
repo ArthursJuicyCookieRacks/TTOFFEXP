@@ -105,10 +105,15 @@ class DistCogdoCraneObject(DistributedSmoothNode.DistributedSmoothNode, FSM.FSM)
     def unstashCollisions(self):
         self.collisionNodePath.unstash()
 
+    def isRunHere(self):
+        # This client runs the physics of what its toon holds or dropped,
+        # and (offline) of what the NPC toons' cranes hold or dropped.
+        return self.craneGame is not None and self.craneGame.runsHere(self.avId)
+
     def __hitFloor(self, entry):
         if self.state == 'Dropped' or self.state == 'LocalDropped':
             self.d_hitFloor()
-            self.demand('SlidingFloor', localAvatar.doId)
+            self.demand('SlidingFloor', self.avId)
 
     def __hitGoon(self, entry):
         if self.state == 'Dropped' or self.state == 'LocalDropped':
@@ -178,8 +183,11 @@ class DistCogdoCraneObject(DistributedSmoothNode.DistributedSmoothNode, FSM.FSM)
         else:
             self.notify.error('Invalid state from AI: %s' % state)
 
-    def d_requestGrab(self):
-        self.sendUpdate('requestGrab')
+    def d_requestGrab(self, avId):
+        self.sendUpdate('requestGrab', [avId])
+
+    def d_hitCog(self, cogId):
+        self.sendUpdate('hitCog', [cogId])
 
     def rejectGrab(self):
         if self.state == 'LocalGrabbed':
@@ -271,7 +279,7 @@ class DistCogdoCraneObject(DistributedSmoothNode.DistributedSmoothNode, FSM.FSM)
         self.avId = avId
         self.craneId = craneId
         self.crane = self.cr.doId2do.get(craneId)
-        if self.avId == base.localAvatar.doId:
+        if self.isRunHere():
             self.activatePhysics()
             self.startPosHprBroadcast()
             self.handler.setStaticFrictionCoef(0)
@@ -281,7 +289,7 @@ class DistCogdoCraneObject(DistributedSmoothNode.DistributedSmoothNode, FSM.FSM)
         self.hideShadows()
 
     def exitDropped(self):
-        if self.avId == base.localAvatar.doId:
+        if self.isRunHere():
             if self.newState != 'SlidingFloor':
                 self.deactivatePhysics()
                 self.stopPosHprBroadcast()
@@ -295,7 +303,7 @@ class DistCogdoCraneObject(DistributedSmoothNode.DistributedSmoothNode, FSM.FSM)
         if self.lerpInterval:
             self.lerpInterval.finish()
             self.lerpInterval = None
-        if self.avId == base.localAvatar.doId:
+        if self.isRunHere():
             self.activatePhysics()
             self.startPosHprBroadcast()
             self.handler.setStaticFrictionCoef(0.9)
@@ -308,7 +316,7 @@ class DistCogdoCraneObject(DistributedSmoothNode.DistributedSmoothNode, FSM.FSM)
         return
 
     def exitSlidingFloor(self):
-        if self.avId == base.localAvatar.doId:
+        if self.isRunHere():
             taskMgr.remove(self.watchDriftName)
             self.deactivatePhysics()
             self.stopPosHprBroadcast()

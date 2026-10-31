@@ -1,0 +1,143 @@
+# Relative texture paths. Pr/Pm describe glTF roughness/metallic equivalents.
+
+newmtl housing
+Ka 0.25 0.25 0.25
+Kd 0.880000 0.880000 0.880000
+Ks 0.12 0.12 0.12
+Ns 18.0
+d 1.0
+illum 2
+Pr 0.7600
+Pm 0.1200
+map_Kd textures/surface_atlas.png
+
+newmtl posts_hoses
+Ka 0.25 0.25 0.25
+Kd 0.870000 0.870000 0.870000
+Ks 0.12 0.12 0.12
+Ns 18.0
+d 1.0
+illum 2
+Pr 0.7200
+Pm 0.1200
+map_Kd textures/surface_atlas.png
+
+newmtl steel_trim
+Ka 0.25 0.25 0.25
+Kd 0.680000 0.700000 0.700000
+Ks 0.12 0.12 0.12
+Ns 18.0
+d 1.0
+illum 2
+Pr 0.5700
+Pm 0.4200
+map_Kd textures/surface_atlas.png
+
+newmtl face_panels
+Ka 0.25 0.25 0.25
+Kd 0.950000 0.950000 0.950000
+Ks 0.12 0.12 0.12
+Ns 18.0
+d 1.0
+illum 2
+Pr 0.6800
+Pm 0.2000
+map_Kd textures/access_panel.png
+map_d textures/access_panel_alpha.png
+# Diffuse PNG also includes this alpha; GLB uses alphaMode MASK.
+
+newmtl panel_overlap_mask
+Ka 0.25 0.25 0.25
+Kd 0.950000 0.950000 0.950000
+Ks 0.12 0.12 0.12
+Ns 18.0
+d 0.0
+illum 2
+Pr 0.6800
+Pm 0.2000
+map_Kd textures/access_panel.png
+map_d textures/access_panel_alpha.png
+# Diffuse PNG also includes this alpha; GLB uses alphaMode MASK.
+
+newmtl bottom_emblem_base
+Ka 0.25 0.25 0.25
+Kd 0.630000 0.650000 0.650000
+Ks 0.12 0.12 0.12
+Ns 18.0
+d 1.0
+illum 2
+Pr 0.6800
+Pm 0.2500
+map_Kd textures/surface_atlas.png
+
+newmtl vents
+Ka 0.25 0.25 0.25
+Kd 0.920000 0.940000 0.940000
+Ks 0.12 0.12 0.12
+Ns 18.0
+d 1.0
+illum 2
+Pr 0.9000
+Pm 0.0000
+map_Kd textures/original_vent_atlas.jpg
+
+newmtl teal_drum
+Ka 0.25 0.25 0.25
+Kd 0.960000 0.960000 0.960000
+Ks 0.12 0.12 0.12
+Ns 18.0
+d 1.0
+illum 2
+Pr 0.7200
+Pm 0.0800
+map_Kd textures/surface_atlas.png
+
+newmtl ivory_tips
+Ka 0.25 0.25 0.25
+Kd 0.960000 0.960000 0.960000
+Ks 0.12 0.12 0.12
+Ns 18.0
+d 1.0
+illum 2
+Pr 0.8000
+Pm 0.0000
+map_Kd textures/surface_atlas.png
+
+newmtl label
+Ka 0.25 0.25 0.25
+Kd 0.940000 0.940000 0.940000
+Ks 0.12 0.12 0.12
+Ns 18.0
+d 1.0
+illum 2
+Pr 0.7800
+Pm 0.0000
+map_Kd textures/label.png
+map_d textures/label_alpha.png
+# Diffuse PNG also includes this alpha; GLB uses alphaMode MASK.
+
+newmtl label_backing
+Ka 0.25 0.25 0.25
+Kd 0.100000 0.110000 0.110000
+Ks 0.12 0.12 0.12
+Ns 18.0
+d 1.0
+illum 2
+Pr 0.8600
+Pm 0.0000
+map_Kd textures/label.png
+map_d textures/label_alpha.png
+# Diffuse PNG also includes this alpha; GLB uses alphaMode MASK.
+
+newmtl cashbot_logo
+Ka 0.25 0.25 0.25
+Kd 0.720000 0.750000 0.730000
+Ks 0.12 0.12 0.12
+Ns 18.0
+d 1.0
+illum 2
+Pr 0.6600
+Pm 0.2000
+map_Kd textures/cashbot_logo.png
+map_d textures/cashbot_logo_alpha.png
+# Diffuse PNG also includes this alpha; GLB uses alphaMode MASK.

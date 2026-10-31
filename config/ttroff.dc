@@ -2364,13 +2364,17 @@ dclass DistCogdoFlyingGame : DistCogdoGame {
 dclass DistCogdoBoardroomGame : DistCogdoLevelGame {
 };
 
-dclass DistCogdoCraneGame : DistCogdoLevelGame {
+dclass DistCogdoCraneGame : DistCogdoGame {
+  setBarrels(uint8 barrelsLeft, uint8 coins) broadcast ram;
+  stomp(uint8 barrelsLeft, int16 timestamp) broadcast;
 };
 
 dclass DistCogdoCrane : DistributedObject {
   setCraneGameId(uint32 craneGameId) required broadcast ram;
   setIndex(uint8 index) required broadcast ram;
   setState(char state, uint32 avId) broadcast ram;
+  requestControl() airecv clsend;
+  requestFree() airecv clsend;
   clearSmoothing(int8 bogus) broadcast clsend;
   setCablePos(uint8 changeSeq, int16/100 y, uint16%360/100 h, LinkPosition links[3], int16 timestamp) broadcast clsend;
 };
@@ -2378,12 +2382,13 @@ dclass DistCogdoCrane : DistributedObject {
 dclass DistCogdoCraneObject : DistributedObject {
   setCraneGameId(uint32) required broadcast ram;
   setObjectState(char, uint32, uint32) broadcast ram;
-  requestGrab() airecv clsend;
+  requestGrab(uint32 avId) airecv clsend;
   rejectGrab();
   requestDrop() airecv clsend;
-  hitFloor() clsend;
+  hitFloor() airecv clsend;
   requestFree(int16/10, int16/10, int16/10, uint16%360/100) airecv clsend;
   hitBoss(uint16/255) airecv clsend;
+  hitCog(uint32 cogId) airecv clsend;
   setX(int16/10) broadcast ram clsend airecv;
   setY(int16/10) broadcast ram clsend airecv;
   setZ(int16/10) broadcast ram clsend airecv;
@@ -2428,6 +2433,8 @@ dclass DistCogdoCraneCog : DistributedObject {
   setGameId(uint32 gameId) required broadcast ram;
   setDNAString(blob dnaString) required broadcast ram;
   setSpawnInfo(uint8 entranceId, int16 timestamp) required broadcast ram;
+  setStunned(int16 timestamp) broadcast ram;
+  insertCoin(int16 timestamp) broadcast;
 };
 
 dclass DistributedHQInterior : DistributedObject {

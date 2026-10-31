@@ -22,7 +22,7 @@ from toontown.minigame import DistributedMinigameAI as MinigameAI
 from toontown.minigame import CannonGameGlobals, CatchGameGlobals, CogThiefGameGlobals
 from toontown.minigame import PatternGameGlobals, PhotoGameGlobals, RaceGameGlobals, TugOfWarGameGlobals
 from toontown.minigame import VineGameGlobals, ToonBlitzGlobals, TravelGameGlobals
-from toontown.cogdominium import CogdoFlyingGameGlobals, CogdoMazeGameGlobals
+from toontown.cogdominium import CogdoCraneGameConsts, CogdoFlyingGameGlobals, CogdoMazeGameGlobals
 from toontown.cogdominium.DistCogdoGameAI import DistCogdoGameAI
 from toontown.minigame.DistributedMinigameAI import DistributedMinigameAI
 from toontown.minigame.CatchGameGlobals import Name2DropObjectType
@@ -1613,7 +1613,89 @@ class CogdoFlyingPlayer(CogdoPlayer):
         return random.choice(memos) if memos else None
 
 
+class CogdoCranePlayer(CogdoPlayer):
+    """The Cashbot field office: walk to a free crane and take its
+    controls. Working the crane is the player's client's job (the NPC has
+    no client of its own), as it runs the money bags' physics; see
+    DistCogdoCrane's pilot."""
+
+    def play(self, now):
+        game = self.game
+        if game.finished:
+            return
+        if now - self.memo.get('logAt', 0) > 3:
+            self.memo['logAt'] = now
+            goal = self.memo.get('goal')
+            self.minigames.notify.info('crane NPC %s at %s goal %s' % (self.npc.doId, self.npc.getPos(), goal and (goal.index, goal.state, goal.avId)))
+        mine = self.myCrane()
+        if mine is not None:
+            if not self.memo.get('seated'):
+                self.memo['seated'] = True
+                self.setAnim('neutral')
+                x, y = CogdoCraneGameConsts.craneWorld(mine.index, 0, -4.9)
+                self.npc.placeAt(x, y, 0, CogdoCraneGameConsts.CranePosHprs[mine.index][3])
+            return
+        self.memo['seated'] = False
+        if not self.after('start', (1.5, 4.0), now):
+            if 'goal' not in self.memo:
+                return
+        crane = self.memo.get('goal')
+        if crane is None or crane.state != 'Free' or crane.avId or crane.isDeleted():
+            crane = self.memo['goal'] = self.pickCrane()
+            if crane is None:
+                self.setAnim('neutral')
+                return
+        # Round behind the controls, then up to them.
+        i = crane.index
+        stand = Point3(*CogdoCraneGameConsts.craneWorld(i, 0, -4.9), 0)
+        back = Point3(*CogdoCraneGameConsts.craneWorld(i, 0, -9.0), 0)
+        self.setAnim('run')
+        if self.memo.get('behind') != i:
+            if self.moveTo(back, speed=RUN_SPEED * 0.8):
+                self.memo['behind'] = i
+            return
+        if self.moveTo(stand, speed=RUN_SPEED * 0.5) and now >= self.memo.get('askAt', 0):
+            self.memo['askAt'] = now + 1.0
+            self.setAnim('neutral')
+            npcSend(self, crane.requestControl)
+
+    def setAnim(self, name):
+        if self.memo.get('anim') != name:
+            self.memo['anim'] = name
+            self.npc.b_setAnimState(name, 1.0)
+
+    def myCrane(self):
+        for crane in self.game.cranes:
+            if crane.avId == self.npc.doId and crane.state == 'Controlled':
+                return crane
+        return None
+
+    def pickCrane(self):
+        # A free crane, not one another NPC is heading for, and away from
+        # the player's toon so the player can have the one nearest them.
+        taken = set()
+        for player in self.minigames.players.values():
+            if player is not self and player.game is self.game:
+                goal = player.memo.get('goal')
+                if goal is not None:
+                    taken.add(goal.doId)
+        playerPos = self.playerPos()
+        here = self.npc.getPos()
+        best = None
+        for crane in self.game.cranes:
+            if crane.state != 'Free' or crane.avId or crane.doId in taken:
+                continue
+            x, y = CogdoCraneGameConsts.craneWorld(crane.index, 0, -4.9)
+            cost = math.hypot(x - here[0], y - here[1])
+            if playerPos is not None:
+                cost -= 0.8 * math.hypot(x - playerPos[0], y - playerPos[1])
+            if best is None or cost < best[0]:
+                best = (cost, crane)
+        return best[1] if best else None
+
+
 COGDO_PLAYERS = {
     'DistCogdoMazeGameAI': CogdoMazePlayer,
     'DistCogdoFlyingGameAI': CogdoFlyingPlayer,
+    'DistCogdoCraneGameAI': CogdoCranePlayer,
 }

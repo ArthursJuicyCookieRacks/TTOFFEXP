@@ -568,14 +568,17 @@ class DistributedBuildingAI(DistributedObjectAI.DistributedObjectAI):
 # The difficulty (SuitBuildingInfo) of each field office level: cogs of
 # levels 1-3 for a level 1 office, up to 9-11 for a level 5.
 FieldOfficeLevels = {1: 0, 2: 2, 3: 4, 4: 6, 5: 8}
-FieldOfficeTracks = {'s': 's', 'sellbot': 's', 'l': 'l', 'lawbot': 'l'}
+# 'c' is Cashbot here (Arthur's ~fo c), though cog department 'c' is
+# Bossbot. Cashbot field offices are for testing: only this word makes one.
+FieldOfficeTracks = {'s': 's', 'sellbot': 's', 'l': 'l', 'lawbot': 'l', 'c': 'm', 'm': 'm', 'cashbot': 'm'}
+FieldOfficeNames = {'s': 'Sellbot', 'l': 'Lawbot', 'm': 'Cashbot'}
 
 @magicWord(category=CATEGORY_OVERRIDE, types=[str, int])
 def fo(track='', level=0):
-    """Make a building on this street a field office: ~fo l|s [level 1-5]."""
+    """Make a building on this street a field office: ~fo s|l|c [level 1-5]."""
     track = FieldOfficeTracks.get(track.lower())
     if track is None:
-        return 'Say which: ~fo s (Sellbot) or ~fo l (Lawbot), then a level 1-5 or nothing for any.'
+        return 'Say which: ~fo s (Sellbot), ~fo l (Lawbot) or ~fo c (Cashbot), then a level 1-5 or nothing for any.'
     if level and level not in FieldOfficeLevels:
         return 'The level is 1 to 5, or leave it out for any level.'
     level = level or random.choice(list(FieldOfficeLevels))
@@ -597,4 +600,4 @@ def fo(track='', level=0):
     near = [block for block in blocks if manager.getBuilding(block).getExteriorAndInteriorZoneId()[0] == zoneId]
     block = random.choice(near or blocks)
     manager.getBuilding(block).cogdoTakeOver(track, FieldOfficeLevels[level], None)
-    return 'A level %d %s field office is landing on block %d.' % (level, 'Sellbot' if track == 's' else 'Lawbot', block)
+    return 'A level %d %s field office is landing on block %d.' % (level, FieldOfficeNames[track], block)

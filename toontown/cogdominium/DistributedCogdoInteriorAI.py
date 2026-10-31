@@ -9,6 +9,7 @@ from direct.task import Timer
 
 from toontown.battle import BattleBase
 from toontown.building.ElevatorConstants import ELEVATOR_NORMAL, ElevatorData, SUIT_HOLD_ELEVATOR_TIME
+from toontown.cogdominium.DistCogdoCraneGameAI import DistCogdoCraneGameAI
 from toontown.cogdominium.DistCogdoFlyingGameAI import DistCogdoFlyingGameAI
 from toontown.cogdominium.DistCogdoMazeGameAI import DistCogdoMazeGameAI
 from toontown.cogdominium.DistributedCogdoBattleBldgAI import DistributedCogdoBattleBldgAI
@@ -19,7 +20,8 @@ from toontown.toonbase.ToontownBattleGlobals import getCreditMultiplier, getInva
 
 # The game on each floor of a field office, by the department that owns it.
 FloorGames = {'s': DistCogdoMazeGameAI,
-              'l': DistCogdoFlyingGameAI}
+              'l': DistCogdoFlyingGameAI,
+              'm': DistCogdoCraneGameAI}
 # Seconds the executive suite intro movie plays before the battle starts.
 BattleIntroTime = 10.5
 # The SOS card the rescued shopkeeper hands out, by how hard the building

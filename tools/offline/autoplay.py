@@ -797,6 +797,62 @@ def playCogdoFlying(dist):
     player.request('WaitingForWin')
 
 
+def playCogdoCrane(dist):
+    # The Cashbot field office: takes the nearest free crane and lets the
+    # crane's own NPC pilot work it, with screenshots along the way.
+    from toontown.cogdominium import CogdoCraneGameConsts as Consts
+    shots = os.environ.get('AUTOPLAY_SHOTS', '/tmp')
+    base.screenshot(os.path.join(shots, 'cash-10-start.png'), defaultFilename=0)
+    if os.environ.get('AUTOPLAY_COGDO_IDLE'):
+        crane = None
+    else:
+        yield until(walking, 30, 'walking in the crane room')
+        here = localAvatar.getPos(render)
+        cranes = sorted(dist.cranes.values(), key=lambda c: (c.root.getPos(render) - here).length())
+        crane = None
+        for c in cranes:
+            if c.state == 'Free':
+                crane = c
+                break
+        if crane:
+            localAvatar.setPos(render, Point3(*Consts.craneWorld(crane.index, 0, -8), 0))
+            localAvatar.headsUp(crane.root)
+            crane.d_requestControl()
+            yield until(lambda: crane.avId == localAvatar.doId, 20, 'the crane to be ours')
+            log('took crane %d' % crane.index)
+            yield sleep(2)
+            crane._DistCogdoCrane__startPilot()
+    video = os.environ.get('AUTOPLAY_VIDEO')
+    if video:
+        # Frames for a video of the game, about ten a second.
+        os.makedirs(video, exist_ok=True)
+        frames = [0, 0.0]
+
+        def grab(task):
+            now = time.time()
+            if now - frames[1] >= 0.1:
+                frames[1] = now
+                base.screenshot(os.path.join(video, 'f%05d.jpg' % frames[0]), defaultFilename=0)
+                frames[0] += 1
+            return task.cont
+        taskMgr.add(grab, 'autoplayVideo', priority=60)
+    n = 0
+    nextShot = time.time() + 8
+    while cogdoGameState(dist) == 'Game':
+        if time.time() > nextShot:
+            n += 1
+            nextShot = time.time() + 12
+            base.screenshot(os.path.join(shots, 'cash-%02d-play.png' % (10 + n)), defaultFilename=0)
+            if n % 2 == 1:
+                shotFrom('cash-%02d-over.png' % (10 + n), Point3(0, -60, 45), Point3(0, 0, 0))
+            log('crane game: %d barrels, %d coins, %d cogs out' % (dist.barrelsLeft, dist.coins, len(dist.cogs)))
+        yield sleep(0.5)
+    log('crane game over: %d barrels left' % dist.barrelsLeft)
+    yield sleep(4 if video else 1)
+    taskMgr.remove('autoplayVideo')
+    base.screenshot(os.path.join(shots, 'cash-90-finish.png'), defaultFilename=0)
+
+
 def scenarioCogdo(track='s'):
     # A field office: a Sellbot one is a maze, a Lawbot one a flying game,
     # then the executive suite battle that frees the shopkeeper.
@@ -829,7 +885,7 @@ def scenarioCogdo(track='s'):
         if time.time() > deadline:
             raise StepFailed('still inside the field office after 25 minutes (place state %s)' % placeState())
         state = interior.fsm.getCurrentState().getName() if interior.fsm else None
-        game = findObject('DistCogdoMazeGame') or findObject('DistCogdoFlyingGame')
+        game = findObject('DistCogdoMazeGame') or findObject('DistCogdoFlyingGame') or findObject('DistCogdoCraneGame')
         if time.time() > nextReport:
             nextReport = time.time() + 15
             log('field office state %s, floor %d, place %s, game %s' % (
@@ -839,6 +895,8 @@ def scenarioCogdo(track='s'):
             log('playing', game.__class__.__name__)
             if game.__class__.__name__ == 'DistCogdoMazeGame':
                 yield from playCogdoMaze(game)
+            elif game.__class__.__name__ == 'DistCogdoCraneGame':
+                yield from playCogdoCrane(game)
             else:
                 yield from playCogdoFlying(game)
         elif state == 'Resting' and walking():
@@ -3987,6 +4045,7 @@ SCENARIOS = [
     ('building', scenarioBuilding),
     ('cogdo', scenarioCogdo),
     ('cogdolaw', lambda: scenarioCogdo('l')),
+    ('cogdocash', lambda: scenarioCogdo('m')),
     ('minigames', scenarioMinigames),
     ('factory', scenarioFactory),
     ('mint', scenarioMint),
