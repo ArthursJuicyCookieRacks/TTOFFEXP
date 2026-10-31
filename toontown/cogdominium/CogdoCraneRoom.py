@@ -2,7 +2,8 @@ import math
 import random
 
 from panda3d.core import (BitMask32, CardMaker, LineSegs, TextureStage, CollisionBox, CollisionNode, CollisionPlane, ColorBlendAttrib,
-                          NodePath, Plane, PNMImage, Point3, Texture, TransparencyAttrib, Vec3, Vec4)
+                          Mat4, NodePath, Plane, PNMImage, Point3, SamplerState, TexGenAttrib, Texture, TransformState,
+                          TransparencyAttrib, Vec3, Vec4)
 
 from otp.otpbase import OTPGlobals
 from toontown.cogdominium import CogdoCraneGameConsts as Consts
@@ -35,6 +36,53 @@ BackProps = (
 # from the middle of the room).
 PileShade = 0.74
 CellSize = 7.5
+
+
+_wallTex = None
+
+
+def _wallTexture():
+    """The walls over the piles: big grimy stone blocks from the mint,
+    stained a dark Cashbot red that glows a little low down (behind the
+    piles, as in the concept art) and goes nearly black up by the ceiling,
+    with rust streaks running down."""
+    blocks = PNMImage()
+    source = loader.loadTexture('phase_10/maps/CBMintBigBlocks.jpg')
+    if not (source and source.store(blocks)):
+        blocks = PNMImage()
+    global _wallTex
+    if _wallTex:
+        return _wallTex
+    w, h = 256, 512
+    image = PNMImage(w, h, 3)
+    rng = random.Random(51)
+    streaks = [0.0] * w
+    for i in range(14):
+        x0 = rng.randrange(w)
+        width = rng.randrange(2, 9)
+        dark = rng.uniform(0.15, 0.4)
+        for x in range(x0, x0 + width):
+            streaks[x % w] = max(streaks[x % w], dark)
+    low = Consts.WallGlow
+    high = Consts.WallTop
+    bw, bh = (blocks.getXSize(), blocks.getYSize()) if blocks.isValid() and blocks.getXSize() else (0, 0)
+    for y in range(h):
+        # PNMImage rows run top down; v 0 is the floor.
+        t = 1.0 - y / float(h - 1)
+        k = t ** 0.8
+        base = [low[c] + (high[c] - low[c]) * k for c in range(3)]
+        for x in range(w):
+            g = blocks.getGray((x * 2) % bw, (y * 2) % bh) * 1.6 if bw else 1.0
+            # The streaks fade out towards the floor.
+            g *= 1.0 - streaks[x] * min(1.0, t * 1.4)
+            image.setXel(x, y, base[0] * g, base[1] * g, base[2] * g)
+    tex = Texture('craneWallGrime')
+    tex.load(image)
+    tex.setWrapU(SamplerState.WMRepeat)
+    tex.setWrapV(SamplerState.WMClamp)
+    tex.setMinfilter(SamplerState.FTLinearMipmapLinear)
+    _wallTex = tex
+    return tex
 
 
 def _gradientTexture(name, radial):
@@ -101,6 +149,7 @@ class CogdoCraneRoom:
         self._loadCeiling(rng)
         self._loadStomper()
         self._loadElevators()
+        self._loadDressing(rng)
         self._loadCollisions()
         return self.root
 
@@ -128,11 +177,19 @@ class CogdoCraneRoom:
         # The prototype's textures are placeholders (a flat magenta wall, a
         # beige floor). The concept art has a pinkish red glow on the walls
         # over the piles, and a grey stone floor.
-        wallTex = Texture('craneWall')
-        image = PNMImage(4, 4)
-        image.fill(*Consts.WallColor)
-        wallTex.load(image)
-        level.findAllMatches('**/wallBarrier*').setTexture(wallTex, 1)
+        # The walls run along x or y, so world x + y across and height up
+        # map the grime texture round the room without the model's UVs.
+        across = 1.0 / Consts.WallTileWidth
+        wallTex = _wallTexture()
+        for wall in level.findAllMatches('**/wallBarrier*'):
+            wall.setTexture(wallTex, 1)
+            wall.setTexGen(TextureStage.getDefault(), TexGenAttrib.MWorldPosition)
+            wall.setTexTransform(TextureStage.getDefault(), TransformState.makeMat(Mat4(
+                across, 0, 0, 0,
+                across, 0, 0, 0,
+                0, 1.0 / Consts.CeilingHeight, 0, 0,
+                0, 0, 0, 1)))
+            wall.setColor(1, 1, 1, 1, 1)
         floorTex = loader.loadTexture('phase_10/maps/StoneSquares.jpg')
         flooring = level.find('**/flooring')
         flooring.setTexture(floorTex, 1)
@@ -141,7 +198,13 @@ class CogdoCraneRoom:
         flooring.setColor(1, 1, 1, 1, 1)
         flooring.setColorScale(*Consts.FloorColorScale)
         self.ceiling = level.find('**/ceiling')
-        self.ceiling.setColorScale(0.35, 0.33, 0.34, 1)
+        # A dark riveted steel ceiling instead of the flat magenta one.
+        steel = loader.loadTexture('phase_5/maps/tt_t_ara_cbr_steelWalls.jpg')
+        self.ceiling.setTexture(steel, 1)
+        self.ceiling.setTexGen(TextureStage.getDefault(), TexGenAttrib.MWorldPosition)
+        self.ceiling.setTexScale(TextureStage.getDefault(), 1 / 24.0, 1 / 24.0)
+        self.ceiling.setColor(1, 1, 1, 1, 1)
+        self.ceiling.setColorScale(*Consts.CeilingColorScale)
 
     def _loadFloorLights(self):
         lights = self.root.attachNewNode('floorLights')
@@ -386,6 +449,150 @@ class CogdoCraneRoom:
         self.entranceElevator.setPosHpr(*Consts.ElevatorPosHpr)
         self.entranceElevator.stash()
 
+    # --- Dressing: the walls, the ceiling and round the elevators ---
+
+    def _loadDressing(self, rng):
+        """Fills the room out like the concept art: steel girders up the
+        walls with pipes running between them and Loan Shark posters over
+        the piles, ducts and more girders across the ceiling with lamps
+        hanging in the gloom, and boilers, crates and girders round the
+        elevators. All Cashbot HQ and field office models."""
+        dressing = self.root.attachNewNode('dressing')
+        self.dressingWalls = []
+        cache = {}
+
+        def place(name, pos, h=0, scale=1.0, p=0, r=0, parent=dressing):
+            if name not in cache:
+                cache[name] = loader.loadModel(name)
+            prop = cache[name].copyTo(parent)
+            prop.setPos(pos)
+            prop.setHpr(h, p, r)
+            if isinstance(scale, tuple):
+                prop.setScale(*scale)
+            else:
+                prop.setScale(scale)
+            return prop
+
+        hx, hy = Consts.RoomHalfSize
+        top = Consts.CeilingHeight
+        girder = 'phase_10/models/cashbotHQ/pipes_A1'
+        # The four walls: (heading into the room, a point on the wall for
+        # 'along' u, and the wall's direction).
+        walls = (
+            (0, lambda u, d=0: Point3(u, hy - d, 0)),      # far (exit) wall
+            (180, lambda u, d=0: Point3(u, -hy + d, 0)),   # entrance wall
+            (90, lambda u, d=0: Point3(-hx + d, u, 0)),    # belt wall
+            (-90, lambda u, d=0: Point3(hx - d, u, 0)),    # right wall
+        )
+        for h, at in walls:
+            belt = h == 90
+            elevatorWall = h in (0, 180)
+            # Girders up the wall to the ceiling beams.
+            for u in Consts.WallGirders:
+                if elevatorWall and abs(u) < 16:
+                    continue
+                place(girder, at(u, 4), h, (0.6, 0.6, top / 30.1))
+            # A pipe run along the top of the wall, over the girders.
+            for u in (-46, 0, 46):
+                if elevatorWall and u == 0:
+                    continue
+                pipe = place('phase_10/models/cashbotHQ/pipes_C', at(u, 8), h + 180, (0.85, 0.7, 0.7))
+                pipe.setZ(top - 15)
+            if belt:
+                # The laff barrel belt runs along this wall: posters over it.
+                posterSpots = (-40, 40)
+            elif elevatorWall:
+                posterSpots = (-34, 34, -58, 58)
+            else:
+                posterSpots = (-50, 0, 50)
+            for u in posterSpots:
+                self._addPoster(place, at(u, 0.6), h, Consts.PosterHeight + rng.uniform(-2, 2))
+            # Zigzag pipes and boilers on top of the piles, against the wall.
+            if not belt:
+                for u in Consts.WallPipes:
+                    if elevatorWall and abs(u) < 22:
+                        continue
+                    pipe = place('phase_10/models/cashbotHQ/pipes_B', at(u, 5), h + rng.choice((0, 180)), 0.9)
+                    pipe.setZ(rng.uniform(18, 24))
+        # Round the elevators: a girder each side of the doorway, a big
+        # Cashbot sign over it, and boilers and crates in the corners of
+        # the space in front.
+        logo = loader.loadTexture('phase_5/maps/ttoff_t_ara_ccg_stomp_cashbot_logo.png')
+        for h, at in walls[:2]:
+            for side in (-1, 1):
+                place(girder, at(side * 11.5, 2.5), h, (0.45, 0.45, top / 30.1))
+                place('phase_10/models/cashbotHQ/boiler_B1', at(side * 19, 4), h + (90 if side > 0 else -90), 0.9)
+                place('phase_10/models/cashbotHQ/crates_C1', at(side * 25, 3.5), h + rng.uniform(-20, 20), 0.85)
+                place('phase_10/models/cashbotHQ/boiler_A1', at(side * 26, 11), h + rng.uniform(0, 360), 0.75)
+                # Tall pipes up the wall behind them, and more crates on top.
+                place('phase_10/models/cashbotHQ/pipes_D4', at(side * 15.5, 4), h, (0.4, 0.4, 1.25))
+                place('phase_10/models/cashbotHQ/pipes_E', at(side * 22, 2), h + (90 if side > 0 else -90), (1.0, 1.0, 1.2))
+                crate = place('phase_10/models/cashbotHQ/crates_C1', at(side * 25, 3.5), h + rng.uniform(-30, 30), 0.75)
+                crate.setZ(14.3 * 0.85)
+                place('phase_10/models/cashbotHQ/MoneyBag', at(side * 27.5, 12), h + rng.uniform(0, 360), 0.9)
+                self.dressingWalls.append((at(side * 19, 4), 7))
+                self.dressingWalls.append((at(side * 25, 3.5), 4.5))
+                self.dressingWalls.append((at(side * 26, 11), 4.5))
+            if logo:
+                cm = CardMaker('cashbotSign')
+                cm.setFrame(-6, 6, -6, 6)
+                sign = dressing.attachNewNode(cm.generate())
+                sign.setPos(at(0, 0.8) + Vec3(0, 0, 27))
+                sign.setH(h)
+                sign.setTexture(logo)
+                sign.setTransparency(TransparencyAttrib.MAlpha)
+                sign.setColorScale(0.75, 0.75, 0.72, 1)
+        # The ceiling: girders the other way too, ducts between them and
+        # lamps hanging in the dark.
+        arm = 'phase_10/models/cogHQ/CBCraneArm'
+        for x in range(-int(hx) + 18, int(hx), 30):
+            place(arm, Point3(x, -hy, top - 3), 0, (0.7, hy * 2 / 44.3, 0.7))
+        for x, y, h in Consts.CeilingDucts:
+            duct = place('phase_10/models/cashbotHQ/pipes_A4', Point3(x, y, top + 15.5 * 0.9), h, 0.9, p=180)
+        lamp = loader.loadModel('phase_10/models/cashbotHQ/boiler_A1')
+        glow = _gradientTexture('lampGlow', True)
+        cable = LineSegs('lampCables')
+        cable.setThickness(2)
+        cable.setColor(0.06, 0.06, 0.06, 1)
+        glows = dressing.attachNewNode('lampGlows')
+        for x, y, z in Consts.CeilingLamps:
+            shade = lamp.copyTo(dressing)
+            shade.setPos(x, y, z)
+            shade.setScale(0.45, 0.45, 0.25)
+            shade.setP(180)
+            cable.moveTo(x, y, z)
+            cable.drawTo(x, y, top)
+            if glow:
+                cm = CardMaker('glow')
+                cm.setFrame(-6, 6, -6, 6)
+                card = glows.attachNewNode(cm.generate())
+                card.setPos(x, y, z - 1.5)
+                card.setBillboardPointEye()
+                card.setTexture(glow)
+                card.setColor(1, 0.8, 0.6, 0.5)
+        lamp.removeNode()
+        dressing.attachNewNode(cable.create())
+        glows.setTransparency(TransparencyAttrib.MAlpha)
+        glows.setAttrib(ColorBlendAttrib.make(ColorBlendAttrib.MAdd, ColorBlendAttrib.OIncomingAlpha, ColorBlendAttrib.OOne))
+        glows.setDepthWrite(0)
+        glows.setBin('fixed', 5)
+        glows.setLightOff()
+        glows.wrtReparentTo(self.root)
+        for m in cache.values():
+            m.removeNode()
+        dressing.setColorScale(*Consts.DressingShade)
+        dressing.clearModelNodes()
+        dressing.flattenStrong()
+
+    def _addPoster(self, place, pos, h, z):
+        # The Loan Shark poster from the building and the executive suite.
+        poster = place('phase_5/models/cogdominium/tt_m_ara_crg_paintingMoverShaker', pos, h, Consts.PosterScale)
+        poster.setZ(z)
+        for name, path in Consts.CashbotPosterTextures.items():
+            old = poster.findTexture(name)
+            if old:
+                poster.replaceTexture(old, loader.loadTexture(path))
+
     def _loadStomper(self):
         self.stomper = loader.loadModel(Consts.StomperModel)
         self.stomper.reparentTo(self.root)
@@ -406,5 +613,8 @@ class CogdoCraneRoom:
         for x, y in self.edgeCells:
             walls.addSolid(CollisionBox(Point3(x - half, y - half, 0), Point3(x + half, y + half, 20)))
         walls.addSolid(CollisionBox(Point3(-3.2, -3.2, 0), Point3(3.2, 3.2, 12)))
+        # The boilers and crates by the elevators.
+        for pos, r in getattr(self, 'dressingWalls', []):
+            walls.addSolid(CollisionBox(Point3(pos[0] - r, pos[1] - r, 0), Point3(pos[0] + r, pos[1] + r, 15)))
         walls.setIntoCollideMask(OTPGlobals.WallBitmask | ToontownGlobals.PieBitmask)
         self.walls = self.root.attachNewNode(walls)

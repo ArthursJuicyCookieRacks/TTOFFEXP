@@ -36,6 +36,24 @@ PileHeights = (8.0, 15.0, 22.0, 30.0, 38.0, 42.0)
 BeltSideX = -50.0
 BeltSideMaxHeight = 24.0
 WallColor = (0.86, 0.5, 0.5)
+# The grimy walls: the red glow low down behind the piles, nearly black
+# up by the ceiling; one tile of the texture is this wide.
+WallGlow = (0.62, 0.24, 0.22)
+WallTop = (0.13, 0.08, 0.08)
+WallTileWidth = 38.0
+CeilingColorScale = (0.32, 0.28, 0.28, 1)
+# The dressing: girders up the walls (along each wall), zigzag pipes over
+# the piles, posters, ducts under the ceiling (x, y, heading) and lamps.
+WallGirders = (-62, -31, 0, 31, 62)
+WallPipes = (-48, 16, 52)
+PosterHeight = 33.0
+PosterScale = 0.95
+CeilingDucts = ((-34, -40, 90), (34, 40, 90), (-40, 32, 0), (40, -32, 0))
+CeilingLamps = ((-30, -30, 40), (30, -30, 40), (-30, 30, 40), (30, 30, 40),
+                (0, -55, 42), (0, 55, 42), (-55, 0, 42), (55, 0, 42))
+DressingShade = (0.62, 0.6, 0.6, 1)
+# The same Loan Shark poster as the Cashbot field office building.
+CashbotPosterTextures = {'cogdominium_palette_3cmla_4': 'phase_5/maps/ttoff_cogdominium_palette_cashbot_4.jpg'}
 FloorColorScale = (1.25, 1.22, 1.22, 1)
 ElevatorPosHpr = (0, -74.5, 0, 180, 0, 0)
 ExitPosHpr = (0, 74.5, 0, 0, 0, 0)
