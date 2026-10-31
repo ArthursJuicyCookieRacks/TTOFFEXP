@@ -935,6 +935,16 @@ class CogdoMazePlayer(CogdoPlayer):
                 self.memo.pop('cooler', None)
                 self.memo.pop('goal', None)
             return
+        # Small cogs close by get soaked too: they drop the memos.
+        minion = self.nearMinion(mazeGame, here)
+        if minion is not None:
+            pos = minion.suit.getPos(clientRender())
+            if (pos - here).length() > CogdoMazeGameGlobals.ThrowDistance * 0.7:
+                self.goTo(maze, ('minion', minion.serialNum), Point3(pos[0], pos[1], 0), speed, near=3.0, replan=0.8)
+                return
+            if self.after(('throw', self.memo.get('throws', 0)), (0.2, 0.6), now):
+                self.throwAt(here, pos, minion.type, minion.serialNum)
+            return
         # Soak a big cog: each NPC keeps to the one it picked.
         target = self.memo.get('boss')
         if target not in [suit.serialNum for suit in bosses]:
@@ -951,15 +961,40 @@ class CogdoMazePlayer(CogdoPlayer):
             return
         if not self.after(('throw', self.memo.get('throws', 0)), (0.3, 0.9), now):
             return
+        self.throwAt(here, pos, CogdoMazeGameGlobals.SuitTypes.Boss, target)
+
+    def throwAt(self, here, pos, suitType, suitNum):
+        # Faces the cog and throws the balloon (every toon's client shows
+        # the throw); most throws hit.
         self.memo['throws'] = self.memo.get('throws', 0) + 1
         delta = pos - here
         h = -math.degrees(math.atan2(delta[0], delta[1]))
         self.npc.moveTo(here[0], here[1], here[2], h)
         self.send('requestUseGag', here[0], here[1], h, globalClockDelta.getRealNetworkTime(bits=16))
         if random.random() < 0.8:
-            self.send('requestSuitHitByGag', CogdoMazeGameGlobals.SuitTypes.Boss, target)
+            self.send('requestSuitHitByGag', suitType, suitNum)
         self.memo['water'] = 0
         self.memo.pop('goal', None)
+
+    def nearMinion(self, mazeGame, here):
+        # The small cog it is after, or a new one near by (each NPC has
+        # its own taste for them, and they don't all chase the same one).
+        keen = self.memo.setdefault('keen', random.uniform(10.0, 22.0))
+        minions = [suit for suit in mazeGame.suitsById.values()
+                   if suit.type != CogdoMazeGameGlobals.SuitTypes.Boss and not suit.suit.isEmpty()
+                   and getattr(suit, 'hp', 1) > 0]
+        mine = self.memo.get('minion')
+        for suit in minions:
+            if suit.serialNum == mine and (suit.suit.getPos(clientRender()) - here).length() < keen * 1.6:
+                return suit
+        minions = [suit for suit in minions if not self.claimed(('minion', suit.serialNum))
+                   and (suit.suit.getPos(clientRender()) - here).length() < keen]
+        if not minions:
+            self.memo.pop('minion', None)
+            return None
+        suit = min(minions, key=lambda m: (m.suit.getPos(clientRender()) - here).length())
+        self.memo['minion'] = suit.serialNum
+        return suit
 
     def claimed(self, goal):
         return any(p.memo.get('goal') == goal for p in self.minigames.players.values()
