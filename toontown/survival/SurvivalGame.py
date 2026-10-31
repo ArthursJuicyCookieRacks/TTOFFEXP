@@ -24,7 +24,7 @@ from toontown.survival.SurvivalGags import GagHandler
 from toontown.survival.SurvivalHUD import SurvivalHUD
 from toontown.survival.SurvivalNPC import SurvivalNPC
 from toontown.survival.SurvivalPlayer import SurvivalPlayer
-from toontown.survival.SurvivalStations import FishermanStation, MickeyStation, TrunkStation
+from toontown.survival.SurvivalStations import FishermanStation, MickeyStation, TrolleyStation, TrunkStation
 from toontown.suit import SuitDNA
 from toontown.toonbase import ToontownGlobals
 
@@ -201,7 +201,7 @@ class SurvivalGame(DirectObject):
         self.player = SurvivalPlayer(self, start, h)
         self.hud = SurvivalHUD(self, self.dna)
         self.gags = GagHandler(self, self.player)
-        self.stations = [MickeyStation(self), TrunkStation(self), FishermanStation(self)]
+        self.stations = [MickeyStation(self), TrunkStation(self), FishermanStation(self), TrolleyStation(self)]
         for i in range(self.npcCount):
             angle = math.radians(120 * i - 60)
             spot, sh = self.arena.placeOnGround(start[0] + 5 * math.sin(angle), start[1] + 5 * math.cos(angle) + 3, 0)
@@ -771,6 +771,46 @@ class SurvivalGame(DirectObject):
         if self.music:
             self.music.stop()
         self.hud.showCard('Game Over', lines, [('Again', self.playAgain), ('Quit', self.quit)])
+
+    # --- Winning: the trolley out ---
+
+    def escape(self, ride):
+        """The trolley was bought: the round stops where it is, the
+        toons ride away, and the game is won."""
+        self.over = True
+        self.escaped = True
+        if self.menuStation is not None:
+            station = self.menuStation
+            self.menuStation = None
+            station.closeMenu()
+        self.gags.cancelReload()
+        self.gags.hideHeld()
+        if self.gags.arms is not None:
+            self.gags.arms.rig.hide()
+        self.player.disable()
+        self.hud.setDowned(False)
+        self.hud.setCinematic(True)
+        for npc in self.npcs:
+            npc.stopSteps()
+        self.count('escapes')
+        self.notify.info('escaped on the trolley in round %d' % self.roundNum)
+        ride.start(self.__escaped)
+
+    def __escaped(self):
+        if self.music:
+            self.music.stop()
+        self.player.grabMouse(False)
+        best = self.loadBest()
+        if self.roundNum > best:
+            self.saveBest(self.roundNum)
+        lines = ['You defeated the cogs!', '',
+                 'Escaped in round %d with %d cogs popped.' % (self.roundNum, self.stats.get('cogs popped', 0))]
+        self.hud.showCard('Good Job Toons!', lines, [('Exit', self.exitToChooser)], sort=1100, color=(1, 0.95, 0.4, 1))
+
+    def exitToChooser(self):
+        self.thawClock()
+        base.transitions.noTransitions()
+        messenger.send(self.doneEvent, [{'mode': 'exit'}])
 
     def playAgain(self):
         messenger.send(self.doneEvent, [{'mode': 'again', 'npcs': self.npcCount}])

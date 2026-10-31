@@ -453,3 +453,43 @@ class FishermanStation(Station):
         self.toon.stopBlink()
         self.toon.delete()
         Station.destroy(self)
+
+
+class TrolleyStation(Station):
+    """The way out: the Toontown Central trolley takes the toons away for
+    100,000 jellybeans, and that wins the game."""
+
+    def __init__(self, game):
+        station = game.arena.geom.find('**/*trolley_station*')
+        self.trolley = station
+        self.car = station.find('**/trolley_car') if not station.isEmpty() else station
+        pos = self.car.getPos(game.arena.root) if not self.car.isEmpty() else Point3(0, 0, -1000)
+        Station.__init__(self, game, pos, 0, 'trolley')
+        self.ride = None
+
+    def near(self, pos):
+        if self.car.isEmpty():
+            return False
+        return (Point3(pos[0], pos[1], 0) - Point3(self.node.getX(), self.node.getY(), 0)).length() < G.ESCAPE_RANGE
+
+    def prompt(self):
+        if self.ride is not None:
+            return ''
+        return 'Use: Escape Toontown Central for %s jellybeans' % format(G.ESCAPE_COST, ',')
+
+    def use(self):
+        if self.ride is not None or self.car.isEmpty():
+            return False
+        if not self.game.spend(G.ESCAPE_COST):
+            self.floatText('Not enough jellybeans!', (1, 0.4, 0.4, 1))
+            return False
+        from toontown.survival.SurvivalEscape import TrolleyRide
+        self.ride = TrolleyRide(self.game, self.trolley, self.car)
+        self.game.escape(self.ride)
+        return True
+
+    def destroy(self):
+        if self.ride is not None:
+            self.ride.destroy()
+            self.ride = None
+        Station.destroy(self)

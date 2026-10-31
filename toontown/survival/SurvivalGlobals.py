@@ -153,6 +153,9 @@ TRUNK_REUSE = 0.4
 DOODLE_ODDS = ((3, 0.0), (7, 0.15), (12, 0.3), (999, 0.5))
 DOODLE_SHUT = 30.0
 MICKEY_COST = 5000
+# The trolley out of Toontown Central wins the game.
+ESCAPE_COST = 100000
+ESCAPE_RANGE = 10.0
 MICKEY_TIME = 5.0
 UPGRADE_MULT = {1: 2, 2: 2, 3: 2, 4: 3, 5: 3, 6: 3, 7: 5}
 
