@@ -171,7 +171,11 @@ DROP_CHANCE = 0.03
 DROP_CHANCE_STEP = 0.03
 DROPS_PER_ROUND = 4
 DROP_LIFE = 26.0
-DROP_BLINK = 6.0
+# BO1: solid for a while, then a slow blink that gets quicker and quicker
+# until it's gone.
+DROP_BLINK = 11.0
+DROP_BLINK_SLOW = 0.5
+DROP_BLINK_FAST = 0.08
 POWER_TIME = 30.0
 POWERUPS = ('maxgags', 'instapop', 'toonado', 'doublebeans', 'trunksale')
 POWERUP_NAMES = {'maxgags': 'Max Gags', 'instapop': 'Insta-Pop', 'toonado': 'Toonado',

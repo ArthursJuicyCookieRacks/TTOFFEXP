@@ -65,9 +65,11 @@ class SurvivalHUD:
         self.reloadTrack = None
         self.grenadeText = OnscreenText(parent=self.gagBox, text='', font=face, fg=(1, 0.85, 0.4, 1), shadow=(0, 0, 0, 1),
                                         scale=0.045, pos=(-0.02, 0.115), align=TextNode.ARight, mayChange=True)
-        # Power-ups along the top.
-        self.powerText = OnscreenText(parent=base.a2dTopCenter, text='', font=sign, fg=(1, 0.9, 0.3, 1), shadow=(0, 0, 0, 1),
-                                      scale=0.06, pos=(0, -0.09), mayChange=True)
+        # Active power-ups: their pictures along the bottom middle, each
+        # with the seconds left in small print just above it (BO1).
+        self.powerRow = base.a2dBottomCenter.attachNewNode('survivalPowers')
+        self.powerRow.setZ(0.13)
+        self.powerIcons = {}
         # Crosshair and prompts.
         self.crosshair = OnscreenText(parent=aspect2d, text='+', font=face, fg=(1, 1, 1, 0.85), shadow=(0, 0, 0, 1), scale=0.08, pos=(0, -0.02))
         self.prompt = OnscreenText(parent=aspect2d, text='', font=face, fg=(1, 1, 1, 1), shadow=(0, 0, 0, 1),
@@ -92,7 +94,8 @@ class SurvivalHUD:
         self.closeCard()
         self.laff.stop()
         self.laff.destroy()
-        for widget in (self.roundText, self.roundLabel, self.tonicText, self.beanBox, self.gagBox, self.powerText,
+        self.powerRow.removeNode()
+        for widget in (self.roundText, self.roundLabel, self.tonicText, self.beanBox, self.gagBox,
                        self.crosshair, self.prompt, self.notice, self.bigRound, self.hurtFrame):
             widget.destroy()
         self.invModel.removeNode()
@@ -160,13 +163,47 @@ class SurvivalHUD:
         if getattr(self.reloadBar, '_optionInfo', None) is not None:
             self.reloadBar['value'] = value
 
+    def __powerIcon(self, key):
+        from toontown.survival.SurvivalGame import POWER_ICONS, POWER_COLORS
+        holder = self.powerRow.attachNewNode('power-' + key)
+        glow = DirectFrame(parent=holder, relief=DGG.FLAT, frameColor=(0, 0, 0, 0.45), frameSize=(-0.075, 0.075, -0.075, 0.075))
+        try:
+            model, part, scale = POWER_ICONS[key]
+            icons = loader.loadModel(model)
+            icon = icons.find(part) if part else icons
+            picture = icon.copyTo(holder)
+            low, high = picture.getTightBounds()
+            size = max(high[0] - low[0], high[2] - low[2]) if low is not None else 1.0
+            picture.setScale(0.12 / max(size, 0.001))
+            centre = (low + high) * 0.5 * picture.getScale()[0] if low is not None else Point3(0)
+            picture.setPos(-centre[0], 0, -centre[2])
+            picture.setTransparency(1)
+            icons.removeNode()
+        except Exception:
+            OnscreenText(parent=holder, text=G.POWERUP_NAMES[key][:1], font=ToontownGlobals.getSignFont(), scale=0.08,
+                         fg=POWER_COLORS.get(key, (1, 1, 1, 1)))
+        timer = OnscreenText(parent=holder, text='', font=ToontownGlobals.getSignFont(), fg=(1, 1, 1, 1), shadow=(0, 0, 0, 1),
+                             scale=0.04, pos=(0, 0.09), mayChange=True)
+        return holder, timer
+
     def setPowers(self, powers, now):
-        parts = []
-        for key, until in powers.items():
-            left = until - now
-            if left > 0:
-                parts.append('%s %d' % (G.POWERUP_NAMES[key], int(left + 0.99)))
-        self.powerText.setText('   '.join(parts))
+        keys = [key for key, until in sorted(powers.items(), key=lambda kv: kv[0]) if until - now > 0]
+        for key in list(self.powerIcons):
+            if key not in keys:
+                self.powerIcons.pop(key)[0].removeNode()
+        gap = 0.2
+        for i, key in enumerate(keys):
+            if key not in self.powerIcons:
+                self.powerIcons[key] = self.__powerIcon(key)
+            holder, timer = self.powerIcons[key]
+            holder.setX((i - (len(keys) - 1) / 2.0) * gap)
+            left = powers[key] - now
+            timer.setText(str(int(left + 0.99)))
+            # The last few seconds blink, as BO1's icons do.
+            if left < 5 and int(left * 4) % 2:
+                holder.hide()
+            else:
+                holder.show()
 
     # --- Moments ---
 

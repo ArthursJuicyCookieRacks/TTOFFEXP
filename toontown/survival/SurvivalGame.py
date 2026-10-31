@@ -120,7 +120,16 @@ class PowerDrop:
             self.icon.setH(now * 90 % 360)
         left = self.until - now
         if left < G.DROP_BLINK:
-            self.node.setColorScale(1, 1, 1, 0.3 + 0.7 * (0.5 + 0.5 * math.sin(now * 12)))
+            # On and off, slow at first and faster toward the end: the time
+            # for one blink shrinks from DROP_BLINK_SLOW to DROP_BLINK_FAST.
+            k = 1.0 - max(0.0, left) / G.DROP_BLINK
+            period = G.DROP_BLINK_SLOW + (G.DROP_BLINK_FAST - G.DROP_BLINK_SLOW) * k
+            self.blinkPhase = getattr(self, 'blinkPhase', 0.0) + (now - getattr(self, 'lastTick', now)) / period
+            if self.blinkPhase % 1.0 < 0.5:
+                self.node.show()
+            else:
+                self.node.hide()
+        self.lastTick = now
         return left > 0
 
     def destroy(self):
