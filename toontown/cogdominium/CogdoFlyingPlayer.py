@@ -18,7 +18,7 @@ class CogdoFlyingPlayer(FSM):
     def __init__(self, toon):
         FSM.__init__(self, 'CogdoFlyingPlayer')
         self.toon = toon
-        self.toon.reparentTo(render)
+        CogdoUtil.takeToon(self.toon)
         self.legalEaglesTargeting = []
         self.activeBuffs = []
         self.initModels()

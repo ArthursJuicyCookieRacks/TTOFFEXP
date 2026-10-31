@@ -35,6 +35,10 @@ class CogdoFlyingGuiManager:
         self._timer = ToontownTimer()
         self._timer.reparentTo(self.root)
         self._timer.posInTopRightCorner()
+        # The corner is outside this gui's root, so it would show a 0 from
+        # the moment the game loads (now during the elevator ride); the
+        # game shows it when it starts.
+        self._timer.hide()
 
     def _initMessageDisplay(self):
         audioMgr = base.cogdoGameAudioMgr

@@ -491,19 +491,60 @@ class DistributedCogdoInterior(DistributedObject.DistributedObject):
         camera.setP(0)
         camera.setPos(0, 14, 4)
         base.playMusic(self.elevatorMusic, looping=1, volume=0.8)
-        track = Sequence(Func(base.transitions.noTransitions), ElevatorUtils.getRideElevatorInterval(ELEVATOR_NORMAL), ElevatorUtils.getOpenInterval(self, self.leftDoorIn, self.rightDoorIn, self.openSfx, None, type=ELEVATOR_NORMAL), Func(camera.wrtReparentTo, render))
-        for toon in self.toons:
-            track.append(Func(toon.wrtReparentTo, render))
-
+        # While the toons ride, the floor's game loads its room around the
+        # elevator (see CogdoUtil.takeToon); the doors wait for it, so they
+        # open onto the room and not onto an empty grey space.
+        self.elevatorModelIn.setPythonTag(CogdoUtil.RIDING_TAG, True)
+        openTrack = Sequence(ElevatorUtils.getOpenInterval(self, self.leftDoorIn, self.rightDoorIn, self.openSfx, None, type=ELEVATOR_NORMAL), Func(self.__letToonsOut))
         # The game before this floor can unload during the ride: finishing
         # its end movie runs that movie's iris out after the one cleared at
         # the start, and the screen stayed black for the rest of the office.
         # The doors are open now, so the screen must be too.
-        track.append(Func(base.transitions.noTransitions))
-        track.append(Func(callback))
+        openTrack.append(Func(base.transitions.noTransitions))
+        openTrack.append(Func(callback))
+        waitForGame = not self.isBossFloor(self.currentFloor)
+        track = Sequence(Func(base.transitions.noTransitions), ElevatorUtils.getRideElevatorInterval(ELEVATOR_NORMAL), Func(self.__openElevatorDoors, name, openTrack, waitForGame))
         track.start(ts)
         self.activeIntervals[name] = track
         return
+
+    # The longest the doors wait for the floor's game to load (the server
+    # starts the game anyway a little after the ride).
+    GameLoadWait = 12.0
+
+    def isRidingElevator(self):
+        return self.elevatorModelIn is not None and self.elevatorModelIn.hasPythonTag(CogdoUtil.RIDING_TAG)
+
+    def __gameReady(self):
+        game = getattr(base, 'cogdoGame', None)
+        return game is not None and getattr(game, '_interiorId', None) == self.doId and game.isVisible()
+
+    def __openElevatorDoors(self, name, openTrack, waitForGame):
+        taskName = self.uniqueName('waitForCogdoGame')
+        taskMgr.remove(taskName)
+        if not waitForGame or self.__gameReady():
+            self.activeIntervals[name] = openTrack
+            openTrack.start()
+            return
+        deadline = globalClock.getFrameTime() + self.GameLoadWait
+
+        def wait(task):
+            if self.__gameReady() or globalClock.getFrameTime() > deadline:
+                self.activeIntervals[name] = openTrack
+                openTrack.start()
+                return task.done
+            return task.cont
+
+        taskMgr.add(wait, taskName)
+
+    def __letToonsOut(self):
+        if not self.isRidingElevator():
+            return
+        self.elevatorModelIn.clearPythonTag(CogdoUtil.RIDING_TAG)
+        camera.wrtReparentTo(render)
+        for toon in self.toons:
+            if not toon.isEmpty():
+                toon.wrtReparentTo(render)
 
     def enterElevator(self, ts = 0):
         if not self._CogdoGameRepeat:
@@ -531,6 +572,10 @@ class DistributedCogdoInterior(DistributedObject.DistributedObject):
             self._movie.end()
             self.__cleanupPenthouseIntro()
         self.__finishInterval(self.elevatorName)
+        taskMgr.remove(self.uniqueName('waitForCogdoGame'))
+        # Finishing the ride can start the doors opening: finish that too.
+        self.__finishInterval(self.elevatorName)
+        self.__letToonsOut()
         return None
 
     def __setupBarrelRoom(self):

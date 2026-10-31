@@ -120,6 +120,7 @@ class CogdoFlyingGameFinish(CogdoGameMovie):
     def __init__(self, level, players):
         CogdoGameMovie.__init__(self)
         self._exit = level.getExit()
+        self._level = level
         self._players = players
 
     def load(self):
@@ -132,13 +133,22 @@ class CogdoFlyingGameFinish(CogdoGameMovie):
             self._exit.open()
 
         exitDur = 1.0
-        showExitIval = Sequence(Func(camera.wrtReparentTo, render), Parallel(camera.posInterval(exitDur, Point3(0, -55, 40), other=self._exit, blendType='easeInOut'), camera.hprInterval(exitDur, Point3(0, -45, 0), blendType='easeInOut')))
+        # Far enough back and low enough to see the whole far platform, so
+        # every toon on it (the NPCs too) is seen running into the exit;
+        # the old spot (0, -55, 40) only showed the last few steps.
+        showExitIval = Sequence(Func(camera.wrtReparentTo, render), Parallel(camera.posInterval(exitDur, Point3(0, -68, 32), other=self._exit, blendType='easeInOut'), camera.hprInterval(exitDur, Point3(0, -33, 0), blendType='easeInOut')))
 
         def showPlayersLeaving():
             for player in self._players:
                 self._exit.toonEnters(player.toon)
 
-        self._ival = Sequence(showExitIval, Func(self._exit.open), Func(showPlayersLeaving), Wait(Globals.Gameplay.FinishDurationSeconds - exitDur - 1.0), Func(base.transitions.irisOut), Wait(1.0))
+        def showEndPlatform():
+            # The camera is at the exit now: show the far platform's part of
+            # the level (only what is near the camera is drawn), in case the
+            # camera wasn't there before (a toon that ran out of time).
+            self._level.update(0.0)
+
+        self._ival = Sequence(showExitIval, Func(showEndPlatform), Func(self._exit.open), Func(showPlayersLeaving), Wait(Globals.Gameplay.FinishDurationSeconds - exitDur - 1.0), Func(base.transitions.irisOut), Wait(1.0))
 
     def end(self):
         # The game can end before this movie does (the next floor's

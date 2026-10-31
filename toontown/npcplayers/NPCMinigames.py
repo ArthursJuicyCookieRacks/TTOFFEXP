@@ -1370,6 +1370,23 @@ class CogdoFlyingPlayer(CogdoPlayer):
                     except Exception:
                         continue
 
+    def endSpotY(self, level):
+        # Where the player lands on the far platform (its spawn mark), so
+        # the NPCs wait beside the player, in view of the end camera.
+        loc = level._endPlatformModel.find('**/spawn_loc')
+        y = level._endPlatformModel.getY(clientRender())
+        return loc.getY(clientRender()) if not loc.isEmpty() else y + 2.0
+
+    def endFloorZ(self, level):
+        # The far platform's floor. Its model sits at EndPlatformHeight
+        # (0), but the floor itself is about 30 above that: landing at 0
+        # put the NPCs under the platform, in the fog, so they were never
+        # seen there or walking into the exit elevator.
+        loc = level._endPlatformModel.find('**/spawn_loc')
+        z = loc.getZ(clientRender()) if not loc.isEmpty() else CogdoFlyingGameGlobals.Level.EndPlatformHeight
+        floor = self.nav().floorAt(level, Point3(0, self.endSpotY(level), z))
+        return z if floor is None else floor
+
     def flight(self, level, endY):
         """The legs of the flight, shared by the game's NPCs: the start
         platform, a spot on each platform in turn and the far one last, and
@@ -1394,7 +1411,7 @@ class CogdoFlyingPlayer(CogdoPlayer):
                         middle.append(Point3(spot[0], spot[1], (spot[2] if floor is None else floor) + 1.0))
             middle.sort(key=lambda p: p[1])
             spots += middle
-            spots.append(Point3(0, endY + 2.0, CogdoFlyingGameGlobals.Level.EndPlatformHeight + 1.0))
+            spots.append(Point3(0, self.endSpotY(level), self.endFloorZ(level) + 1.0))
             flight = flights[self.game.doId] = {'spots': spots, 'plans': {}, 'pumped': None}
         return flight
 
@@ -1494,7 +1511,7 @@ class CogdoFlyingPlayer(CogdoPlayer):
             # Out of time: like a player, it is put on the far platform and
             # counts as landed, so the game ends instead of waiting on it.
             self.memo['timedOut'] = True
-            self.npc.placeAt(random.uniform(-4, 4), endY + random.uniform(0, 4), G.Level.EndPlatformHeight, 0)
+            self.npc.placeAt(random.uniform(-4, 4), self.endSpotY(level) + random.uniform(-2, 2), self.endFloorZ(level), 0)
             self.send('requestAction', Actions.LandOnWinPlatform, 0)
             return
         speed = G.Gameplay.ToonVelMax['forward'] * self.memo.setdefault('pace', random.uniform(0.85, 1.0))
