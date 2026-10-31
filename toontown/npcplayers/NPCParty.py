@@ -20,6 +20,8 @@ from toontown.building.DistributedElevatorExtAI import DistributedElevatorExtAI
 from otp.local.ExecutionContext import getClientBuiltin
 from toontown.building.DistributedElevatorFSMAI import DistributedElevatorFSMAI
 from toontown.cogdominium.DistCogdoGameAI import DistCogdoGameAI
+from toontown.cogdominium.DistributedCogdoInteriorAI import DistributedCogdoInteriorAI
+from toontown.building.DistributedSuitInteriorAI import DistributedSuitInteriorAI
 from toontown.golf.DistributedGolfCourseAI import DistributedGolfCourseAI
 from toontown.npcplayers.NPCSettings import wantsTrolleyCompany, wantsHelp, forgetHelpAnswer
 from toontown.npcplayers.NPCBattleCrew import isNPC
@@ -40,6 +42,8 @@ CATCH_UP_DISTANCE = 45.0
 WALK_ON_DISTANCE = 70.0
 WALK_ON_DELAY = (0.4, 1.5)
 TELEPORT_IN_DISTANCE = (9.0, 14.0)
+# How long the run out of a won building's elevator takes on the clients.
+WALK_OUT_TIME = 6.0
 
 # For each place that waits on every toon in it: the state it waits in, and
 # what the toon's client sends there. A place is matched by its class or the
@@ -121,9 +125,30 @@ class NPCParty:
 
     # --- Seats ---
 
+    ELEVATOR_CLASSES = (DistributedElevatorAI, DistributedElevatorFSMAI, DistributedGolfKartAI, DistributedTrolleyAI)
+    ACTIVITY_CLASSES = (DistributedGolfCourseAI, DistributedMinigameAI, DistributedRaceAI, DistCogdoGameAI)
+    INTERIOR_CLASSES = (DistributedSuitInteriorAI, DistributedCogdoInteriorAI)
+    # A building's states in which every toon rides in its elevator: the
+    # NPCs stay in their seats beside the player (the clients put them
+    # there) instead of walking or teleporting off.
+    RIDE_STATES = ('WaitForAllToonsInside', 'Elevator')
+
+    def _objectsOfType(self, classes):
+        # Scanning every distributed object several times per NPC per tick
+        # showed up in profiles (a few ms per tick in a field office), so the
+        # typed lists are cached.
+        # Rebuilt when an object comes or goes, or after half a second.
+        key = (len(self.air.doId2do), int(globalClock.getFrameTime() * 2))
+        cache = getattr(self, '_typedCache', None)
+        if cache is None or cache[0] != key:
+            cache = self._typedCache = (key, {})
+        found = cache[1].get(classes)
+        if found is None:
+            found = cache[1][classes] = [obj for obj in list(self.air.doId2do.values()) if isinstance(obj, classes)]
+        return found
+
     def getElevators(self):
-        return [obj for obj in list(self.air.doId2do.values())
-                if isinstance(obj, (DistributedElevatorAI, DistributedElevatorFSMAI, DistributedGolfKartAI, DistributedTrolleyAI))]
+        return list(self._objectsOfType(self.ELEVATOR_CLASSES))
 
     def fillSeats(self):
         for elevator in self.getElevators():
@@ -338,12 +363,18 @@ class NPCParty:
                 if npc.busy:
                     continue
                 self.notify.info('NPC %s follows %d to zone %d' % (npc.doId, player.doId, player.zoneId))
-                npc.b_setLocation(self.air.districtId, player.zoneId)
                 spot = self.spotNear(self.manager.getPlayerPos(player), 5.0)
-                npc.placeAt(spot[0], spot[1], spot[2], random.uniform(-180, 180))
-                npc.b_setAnimState('Happy', 1.0)
-                npc.walk = None
+                self.manager.teleportTo(npc, player.zoneId, spot)
                 continue
+            if self.ridingElevator(npc):
+                npc.walk = None
+                npc.inElevatorRide = True
+                continue
+            if getattr(npc, 'inElevatorRide', False):
+                # Off the elevator with the player: it goes on from where the
+                # ride left it, not from where it stood before.
+                npc.inElevatorRide = False
+                self.syncToClient(npc)
             if npc.busy:
                 continue
             if self.manager.facilities.holds(npc):
@@ -375,7 +406,9 @@ class NPCParty:
                 # the player went, jumps and all.
                 pass
             else:
-                npc.placeAt(target[0], target[1], target[2], npc.getH())
+                # Left too far behind to walk: it teleports to the player,
+                # the way a friend would.
+                self.manager.teleportTo(npc, None, target, npc.getH())
 
     def answerHandshakes(self, zoneIndex):
         for npc in self.members:
@@ -407,8 +440,62 @@ class NPCParty:
                 return True
         return False
 
+    def walkOutWith(self, building, victorList):
+        """A building the party won hands back its victors: the NPCs go to
+        the street with it, so they run out of the elevator beside the
+        player, then stay out there as the street's own toons."""
+        from toontown.npcplayers.NPCPlayerManagerAI import getAreaId
+        zoneId = building.zoneId
+        area = self.manager.areas.get(getAreaId(zoneId))
+        for avId in victorList:
+            npc = self.air.doId2do.get(avId)
+            if not isNPC(npc) or npc.isDeleted():
+                continue
+            if npc in self.members:
+                self.members.remove(npc)
+            npc.party = None
+            npc.crew = None
+            npc.walk = None
+            npc.inElevatorRide = False
+            npc.busy = True
+            npc.b_setLocation(self.air.districtId, zoneId)
+            if area is not None:
+                npc.area = area
+                if npc not in area.npcs:
+                    area.npcs.append(npc)
+
+            def ready(task, npc=npc):
+                if npc.isDeleted():
+                    return task.done
+                if building.victorResponses is not None and npc.doId in building.victorList:
+                    npc.asSender(building.setVictorReady)
+                # Out on the street where the run out left it.
+                self.syncToClient(npc)
+                npc.busy = False
+                if npc.area is None:
+                    self.manager.despawn(npc)
+                return task.done
+
+            taskMgr.doMethodLater(WALK_OUT_TIME, ready, 'npcWalkOut-%d' % npc.doId)
+
+    def ridingElevator(self, npc):
+        for obj in self._objectsOfType(self.INTERIOR_CLASSES):
+            if getattr(obj, 'zoneId', None) == npc.zoneId and stateOf(obj) in self.RIDE_STATES and \
+                    npc.doId in getattr(obj, 'toons', ()):
+                return True
+        return False
+
+    def syncToClient(self, npc):
+        base = getClientBuiltin('base')
+        client = base.cr.doId2do.get(npc.doId) if base is not None and getattr(base, 'cr', None) else None
+        if client is None or client.isEmpty():
+            return
+        pos = client.getPos(base.render)
+        if (pos - npc.getPos()).length() > 0.5:
+            npc.setPosHpr(pos[0], pos[1], pos[2], client.getH(base.render), 0, 0)
+
     def isPlaying(self, npc):
-        for obj in list(self.air.doId2do.values()):
+        for obj in self._objectsOfType(self.ACTIVITY_CLASSES):
             if getattr(obj, 'zoneId', None) != npc.zoneId:
                 continue
             if isinstance(obj, (DistributedGolfCourseAI, DistributedMinigameAI)) and npc.doId in obj.avIdList:

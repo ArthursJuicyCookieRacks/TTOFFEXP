@@ -66,6 +66,13 @@ else:
 if simbase.wantKarts:
     from toontown.racing.KartDNA import *
 
+# Answers to requestTrackSwap (see trackSwapResult).
+TrackSwapOK = 0
+TrackSwapLocked = 1
+TrackSwapNotYet = 2
+TrackSwapBadTrack = 3
+
+
 class DistributedToonAI(DistributedPlayerAI.DistributedPlayerAI, DistributedSmoothNodeAI.DistributedSmoothNodeAI, PetLookerAI.PetLookerAI):
     notify = DirectNotifyGlobal.directNotify.newCategory('DistributedToonAI')
     maxCallsPerNPC = 100
@@ -3949,6 +3956,69 @@ class DistributedToonAI(DistributedPlayerAI.DistributedPlayerAI, DistributedSmoo
     def setTrackBonusLevel(self, trackBonusLevelArray):
         self.trackBonusLevel = trackBonusLevelArray
 
+    # --- Swapping a gag track (offline; see TrackSwapPanel) ---
+
+    def setGagTracksLocked(self, locked):
+        self.gagTracksLocked = locked
+
+    def b_setGagTracksLocked(self, locked):
+        self.setGagTracksLocked(locked)
+        self.sendUpdate('setGagTracksLocked', [locked])
+
+    def getGagTracksLocked(self):
+        return getattr(self, 'gagTracksLocked', 0)
+
+    def requestTrackSwap(self, outTrack, inTrack):
+        """The toon gives up outTrack for inTrack, a track it does not have
+        but the quest line has offered. Throw and Squirt stay. Both tracks start from no experience
+        (and no gags): the one given up loses all it had, even if it was
+        maxed, and gets it back from nothing if it is ever taken again.
+        Never while a track is being trained, and never after ~maxToon."""
+        avId = self.air.getAvatarIdFromSender()
+        if avId != self.doId:
+            self.air.writeServerEvent('suspicious', avId, 'requestTrackSwap for %d' % self.doId)
+            return
+        result = self.trackSwapProblem(outTrack, inTrack)
+        if result == TrackSwapOK:
+            self.swapTracks(outTrack, inTrack)
+        self.sendUpdateToAvatarId(avId, 'trackSwapResult', [result])
+
+    def trackSwapProblem(self, outTrack, inTrack):
+        tracks = len(ToontownBattleGlobals.Tracks)
+        if self.getGagTracksLocked():
+            return TrackSwapLocked
+        if self.trackProgressId >= 0:
+            return TrackSwapNotYet
+        if not (0 <= outTrack < tracks and 0 <= inTrack < tracks) or outTrack == inTrack:
+            return TrackSwapBadTrack
+        if inTrack not in Quests.tracksOfferedTo(self):
+            # Only a track the quest line has put in front of the toon.
+            return TrackSwapBadTrack
+        if outTrack in (ToontownBattleGlobals.THROW_TRACK, ToontownBattleGlobals.SQUIRT_TRACK):
+            return TrackSwapBadTrack
+        if not self.hasTrackAccess(outTrack) or self.hasTrackAccess(inTrack):
+            return TrackSwapBadTrack
+        return TrackSwapOK
+
+    def swapTracks(self, outTrack, inTrack):
+        self.notify.info('toon %d swaps track %d for %d' % (self.doId, outTrack, inTrack))
+        trackArray = list(self.trackArray)
+        trackArray[outTrack] = 0
+        trackArray[inTrack] = 1
+        self.b_setTrackAccess(trackArray)
+        for track in (outTrack, inTrack):
+            self.experience.experience[track] = 0
+        self.b_setExperience(self.experience.makeNetString())
+        bonus = list(self.trackBonusLevel)
+        for track in (outTrack, inTrack):
+            bonus[track] = -1
+        self.b_setTrackBonusLevel(bonus)
+        for track in (outTrack, inTrack):
+            for level in range(len(self.inventory.inventory[track])):
+                self.inventory.inventory[track][level] = 0
+        self.inventory.calcTotalProps()
+        self.b_setInventory(self.inventory.makeNetString())
+
     def getTrackBonusLevel(self, track = None):
         if track == None:
             return self.trackBonusLevel
@@ -4736,8 +4806,9 @@ def maxToon(hasConfirmed='UNCONFIRMED'):
     if hasConfirmed != 'CONFIRM':
         return 'Are you sure you want to max out %s? This process is irreversible. Press MaxToon in SpeedChat Tools again, or use "~maxToon CONFIRM", to confirm.' % toon.getName()
 
-    # Max out gag tracks (all 7 tracks)
+    # Max out gag tracks (all 7 tracks); no track swapping after this.
     toon.b_setTrackAccess([1] * 7)
+    toon.b_setGagTracksLocked(1)
     toon.b_setMaxCarry(MaxCarryLimit + 15) # Compensate for the extra gag track.
     toon.experience.maxOutExp() # Completely max out the toons experience.
     toon.b_setExperience(toon.experience.makeNetString())

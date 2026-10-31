@@ -36,6 +36,12 @@ class ToonBase(OTPBase.OTPBase):
     def __init__(self):
         self.display = DisplayOptions()
         OTPBase.OTPBase.__init__(self)
+        # Drop shadows: every avatar casts a ray at the floor each frame.
+        # In a crowd (forty-odd NPC toons) that full pass over the scene cost
+        # several ms, so it runs every other frame once there are many; a
+        # shadow lags its toon by one frame at most.
+        self.shadowTrav = CrowdShadowTraverser('base.shadowTrav')
+        self.shadowTrav.setRespectPrevTransform(False)
         base.enableMusic(self.display.settings.getBool('game', 'music', True))
         base.enableSoundEffects(self.display.settings.getBool('game', 'sfx', True))
         self.disableShowbaseMouse()
@@ -96,13 +102,7 @@ class ToonBase(OTPBase.OTPBase):
         self.wantKarts = self.config.ConfigVariableBool('want-karts', 1).getValue()
         self.wantNewSpecies = self.config.ConfigVariableBool('want-new-species', 0).getValue()
         self.inactivityTimeout = self.config.GetFloat('inactivity-timeout', ToontownGlobals.KeyboardTimeout)
-        if self.inactivityTimeout:
-            self.notify.debug('Enabling Panda timeout: %s' % self.inactivityTimeout)
-            self.mouseWatcherNode.setInactivityTimeout(self.inactivityTimeout)
-        self.mouseWatcherNode.setEnterPattern('mouse-enter-%r')
-        self.mouseWatcherNode.setLeavePattern('mouse-leave-%r')
-        self.mouseWatcherNode.setButtonDownPattern('button-down-%r')
-        self.mouseWatcherNode.setButtonUpPattern('button-up-%r')
+        self.setupMouseWatcherPatterns()
         self.randomMinigameAbort = self.config.ConfigVariableBool('random-minigame-abort', 0).getValue()
         self.randomMinigameDisconnect = self.config.ConfigVariableBool('random-minigame-disconnect', 0).getValue()
         self.randomMinigameNetworkPlugPull = self.config.ConfigVariableBool('random-minigame-netplugpull', 0).getValue()
@@ -159,10 +159,42 @@ class ToonBase(OTPBase.OTPBase):
         self.loadingScreen = None
         return
 
+    def setupMouseWatcherPatterns(self):
+        """The events the click regions of name tags and speech bubbles
+        (otp.margins.ClickablePopup) listen for. Opening the main window
+        again (switching full screen on or off) makes a new mouse watcher
+        without them, which left every speech bubble unclickable."""
+        if not self.mouseWatcherNode:
+            return
+        timeout = getattr(self, 'inactivityTimeout', 0)
+        if timeout:
+            self.notify.debug('Enabling Panda timeout: %s' % timeout)
+            self.mouseWatcherNode.setInactivityTimeout(timeout)
+        self.mouseWatcherNode.setEnterPattern('mouse-enter-%r')
+        self.mouseWatcherNode.setLeavePattern('mouse-leave-%r')
+        self.mouseWatcherNode.setButtonDownPattern('button-down-%r')
+        self.mouseWatcherNode.setButtonUpPattern('button-up-%r')
+
     def openMainWindow(self, *args, **kw):
         result = OTPBase.OTPBase.openMainWindow(self, *args, **kw)
         self.setCursorAndIcon()
+        self.setupMouseWatcherPatterns()
+        # The driver's names are known once the window has drawn a frame.
+        from direct.task.TaskManagerGlobal import taskMgr as tasks
+        tasks.doMethodLater(1.0, self.logGraphicsDriver, 'logGraphicsDriver')
         return result
+
+    def logGraphicsDriver(self, task=None):
+        """The graphics card and driver, in the game log: drawing bugs
+        that show on one player's machine only come down to these."""
+        try:
+            gsg = self.win.getGsg() if self.win else None
+            if gsg is not None:
+                print('ToonBase: graphics %s | %s | %s | shaders %s' % (gsg.getDriverVendor(), gsg.getDriverRenderer(),
+                                                                       gsg.getDriverVersion(), gsg.getDriverShaderVersionMajor()))
+        except Exception as e:
+            print('ToonBase: graphics driver unknown (%s)' % e)
+        return None
 
     def windowEvent(self, win):
         OTPBase.OTPBase.windowEvent(self, win)
@@ -557,3 +589,38 @@ class ToonBase(OTPBase.OTPBase):
         wp.setMinimized(True)
         base.win.requestProperties(wp)
 
+
+class CrowdShadowTraverser(CollisionTraverser):
+    """base.shadowTrav that skips every other frame when it has many rays.
+
+    Only the drop shadows skip. The local toon's walker also puts its floor
+    lifter (gravity) and event sphere here; those run every frame in their
+    own pass, or the gravity handler only falls on every other frame and a
+    jump near a crowd floats down at half gravity."""
+    CROWD = 16
+
+    def __init__(self, name):
+        CollisionTraverser.__init__(self, name)
+        self.always = CollisionTraverser(name + '-always')
+        self.always.setRespectPrevTransform(False)
+
+    def addCollider(self, collider, handler):
+        if type(handler) in (CollisionHandlerGravity, CollisionHandlerEvent):
+            self.always.addCollider(collider, handler)
+        else:
+            CollisionTraverser.addCollider(self, collider, handler)
+
+    def removeCollider(self, collider):
+        removed = self.always.removeCollider(collider)
+        return CollisionTraverser.removeCollider(self, collider) or removed
+
+    def clearColliders(self):
+        self.always.clearColliders()
+        CollisionTraverser.clearColliders(self)
+
+    def traverse(self, root):
+        if self.always.getNumColliders():
+            self.always.traverse(root)
+        if self.getNumColliders() > self.CROWD and globalClock.getFrameCount() % 2:
+            return
+        CollisionTraverser.traverse(self, root)

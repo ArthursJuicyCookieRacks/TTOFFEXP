@@ -46,7 +46,7 @@ class CatalogPetTrickItem(CatalogItem.CatalogItem):
         from toontown.pets import PetDNA, Pet
         pet = Pet.Pet(forGui=1)
         #dna = avatar.petDNA
-        i#f dna == None:
+        #if dna == None:
         dna = PetDNA.getRandomPetDNA() # another temphack
         pet.setDNA(dna)
         pet.setH(180)

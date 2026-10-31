@@ -4234,6 +4234,14 @@ AvatarChoiceDeleteWrongConfirm = 'You didn\'t type the right thing.  To delete %
 AvatarChooserPickAToon = 'Pick  A  Toon  To  Play'
 AvatarChooserQuit = lQuit
 AvatarChooserQuestionable = '???'
+AvatarChooserSurvival = 'SURVIVAL'
+SurvivalTitle = 'Survival Mode'
+SurvivalPlay = 'Survival Mode'
+SurvivalDescription = 'Toontown Central after dark. Cogs fall from the sky in rounds, and every round brings more of them, tougher and faster. Your gags are your weapons and jellybeans buy more: Mickey upgrades a gag by the Loopy Lane tunnel, the trunk by the gazebo hands out a random one, and Fisherman Freddy sells Toon Tonics. Hold out as many rounds as you can.'
+SurvivalFriends = 'NPC toons with you:'
+SurvivalBestRound = 'Best round: %d'
+SurvivalBack = 'Back'
+SurvivalDefaultName = 'Toon'
 DateOfBirthEntryMonths = ['Jan',
  'Feb',
  'Mar',
@@ -4266,6 +4274,19 @@ InventoryPageTrackFull = 'You have all the gags in the %s track.'
 InventoryPagePluralPoints = 'You will get a new\n%(trackName)s gag when you\nget %(numPoints)s more %(trackName)s points.'
 InventoryPageSinglePoint = 'You will get a new\n%(trackName)s gag when you\nget %(numPoints)s more %(trackName)s point.'
 InventoryPageNoAccess = 'You do not have access to the %s track yet.'
+# Swapping a gag track (offline).
+TrackSwapButton = 'Swap Tracks'
+TrackSwapTitle = 'Swap Tracks'
+TrackSwapHelp = 'Give up one of your gag tracks for a track you do not have. You keep Throw and Squirt.'
+TrackSwapNew = 'You will get: %s'
+TrackSwapGiveUp = 'Give up which track?'
+TrackSwapGet = 'Get which track?'
+TrackSwapWarning = 'Every swap wipes out ALL the experience of both tracks. A track you take back starts from nothing, even if it was maxed.'
+TrackSwapConfirm = 'Give up %(out)s for %(in)s?\n\nAll your gag experience and gags will be gone for good.'
+TrackSwapDone = 'Done! You now have the %s track. Go buy some gags!'
+TrackSwapNotYet = 'No track to swap for yet. Finish the ToonTasks that offer gag tracks first.'
+TrackSwapLocked = 'This toon was maxed, so its tracks are set for good.'
+TrackSwapFailed = 'That swap could not be done.'
 NPCFriendPageTitle = 'SOS Toons'
 PartyDateFormat = '%(mm)s %(dd)d, %(yyyy).4d'
 PartyTimeFormat = '%d:%.2d %s'
@@ -5555,6 +5576,15 @@ MakeAToonAccessories = 'Accessories'
 MakeAToonSetup = 'Setup'
 MakeAToonNoAccessory = 'None'
 TownBattleNeedHelp = 'Need Help!'
+LooksTitle = 'My Looks'
+LooksHelp = 'Tap a look to wear it. Your laff, gags, tasks and everything else stay the same.'
+LooksClose = 'Close'
+LooksKeep = 'Up to 6 looks. They are saved with your toon.'
+LooksNew = 'New Look'
+LooksNumber = 'Look %d'
+LooksWearing = 'Wearing'
+LooksEdit = 'Edit'
+LooksDeleteAsk = 'Delete Look %d? This cannot be undone.'
 MakeAToonClothes = 'Clothes'
 GagShopName = "Goofy's Gag Shop"
 GagShopPlayAgain = 'PLAY\nAGAIN'
@@ -5587,6 +5617,9 @@ ColorShopBody = 'Body'
 ColorShopLegs = 'Legs'
 ColorShopParts = 'Multi Color'
 ColorShopAll = 'Single Color'
+ClothesShopShirt = 'Shirt'
+ClothesShopShorts = 'Shorts'
+ClothesShopBottoms = 'Bottoms'
 ClothesShopShortsStyle = 'Shorts'
 ClothesShopShortsColor = 'Color'
 ClothesShopShirtsStyle = 'Shirts'
@@ -5876,6 +5909,8 @@ CagedToonThankYou = "It's great to be free!\x07Thanks for all your help!\x07I am
 CagedToonPromotion = "\x07Say--that V.P. Cog left behind your promotion papers.\x07I'll file them for you on the way out, so you'll get your promotion!"
 CagedToonLastPromotion = "\x07Wow, you've reached level %s on your Cog suit!\x07Cogs don't get promoted higher than that.\x07You can't upgrade your Cog suit anymore, but you can certainly keep rescuing Toons!"
 CagedToonHPBoost = "\x07You've rescued a lot of Toons from this HQ.\x07The Toon Council has decided to give you another Laff point. Congratulations!"
+CagedToonLevelPromotion = "\x07Say--that V.P. Cog left behind your promotion papers.\x07I'll file them for you on the way out, so you'll get your promotion!"
+CagedToonSuitPromotion = "\x07You've also earned a new Cog suit: you can now go undercover as a %s!"
 CagedToonMaxed = '\x07I see that you have a level %s Cog suit. Very impressive!\x07On behalf of the Toon Council, thank you for coming back to rescue more Toons!'
 CagedToonGoodbye = 'See ya!'
 CagedToonBattleThree = {10: 'Nice jump, %(toon)s.  Here are some pies!',
@@ -10020,4 +10055,11 @@ InteractivePropTrackBonusTerms = {0: 'Super Toon-Up!',
  5: 'Super Squirt!',
  6: ''}
 PlayingCardUnknown = 'Card Name is unknown'
+PlayingCardSuits = ('Hearts', 'Diamonds', 'Clubs', 'Spades')
+PlayingCardRanks = ('Ace', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Jack', 'Queen', 'King')
+
+
+def getPlayingCardName(suit, rank):
+    return '%s of %s' % (PlayingCardRanks[rank % len(PlayingCardRanks)], PlayingCardSuits[suit % len(PlayingCardSuits)])
+
 TouchControlsJump = 'Jump'

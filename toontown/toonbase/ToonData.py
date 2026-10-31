@@ -30,6 +30,7 @@ MIME_TYPE = 'application/zip'
 # cog building records in a test setup); they are left as they are.
 SKIP_DIRS = ('events', 'backups')
 SETTINGS = 'settings.json'
+VALUE_RE = re.compile(r'^\s*\("((?:[^"\\]|\\.)*)"\)\s*$')
 NAME_RE = re.compile(r'^\s*setName: \("((?:[^"\\]|\\.)*)"\)\s*$', re.M)
 
 
@@ -55,12 +56,33 @@ def toonNamesIn(texts):
     """The toons' names, from the database files' texts."""
     names = []
     for text in texts:
-        if 'class: DistributedToon' not in text:
-            continue
-        match = NAME_RE.search(text)
-        if match:
-            names.append(match.group(1).replace('\\"', '"').replace('\\\\', '\\'))
+        name = _jsonToonName(text)
+        if name is None:
+            if 'class: DistributedToon' not in text:
+                continue
+            match = NAME_RE.search(text)
+            if not match:
+                continue
+            name = match.group(1)
+        names.append(name.replace('\\"', '"').replace('\\\\', '\\'))
     return sorted(names, key=str.lower)
+
+
+def _jsonToonName(text):
+    # The packaged games have no PyYAML, so their database files are JSON
+    # ("class": "DistributedToon"), which the YAML pattern never matched:
+    # the phone said it had no toons. Returns None for anything else.
+    if not text.lstrip().startswith('{'):
+        return None
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return None
+    if not isinstance(data, dict) or data.get('class') != 'DistributedToon':
+        return None
+    value = (data.get('fields') or {}).get('setName')
+    match = VALUE_RE.match(value) if isinstance(value, str) else None
+    return match.group(1) if match else None
 
 
 def databaseFiles():

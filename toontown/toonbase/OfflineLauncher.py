@@ -2,9 +2,10 @@
 
 Before anything of the game loads, the player sees the old Toontown Online
 launcher: PLAY! starts the game (the bar under it fills as it loads),
-DRIVERS picks a graphics driver on Android, SETTINGS holds the game's
-own options, such as the touch screen controls, and DATA exports and imports
-the player's toons. It is part of the game, not
+MOBILE picks a graphics driver on Android and turns the bottom screen of
+dual-screen handhelds on or off, SETTINGS holds the game's own options, such
+as the touch screen controls, PERFORMANCE the graphics options, and DATA
+exports and imports the player's toons. It is part of the game, not
 a program of its own.
 
 The launcher draws in a display region of its own, above the game's, so it
@@ -76,13 +77,7 @@ def isAndroid():
     return sys.platform == 'android'
 
 
-def mobileOptionsAvailable():
-    # The MOBILE options are for phones; launcher-mobile-anywhere lets them
-    # be tried on a computer.
-    return isAndroid() or ConfigVariableBool('launcher-mobile-anywhere', False).getValue()
-
-
-# The MOBILE options: the setting, its values (first = the default) and how
+# The PERFORMANCE options: the setting, its values (first = the default) and how
 # each value reads on its button.
 RENDER_SCALES = ((100, '100%'), (75, '75%'), (50, '50%'))
 FILTERING = ((16, 'HIGH'), (8, 'MEDIUM'), (4, 'LOW'), (1, 'OFF'))
@@ -100,8 +95,6 @@ def mobileSetting(key, choices, settings=None):
 
 def applyMobileSettings(settings=None):
     """At PLAY!: the texture filtering (the render scale comes in at finish)."""
-    if not mobileOptionsAvailable():
-        return
     degree = mobileSetting('filtering', FILTERING, settings)
     loadPrcFileData('OfflineLauncher filtering', 'texture-anisotropic-degree %d' % degree)
 
@@ -116,6 +109,17 @@ def applyTouchSetting(settings=None):
     # on); the player can turn them off.
     on = isAndroid() and touchControlsWanted(settings)
     loadPrcFileData('OfflineLauncher touch controls', 'want-touch-controls %d' % on)
+
+
+def secondScreenWanted(settings=None):
+    settings = settings or Settings()
+    return settings.getBool('mobile', 'dual-screen', True)
+
+
+def applySecondScreenSetting(settings=None):
+    # The bottom screen of a dual-screen handheld (see SecondScreen); the
+    # player can turn it off.
+    loadPrcFileData('OfflineLauncher second screen', 'want-second-screen %d' % secondScreenWanted(settings))
 
 
 def trainingDistrictWanted(key, settings=None):
@@ -140,6 +144,7 @@ class OfflineLauncher(DirectObject):
         self.closed = False
         self.panel = None
         applyTouchSetting(self.settings)
+        applySecondScreenSetting(self.settings)
 
         # A layer of its own, drawn over everything else in the window.
         self.top = NodePath(PGTop('offlineLauncher'))
@@ -291,15 +296,12 @@ class OfflineLauncher(DirectObject):
                                         text_font=self.interfaceFont, text_scale=0.032, text_fg=TEXT_DARK)
 
     def makeLeftPanel(self):
-        self.driversButton = self.redButton('DRIVERS', place(192, 100), self.showDrivers)
+        self.driversButton = self.redButton('MOBILE', place(192, 100), self.showDrivers)
         # Greyed out, rather than a darker red, when it can't be pressed.
         images = self.buttonImages((RED, PRESSED, RED_ROLLOVER)) + [self.buttonImages()[3]]
         self.driversButton['image'] = images
         self.driversButton['text3_fg'] = (0.85, 0.85, 0.85, 1)
         self.driversButton['text3_shadow'] = (0.3, 0.3, 0.3, 1)
-        if not isAndroid():
-            # Custom graphics drivers are a thing of Android phones.
-            self.driversButton['state'] = DGG.DISABLED
         # The text fills the panel between the two buttons.
         self.blurb = DirectLabel(parent=self.canvas, relief=None, pos=place(192, 150), text=BLURB,
                                  text_font=self.interfaceFont, text_scale=0.08, text_wordwrap=16.3,
@@ -308,18 +310,15 @@ class OfflineLauncher(DirectObject):
                                    text_font=self.interfaceFont, text_scale=0.056, text_wordwrap=23,
                                    text_fg=TEXT_DARK, text_align=TextNode.ACenter)
         self.settingsButton = self.redButton('SETTINGS', place(192, 405), self.showSettings)
-        # Phone graphics options: a small button in the bottom right corner,
-        # greyed out off Android like DRIVERS.
-        self.mobileButton = self.redButton('MOBILE', place(706, 478), self.showMobile, textScale=0.04,
-                                           imageScale=(0.62, 1, 1.0))
-        self.mobileButton['frameSize'] = (-0.13, 0.13, -0.05, 0.05)
+        # Graphics options: a small button in the bottom right corner.
+        self.mobileButton = self.redButton('PERFORMANCE', place(690, 478), self.showMobile, textScale=0.034,
+                                           imageScale=(0.92, 1, 1.0))
+        self.mobileButton['frameSize'] = (-0.19, 0.19, -0.05, 0.05)
         self.mobileButton['image'] = images
         self.mobileButton['text3_fg'] = (0.85, 0.85, 0.85, 1)
         self.mobileButton['text3_shadow'] = (0.3, 0.3, 0.3, 1)
-        if not mobileOptionsAvailable():
-            self.mobileButton['state'] = DGG.DISABLED
         # Exporting and importing toons: a small button in the bottom left
-        # corner of the picture, the size of MOBILE.
+        # corner of the picture.
         self.dataButton = self.redButton('DATA', place(44, 478), self.showData, textScale=0.04,
                                          imageScale=(0.62, 1, 1.0))
         self.dataButton['frameSize'] = (-0.13, 0.13, -0.05, 0.05)
@@ -394,7 +393,7 @@ class OfflineLauncher(DirectObject):
             button.reparentTo(panel)
 
     def showMobile(self):
-        panel = self.openPanel('MOBILE', titleZ=0.45, closeZ=-0.43, closeScale=0.75)
+        panel = self.openPanel('PERFORMANCE', titleZ=0.45, closeZ=-0.43, closeScale=0.75)
         self.mobileButtons = {}
         # Each description sits on one line in the gap under its button.
         rows = (
@@ -494,7 +493,7 @@ class OfflineLauncher(DirectObject):
 
     def showDrivers(self):
         from toontown.toonbase import TurnipDrivers
-        TurnipDrivers.DriversPanel(self, self.openPanel('DRIVERS', titleZ=0.45))
+        self.driversPanel = TurnipDrivers.DriversPanel(self, self.openPanel('MOBILE', titleZ=0.5, closeZ=-0.445, closeScale=0.75))
 
     # --- Starting the game ---
 
@@ -581,7 +580,6 @@ def finish():
         return
     progress(100, 'Ready!')
     launcher, _launcher = _launcher, None
-    if mobileOptionsAvailable():
-        from toontown.toonbase import RenderScale
-        RenderScale.apply(mobileSetting('render-scale', RENDER_SCALES, launcher.settings))
+    from toontown.toonbase import RenderScale
+    RenderScale.apply(mobileSetting('render-scale', RENDER_SCALES, launcher.settings))
     getClientBuiltin('taskMgr').doMethodLater(0.4, lambda task: launcher.destroy(), 'offlineLauncherFinish')

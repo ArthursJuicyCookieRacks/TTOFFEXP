@@ -1,8 +1,10 @@
 from direct.directnotify import DirectNotifyGlobal
 import string
 from . import LevelConstants
-if __debug__:
-    from direct.showbase.PythonUtil import lineInfo, uniqueElements
+# From DebugNames: PythonUtil has these only when __debug__ is on, and
+# release builds run with -O.
+from direct.showbase.PythonUtil import uniqueElements
+from otp.otpbase.DebugNames import lineInfo
 import types
 
 class Level:

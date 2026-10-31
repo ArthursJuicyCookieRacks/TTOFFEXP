@@ -5,6 +5,7 @@ from direct.fsm import StateData
 from direct.fsm import ClassicFSM, State
 from direct.fsm import State
 from toontown.launcher import DownloadForceAcknowledge
+from toontown.toon import ToonDNA
 from direct.gui.DirectGui import *
 from panda3d.core import *
 from toontown.toonbase import TTLocalizer
@@ -53,6 +54,7 @@ class AvatarChooser(StateData.StateData):
         base.disableMouse()
         self.title.reparentTo(aspect2d)
         self.quitButton.show()
+        self.survivalButton.show()
         # The ??? button plays a test cutscene this source doesn't have, so it
         # stays hidden.
         self.pickAToonBG.setBin('background', 1)
@@ -75,6 +77,7 @@ class AvatarChooser(StateData.StateData):
         self.title.reparentTo(hidden)
         self.quitButton.hide()
         self.questionableButton.hide()
+        self.survivalButton.hide()
         self.pickAToonBG.reparentTo(hidden)
         base.setBackgroundColor(ToontownGlobals.DefaultBackgroundColor)
         return None
@@ -99,6 +102,10 @@ class AvatarChooser(StateData.StateData):
             base.loadingScreen.cleanup()
             base.loadingScreen.musicLoadIn()
         self.questionableButton.hide()
+        # Survival Mode lives behind a button in the corner the ??? button
+        # would use.
+        self.survivalButton = DirectButton(relief=None, image=(quitHover, quitHover, quitHover), parent=base.a2dBottomLeft, text=TTLocalizer.AvatarChooserSurvival, text_font=ToontownGlobals.getSignFont(), text_fg=(0.9, 0.15, 0.15, 1), text_scale=0.075, text_pos=(0, -0.03), image_scale=(1.3, 1, 1), image1_scale=(1.35, 1, 1.05), image2_scale=(1.35, 1, 1.05), scale=1.05, pos=(0.36, 0, 0.1), command=self.__handleSurvival)
+        self.survivalLauncher = None
         gui.removeNode()
         gui2.removeNode()
         newGui.removeNode()
@@ -219,6 +226,11 @@ class AvatarChooser(StateData.StateData):
         del self.quitButton
         self.questionableButton.destroy()
         del self.questionableButton
+        self.survivalButton.destroy()
+        del self.survivalButton
+        if self.survivalLauncher:
+            self.survivalLauncher.destroy()
+            self.survivalLauncher = None
         self.pickAToonBG.removeNode()
         del self.pickAToonBG
         del self.avatarList
@@ -284,6 +296,25 @@ class AvatarChooser(StateData.StateData):
             base.transitions.fadeOut(finishIval=EventInterval(self.doneEvent, [self.doneStatus]))
         else:
             self.fsm.request('Choose')
+
+    def __handleSurvival(self):
+        if self.survivalLauncher:
+            return
+        from toontown.survival.SurvivalMenu import SurvivalLauncher
+        dna, name = self.survivalToon()
+        self.survivalLauncher = SurvivalLauncher(self, dna, name)
+
+    def survivalToon(self):
+        """The toon whose face the Survival laff meter wears: the first
+        one on the account, or a random one when there is none."""
+        for av in sorted(self.avatarList, key=lambda a: a.position):
+            if av.dna:
+                dna = ToonDNA.ToonDNA()
+                dna.makeFromNetString(av.dna)
+                return dna, av.name
+        dna = ToonDNA.ToonDNA()
+        dna.newToonRandom()
+        return dna, TTLocalizer.SurvivalDefaultName
 
     def __handleTestCutscene(self):
         self.exit()

@@ -35,6 +35,10 @@ ADRENOTOOLS_DRIVER_CUSTOM = 1 << 0
 TEXT_DARK = (0.16, 0.16, 0.32, 1)
 
 
+def isAndroid():
+    return sys.platform == 'android'
+
+
 def currentDriver(settings=None):
     """The folder of the driver in use, or '' for the phone's own."""
     settings = settings or Settings()
@@ -212,31 +216,53 @@ def installDriver(zipPath):
 
 
 class DriversPanel:
+    """The launcher's MOBILE panel: the graphics driver and the dual screen."""
 
     def __init__(self, launcher, panel):
         self.launcher = launcher
         self.panel = panel
-        self.label = DirectLabel(parent=panel, relief=None, pos=(0, 0, 0.32), text_font=launcher.interfaceFont,
-                                 text_scale=0.056, text_fg=TEXT_DARK, text_wordwrap=30, text='')
-        self.pickButton = launcher.redButton('PICK A DRIVER', (0, 0, 0.136), self.pick, textScale=0.04,
-                                             imageScale=(1.9, 1, 1.25))
+        self.label = DirectLabel(parent=panel, relief=None, pos=(0, 0, 0.36), text_font=launcher.interfaceFont,
+                                 text_scale=0.05, text_fg=TEXT_DARK, text_wordwrap=30, text='')
+        self.pickButton = launcher.redButton('PICK A DRIVER', (-0.34, 0, 0.215), self.pick, textScale=0.038,
+                                             imageScale=(1.6, 1, 1.25))
         self.pickButton.reparentTo(panel)
-        self.resetButton = launcher.redButton("PHONE'S DRIVER", (0, 0, -0.042), self.reset, textScale=0.04,
-                                              imageScale=(1.9, 1, 1.25))
+        self.resetButton = launcher.redButton("PHONE'S DRIVER", (0.34, 0, 0.215), self.reset, textScale=0.038,
+                                              imageScale=(1.6, 1, 1.25))
         self.resetButton.reparentTo(panel)
         # Small text sits in the middle of these thinner buttons.
         for button in (self.pickButton, self.resetButton):
             button['text_pos'] = (0, -0.013)
-        self.message = DirectLabel(parent=panel, relief=None, pos=(0, 0, -0.205), text_font=launcher.interfaceFont,
-                                   text_scale=0.05, text_fg=TEXT_DARK, text_wordwrap=28,
+        self.message = DirectLabel(parent=panel, relief=None, pos=(0, 0, 0.1), text_font=launcher.interfaceFont,
+                                   text_scale=0.045, text_fg=TEXT_DARK, text_wordwrap=32,
                                    text='Pick a Turnip driver .zip (Snapdragon phones only). '
                                         'It is used from the next start.')
+        if not isAndroid():
+            # Custom graphics drivers are a thing of Android phones.
+            self.message['text'] = 'Graphics drivers can only be changed on Android.'
+            self.pickButton['state'] = DGG.DISABLED
+        self.screenButton = launcher.redButton('', (0, 0, -0.12), self.toggleScreen, textScale=0.05,
+                                               imageScale=(2.9, 1, 1.25))
+        self.screenButton.reparentTo(panel)
+        DirectLabel(parent=panel, relief=None, pos=(0, 0, -0.245), text_font=launcher.interfaceFont,
+                    text_scale=0.045, text_fg=TEXT_DARK, text_wordwrap=32,
+                    text='The bottom screen of dual-screen handhelds such as the AYN Thor: '
+                         'laff meter, gags, tasks, maps and more.')
         self.update()
 
     def update(self):
+        from toontown.toonbase import OfflineLauncher
         driver = currentDriver(self.launcher.settings)
-        self.label['text'] = 'Driver in use:\n%s' % (driverName(driver) if driver else "The phone's own driver")
-        self.resetButton['state'] = DGG.NORMAL if driver else DGG.DISABLED
+        self.label['text'] = 'Driver in use: %s' % (driverName(driver) if driver else "the phone's own driver")
+        self.resetButton['state'] = DGG.NORMAL if driver and isAndroid() else DGG.DISABLED
+        on = OfflineLauncher.secondScreenWanted(self.launcher.settings)
+        self.screenButton['text'] = 'DUAL SCREEN: %s' % ('ON' if on else 'OFF')
+
+    def toggleScreen(self):
+        from toontown.toonbase import OfflineLauncher
+        settings = self.launcher.settings
+        settings.updateSetting('mobile', 'dual-screen', not OfflineLauncher.secondScreenWanted(settings))
+        OfflineLauncher.applySecondScreenSetting(settings)
+        self.update()
 
     def say(self, text):
         self.message['text'] = text

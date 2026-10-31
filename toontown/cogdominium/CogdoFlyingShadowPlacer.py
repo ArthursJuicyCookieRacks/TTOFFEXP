@@ -27,8 +27,17 @@ class CogdoFlyingShadowPlacer(ShadowPlacer):
         cRayNode.setIntoCollideMask(BitMask32.allOff())
         self.queue = CollisionHandlerQueue()
 
+    # Every flyer, minion and legal eagle has one of these, and each used to
+    # run its own full collision pass over the scene every frame (a dozen
+    # passes a frame in a busy level).  They all share base.shadowTrav, so
+    # one pass per frame serves every queue.
+    _lastTraversal = {}
+
     def update(self):
-        self.cTrav.traverse(render)
+        frame = globalClock.getFrameCount()
+        if self._lastTraversal.get(id(self.cTrav)) != frame:
+            self._lastTraversal[id(self.cTrav)] = frame
+            self.cTrav.traverse(render)
         self.queue.sortEntries()
         if self.queue.getNumEntries() > 0:
             entry = self.queue.getEntry(0)

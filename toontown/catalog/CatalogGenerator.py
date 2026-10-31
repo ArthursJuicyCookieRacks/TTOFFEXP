@@ -1,7 +1,7 @@
 from direct.directnotify import DirectNotifyGlobal
 from . import CatalogItem
 from . import CatalogItemList
-from .CatalogFurnitureItem import CatalogFurnitureItem, nextAvailableCloset, getAllClosets, get50ItemCloset, getMaxClosets, get50ItemTrunk
+from .CatalogFurnitureItem import CatalogFurnitureItem, nextAvailableCloset, getAllClosets, get50ItemCloset, getMaxClosets, get50ItemTrunk, getMaxTrunks
 from .CatalogAnimatedFurnitureItem import CatalogAnimatedFurnitureItem
 from .CatalogClothingItem import CatalogClothingItem, getAllClothes
 from .CatalogChatItem import CatalogChatItem, getChatRange

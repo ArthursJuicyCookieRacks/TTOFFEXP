@@ -157,9 +157,31 @@ class CogdoFlyingLegalEagle(FSM):
         else:
             return False
 
+    # A roosting eagle more than this far from the local toon (along the
+    # level) is stashed: it is still drawn and animated otherwise, far behind
+    # the fog, and every one of them costs skinning, a shadow pass and a
+    # nametag tick each frame.  Its interest cone is far shorter than this.
+    RestingHideDistance = Globals.Level.QuadLengthUnits * 1.5
+
+    def _setRestingHidden(self, hidden):
+        if getattr(self, '_restingHidden', False) == hidden:
+            return
+        self._restingHidden = hidden
+        if hidden:
+            self.suit.stash()
+            self.hoverOverNestSeq.pause()
+            self.propTrack.pause()
+        else:
+            self.suit.unstash()
+            self.hoverOverNestSeq.loop()
+            self.propTrack.loop()
+
     def update(self, dt, localPlayer):
         if Globals.Dev.NoLegalEagleAttacks:
             return
+        if self.state == 'Roost':
+            far = abs(self.nest.getY(render) - localPlayer.toon.getY(render)) > self.RestingHideDistance
+            self._setRestingHidden(far)
         inView = self.isToonInView(localPlayer.toon)
         if inView and not self.isEagleInterested:
             self.handleEnterInterest()
@@ -385,6 +407,7 @@ class CogdoFlyingLegalEagle(FSM):
 
     def exitRoost(self):
         self.notify.debug("exit%s: '%s' -> '%s'" % (self.oldState, self.oldState, self.newState))
+        self._setRestingHidden(False)
         self.hoverOverNestSeq.pause()
         self.setCollSphereToTargeting()
 

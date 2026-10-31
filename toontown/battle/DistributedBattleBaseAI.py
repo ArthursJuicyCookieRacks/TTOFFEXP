@@ -771,6 +771,8 @@ class DistributedBattleBaseAI(DistributedObjectAI.DistributedObjectAI, BattleBas
             if self.addToon(toonId):
                 self.__joinToon(toonId, Point3(x, y, z))
                 self.d_setMembers()
+            else:
+                self.d_denyLocalToonJoin(toonId)
         else:
             self.notify.warning('toonRequestJoin() - not joinable')
             self.d_denyLocalToonJoin(toonId)

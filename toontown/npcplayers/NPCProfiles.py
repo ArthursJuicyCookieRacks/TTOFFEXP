@@ -78,12 +78,8 @@ def getTier(zoneId, player=None):
     else:
         tier = MIXED_TIER
     (low, high), level = tier
-    if player is not None and hoodId not in COG_HQS:
-        # Out in the playgrounds nobody tags along with a toon much stronger
-        # than themselves. (The Cog HQs keep their mix of toons.)
-        low = max(low, min(player.getMaxHp() - 10, 137))
-        high = max(high, low)
-        level = max(level if isinstance(level, int) else level[1], highestGagLevel(player))
+    # The toons fit the place, whoever they play with (Arthur, 2026-10-30:
+    # a maxed player's Toontown Central field office had maxed helpers).
     if isinstance(level, int):
         level = (level, level)
     return ((low, high), level)

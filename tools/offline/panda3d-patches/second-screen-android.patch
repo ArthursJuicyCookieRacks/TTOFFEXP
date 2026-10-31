@@ -1,0 +1,301 @@
+diff --git a/panda/src/android/PythonActivity.java b/panda/src/android/PythonActivity.java
+index 7031f8a..0a5c088 100644
+--- a/panda/src/android/PythonActivity.java
++++ b/panda/src/android/PythonActivity.java
+@@ -32,6 +32,14 @@ import android.widget.EditText;
+ import android.database.Cursor;
+ import android.net.Uri;
+ import android.provider.OpenableColumns;
++import android.app.Presentation;
++import android.graphics.Bitmap;
++import android.hardware.display.DisplayManager;
++import android.util.DisplayMetrics;
++import android.view.Display;
++import android.view.MotionEvent;
++import android.widget.FrameLayout;
++import android.widget.ImageView;
+ import java.io.File;
+ import java.io.FileInputStream;
+ import java.io.FileOutputStream;
+@@ -41,6 +49,8 @@ import java.util.ArrayList;
+ import java.util.Collections;
+ import java.util.Iterator;
+ import java.util.List;
++import java.nio.ByteBuffer;
++import java.util.concurrent.ConcurrentLinkedQueue;
+ 
+ /**
+  * Extends PandaActivity with some things that are useful in a Python
+@@ -347,6 +357,153 @@ public class PythonActivity extends PandaActivity {
+         }
+     }
+ 
++    // The second screen of a dual-screen handheld (such as the AYN Thor).
++    // The game draws its picture for it (Python, in an offscreen buffer) and
++    // hands it over here; it is shown on the second display through a
++    // Presentation, and the touches on it are queued for the game to read.
++    private Presentation secondScreen = null;
++    private FrameLayout secondScreenFrame = null;
++    private ImageView secondScreenView = null;
++    private volatile boolean secondScreenOpening = false;
++    private volatile int secondScreenWidth = 0;
++    private volatile int secondScreenHeight = 0;
++    private final Bitmap[] secondScreenBitmaps = new Bitmap[2];
++    private int secondScreenBitmap = 0;
++    private final ConcurrentLinkedQueue<String> secondScreenTouches = new ConcurrentLinkedQueue<String>();
++
++    // "width height" of the second screen, or "" if there is none (yet).
++    // Asking also opens it, the first time it is there.
++    public String getSecondScreen() {
++        if (secondScreen == null && !secondScreenOpening) {
++            secondScreenOpening = true;
++            runOnUiThread(() -> {
++                try {
++                    openSecondScreen();
++                } catch (Exception e) {
++                    secondScreen = null;
++                }
++                secondScreenOpening = false;
++            });
++        }
++        int width = secondScreenWidth;
++        int height = secondScreenHeight;
++        return width > 0 && height > 0 ? width + " " + height : "";
++    }
++
++    private void openSecondScreen() {
++        DisplayManager manager = (DisplayManager) getSystemService(Context.DISPLAY_SERVICE);
++        if (manager == null) {
++            return;
++        }
++        Display[] displays = manager.getDisplays(DisplayManager.DISPLAY_CATEGORY_PRESENTATION);
++        if (displays == null || displays.length == 0) {
++            return;
++        }
++        Display display = displays[0];
++        Presentation presentation = new Presentation(this, display);
++        Context context = presentation.getContext();
++        FrameLayout frame = new FrameLayout(context);
++        frame.setBackgroundColor(0xff6eabdb);
++        ImageView view = new ImageView(context);
++        view.setScaleType(ImageView.ScaleType.FIT_XY);
++        // Panda's pictures are stored bottom row first.
++        view.setScaleY(-1f);
++        frame.addView(view, new FrameLayout.LayoutParams(
++            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
++        frame.setOnTouchListener((v, event) -> {
++            int width = v.getWidth();
++            int height = v.getHeight();
++            if (width <= 0 || height <= 0) {
++                return true;
++            }
++            String kind;
++            switch (event.getActionMasked()) {
++            case MotionEvent.ACTION_DOWN:
++                kind = "down";
++                break;
++            case MotionEvent.ACTION_MOVE:
++                kind = "move";
++                break;
++            case MotionEvent.ACTION_UP:
++                kind = "up";
++                break;
++            case MotionEvent.ACTION_CANCEL:
++                kind = "cancel";
++                break;
++            default:
++                return true;
++            }
++            secondScreenTouches.add(kind + " " + (event.getX() / width) + " " + (event.getY() / height));
++            return true;
++        });
++        presentation.setContentView(frame);
++        presentation.getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
++        presentation.setOnDismissListener(dialog -> {
++            if (secondScreen == dialog) {
++                secondScreen = null;
++                secondScreenFrame = null;
++                secondScreenView = null;
++                secondScreenWidth = 0;
++                secondScreenHeight = 0;
++            }
++        });
++        presentation.show();
++        DisplayMetrics metrics = new DisplayMetrics();
++        display.getRealMetrics(metrics);
++        secondScreen = presentation;
++        secondScreenFrame = frame;
++        secondScreenView = view;
++        secondScreenWidth = metrics.widthPixels;
++        secondScreenHeight = metrics.heightPixels;
++    }
++
++    // A new picture for the second screen: RGBA rows, bottom row first.
++    public void setSecondScreenFrame(byte[] pixels, int width, int height) {
++        if (secondScreen == null || pixels.length < width * height * 4) {
++            return;
++        }
++        // Two bitmaps, so the one being shown is never the one being filled.
++        secondScreenBitmap = 1 - secondScreenBitmap;
++        Bitmap bitmap = secondScreenBitmaps[secondScreenBitmap];
++        if (bitmap == null || bitmap.getWidth() != width || bitmap.getHeight() != height) {
++            bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
++            secondScreenBitmaps[secondScreenBitmap] = bitmap;
++        }
++        bitmap.copyPixelsFromBuffer(ByteBuffer.wrap(pixels, 0, width * height * 4));
++        final Bitmap shown = bitmap;
++        runOnUiThread(() -> {
++            if (secondScreenView != null) {
++                secondScreenView.setImageBitmap(shown);
++            }
++        });
++    }
++
++    // The next touch on the second screen ("down|move|up|cancel x y", x and
++    // y from 0 to 1 from the top left), or null.
++    public String pollSecondScreenTouch() {
++        return secondScreenTouches.poll();
++    }
++
++    private void closeSecondScreen() {
++        if (secondScreen != null) {
++            try {
++                secondScreen.dismiss();
++            } catch (Exception e) {
++            }
++        }
++        secondScreen = null;
++        secondScreenFrame = null;
++        secondScreenView = null;
++        secondScreenWidth = 0;
++        secondScreenHeight = 0;
++    }
++
++    @Override
++    protected void onStop() {
++        closeSecondScreen();
++        super.onStop();
++    }
++
+     @Override
+     protected void onActivityResult(int requestCode, int resultCode, Intent intent) {
+         if (requestCode == SAVE_FILE_REQUEST) {
+diff --git a/pandatool/src/deploy-stub/android_support.cxx b/pandatool/src/deploy-stub/android_support.cxx
+index 95b5eb8..4a11326 100644
+--- a/pandatool/src/deploy-stub/android_support.cxx
++++ b/pandatool/src/deploy-stub/android_support.cxx
+@@ -249,6 +249,104 @@ _py_saved_file(PyObject *self, PyObject *args) {
+   return saved;
+ }
+ 
++/**
++ * Returns (width, height) of the second screen of a dual-screen device, or
++ * None if there is none (yet).  The first call opens it.
++ */
++static PyObject *
++_py_second_screen(PyObject *self, PyObject *args) {
++  jobject activity;
++  jclass activity_class;
++  JNIEnv *env = get_activity_env(activity, activity_class);
++  jmethodID method = env ? env->GetMethodID(activity_class, "getSecondScreen", "()Ljava/lang/String;") : nullptr;
++  if (method == nullptr) {
++    if (env != nullptr) {
++      env->ExceptionClear();
++    }
++    Py_RETURN_NONE;
++  }
++  jstring result = (jstring)env->CallObjectMethod(activity, method);
++  env->DeleteLocalRef(activity_class);
++  if (result == nullptr) {
++    Py_RETURN_NONE;
++  }
++  const char *chars = env->GetStringUTFChars(result, nullptr);
++  int width = 0, height = 0;
++  bool found = sscanf(chars, "%d %d", &width, &height) == 2 && width > 0 && height > 0;
++  env->ReleaseStringUTFChars(result, chars);
++  env->DeleteLocalRef(result);
++  if (!found) {
++    Py_RETURN_NONE;
++  }
++  return Py_BuildValue("(ii)", width, height);
++}
++
++/**
++ * Shows a picture on the second screen: RGBA bytes, bottom row first.
++ */
++static PyObject *
++_py_second_screen_frame(PyObject *self, PyObject *args) {
++  Py_buffer pixels;
++  int width, height;
++  if (!PyArg_ParseTuple(args, "y*ii", &pixels, &width, &height)) {
++    return NULL;
++  }
++  jobject activity;
++  jclass activity_class;
++  JNIEnv *env = get_activity_env(activity, activity_class);
++  jmethodID method = env ? env->GetMethodID(activity_class, "setSecondScreenFrame", "([BII)V") : nullptr;
++  if (method == nullptr) {
++    if (env != nullptr) {
++      env->ExceptionClear();
++    }
++    PyBuffer_Release(&pixels);
++    Py_RETURN_NONE;
++  }
++  jbyteArray array = env->NewByteArray((jsize)pixels.len);
++  if (array != nullptr) {
++    env->SetByteArrayRegion(array, 0, (jsize)pixels.len, (const jbyte *)pixels.buf);
++    env->CallVoidMethod(activity, method, array, width, height);
++    env->DeleteLocalRef(array);
++  }
++  env->ExceptionClear();
++  env->DeleteLocalRef(activity_class);
++  PyBuffer_Release(&pixels);
++  Py_RETURN_NONE;
++}
++
++/**
++ * Returns the next touch on the second screen, as (kind, x, y) with x and y
++ * from 0 to 1 from the top left, or None.
++ */
++static PyObject *
++_py_second_screen_touch(PyObject *self, PyObject *args) {
++  jobject activity;
++  jclass activity_class;
++  JNIEnv *env = get_activity_env(activity, activity_class);
++  jmethodID method = env ? env->GetMethodID(activity_class, "pollSecondScreenTouch", "()Ljava/lang/String;") : nullptr;
++  if (method == nullptr) {
++    if (env != nullptr) {
++      env->ExceptionClear();
++    }
++    Py_RETURN_NONE;
++  }
++  jstring result = (jstring)env->CallObjectMethod(activity, method);
++  env->DeleteLocalRef(activity_class);
++  if (result == nullptr) {
++    Py_RETURN_NONE;
++  }
++  const char *chars = env->GetStringUTFChars(result, nullptr);
++  char kind[16] = {0};
++  float x = 0, y = 0;
++  bool found = sscanf(chars, "%15s %f %f", kind, &x, &y) == 3;
++  env->ReleaseStringUTFChars(result, chars);
++  env->DeleteLocalRef(result);
++  if (!found) {
++    Py_RETURN_NONE;
++  }
++  return Py_BuildValue("(sff)", kind, x, y);
++}
++
+ static PyMethodDef python_simple_funcs[] = {
+   { "log_write", &_py_log_write, METH_VARARGS },
+   { "find_library", &_py_find_library, METH_VARARGS },
+@@ -256,6 +354,9 @@ static PyMethodDef python_simple_funcs[] = {
+   { "picked_file", &_py_picked_file, METH_NOARGS },
+   { "save_file", &_py_save_file, METH_VARARGS },
+   { "saved_file", &_py_saved_file, METH_NOARGS },
++  { "second_screen", &_py_second_screen, METH_NOARGS },
++  { "second_screen_frame", &_py_second_screen_frame, METH_VARARGS },
++  { "second_screen_touch", &_py_second_screen_touch, METH_NOARGS },
+   { "ask_text", &_py_ask_text, METH_VARARGS },
+   { "typed_text", &_py_typed_text, METH_NOARGS },
+   { NULL, NULL }

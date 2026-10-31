@@ -1,5 +1,7 @@
 from direct.directtools.DirectSelection import *
-from direct.directtools.DirectUtil import ROUND_TO
+from direct.directtools.DirectUtil import ROUND_TO, CLAMP
+# Panda3D 1.11's DirectSelection no longer passes these through its star import.
+from direct.directtools.DirectGlobals import SKIP_ALL, SKIP_BACKFACE, SKIP_CAMERA, SKIP_UNPICKABLE
 from direct.directtools.DirectGeometry import LineNodePath
 from direct.gui.DirectGui import *
 from panda3d.core import *
@@ -42,6 +44,18 @@ NormalPickerPanelColor = (1, 0.9, 0.745, 1)
 DisabledPickerPanelColor = (0.7, 0.65, 0.58, 1)
 DeletePickerPanelColor = (1, 0.4, 0.4, 1)
 DisabledDeletePickerPanelColor = (0.7, 0.3, 0.3, 1)
+
+def segmentPairs(pairs):
+    # A collision segment must have two different end points (Panda asserts
+    # on it, and the game crashed moving furniture when a corner had not
+    # moved, or an item had no size). A degenerate pair gets a hair of length.
+    out = []
+    for a, b in pairs:
+        if (Point3(b) - Point3(a)).lengthSquared() < 1e-8:
+            b = Point3(b) + Vec3(0, 0, 0.001)
+        out.append((a, b))
+    return out
+
 
 class FurnitureItemPanel(DirectButton):
 
@@ -696,10 +710,10 @@ class ObjectManager(NodePath, DirectObject):
         if deltaMove.length() == 0:
             return 1
         self.iSegment4.setParentNP(so)
-        entry = self.iSegment4.pickBitMask(bitMask=so.getWallBitmask(), targetNodePath=target, endPointList=[(so.c0, Point3(m.xformPoint(so.c0))),
+        entry = self.iSegment4.pickBitMask(bitMask=so.getWallBitmask(), targetNodePath=target, endPointList=segmentPairs([(so.c0, Point3(m.xformPoint(so.c0))),
          (so.c1, Point3(m.xformPoint(so.c1))),
          (so.c2, Point3(m.xformPoint(so.c2))),
-         (so.c3, Point3(m.xformPoint(so.c3)))], skipFlags=SKIP_CAMERA | SKIP_UNPICKABLE)
+         (so.c3, Point3(m.xformPoint(so.c3)))]), skipFlags=SKIP_CAMERA | SKIP_UNPICKABLE)
         maxLen = 0
         maxOffset = None
         while entry:
@@ -719,12 +733,12 @@ class ObjectManager(NodePath, DirectObject):
     def segmentCollision(self):
         so = self.selectedObject
         self.iSegment.setParentNP(so)
-        entry = self.iSegment.pickBitMask(bitMask=so.getWallBitmask(), targetNodePath=self.targetNodePath, endPointList=[(so.c0, so.c1),
+        entry = self.iSegment.pickBitMask(bitMask=so.getWallBitmask(), targetNodePath=self.targetNodePath, endPointList=segmentPairs([(so.c0, so.c1),
          (so.c1, so.c2),
          (so.c2, so.c3),
          (so.c3, so.c0),
          (so.c0, so.c2),
-         (so.c1, so.c3)], skipFlags=SKIP_CAMERA | SKIP_UNPICKABLE)
+         (so.c1, so.c3)]), skipFlags=SKIP_CAMERA | SKIP_UNPICKABLE)
         return entry
 
     def computeSegmentOffset(self, entry):

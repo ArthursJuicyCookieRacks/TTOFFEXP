@@ -1,6 +1,18 @@
 from panda3d.core import *
 from direct.showbase.DirectObject import DirectObject
+import weakref
+
 from otp.nametag import NametagGlobals
+
+# Every popup alive, so a new mouse watcher (a new window: switching to or
+# from full screen opens one) can take over their click regions.
+_popups = weakref.WeakSet()
+
+
+def moveToMouseWatcher(mwn):
+    for popup in list(_popups):
+        popup._moveToMouseWatcher(mwn)
+
 
 class ClickablePopup(PandaNode, DirectObject):
     CS_NORMAL = 0
@@ -18,6 +30,7 @@ class ClickablePopup(PandaNode, DirectObject):
         self.__cam = cam
         self.__region = MouseWatcherRegion(self.__name, 0, 0, 0, 0)
         self.__mwn.addRegion(self.__region)
+        _popups.add(self)
 
         self.__disabled = False
         self.__clicked = False
@@ -34,8 +47,25 @@ class ClickablePopup(PandaNode, DirectObject):
         self.accept(self.__getEvent(self.__mwn.getButtonUpPattern()), self.__buttonUp)
 
     def destroy(self):
-        self.__mwn.removeRegion(self.__region)
+        _popups.discard(self)
+        if self.__mwn is not None:
+            self.__mwn.removeRegion(self.__region)
         self.ignoreAll()
+
+    def _moveToMouseWatcher(self, mwn):
+        """The window was opened again (full screen on or off): the old
+        mouse watcher hears no clicks any more, so the region goes to the
+        new one. Without this, speech bubbles and name tags made before
+        the switch could not be clicked."""
+        if mwn is None or mwn == self.__mwn:
+            return
+        if self.__mwn is not None:
+            self.__mwn.removeRegion(self.__region)
+        self.__mwn = mwn
+        self.__mwn.addRegion(self.__region)
+        self.__hovered = False
+        self.__clicked = False
+        self.__updateClickState()
 
     def setClickRegionEvent(self, event, clickArgs=[]):
         if event == None:

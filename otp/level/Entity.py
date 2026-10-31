@@ -1,6 +1,7 @@
 from direct.showbase.DirectObject import DirectObject
-if __debug__:
-    from direct.showbase.PythonUtil import lineInfo
+# From DebugNames: PythonUtil has these only when __debug__ is on, and
+# release builds run with -O.
+from otp.otpbase.DebugNames import lineInfo
 import string
 from direct.directnotify import DirectNotifyGlobal
 

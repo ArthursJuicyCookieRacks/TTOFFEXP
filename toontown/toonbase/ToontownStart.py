@@ -102,6 +102,10 @@ from direct.gui.DirectGui import *
 from .Gamepad import Gamepad
 base.gamepad = Gamepad()
 
+# The bottom screen of a dual-screen handheld, from the launcher on.
+from toontown.dualscreen import SecondScreen
+SecondScreen.start()
+
 # The packaged game opens on its launcher, and goes on from here once the
 # player presses PLAY!.
 from . import OfflineLauncher

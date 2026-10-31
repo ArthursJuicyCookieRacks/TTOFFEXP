@@ -41,6 +41,17 @@ class DevVariableContainer:
         self.__dict__[name] = self._enabled and value
 
 
+def loadElevatorModel():
+    # The field office elevator's floor is 0.1 above its origin, so toons
+    # stepped up onto it. Lower the model so its floor is level with the
+    # ground and toons walk in flat.
+    model = loader.loadModel('phase_5/models/cogdominium/tt_m_ara_csa_elevatorB')
+    grp = model.find('**/Grp_elevatorB')
+    if not grp.isEmpty():
+        grp.setZ(grp.getZ() - 0.1)
+    return model
+
+
 def getRandomDialogueLine(lineList, rng):
     return lineList[rng.randint(0, len(lineList) - 1)]
 
@@ -70,7 +81,10 @@ class CogdoGameMovie:
 
     def unload(self):
         if self._ival != None and self._ival.isPlaying():
-            self.finish()
+            # Stopped where it is: there is no self.finish (that raised), and
+            # finishing the ival would run its last steps, such as the
+            # flying game's iris out, after the next floor has started.
+            self._ival.pause()
         self._ival = None
         self._dialogueLabel.removeNode()
         del self._dialogueLabel

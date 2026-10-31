@@ -28,26 +28,56 @@ THROW_TIME = (1.6, 3.2)
 SLOW_TIME = (3.0, 6.0)
 SLOW_JOBS = (('l', 'BattleTwo'), ('c', 'BattleTwo'))
 # Swinging a crane over to a safe or a goon, and from there to the CFO.
-CRANE_TIME = (10.0, 18.0)
+CRANE_TIME = (4.0, 7.0)
 # Aiming a banquet table's water pitcher at the CEO.
 PITCHER_TIME = (4.0, 6.0)
 PITCHER_HIT_CHANCE = 0.45
 # How many NPCs take a pitcher; the rest golf, fetch toon-up food or keep
 # out of his way.
 PITCHERS = 3
-GOLF_TIME = (5.0, 9.0)
+GOLF_TIME = (4.0, 6.0)
 # Chances a pie does what it was thrown for.
-STUN_CHANCE = 0.25
 HIT_CHANCE = 0.4
-# Seconds between one NPC's throws at a dizzy VP: a player has to get in
-# front of him and aim.
-DIZZY_THROW_TIME = (1.8, 3.5)
-# A run to the witness stand for more evidence, and back.
-EVIDENCE_TRIP = (3.0, 6.0)
+# The VP's underside opens while he shoots gears out of it; a pie thrown
+# into the opening stuns him. A stunner standing ready in front of him
+# throws as soon as the doors open, and keeps throwing while they are
+# open: this often a throw, and this often one goes in.
+STUN_CHANCE = 0.5
+STUN_THROW_TIME = (1.2, 2.0)
+# While he is dizzy everyone runs in close, from all sides, and pies his
+# body as fast as it can; close up most pies land.
+DIZZY_THROW_TIME = (1.0, 2.0)
+DIZZY_RANGE = (12.0, 17.0)
+DIZZY_HIT_CHANCE = 0.65
+# The gears he shoots from the opening: how often one hits a toon standing
+# in front of him (the stunners' risk), and how far they reach.
+STRAFE_HIT_CHANCE = 0.3
+STRAFE_REACH = 45.0
+# A toon the VP aims a gear at runs sideways out of its way, usually.
+SIDESTEP_CHANCE = 0.7
+SIDESTEP = (8.0, 12.0)
+# Out of pies: a run to the cage to refill, close enough to touch it.
+CAGE_NEAR = 9.0
+# One evidence throw after another at the CJ's scale, and faster still
+# during the witness bonus, when evidence counts double.
+EVIDENCE_TIME = (1.5, 2.5)
+BONUS_TIME = (0.8, 1.4)
+# The witness stand (courtroom coordinates), where a toon out of evidence
+# runs to refill: the floor just in front of the stand (its own floor is a
+# raised step at y 84-100), close enough to touch its rail.
+WITNESS_STAND = (55, 78)
+WITNESS_NEAR = 10.0
 # Evidence on the CJ's scale pan, a big target.
 EVIDENCE_HIT_CHANCE = 0.55
-# How often a throw goes at one of the lawyers instead.
-LAWYER_CHANCE = 0.2
+# The courtroom floor the toons throw from (the scale stands on the bench at
+# y 89): where they are spread out at the start of the round, and the middle
+# of their wandering.
+COURTROOM_X = (-45.0, 45.0)
+COURTROOM_Y = (-5.0, 55.0)
+COURTROOM_FLOOR = (0.0, 25.0)
+# One or two toons have the lawyers as their job: pies that stun them for
+# a while so they stop loading the cogs' pan.
+LAWYER_STUNNERS = (1, 2)
 LAWYER_HIT_CHANCE = 0.5
 # The VP: only a few toons go for his stun (the rest wait to hit him while
 # he is dizzy), and they give him a while on his feet before trying again.
@@ -57,6 +87,12 @@ STUN_REST = (4.0, 8.0)
 # kept free for the player at the start.
 CRANE_HIT_CHANCE = 0.4
 CRANE_FOR_PLAYER = 30.0
+# The CFO's floor toons: they jump on the goons' heads to stun them for the
+# craners, and pick up the treasures the stunned goons leave when hurt.
+GOON_STOMP_RANGE = 6.0
+GOON_STOMP_CHANCE = 0.6
+TREASURE_BELOW = 0.6
+TREASURE_NEAR = 4.0
 # The CJ: how likely a toon fired from a cannon lands in a chair.
 CANNON_HIT_CHANCE = 0.3
 # The CEO: how many NPCs take a golf spot, and how likely a ball hits him.
@@ -73,6 +109,8 @@ PIE_ROAM_RANGE = (16.0, 34.0)
 # there, this far from his middle (he swats within about 14).
 STUN_SPOT = (18.0, 24.0)
 STUN_SPOT_NEAR = 5.0
+# Within this of him an NPC counts as near, for his gear attacks.
+NEAR_BOSS = 40.0
 # No roaming path passes nearer the boss than this.
 BOSS_CLEAR = 11.0
 # Now and then an NPC stops to emote instead of walking.
@@ -94,9 +132,10 @@ BOSS_BODY = 9.0
 JUMP_CHANCE = 0.55
 DODGE_CHANCE = 0.3
 HIT_REST = 3.0
-JUMPABLE = (ToontownGlobals.BossCogAreaAttack, ToontownGlobals.BossCogDirectedAttack,
-            ToontownGlobals.BossCogSlowDirectedAttack, ToontownGlobals.BossCogGearDirectedAttack,
-            ToontownGlobals.BossCogGavelStomp, ToontownGlobals.BossCogGolfAreaAttack)
+JUMPABLE = (ToontownGlobals.BossCogAreaAttack, ToontownGlobals.BossCogGavelStomp,
+            ToontownGlobals.BossCogGolfAreaAttack)
+DIRECTED = (ToontownGlobals.BossCogDirectedAttack, ToontownGlobals.BossCogSlowDirectedAttack,
+            ToontownGlobals.BossCogGearDirectedAttack)
 HIT_STATES = ('BattleThree', 'BattleFour', 'RollToBattleTwo')
 # Toon-up pies for the player: only once it is really hurt, and one healer
 # at a time with a breather between heals, not a constant shower of them.
@@ -130,11 +169,16 @@ class NPCBossCrew:
         self.foodNum = 1000
         self.stateSince = (None, 0)
         self.stunners = None
+        self.lawyerStunners = None
+        self.stunOffsets = {}
+        self.chasing = {}
         self.dizzy = False
         self.stunRestUntil = 0
         self.nextRoam = {}
+        self.placed = False
         self.nextHeal = 0
         self.animRefresh = {}
+        self.doorWasOpen = False
         self.taskName = 'npcBossCrew-%d' % boss.doId
         taskMgr.doMethodLater(TICK, self.__tick, self.taskName)
 
@@ -169,14 +213,35 @@ class NPCBossCrew:
             self.stateSince = (state, now)
             # A new stretch: everyone gets going straight away.
             self.nextRoam = {}
+            self.placed = False
         try:
             members = self.members()
+            pieRound = self.dept == 's' and state == 'BattleThree'
+            if self.dept == 'l' and state == 'BattleThree' and not self.placed:
+                self.placed = True
+                self.placeCourtroom(members)
+            if pieRound:
+                self.watchDizzy(now)
+                self.markNear(members)
             self.takeHits(members)
             self.refreshAnims(members, now)
             if (self.dept, state) in ROAM_STATES:
                 for npc in members:
-                    if self.dept == 's' and state == 'BattleThree' and self.isStunner(npc):
-                        self.goToStunSpot(npc, now)
+                    if pieRound:
+                        if self.refillTrip(npc, now):
+                            continue
+                        if self.dizzy:
+                            self.closeIn(npc, now)
+                        elif self.isStunner(npc):
+                            self.goToStunSpot(npc, now)
+                        else:
+                            self.roam(npc, now)
+                    elif self.dept == 'm' and state == 'BattleThree':
+                        if not self.floorJob(npc, now):
+                            self.roam(npc, now)
+                    elif self.dept == 'l' and state == 'BattleThree':
+                        if not self.witnessTrip(npc, now):
+                            self.roam(npc, now)
                     else:
                         self.roam(npc, now)
             play = getattr(self, 'play%s%s' % (self.dept.upper(), state), None)
@@ -186,6 +251,10 @@ class NPCBossCrew:
                     pace = CRANE_TIME
                 elif self.dept == 's' and boss.attackCode == ToontownGlobals.BossCogDizzyNow:
                     pace = DIZZY_THROW_TIME
+                elif self.dept == 's' and state == 'BattleThree':
+                    pace = STUN_THROW_TIME
+                elif self.dept == 'l' and state == 'BattleThree':
+                    pace = BONUS_TIME if getattr(boss, 'bonusState', False) else EVIDENCE_TIME
                 for npc in members:
                     if now >= self.nextAction.get(npc.doId, 0):
                         self.nextAction[npc.doId] = now + random.uniform(*pace)
@@ -199,6 +268,12 @@ class NPCBossCrew:
         return Task.again
 
     # --- Moving about ---
+
+    def inBattle(self, npc):
+        # A boss's cog battles are torn down, not finished: a toon keeps the
+        # battle's id after the battle itself is gone.
+        battleId = npc.getBattleId()
+        return battleId > 0 and battleId in self.air.doId2do
 
     def isStationed(self, npc):
         # On a crane, in a cannon, at a golf spot or a table's pitcher, where the
@@ -214,7 +289,7 @@ class NPCBossCrew:
     def canRoam(self, npc, now):
         if npc.walk is not None or npc.busy or now < self.nextRoam.get(npc.doId, 0):
             return False
-        if self.isStationed(npc) or npc.getBattleId() > 0 or getattr(npc, 'crew', None) is not None:
+        if self.isStationed(npc) or self.inBattle(npc) or getattr(npc, 'crew', None) is not None:
             # Held by the game, or fighting the cogs.
             self.nextRoam[npc.doId] = now + 1.0
             return False
@@ -228,6 +303,9 @@ class NPCBossCrew:
         center = self.bossPos()
         if center is None:
             return
+        if self.dept == 'l' and self.boss.getCurrentOrNextState() == 'BattleThree':
+            # The courtroom floor in front of the bench, not the bench.
+            center = Point3(COURTROOM_FLOOR[0], COURTROOM_FLOOR[1], 0)
         self.syncPos(npc)
         if not pieRound and random.random() < ROAM_EMOTE_CHANCE:
             from toontown.npcplayers.NPCPlayerManagerAI import IDLE_EMOTES
@@ -263,48 +341,390 @@ class NPCBossCrew:
                 del self.animRefresh[npc.doId]
                 self.wakeAnim(npc)
 
-    def stunSpot(self):
-        # On the open ground in front of him (he faces -Y in his own frame).
+    def stunSpot(self, npc=None):
+        """The open ground in front of him (he faces -Y in his own frame)
+        where this stunner stands: each keeps its own place there, so it
+        walks up once and holds it as he turns, instead of chasing a new
+        random point every moment."""
         base = getClientBuiltin('base')
         boss = base.cr.doId2do.get(self.boss.doId) if base else None
         if boss is None or boss.isEmpty():
             return None
         node = getattr(boss, 'rotateNode', boss)
-        return base.render.getRelativePoint(node, Point3(random.uniform(-5, 5), -random.uniform(*STUN_SPOT), 0))
+        if npc is None:
+            offset = (random.uniform(-5, 5), random.uniform(*STUN_SPOT))
+        else:
+            offset = self.stunOffsets.get(npc.doId)
+            if offset is None:
+                offset = (random.uniform(-4, 4), random.uniform(*STUN_SPOT))
+                self.stunOffsets[npc.doId] = offset
+        return base.render.getRelativePoint(node, Point3(offset[0], -offset[1], 0))
 
     def goToStunSpot(self, npc, now):
-        """A stunner heads for the open ground in front of the VP, where a
-        player stands to throw under him, and keeps to it as he turns;
-        while he is dizzy or the stunners rest it roams like the others."""
+        """A stunner heads for its place in front of the VP, where a player
+        stands to throw under him, and keeps to it as he turns; while he is
+        dizzy or the stunners rest it roams like the others."""
         if self.dizzy or now < self.stunRestUntil:
             self.roam(npc, now)
             return
-        if not self.canRoam(npc, now):
+        if npc.busy:
             return
-        spot = self.stunSpot()
+        spot = self.stunSpot(npc)
         if spot is None:
             return
         self.syncPos(npc)
         pos = npc.getPos()
-        if (Point3(pos[0], pos[1], 0) - Point3(spot[0], spot[1], 0)).length() < STUN_SPOT_NEAR * 2:
-            # Close enough; a short shuffle keeps it looking alive.
-            self.nextRoam[npc.doId] = now + random.uniform(*PIE_ROAM_TIME)
-            return
-        path = getNav().walkable(pos, Point3(spot[0], spot[1], pos[2]))
-        if path:
-            self.startWalk(npc, path)
+        flat = (Point3(pos[0], pos[1], 0) - Point3(spot[0], spot[1], 0)).length()
+        if npc.walk is not None:
+            # On the way: let it finish unless he has turned away meanwhile.
+            goal = npc.walk[0][-1]
+            if (Point3(goal[0], goal[1], 0) - Point3(spot[0], spot[1], 0)).length() > 6.0:
+                npc.walk = None
+            else:
+                return
+        if flat < STUN_SPOT_NEAR:
+            # In place: squared up to the opening, ready for the doors.
+            self.faceBoss(npc)
             self.nextRoam[npc.doId] = now + 0.5
-        else:
+            return
+        if now < self.nextRoam.get(npc.doId, 0):
+            return
+        self.nextRoam[npc.doId] = now + 0.5
+        if not self.walkToward(npc, pos, spot, ToontownGlobals.ToonForwardSpeed):
             self.roam(npc, now)
 
     def atStunSpot(self, npc):
+        """In front of him and near enough to throw into the opening."""
         base = getClientBuiltin('base')
         boss = base.cr.doId2do.get(self.boss.doId) if base else None
         client = base.cr.doId2do.get(npc.doId) if base else None
         if boss is None or boss.isEmpty() or client is None or client.isEmpty():
             return False
         rel = client.getPos(getattr(boss, 'rotateNode', boss))
-        return abs(rel[0]) < 9 and -STUN_SPOT[1] - STUN_SPOT_NEAR < rel[1] < -STUN_SPOT[0] + STUN_SPOT_NEAR
+        return abs(rel[0]) < 12 and -STUN_SPOT[1] - 8 < rel[1] < -10
+
+    def markNear(self, members):
+        """The VP aims his gears at the toons near him; a player's client
+        reports being near, so the NPC toons report it here."""
+        center = self.bossPos()
+        near = getattr(self.boss, 'nearToons', None)
+        if center is None or near is None:
+            return
+        for npc in members:
+            pos = npc.getPos()
+            close = math.hypot(pos[0] - center[0], pos[1] - center[1]) < NEAR_BOSS
+            if close and npc.doId not in near:
+                near.append(npc.doId)
+            elif not close and npc.doId in near:
+                near.remove(npc.doId)
+
+    def faceBoss(self, npc):
+        center = self.bossPos()
+        if center is None:
+            return
+        pos = npc.getPos()
+        wanted = -math.degrees(math.atan2(center[0] - pos[0], center[1] - pos[1]))
+        if abs((wanted - npc.getH() + 180) % 360 - 180) > 8:
+            npc.faceH = wanted
+
+    def watchDizzy(self, now):
+        dizzy = self.boss.attackCode == ToontownGlobals.BossCogDizzyNow
+        if dizzy == self.dizzy:
+            return
+        self.dizzy = dizzy
+        # Everyone moves at once: in to pie him, or back out as he gets up.
+        self.nextRoam = {}
+        if dizzy:
+            self.count('vp dizzy spells')
+        else:
+            # Back on his feet; the stunners give him a moment.
+            self.stunRestUntil = now + random.uniform(*STUN_REST)
+
+    def walkToward(self, npc, pos, target, speed=None):
+        """Start a walk to target, or part of the way there when no
+        straight path goes all the way (the arena's ramps and levels).
+        True when a walk started."""
+        nav = getNav()
+        for share in (1.0, 0.5, 0.25):
+            mid = Point3(pos[0] + (target[0] - pos[0]) * share, pos[1] + (target[1] - pos[1]) * share, pos[2])
+            path = nav.walkable(pos, mid)
+            if path:
+                self.startWalk(npc, path)
+                if speed is not None:
+                    npc.walk[1] = speed
+                return True
+        return False
+
+    def closeIn(self, npc, now):
+        """While the VP is dizzy every toon runs in close, from whichever
+        side it is on, and throws at his body from there."""
+        if not self.canRoam(npc, now):
+            return
+        center = self.bossPos()
+        if center is None:
+            return
+        self.syncPos(npc)
+        pos = npc.getPos()
+        flat = math.hypot(pos[0] - center[0], pos[1] - center[1])
+        self.nextRoam[npc.doId] = now + random.uniform(*PIE_ROAM_TIME)
+        if DIZZY_RANGE[0] - 2 <= flat <= DIZZY_RANGE[1] + 3:
+            self.faceBoss(npc)
+            return
+        nav = getNav()
+        here = math.atan2(pos[1] - center[1], pos[0] - center[0])
+        for i in range(6):
+            angle = here + random.uniform(-0.6, 0.6)
+            dist = random.uniform(*DIZZY_RANGE)
+            target = Point3(center[0] + dist * math.cos(angle), center[1] + dist * math.sin(angle), pos[2])
+            path = nav.walkable(pos, target)
+            if path and not self.nearBoss(path, center):
+                self.startWalk(npc, path)
+                npc.walk[1] = ToontownGlobals.ToonForwardSpeed
+                return
+        # No straight way in from here: part of the way, then look again.
+        angle = here
+        dist = DIZZY_RANGE[1]
+        target = Point3(center[0] + dist * math.cos(angle), center[1] + dist * math.sin(angle), pos[2])
+        if self.walkToward(npc, pos, target, ToontownGlobals.ToonForwardSpeed):
+            self.nextRoam[npc.doId] = now + 0.3
+        else:
+            self.nextRoam[npc.doId] = now + 0.5
+
+    def cagePoint(self):
+        base = getClientBuiltin('base')
+        boss = base.cr.doId2do.get(self.boss.doId) if base else None
+        cage = getattr(boss, 'cage', None) if boss is not None and not boss.isEmpty() else None
+        if cage is None or cage.isEmpty():
+            return None
+        return cage.getPos(base.render)
+
+    def refillTrip(self, npc, now):
+        """Out of pies, a toon runs over to the cage for more and touches it,
+        as a player has to, then goes back to its job."""
+        if not getattr(npc, 'refilling', False):
+            return False
+        if npc.walk is not None or npc.busy:
+            return True
+        cage = self.cagePoint()
+        if cage is None:
+            npc.refilling = False
+            npc.asSender(self.boss.touchCage)
+            return False
+        self.syncPos(npc)
+        pos = npc.getPos()
+        if math.hypot(pos[0] - cage[0], pos[1] - cage[1]) < CAGE_NEAR:
+            npc.refilling = False
+            npc.asSender(self.boss.touchCage)
+            self.count('vp cage refills')
+            self.nextRoam[npc.doId] = now
+            return False
+        if now < self.nextRoam.get(npc.doId, 0):
+            return True
+        nav = getNav()
+        for i in range(6):
+            angle = random.uniform(0, 2 * math.pi)
+            dist = random.uniform(2.0, CAGE_NEAR - 2.0)
+            target = Point3(cage[0] + dist * math.cos(angle), cage[1] + dist * math.sin(angle), pos[2])
+            path = nav.walkable(pos, target)
+            if path:
+                self.startWalk(npc, path)
+                npc.walk[1] = ToontownGlobals.ToonForwardSpeed
+                self.nextRoam[npc.doId] = now + 0.5
+                return True
+        if self.walkToward(npc, pos, Point3(cage[0], cage[1], pos[2]), ToontownGlobals.ToonForwardSpeed):
+            self.nextRoam[npc.doId] = now + 0.5
+            return True
+        # No way over there from here: the pies come anyway.
+        npc.refilling = False
+        npc.asSender(self.boss.touchCage)
+        return False
+
+    def floorJob(self, npc, now):
+        """A CFO floor toon (no crane): stomps a goon when one walks near,
+        and goes for a treasure when hurt. True while it is on such a job."""
+        if self.isStationed(npc) or npc.busy:
+            return False
+        base = getClientBuiltin('base')
+        if base is None:
+            return False
+        boss = self.boss
+        self.syncPos(npc)
+        pos = npc.getPos()
+        job = self.chasing.get(npc.doId)
+        if job is not None:
+            kind, doId = job
+            if kind == 'goon':
+                goon = boss.air.doId2do.get(doId) if hasattr(boss, 'air') else self.air.doId2do.get(doId)
+                client = base.cr.doId2do.get(doId)
+                if goon is None or client is None or client.isEmpty() or goon.state not in ('Walk', 'Battle'):
+                    del self.chasing[npc.doId]
+                    return False
+                target = client.getPos(base.render)
+                if math.hypot(pos[0] - target[0], pos[1] - target[1]) < GOON_STOMP_RANGE:
+                    del self.chasing[npc.doId]
+                    npc.walk = None
+                    self.jump(npc)
+                    npc.asSender(goon.requestStunned, 0)
+                    self.count('cfo goon stomps')
+                    self.nextRoam[npc.doId] = now + 1.5
+                    return True
+            else:
+                treasure = boss.treasures.get(doId)
+                if treasure is None:
+                    del self.chasing[npc.doId]
+                    return False
+                target = treasure.pos
+                if math.hypot(pos[0] - target[0], pos[1] - target[1]) < TREASURE_NEAR:
+                    del self.chasing[npc.doId]
+                    npc.walk = None
+                    npc.asSender(treasure.requestGrab)
+                    self.count('cfo treasures')
+                    self.nextRoam[npc.doId] = now + 1.0
+                    return True
+            if npc.walk is not None and (Point3(npc.walk[0][-1]) - Point3(target[0], target[1], npc.walk[0][-1][2])).length() < 4.0:
+                return True
+            if now < self.nextRoam.get(npc.doId, 0):
+                return True
+            self.nextRoam[npc.doId] = now + 0.5
+            if self.walkToward(npc, pos, Point3(target[0], target[1], pos[2]), ToontownGlobals.ToonForwardSpeed):
+                return True
+            del self.chasing[npc.doId]
+            return False
+        if npc.walk is not None or now < self.nextRoam.get(npc.doId, 0):
+            return False
+        # Hurt: a treasure, when one lies about. Else a goon walking near.
+        if npc.hp < npc.maxHp * TREASURE_BELOW and getattr(boss, 'treasures', None):
+            nearest = min(boss.treasures.values(), key=lambda t: math.hypot(pos[0] - t.pos[0], pos[1] - t.pos[1]))
+            self.chasing[npc.doId] = ('treasure', nearest.doId)
+            return True
+        goons = [g for g in (boss.goons or []) if g.state in ('Walk', 'Battle')]
+        random.shuffle(goons)
+        for goon in goons:
+            client = base.cr.doId2do.get(goon.doId)
+            if client is None or client.isEmpty():
+                continue
+            gpos = client.getPos(base.render)
+            if math.hypot(pos[0] - gpos[0], pos[1] - gpos[1]) < 30 and random.random() < GOON_STOMP_CHANCE:
+                self.chasing[npc.doId] = ('goon', goon.doId)
+                return True
+        return False
+
+    def placeCourtroom(self, members):
+        """The cannon round lands each toon wherever its own shot went, on
+        the player's screen only; the district has no idea where. For the
+        evidence round every NPC gets a spot of its own on the courtroom
+        floor, spread out in front of the bench, the way the players land
+        all over it."""
+        nav = getNav()
+        taken = []
+        for npc in members:
+            spot = None
+            for i in range(12):
+                x = random.uniform(*COURTROOM_X)
+                y = random.uniform(*COURTROOM_Y)
+                if any(math.hypot(x - t[0], y - t[1]) < 7 for t in taken):
+                    continue
+                z = nav.standZ(x, y, 1.0)
+                if z is not None and abs(z) < 3.0:
+                    spot = Point3(x, y, z)
+                    break
+            if spot is None:
+                spot = Point3(random.uniform(-20, 20), random.uniform(10, 30), 0)
+            taken.append(spot)
+            npc.walk = None
+            self.manager.teleportTo(npc, None, spot, h=random.uniform(-30, 30))
+            self.wakeClient(npc)
+            self.nextRoam[npc.doId] = globalClock.getFrameTime() + random.uniform(2.0, 5.0)
+
+    def wakeClient(self, npc):
+        """The cannon stops the toon's smoothing on the player's screen when
+        it climbs in, and only a player's own toon gets it back: an NPC left
+        that way ignores every walk the district sends and stands where the
+        round left it. Smooth it again, out in the room."""
+        base = getClientBuiltin('base')
+        client = base.cr.doId2do.get(npc.doId) if base is not None and getattr(base, 'cr', None) else None
+        if client is None or client.isEmpty():
+            return
+        from otp.local import ExecutionContext
+        contexts = ExecutionContext.contexts
+        if contexts is None:
+            return
+        # The smoothing task belongs to the client's task manager, with the
+        # client's builtins, not to the district's.
+        with contexts.use(contexts.client):
+            if client.getParent() != base.render:
+                client.wrtReparentTo(base.render)
+            if not getattr(client, 'smoothStarted', 1):
+                client.startSmooth()
+
+    def witnessTrip(self, npc, now):
+        """Out of evidence, a CJ toon runs to the witness stand, touches it
+        and runs back to its spot. True while it is on the run."""
+        if not getattr(npc, 'fetchingEvidence', False):
+            return False
+        if npc.walk is not None or npc.busy:
+            return True
+        self.syncPos(npc)
+        pos = npc.getPos()
+        if math.hypot(pos[0] - WITNESS_STAND[0], pos[1] - WITNESS_STAND[1]) < WITNESS_NEAR:
+            npc.fetchingEvidence = False
+            npc.asSender(self.boss.touchWitnessStand)
+            self.count('cj witness refills')
+            self.nextRoam[npc.doId] = now
+            return False
+        if now < self.nextRoam.get(npc.doId, 0):
+            return True
+        self.nextRoam[npc.doId] = now + 0.5
+        if self.walkToward(npc, pos, Point3(WITNESS_STAND[0], WITNESS_STAND[1], pos[2]), ToontownGlobals.ToonForwardSpeed):
+            return True
+        # No way over there from here: the evidence comes anyway.
+        npc.fetchingEvidence = False
+        npc.asSender(self.boss.touchWitnessStand)
+        return False
+
+    def isLawyerStunner(self, npc):
+        if self.lawyerStunners is None:
+            members = self.members()
+            count = min(len(members), random.randint(*LAWYER_STUNNERS))
+            self.lawyerStunners = set(n.doId for n in random.sample(members, count))
+        return npc.doId in self.lawyerStunners
+
+    def sideStep(self, npc, bossClient, now):
+        """A gear aimed at this toon: it runs sideways out of the line."""
+        base = getClientBuiltin('base')
+        center = bossClient.getPos(base.render)
+        self.syncPos(npc)
+        pos = npc.getPos()
+        away = Point3(pos[0] - center[0], pos[1] - center[1], 0)
+        if away.length() < 0.1:
+            return False
+        away.normalize()
+        side = Point3(-away[1], away[0], 0) * random.choice((-1, 1))
+        nav = getNav()
+        for sign in (1, -1):
+            dist = random.uniform(*SIDESTEP)
+            target = pos + side * (dist * sign)
+            path = nav.walkable(pos, Point3(target[0], target[1], pos[2]))
+            if path and not self.nearBoss(path, center):
+                self.startWalk(npc, path)
+                self.nextRoam[npc.doId] = now + 1.5
+                return True
+        return False
+
+    def doorOpening(self):
+        """Where the VP's front doors are open, the opening's spot (a pie
+        thrown in there stuns him); None while they are shut."""
+        base = getClientBuiltin('base')
+        boss = base.cr.doId2do.get(self.boss.doId) if base else None
+        if boss is None or boss.isEmpty():
+            return None
+        door = getattr(boss, 'doorA', None)
+        if door is None or door.state not in ('Opening', 'Opened'):
+            return None
+        axle = getattr(boss, 'axle', None)
+        if axle is None or axle.isEmpty():
+            return None
+        return base.render.getRelativePoint(axle, Point3(0, -2.5, 2.75))
 
     def nearBoss(self, path, center):
         for point in path:
@@ -332,6 +752,10 @@ class NPCBossCrew:
         newAttack = attack != self.lastAttack
         self.lastAttack = attack
         code, target = attack
+        door = getattr(bossClient, 'doorA', None)
+        doorOpen = door is not None and door.state in ('Opening', 'Opened')
+        gearsOut = doorOpen and not self.doorWasOpen
+        self.doorWasOpen = doorOpen
         for npc in members:
             client = base.cr.doId2do.get(npc.doId)
             if client is None or client.isEmpty() or now < self.safeUntil.get(npc.doId, 0):
@@ -349,11 +773,21 @@ class NPCBossCrew:
             elif newAttack and code == ToontownGlobals.BossCogFrontAttack:
                 if math.hypot(rel[0], rel[1] + 25) < 14 and random.random() > DODGE_CHANCE:
                     hit = code
-            elif newAttack and code in JUMPABLE and (not target or target == npc.doId):
+            elif newAttack and code in DIRECTED and target == npc.doId:
+                # A gear aimed at it: most run sideways out of its way.
+                if not (random.random() < SIDESTEP_CHANCE and self.sideStep(npc, bossClient, now)):
+                    hit = code
+            elif newAttack and code in JUMPABLE and not target:
                 # Everyone in reach tries to jump it.
                 self.jump(npc)
                 if random.random() > JUMP_CHANCE:
                     hit = code
+            elif gearsOut and rel[1] < -8 and abs(rel[0]) < 0.6 * -rel[1] + 3 and flat < STRAFE_REACH:
+                # Gears out of his front: the toons standing in front of him
+                # (the stunners, mostly) jump them, not always in time.
+                self.jump(npc)
+                if random.random() < STRAFE_HIT_CHANCE:
+                    hit = ToontownGlobals.BossCogStrafeAttack
             if hit is None:
                 continue
             self.safeUntil[npc.doId] = now + HIT_REST
@@ -451,30 +885,52 @@ class NPCBossCrew:
         return npc.doId in self.stunners
 
     def playSBattleThree(self, npc):
+        """The pie round, played as players play it: the stunners wait in
+        front of him and throw into his underside when its doors open; once
+        he is dizzy everyone pies his body from close up; nobody wastes
+        pies on his body while he is on his feet (they do nothing then)."""
         boss = self.boss
         now = globalClock.getFrameTime()
-        dizzy = boss.attackCode == ToontownGlobals.BossCogDizzyNow
-        if self.dizzy and not dizzy:
-            # Back on his feet; the stunners give him a moment.
-            self.stunRestUntil = now + random.uniform(*STUN_REST)
-        self.dizzy = dizzy
         if npc.numPies <= 0:
-            npc.asSender(boss.touchCage)
+            if not getattr(npc, 'refilling', False):
+                npc.refilling = True
+                npc.walk = None
+                self.nextRoam[npc.doId] = now
+            return
+        if getattr(npc, 'refilling', False):
             return
         if self.healPlayer(npc):
             return
         target = self.bossPos()
-        if dizzy:
-            hit = random.random() < HIT_CHANCE
+        if target is None:
+            return
+        if self.dizzy:
+            self.syncPos(npc)
+            pos = npc.getPos()
+            if math.hypot(pos[0] - target[0], pos[1] - target[1]) > DIZZY_RANGE[1] + 6:
+                # Still running in; throws from close up.
+                self.nextAction[npc.doId] = now + 0.5
+                return
+            hit = random.random() < DIZZY_HIT_CHANCE
             self.throwAt(npc, target, ToontownGlobals.PieCodeBossCog, hit)
             if hit:
                 npc.asSender(boss.hitBoss, 1)
+                self.count('vp body hits')
+            if npc.numPies != ToontownGlobals.FullPies:
+                npc.setNumPies(npc.numPies - 1)
         elif self.isStunner(npc) and now >= self.stunRestUntil and self.atStunSpot(npc):
-            # From the open ground in front of him a pie under his front
-            # stuns him; most miss.
+            opening = self.doorOpening()
+            if opening is None:
+                # Doors shut: nothing to throw at yet. Ready for them.
+                self.nextAction[npc.doId] = now + 0.5
+                return
             stun = random.random() < STUN_CHANCE
-            self.throwAt(npc, target, ToontownGlobals.PieCodeBossInsides, stun)
+            self.throwAt(npc, opening, ToontownGlobals.PieCodeBossInsides, stun)
             self.count('vp stun tries')
+            if random.random() < 0.5:
+                self.stunOffsets.pop(npc.doId, None)
+            if npc.numPies != ToontownGlobals.FullPies:
+                npc.setNumPies(npc.numPies - 1)
             if stun:
                 npc.asSender(boss.hitBossInsides)
                 self.count('vp stuns')
@@ -557,21 +1013,28 @@ class NPCBossCrew:
         boss = self.boss
         if npc.numPies <= 0:
             if not getattr(npc, 'fetchingEvidence', False):
-                # Off to the witness stand for more.
+                # Off to the witness stand for more (witnessTrip walks it).
                 npc.fetchingEvidence = True
-                self.nextAction[npc.doId] = globalClock.getFrameTime() + random.uniform(*EVIDENCE_TRIP)
-                return
-            npc.fetchingEvidence = False
-            npc.asSender(boss.touchWitnessStand)
+                npc.walk = None
+                self.nextRoam[npc.doId] = globalClock.getFrameTime()
+            return
+        if getattr(npc, 'fetchingEvidence', False):
             return
         if self.healPlayer(npc):
             return
         lawyers = [l for l in getattr(boss, 'lawyers', None) or [] if not l.isDeleted() and not l.stunned]
-        if lawyers and random.random() < LAWYER_CHANCE:
-            # A pie at a lawyer stops its evidence landing on the cogs' pan,
-            # and with every lawyer stunned the toons' evidence weighs more.
-            if random.random() < LAWYER_HIT_CHANCE:
-                npc.asSender(random.choice(lawyers).hitByToon)
+        if lawyers and self.isLawyerStunner(npc):
+            # The lawyer stunners' job: a pie at a lawyer stops its evidence
+            # landing on the cogs' pan, and with every lawyer stunned the
+            # toons' evidence weighs more. With all of them down they throw
+            # at the scale like everyone else.
+            lawyer = random.choice(lawyers)
+            hit = random.random() < LAWYER_HIT_CHANCE
+            where = self.lawyerPos(lawyer)
+            if where is not None:
+                self.throwAt(npc, where, ToontownGlobals.PieCodeLawyer, hit)
+            if hit:
+                npc.asSender(lawyer.hitByToon)
                 self.count('cj lawyer stuns')
             if npc.numPies != ToontownGlobals.FullPies:
                 npc.setNumPies(npc.numPies - 1)
@@ -585,6 +1048,13 @@ class NPCBossCrew:
         if hit:
             npc.asSender(boss.hitBoss, 1)
             self.count('cj evidence hits')
+
+    def lawyerPos(self, lawyer):
+        base = getClientBuiltin('base')
+        client = base.cr.doId2do.get(lawyer.doId) if base else None
+        if client is None or client.isEmpty():
+            return None
+        return client.getPos(base.render) + Point3(0, 0, 3)
 
     def playLNearVictory(self, npc):
         self.playSNearVictory(npc)

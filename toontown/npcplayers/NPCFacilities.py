@@ -544,7 +544,14 @@ class NPCFacilities:
                     npc.job = None
                 continue
             if npc.crew is None and not npc.busy and npc.walk is None:
-                self.ride(npc)
+                if self.manager.party.isPlaying(npc):
+                    # A field office game (or a trolley game, a race, golf)
+                    # moves the toon itself; riding the floor it stands on
+                    # would pin it to the spot (the Lawbot flyers never
+                    # took off from the start platform).
+                    npc.ride = None
+                else:
+                    self.ride(npc)
         for npc in self.manager.party.members[:]:
             if getattr(npc, 'job', None) is None and npc.crew is None and not npc.busy and not npc.isDeleted():
                 self.findJob(npc)
@@ -576,9 +583,7 @@ class NPCFacilities:
     def entitiesFor(self, player):
         # The puzzles of the level the player is in (its rooms have zones of
         # their own, so the toon's zone says nothing).
-        for obj in list(self.air.doId2do.values()):
-            if not isinstance(obj, (DistributedMoleFieldAI, DistributedGolfGreenGameAI, DistributedMazeAI)):
-                continue
+        for obj in self.manager.party._objectsOfType((DistributedMoleFieldAI, DistributedGolfGreenGameAI, DistributedMazeAI)):
             level = getattr(obj, 'level', None)
             if obj.isDeleted() or not hasattr(obj, 'entId') or level is None:
                 continue

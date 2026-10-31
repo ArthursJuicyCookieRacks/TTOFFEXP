@@ -2,7 +2,9 @@ from panda3d.core import *
 from toontown.toonbase import ToontownGlobals
 from direct.showbase import DirectObject
 from toontown.toon import ToonDNA
+from toontown.toon import Toon
 from toontown.toon import ToonHead
+from toontown.toon import ToonLooks
 from toontown.toontowngui import TTDialog
 from direct.gui.DirectGui import *
 from toontown.toonbase import TTLocalizer
@@ -10,6 +12,8 @@ from direct.directnotify import DirectNotifyGlobal
 from toontown.toontowngui import TeaserPanel
 #from toontown.toonbase import UserFunnel
 NAME_ROTATIONS = (7, -11, 1, -5, 3.5, -5)
+# How much taller than the bare head a head with a hat may be.
+HAT_ROOM = 1.15
 NAME_POSITIONS = ((0, 0, 0.26),
  (-0.03, 0, 0.25),
  (0, 0, 0.27),
@@ -135,6 +139,15 @@ class AvatarChoice(DirectButton):
             animalStyle = self.dna.getAnimal()
             bodyScale = ToontownGlobals.toonBodyScales[animalStyle]
             self.headModel.setScale(bodyScale / 0.75)
+            bare = self.headModel.getTightBounds(self.head)
+            worn = ToonLooks.savedAccessories(av.id)
+            Toon.dressHead(self.headModel, self.dna, worn.get('hat'), worn.get('glasses'))
+            dressed = self.headModel.getTightBounds(self.head)
+            if bare and dressed:
+                # A tall hat shrinks the head a little so it stays under the name.
+                grow = (dressed[1][2] - dressed[0][2]) / max(bare[1][2] - bare[0][2], 0.001)
+                if grow > HAT_ROOM:
+                    self.headModel.setScale(self.headModel.getScale() * HAT_ROOM / grow)
             self.headModel.startBlink()
             self.headModel.startLookAround()
             trashcanGui = loader.loadModel('phase_3/models/gui/trashcan_gui')

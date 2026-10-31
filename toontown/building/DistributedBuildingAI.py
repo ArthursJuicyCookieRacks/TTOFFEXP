@@ -308,6 +308,10 @@ class DistributedBuildingAI(DistributedObjectAI.DistributedObjectAI):
          0,
          0]
         self.d_setState('waitForVictors')
+        manager = getattr(self.air, 'npcPlayerManager', None)
+        if manager is not None:
+            # The NPC toons who won it with the player come out with them.
+            manager.party.walkOutWith(self, victorList)
         return
 
     def exitWaitForVictors(self):
@@ -350,6 +354,10 @@ class DistributedBuildingAI(DistributedObjectAI.DistributedObjectAI):
          0,
          0]
         self.d_setState('waitForVictorsFromCogdo')
+        manager = getattr(self.air, 'npcPlayerManager', None)
+        if manager is not None:
+            # The NPC toons who won it with the player come out with them.
+            manager.party.walkOutWith(self, victorList)
         return
 
     def exitWaitForVictorsFromCogdo(self):

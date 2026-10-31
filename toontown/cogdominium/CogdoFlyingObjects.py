@@ -37,7 +37,7 @@ class CogdoFlyingGatherableFactory:
         return CogdoFlyingPowerup(self._serialNum, type, self._powerUpModels[type])
 
     def createSparkles(self, color1, color2, amp):
-        self.f = ParticleEffect.ParticleEffect('particleEffect_sparkles')
+        f = ParticleEffect.ParticleEffect('particleEffect_sparkles')
         p0 = Particles.Particles('particles-1')
         p0.setFactory('PointParticleFactory')
         p0.setRenderer('SparkleParticleRenderer')
@@ -67,12 +67,12 @@ class CogdoFlyingGatherableFactory:
         force0.setVectorMasks(1, 1, 1)
         force0.setActive(1)
         f0.addForce(force0)
-        self.f.addForceGroup(f0)
+        f.addForceGroup(f0)
         p0.emitter.setRadius(2.0)
-        self.f.addParticles(p0)
-        self.f.setPos(0, 0, 0)
-        self.f.setHpr(0, random.random() * 180, random.random() * 180)
-        return self.f
+        f.addParticles(p0)
+        f.setPos(0, 0, 0)
+        f.setHpr(0, random.random() * 180, random.random() * 180)
+        return f
 
     def destroy(self):
         self._memoModel.removeNode()
@@ -83,9 +83,6 @@ class CogdoFlyingGatherableFactory:
             model.removeNode()
 
         del self._powerUpModels
-        if Globals.Level.AddSparkleToPowerups:
-            self.f.cleanup()
-            del self.f
 
 
 class CogdoFlyingGatherableBase:
@@ -242,8 +239,12 @@ class CogdoFlyingPowerup(CogdoFlyingGatherable):
         if self._isToonLocal:
             self._model.setAlphaScale(0.5)
             if Globals.Level.AddSparkleToPowerups:
-                self.f = self.find('**/particleEffect_sparkles')
-                self.f.hide()
+                # Only some power-ups get sparkles (the level's generator
+                # adds them to the laff and memo pickups, not to every
+                # kind), so a pickup without them has nothing to hide.
+                sparkles = self.find('**/particleEffect_sparkles')
+                if not sparkles.isEmpty():
+                    sparkles.hide()
 
     def pickUp(self, toon, elapsedSeconds = 0.0):
         if self.wasPickedUpByToon(toon) == True:
@@ -335,6 +336,80 @@ class CogdoFlyingPropeller(CogdoFlyingGatherable):
             return False
 
 
+# OpenGL ES 2 (Android) has no fixed-function fog, and Panda's stand-in
+# shader there ignores it: the far end of the level stopped short against
+# the fog colour, a flat blue box. This is that stand-in shader with the
+# linear fog added back.
+FOG_VSHADER = """
+uniform mat4 p3d_ModelViewProjectionMatrix;
+uniform mat4 p3d_ModelViewMatrix;
+uniform mat4 p3d_TextureMatrix;
+uniform vec4 p3d_ColorScale;
+attribute vec4 p3d_Vertex;
+attribute vec4 p3d_Color;
+attribute vec4 p3d_MultiTexCoord0;
+varying vec3 texcoord;
+varying vec4 color;
+varying float eyeDistance;
+void main(void) {
+  gl_Position = p3d_ModelViewProjectionMatrix * p3d_Vertex;
+  texcoord = (p3d_TextureMatrix * p3d_MultiTexCoord0).xyw;
+  color = p3d_Color * p3d_ColorScale;
+  eyeDistance = length((p3d_ModelViewMatrix * p3d_Vertex).xyz);
+}
+"""
+FOG_FSHADER = """
+uniform sampler2D p3d_Texture0;
+uniform vec4 p3d_TexAlphaOnly;
+uniform vec4 p3d_AlphaTest;
+uniform struct p3d_FogParameters {
+  vec4 color;
+  float density;
+  float start;
+  float end;
+  float scale;
+} p3d_Fog;
+varying vec3 texcoord;
+varying vec4 color;
+varying float eyeDistance;
+bool alpha_test(float a) {
+  int mode = int(p3d_AlphaTest.x + 0.5);
+  float ref = p3d_AlphaTest.y;
+  if (mode == 1) return false;
+  if (mode == 2) return a < ref;
+  if (mode == 3) return a == ref;
+  if (mode == 4) return a <= ref;
+  if (mode == 5) return a > ref;
+  if (mode == 6) return a != ref;
+  if (mode == 7) return a >= ref;
+  return true;
+}
+void main(void) {
+  vec4 c = texture2DProj(p3d_Texture0, texcoord);
+  c += p3d_TexAlphaOnly;
+  c *= color;
+  if (!alpha_test(c.a)) discard;
+  float fog = clamp((p3d_Fog.end - eyeDistance) * p3d_Fog.scale, 0.0, 1.0);
+  gl_FragColor = vec4(mix(p3d_Fog.color.rgb, c.rgb, fog), c.a);
+}
+"""
+
+
+def needsFogShader():
+    pipe = getattr(base, 'pipe', None)
+    es = pipe is not None and 'ES' in pipe.getInterfaceName()
+    return ConfigVariableBool('cogdo-fog-shader', es).getValue()
+
+
+def makeFogShader():
+    if 'ES' in base.pipe.getInterfaceName():
+        head = '#version 100\nprecision highp float;\n'
+    else:
+        # Only to try it on a PC (prc cogdo-fog-shader #t).
+        head = '#version 120\n'
+    return Shader.make(Shader.SL_GLSL, head + FOG_VSHADER, head + FOG_FSHADER)
+
+
 class CogdoFlyingLevelFog:
 
     def __init__(self, level, color = Globals.Level.FogColor):
@@ -361,9 +436,13 @@ class CogdoFlyingLevelFog:
         if self._visible:
             base.win.setClearColor(self.color)
             render.setFog(self.fog)
+            if needsFogShader():
+                render.setShader(makeFogShader())
         else:
             base.win.setClearColor(self._clearColor)
             render.clearFog()
+            if needsFogShader():
+                render.clearShader()
 
 
 class CogdoFlyingPlatform:

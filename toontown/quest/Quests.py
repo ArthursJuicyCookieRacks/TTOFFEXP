@@ -18048,6 +18048,33 @@ def questExists(id):
     return id in QuestDict
 
 
+def tracksOfferedTo(toon):
+    """The gag tracks the quest line has put in front of this toon so far:
+    both options of every track choice quest it has finished, plus the
+    tracks it already has. A toon can only swap into one of these."""
+    offered = set()
+    try:
+        access = toon.getTrackAccess()
+    except Exception:
+        access = []
+    for track, has in enumerate(access):
+        if has:
+            offered.add(track)
+    try:
+        history = list(toon.getQuestHistory())
+    except Exception:
+        history = []
+    for questId in history:
+        questEntry = QuestDict.get(questId)
+        if not questEntry:
+            continue
+        questDesc = questEntry[QuestDictDescIndex]
+        if questDesc[0] is TrackChoiceQuest:
+            offered.add(questDesc[1])
+            offered.add(questDesc[2])
+    return offered
+
+
 def getQuest(id):
     questEntry = QuestDict.get(id)
     if questEntry:

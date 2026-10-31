@@ -66,7 +66,27 @@ class DistributedDoor(DistributedObject.DistributedObject, DelayDeletable):
         self.doorExitTrack = None
         return
 
+    def __enterTimedOut(self, task=None):
+        # The server never let us in (the building was changing hands, say):
+        # let the toon walk again rather than leave it stuck at the door.
+        if self.localEntering:
+            self.notify.warning('no answer to entering door %s; walking again' % self.doId)
+            self.localEntering = False
+            self.accept(self.getEnterTriggerEvent(), self.doorTrigger)
+            place = base.cr.playGame.getPlace()
+            if place and place.fsm.getCurrentState().getName() == 'doorOut':
+                place.setState('walk')
+        return Task.done
+
     def disable(self):
+        taskMgr.remove(self.uniqueName('enterTimeout'))
+        if getattr(self, 'localEntering', False):
+            # The door went away (its building changed) before the server
+            # answered our knock: without this the toon stays frozen at it.
+            self.localEntering = False
+            place = base.cr.playGame.getPlace()
+            if place and place.fsm.getCurrentState().getName() == 'doorOut':
+                place.setState('walk')
         self.clearNametag()
         taskMgr.remove(self.checkIsDoorHitTaskName())
         self.ignore(self.getEnterTriggerEvent())
@@ -308,6 +328,8 @@ class DistributedDoor(DistributedObject.DistributedObject, DelayDeletable):
 
         if self.allowedToEnter():
             messenger.send('DistributedDoor_doorTrigger')
+            self.localEntering = True
+            taskMgr.doMethodLater(8, self.__enterTimedOut, self.uniqueName('enterTimeout'))
             self.sendUpdate('requestEnter')
         else:
             place = base.cr.playGame.getPlace()
@@ -375,6 +397,8 @@ class DistributedDoor(DistributedObject.DistributedObject, DelayDeletable):
 
     def avatarEnter(self, avatarID):
         avatar = self.cr.doId2do.get(avatarID, None)
+        if avatarID == base.localAvatar.doId:
+            self.localEntering = False
         if avatar:
             avatar.setAnimState('neutral')
             track = self.avatarEnqueueTrack(avatar, 0.5)
@@ -384,6 +408,7 @@ class DistributedDoor(DistributedObject.DistributedObject, DelayDeletable):
         return
 
     def rejectEnter(self, reason):
+        self.localEntering = False
         message = FADoorCodes.reasonDict[reason]
         if message:
             self.__faRejectEnter(message)

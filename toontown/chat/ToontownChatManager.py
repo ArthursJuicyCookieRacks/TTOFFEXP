@@ -1,7 +1,8 @@
 import sys
 from direct.showbase import DirectObject
-if __debug__:
-    from direct.showbase.PythonUtil import traceFunctionCall
+# From DebugNames: PythonUtil has these only when __debug__ is on, and
+# release builds run with -O.
+from otp.otpbase.DebugNames import traceFunctionCall
 from otp.otpbase import OTPGlobals
 from otp.otpbase import OTPLocalizer
 from toontown.toonbase import TTLocalizer

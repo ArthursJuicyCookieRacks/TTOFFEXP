@@ -48,6 +48,8 @@ class DistributedAvatar(DistributedActor, Avatar):
         self.hp = None
         self.ignore('nameTagShowAvId')
         self.ignore('nameTagShowName')
+        if hasattr(self, 'nametag'):
+            self.nametag.setTicking(False)
         DistributedActor.disable(self)
         return
 
@@ -61,6 +63,8 @@ class DistributedAvatar(DistributedActor, Avatar):
 
     def generate(self):
         DistributedActor.generate(self)
+        if hasattr(self, 'nametag'):
+            self.nametag.setTicking(True)
         if not self.isLocal():
             self.addActive()
             self.considerUnderstandable()

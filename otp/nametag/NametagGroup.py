@@ -58,8 +58,18 @@ class NametagGroup:
     def getName(self):
         return self.name
 
+    def setTicking(self, ticking):
+        # A disabled avatar (one waiting in the client's cache, say) keeps its
+        # nametag, but there is nothing to tick for it; dozens of them ticking
+        # every frame was a measurable slice of the frame.
+        if ticking and self.tickTask is None:
+            self.tickTask = taskMgr.add(self.__tickTask, self.getUniqueId(), sort=45)
+        elif not ticking and self.tickTask is not None:
+            taskMgr.remove(self.tickTask)
+            self.tickTask = None
+
     def destroy(self):
-        taskMgr.remove(self.tickTask)
+        self.setTicking(False)
         if self.manager != None:
             self.unmanage(self.manager)
         for nametag in list(self.nametags):

@@ -265,7 +265,31 @@ class LocalToon(DistributedToon.DistributedToon, LocalAvatar.LocalAvatar):
         if config.ConfigVariableBool('want-keep-alive', True).getValue():
             taskMgr.doMethodLater(config.ConfigVariableInt('keep-alive-delay', 30).getValue(), self.keepAliveCheck, self.uniqueName('KeepAliveTimeout'), extraArgs=[])
 
+    def makeLaffMeter(self):
+        self.laffMeter = LaffMeter.LaffMeter(self.style, self.hp, self.maxHp)
+        self.laffMeter.setAvatar(self)
+        self.laffMeter.setScale(0.075)
+        self.laffMeter.reparentTo(base.a2dBottomLeft)
+        if self.style.getAnimal() == 'monkey':
+            self.laffMeter.setPos(0.153, 0.0, 0.13)
+        else:
+            self.laffMeter.setPos(0.133, 0.0, 0.13)
+
+    def rebuildLaffMeter(self):
+        # A new look (ToonLooks) can be another species or colour.
+        shown = not self.laffMeter.isHidden()
+        self.laffMeter.stop()
+        self.laffMeter.destroy()
+        self.makeLaffMeter()
+        if shown:
+            self.laffMeter.start()
+        else:
+            self.laffMeter.stop()
+
     def disable(self):
+        if hasattr(self, 'looksButton'):
+            self.looksButton.destroy()
+            del self.looksButton
         self.laffMeter.destroy()
         del self.laffMeter
         self.questMap.destroy()
@@ -387,15 +411,10 @@ class LocalToon(DistributedToon.DistributedToon, LocalAvatar.LocalAvatar):
         if WantNewsPage:
             self.addNewsPage()
         self.book.setPage(self.mapPage, enterPage=False)
-        self.laffMeter = LaffMeter.LaffMeter(self.style, self.hp, self.maxHp)
-        self.laffMeter.setAvatar(self)
-        self.laffMeter.setScale(0.075)
-        self.laffMeter.reparentTo(base.a2dBottomLeft)
-        if self.style.getAnimal() == 'monkey':
-            self.laffMeter.setPos(0.153, 0.0, 0.13)
-        else:
-            self.laffMeter.setPos(0.133, 0.0, 0.13)
+        self.makeLaffMeter()
         self.laffMeter.stop()
+        from toontown.toon import ToonLooksPanel
+        self.looksButton = ToonLooksPanel.LooksButton()
         self.questMap = QuestMap.QuestMap(self)
         self.questMap.stop()
         if not base.cr.isPaid():

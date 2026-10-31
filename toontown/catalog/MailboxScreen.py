@@ -11,8 +11,9 @@ from toontown.toontowngui import TTDialog
 from toontown.toontowngui.TeaserPanel import TeaserPanel
 from toontown.parties.InviteVisual import InviteVisual
 from . import CatalogItem
-if __debug__:
-    from direct.showbase.PythonUtil import StackTrace
+# From DebugNames: PythonUtil has these only when __debug__ is on, and
+# release builds run with -O.
+from otp.otpbase.DebugNames import StackTrace
 
 class MailboxScreen(DirectObject.DirectObject):
     notify = directNotify.newCategory('MailboxScreen')

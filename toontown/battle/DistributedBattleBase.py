@@ -23,6 +23,11 @@ from otp.avatar import Emote
 from otp.nametag.NametagConstants import *
 from otp.nametag import NametagGlobals
 
+# How long a toon waits for a join answer, and how long after a no before
+# the battle's circle can pull it in again.
+JOIN_ANSWER_TIMEOUT = 5.0
+JOIN_DENIED_LOCKOUT = 4.0
+
 class DistributedBattleBase(DistributedNode.DistributedNode, BattleBase):
     notify = DirectNotifyGlobal.directNotify.newCategory('DistributedBattleBase')
     id = 0
@@ -128,6 +133,12 @@ class DistributedBattleBase(DistributedNode.DistributedNode, BattleBase):
 
     def disable(self):
         self.notify.debug('disable(%s)' % self.doId)
+        taskMgr.remove(self.uniqueName('joinAnswerLate'))
+        if self.localToonFsm.getCurrentState().getName() == 'WaitForServer':
+            # The battle went away while the toon was asking to join.
+            place = self.cr.playGame.getPlace()
+            if place and place.fsm.getCurrentState().getName() == 'WaitForBattle':
+                place.setState('walk')
         self.cleanupBattle()
         DistributedNode.DistributedNode.disable(self)
 
@@ -1477,20 +1488,36 @@ class DistributedBattleBase(DistributedNode.DistributedNode, BattleBase):
             return
         if self._skippingRewardMovie:
             return
+        if globalClock.getFrameTime() < getattr(self, '_joinDeniedUntil', 0):
+            # Just turned away (the battle was ending): walking on inside
+            # its circle must not ask again every frame, or the toon is
+            # pulled back towards the battle over and over.
+            return
         base.cr.playGame.getPlace().setState('WaitForBattle')
         toon = base.localAvatar
         self.d_toonRequestJoin(toon.doId, toon.getPos(self))
         base.localAvatar.preBattleHpr = base.localAvatar.getHpr(render)
         self.localToonFsm.request('WaitForServer')
+        # A battle that ends (or is deleted) before it answers never says
+        # no: let the toon walk again rather than wait for good.
+        taskMgr.doMethodLater(JOIN_ANSWER_TIMEOUT, self.__joinAnswerLate, self.uniqueName('joinAnswerLate'))
         self.onWaitingForJoin()
+
+    def __joinAnswerLate(self, task):
+        if self.localToonFsm.getCurrentState().getName() == 'WaitForServer':
+            self.notify.info('no answer to the join request; back to walking')
+            self.denyLocalToonJoin()
+        return task.done
 
     def onWaitingForJoin(self):
         pass
 
     def denyLocalToonJoin(self):
         self.notify.debug('denyLocalToonJoin()')
+        taskMgr.remove(self.uniqueName('joinAnswerLate'))
+        self._joinDeniedUntil = globalClock.getFrameTime() + JOIN_DENIED_LOCKOUT
         place = self.cr.playGame.getPlace()
-        if place.fsm.getCurrentState().getName() == 'WaitForBattle':
+        if place and place.fsm.getCurrentState().getName() == 'WaitForBattle':
             place.setState('walk')
         self.localToonFsm.request('NoLocalToon')
 

@@ -162,8 +162,17 @@ class NPCPlayerAI(DistributedToonAI):
 
     def placeAt(self, x, y, z, h):
         # A jump to a spot, remembered for toons who arrive later.
+        #
+        # The clients smooth every toon's movement between its position
+        # reports, so a plain jump would be drawn as a dash across the map
+        # from the last report (and a new toon, whose first report is where
+        # its client put it, would stand at the origin and dash to its
+        # spot). Like a player's own game before a teleport, the old
+        # reports are thrown away first, and a fresh one marks the spot.
         self.setPosHpr(x, y, z, h, 0, 0)
+        self.sendUpdate('clearSmoothing', [0])
         self.sendUpdate('setPosHpr', [x, y, z, h, 0, 0])
+        self.sendUpdate('setSmPosHpr', [x, y, z, h, 0, 0, globalClockDelta.getRealNetworkTime(bits=16)])
 
     def moveTo(self, x, y, z, h):
         self.setPosHpr(x, y, z, h, 0, 0)

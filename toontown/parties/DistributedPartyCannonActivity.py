@@ -393,7 +393,9 @@ class DistributedPartyCannonActivity(DistributedPartyActivity):
         return Task.done
 
     def d_setLanded(self, toonId):
-        printStack()
+        if __debug__:
+            # printStack is only a builtin when __debug__ is on.
+            printStack()
         self.notify.debug('d_setLanded %s' % toonId)
         if self.isLocalToonId(toonId):
             if self.cr:

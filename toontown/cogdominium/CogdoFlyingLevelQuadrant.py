@@ -1,6 +1,6 @@
 import math
 from direct.directutil import Mopath
-from panda3d.core import NodePath, Point3, Vec4
+from panda3d.core import NodePath, Point3, Vec4, TransparencyAttrib
 from .CogdoFlyingObjects import CogdoFlyingPlatform
 from . import CogdoFlyingGameGlobals as Globals
 
@@ -19,6 +19,11 @@ class CogdoFlyingLevelQuadrant:
         self.gatherables = []
         self.obstacles = []
         self._playing = False
+        # Particle effects (power-up sparkles, fan streamers) with the node
+        # they hang from.  They only run while the quadrant is on stage; the
+        # original code started every effect of every quadrant for the whole
+        # game, which cost several milliseconds a frame.
+        self._effects = []
         self._obstaclesRoot = NodePath('obstacles')
         self._obstaclesRoot.reparentTo(self._root)
         self._initObstacles(self._obstaclesRoot)
@@ -52,10 +57,47 @@ class CogdoFlyingLevelQuadrant:
         for np in self._model.findAllMatches('**/*LayerStack*'):
             np.wrtReparentTo(self._model)
 
+        # The box stacks and cut-outs are hundreds of tiny GeomNodes, each
+        # wrapped in its own group next to a collision node, so flattenMedium
+        # could not merge them and every quadrant cost 600-900 draw calls.
+        # Merge the opaque static scenery into a handful of geoms; the fog
+        # planes and anything translucent stay separate so they still sort.
+        merged = NodePath('staticMerged')
         for np in self._model.find('**/static').getChildren():
-            np.wrtReparentTo(self._model)
+            if 'fog' in np.getName().lower():
+                np.wrtReparentTo(self._model)
+            else:
+                np.wrtReparentTo(merged)
 
+        for geomNode in merged.findAllMatches('**/+GeomNode'):
+            if self._isTranslucent(geomNode):
+                geomNode.wrtReparentTo(self._model)
+
+        merged.reparentTo(self._model)
+        merged.flattenStrong()
         self._model.flattenMedium()
+
+    @staticmethod
+    def _isTranslucent(geomNode):
+        if geomNode.getNetState().hasAttrib(TransparencyAttrib):
+            return True
+        node = geomNode.node()
+        for i in range(node.getNumGeoms()):
+            if node.getGeomState(i).hasAttrib(TransparencyAttrib):
+                return True
+        return False
+
+    def _addEffect(self, effect, parent):
+        effect.reparentTo(parent)
+        self._effects.append((effect, parent))
+
+    def _startEffects(self):
+        for effect, parent in self._effects:
+            effect.start(parent)
+
+    def _stopEffects(self):
+        for effect, parent in self._effects:
+            effect.disable()
 
     def _initPlatforms(self, parent):
         platformModels = self._model.findAllMatches('**/%s' % Globals.Level.PlatformName)
@@ -83,9 +125,8 @@ class CogdoFlyingLevelQuadrant:
             pickup.setPos(parent, nest.getPos(parent) + offset)
             if Globals.Level.AddSparkleToPowerups:
                 sparkles = self._level.gatherableFactory.createSparkles(Vec4(1, 1, 1, 1), Vec4(1, 1, 0, 1), 10.0)
-                sparkles.reparentTo(pickup)
                 sparkles.setPos(0, 0, 1)
-                sparkles.start()
+                self._addEffect(sparkles, pickup)
             self.gatherables.append(pickup)
 
     def generateGatherables(self, gatherableModel, parent = None, spread = Globals.Level.GatherablesDefaultSpread):
@@ -147,9 +188,8 @@ class CogdoFlyingLevelQuadrant:
                     pickup.setPos(parent, gatherable.getPos(parent))
                     if Globals.Level.AddSparkleToPowerups:
                         sparkles = self._level.gatherableFactory.createSparkles(Vec4(1, 1, 1, 1), Vec4(1, 1, 0, 1), 10.0)
-                        sparkles.reparentTo(pickup)
                         sparkles.setPos(0, 0, 1)
-                        sparkles.start()
+                        self._addEffect(sparkles, pickup)
                     self.gatherables.append(pickup)
                     gatherable.removeNode()
 
@@ -184,8 +224,7 @@ class CogdoFlyingLevelQuadrant:
                 obstacle.setBlowDirection()
                 if Globals.Level.AddParticlesToStreamers:
                     particles = self._level.obstacleFactory.createStreamerParticles(Vec4(1, 1, 1, 1), Vec4(1, 1, 1, 1), 10.0)
-                    particles.reparentTo(obstacle.model)
-                    particles.start()
+                    self._addEffect(particles, obstacle.model)
                 self.obstacles.append(obstacle)
                 obstacleLoc.removeNode()
 
@@ -223,6 +262,10 @@ class CogdoFlyingLevelQuadrant:
         for gatherable in self.gatherables:
             gatherable.destroy()
 
+        for effect, parent in self._effects:
+            effect.cleanup()
+
+        del self._effects[:]
         self._root.removeNode()
         del self._root
         del self._gatherablesRoot
@@ -240,6 +283,7 @@ class CogdoFlyingLevelQuadrant:
         for gatherable in self.gatherables:
             gatherable.show()
 
+        self._startEffects()
         self._visible = True
 
     def offstage(self):
@@ -252,6 +296,7 @@ class CogdoFlyingLevelQuadrant:
         for gatherable in self.gatherables:
             gatherable.hide()
 
+        self._stopEffects()
         self._visible = False
 
     def update(self, dt):
