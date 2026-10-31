@@ -100,6 +100,11 @@ class DistCogdoGame(DistCogdoGameBase, DistributedObject):
     def _handleGotInterior(self, objs):
         self._gotInterior.set(True)
         self.getEntranceElevator(self.placeEntranceElev)
+        interior = self.getInterior()
+        if interior is not None and interior.isRidingElevator():
+            # Made while the toons ride up: show the room now, so the
+            # elevator doors open onto it.
+            self.setVisible()
 
     def stashEntranceElevator(self):
         self._wantStashElevator.set(True)
@@ -168,7 +173,11 @@ class DistCogdoGame(DistCogdoGameBase, DistributedObject):
         pass
 
     def setVisible(self):
-        self.fsm.request('Visible')
+        if self.fsm.getCurrentState().getName() == 'Off':
+            self.fsm.request('Visible')
+
+    def isVisible(self):
+        return self.fsm is not None and self.fsm.getCurrentState().getName() != 'Off'
 
     def setIntroStart(self):
         self.fsm.request('Intro')

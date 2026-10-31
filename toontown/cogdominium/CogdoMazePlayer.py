@@ -23,7 +23,7 @@ class CogdoMazePlayer(FSM, CogdoMazeSplattable):
          'Normal': ['Hit', 'Done', 'Off'],
          'Hit': ['Normal', 'Done', 'Off'],
          'Done': ['Off']}
-        self.toon.reparentTo(render)
+        CogdoUtil.takeToon(self.toon)
         self.gagModel = CogdoUtil.loadMazeModel('waterBalloon')
         self.equippedGag = None
         self._toonHitSfx = base.cogdoGameAudioMgr.createSfx('toonHit', self.toon)
