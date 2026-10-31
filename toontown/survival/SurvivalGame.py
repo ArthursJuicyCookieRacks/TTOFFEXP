@@ -687,8 +687,19 @@ class SurvivalGame(DirectObject):
         for npc in self.npcs:
             npc.stopSteps()
         self.player.grabMouse(False)
+        self.showPauseCard()
+
+    def showPauseCard(self):
         self.hud.showCard('Paused', ['Round %d' % self.roundNum, '%d cogs popped' % self.stats.get('cogs popped', 0)],
-                          [('Resume', self.resume), ('Quit', self.quit)])
+                          [('Resume', self.resume), ('Settings', self.showSettings), ('Quit', self.quit)])
+
+    def showSettings(self):
+        from toontown.survival.SurvivalPlayer import saveSensitivity
+
+        def changed(level):
+            self.player.setSensitivity(level)
+            saveSensitivity(level)
+        self.hud.showSettings(self.player.sensitivity, changed, self.showPauseCard)
 
     def freezeClock(self):
         # The pause stops the game clock itself, so every animation, gag in

@@ -20,6 +20,33 @@ from toontown.toonbase import ToontownGlobals, TouchControls
 
 SOURCE = 'survival'
 MOUSE_SENSITIVITY = 0.12
+# Camera sensitivity 1 (very slow) to 10 (very fast), from the pause
+# menu's Settings; 5 is the turn speed the game always had.
+SENSITIVITY_SETTING = ('survival', 'sensitivity')
+DEFAULT_SENSITIVITY = 5
+
+
+def sensitivityFactor(level):
+    level = max(1, min(10, int(level)))
+    # 1 turns at a quarter of the old speed, 5 at the old speed, 10 three
+    # times it; each step multiplies by the same amount on either side.
+    if level <= 5:
+        return 0.25 * 4.0 ** ((level - 1) / 4.0)
+    return 3.0 ** ((level - 5) / 5.0)
+
+
+def loadSensitivity():
+    try:
+        return int(base.settings.settings.getOption(SENSITIVITY_SETTING[0], SENSITIVITY_SETTING[1], DEFAULT_SENSITIVITY))
+    except Exception:
+        return DEFAULT_SENSITIVITY
+
+
+def saveSensitivity(level):
+    try:
+        base.settings.settings.updateSetting(SENSITIVITY_SETTING[0], SENSITIVITY_SETTING[1], int(level))
+    except Exception:
+        pass
 TOUCH_SENSITIVITY = 160.0
 PITCH_LIMIT = 80.0
 # The toon's own footsteps, the loops the playground uses.
@@ -123,6 +150,7 @@ class SurvivalPlayer(DirectObject):
         self.xHeldSince = None
         self.slideForcedOff = {}
         self.moveState = 'idle'
+        self.setSensitivity(loadSensitivity())
         self.stepSounds = {}
         self.stepPlaying = None
         for key, path in (('walk', WALK_STEPS), ('run', RUN_STEPS)):
@@ -228,6 +256,10 @@ class SurvivalPlayer(DirectObject):
         if token != 'jump':
             inputState.set(token, down and not self.down, inputSource=SOURCE)
 
+    def setSensitivity(self, level):
+        self.sensitivity = max(1, min(10, int(level)))
+        self.lookScale = sensitivityFactor(self.sensitivity)
+
     def setSprint(self, down):
         if down and not self.sprinting:
             # A fresh press: a spent sprint may go again.
@@ -280,7 +312,7 @@ class SurvivalPlayer(DirectObject):
             self.setSprint(False)
 
     def touchLookBy(self, dx, dy):
-        self.lookDelta += Vec3(dx * TOUCH_SENSITIVITY, dy * TOUCH_SENSITIVITY, 0)
+        self.lookDelta += Vec3(dx * TOUCH_SENSITIVITY, dy * TOUCH_SENSITIVITY, 0) * self.lookScale
 
     # --- The controller (see toontown.toonbase.Gamepad.setGame) ---
 
@@ -301,7 +333,7 @@ class SurvivalPlayer(DirectObject):
     def gamepadLook(self, x, y, dt):
         if max(abs(x), abs(y)) < GAMEPAD_LOOK_DEAD_ZONE:
             return
-        speed = GAMEPAD_LOOK_SPEED * dt
+        speed = GAMEPAD_LOOK_SPEED * dt * self.lookScale
         self.lookDelta += Vec3(-x * abs(x) * speed, y * abs(y) * speed, 0)
 
     def gamepadButton(self, name, down):
@@ -339,7 +371,7 @@ class SurvivalPlayer(DirectObject):
             return
         dx, dy = md.getX() - cx, md.getY() - cy
         if dx or dy:
-            self.lookDelta += Vec3(-dx * MOUSE_SENSITIVITY, -dy * MOUSE_SENSITIVITY, 0)
+            self.lookDelta += Vec3(-dx * MOUSE_SENSITIVITY, -dy * MOUSE_SENSITIVITY, 0) * self.lookScale
             win.movePointer(0, cx, cy)
 
     # --- Each frame ---
