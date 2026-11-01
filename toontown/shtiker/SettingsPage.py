@@ -88,8 +88,8 @@ class SettingsPage(ShtikerPage.ShtikerPage):
         z = 0.45
         for name, label, low, high, step, getter, setter in rows:
             # The name on its own line, the slider and its value under it.
-            DirectLabel(parent=frame, relief=None, text=label, text_align=TextNode.ALeft, text_scale=0.055,
-                        text_fg=TEXT_COLOR, pos=(-0.72, 0, z))
+            DirectLabel(parent=frame, relief=None, text=label, text_align=TextNode.ACenter, text_scale=0.055,
+                        text_fg=TEXT_COLOR, pos=(-0.06, 0, z))
             value = DirectLabel(parent=frame, relief=None, text='', text_align=TextNode.ACenter, text_scale=0.055,
                                 text_fg=TEXT_COLOR, pos=(0.62, 0, z - 0.085))
             slider = DirectSlider(parent=frame, range=(low, high), value=getter(), pageSize=step, scrollSize=step,
