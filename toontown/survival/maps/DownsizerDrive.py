@@ -178,12 +178,12 @@ class DownsizerDrive:
         sign = kit.dna("""
 <sign code="sign_general1">
   <color r="1" g="0.88" b="0.56" a="1" />
-  <baseline code="TT_Comedy" kern="0.04" width="40" height="40" flags="d">
+  <baseline code="TT_Comedy" kern="0.04" width="30" height="30" flags="d">
     <color r="0.75" g="0.1" b="0.1" a="1" /><pos x="0" y="0" z="1.3" /><scale x="0.95" y="1" z="1.2" />
     <text>Downsizer Drive</text>
   </baseline>
-  <baseline code="TT_Comedy" kern="0.03" width="40" height="40">
-    <color r="0.2" g="0.2" b="0.25" a="1" /><pos x="0" y="0" z="-0.45" /><scale x="0.9" y="1" z="0.95" />
+  <baseline code="TT_Comedy" kern="0.02" width="36" height="36">
+    <color r="0.2" g="0.2" b="0.25" a="1" /><pos x="0" y="0" z="-0.45" /><scale x="0.98" y="1" z="1.1" />
     <text>A Cog Testing Community</text>
   </baseline>
 </sign>""")
