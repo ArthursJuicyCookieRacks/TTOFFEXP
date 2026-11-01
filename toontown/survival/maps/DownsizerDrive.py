@@ -32,6 +32,7 @@ class DownsizerDrive:
         ('street_east', (40, -4, 6), (-40, 0, 6)),
         ('house_north', (-12, -6, 7), (-14, 50, 10)),
         ('house_south', (-18, 6, 7), (-16, -50, 10)),
+        ('welcome_sign', (-82, 0, 12), (-109, 0, 16)),
         ('cul_de_sac', (22, -4, 9), (60, 8, 2)),
         ('backyard_north', (-70, 92, 10), (-20, 60, 4)),
         ('backyard_south', (40, -95, 10), (-20, -60, 4)),
@@ -40,6 +41,8 @@ class DownsizerDrive:
     def __init__(self):
         self.root = render.attachNewNode('downsizerDrive')
         self.kit = MapKit(self.root)
+        # The street signs' font, which the Toontown Central storage leaves out.
+        self.kit.store.storeFont(loader.loadFont('phase_3/models/fonts/Comedy'), 'TT_Comedy')
 
     def build(self):
         self.buildGround()
@@ -64,7 +67,10 @@ class DownsizerDrive:
         # Sidewalks along both sides and round the end.
         kit.rect(-110, 12, 30, 20, z=0.04, tex=SIDEWALK_TEX, tile=8, name='walkN')
         kit.rect(-110, -20, 30, -12, z=0.04, tex=SIDEWALK_TEX, tile=8, name='walkS')
-        kit.ring(48, 0, 26, 33, z=0.04, tex=SIDEWALK_TEX, tile=8, a0=-150, a1=150, name='walkEnd')
+        kit.ring(48, 0, 25.8, 33, z=0.04, tex=SIDEWALK_TEX, tile=8, a0=-150, a1=150, name='walkEnd')
+        # Grass right out to the board fence, so no sand shows inside the site.
+        x0, y0, x1, y1 = SITE
+        kit.rect(x0, y0, x1, y1, z=0.01, tex=GRASS_TEX, tile=20, name='siteLawn')
         # The lawns, front and back.
         kit.rect(-100, 20, 30, 90, z=0.03, tex=GRASS_TEX, tile=20, name='yardN')
         kit.rect(-100, -90, 30, -20, z=0.03, tex=GRASS_TEX, tile=20, name='yardS')
@@ -97,7 +103,7 @@ class DownsizerDrive:
         kit = self.kit
         # White picket fences along the front of each yard, with gaps for the paths and drives.
         for y in (20.5, -20.5):
-            self.picket((-100, y), (-36, y))
+            self.picket((-110, y), (-36, y))
             self.picket((-24, y), (2, y))
         # And between the front and back yards.
         self.picket((30, 30), (30, 90))
@@ -136,7 +142,7 @@ class DownsizerDrive:
     def buildCars(self):
         kit = self.kit
         # The trolley, parked in the cul-de-sac like a bus with nowhere to go.
-        kit.model('phase_4/models/modules/trolley_station_TT', find='trolley_car', pos=(54, 12, -0.7), h=200)
+        kit.model('phase_4/models/modules/trolley_station_TT', find='trolley_car', pos=(54, 12, 0.12), h=200)
         # A kart in each driveway and one left in the street.
         kit.model('phase_6/models/karting/Kart3_Final', pos=(13, 17, 0.05), h=90, scale=2.6, color=(0.5, 0.85, 0.5, 1))
         kit.model('phase_6/models/karting/Kart1_Final', pos=(13, -16, 0.05), h=-90, scale=2.6, color=(1.0, 0.85, 0.4, 1))
@@ -158,8 +164,10 @@ class DownsizerDrive:
         fence = [{'code': 'wall_fence_wood_ur', 'height': 14, 'color': (0.86, 0.72, 0.52)}]
         x = x0
         while x < x1:
-            kit.flat(x, y0, 180, 20, fence).setTwoSided(True)
-            kit.flat(x + 20, y1, 0, 20, fence).setTwoSided(True)
+            # A flat runs along its own +x, so the south side (turned 180)
+            # starts from its east end to cover x..x+20 like the north side.
+            kit.flat(x + 20, y0, 180, 20, fence).setTwoSided(True)
+            kit.flat(x, y1, 0, 20, fence).setTwoSided(True)
             x += 20
         y = y0
         while y < y1:
@@ -167,9 +175,19 @@ class DownsizerDrive:
             kit.flat(x1, y, 90, 20, fence).setTwoSided(True)
             y += 20
         # The welcome sign over the closed end of the street.
-        sign = kit.model('phase_4/models/props/sign_general1', pos=(-109, 0, 17), h=90, scale=(1.6, 1, 1.4))
-        kit.text('DOWNSIZER DRIVE', pos=(-108.3, 0, 17.4), h=90, scale=2.6, color=(0.75, 0.1, 0.1, 1))
-        kit.text('A COG TESTING COMMUNITY', pos=(-108.3, 0, 15.3), h=90, scale=1.1, color=(0.2, 0.2, 0.25, 1))
+        sign = kit.dna("""
+<sign code="sign_general1">
+  <color r="1" g="0.88" b="0.56" a="1" />
+  <baseline code="TT_Comedy" kern="0.06" wiggle="3" stumble="0.04" stomp="0.02" width="25" height="25" flags="d">
+    <color r="0.75" g="0.1" b="0.1" a="1" /><pos x="0" y="0" z="0.05" /><scale x="1.4" y="1" z="1.6" />
+    <text>Downsizer Drive</text>
+  </baseline>
+  <baseline code="TT_Comedy" kern="0.03" width="40" height="40">
+    <color r="0.2" g="0.2" b="0.25" a="1" /><pos x="0" y="0" z="-1.15" /><scale x="0.7" y="1" z="0.7" />
+    <text>A Cog Testing Community</text>
+  </baseline>
+</sign>""")
+        sign.setPosHprScale(-109, 0, 17, 90, 0, 0, 1.6, 1, 1.4)
         # The street is closed off where it meets the fence.
         for i, y in enumerate((-10, -4, 2, 8)):
             kit.model('phase_6/models/karting/cone', pos=(-104, y, 0), h=i * 30, scale=1.5)
