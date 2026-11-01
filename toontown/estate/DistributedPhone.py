@@ -104,7 +104,11 @@ class DistributedPhone(DistributedFurnitureItem.DistributedFurnitureItem):
         if self.initialScale:
             mount.setScale(*self.initialScale)
             self.usedInitialScale = 1
-        phoneSphere = CollisionSphere(0, -0.66, 0, 0.2)
+        # A bigger trigger in front of the phone: the old one (a 0.2 ball at
+        # floor level) could only be reached walking straight at the phone,
+        # and after a call it shrank with the phone (see replacePhoneInterval),
+        # so a toon could not ring Clarabelle again until it left the estate.
+        phoneSphere = CollisionSphere(0, -1.2, 1.0, 1.0)
         phoneSphere.setTangible(0)
         phoneSphereNode = CollisionNode(self.phoneSphereEvent)
         phoneSphereNode.setIntoCollideMask(ToontownGlobals.WallBitmask)
@@ -302,6 +306,8 @@ class DistributedPhone(DistributedFurnitureItem.DistributedFurnitureItem):
         walkTime = 1.0
         scaleTime = 1.0
         origScale = self.getScale()
+        if getattr(self, 'restScale', None) is None:
+            self.restScale = origScale
         origToonPos = toon.getPos()
         origToonHpr = toon.getHpr()
         self.origToonHpr = origToonHpr
@@ -322,13 +328,19 @@ class DistributedPhone(DistributedFurnitureItem.DistributedFurnitureItem):
         legs = TextEncoder.upper(toon.style.legs[0])
         phoneBackAnim = '%s%s_phoneBack' % (torso, legs)
         scaleTime = 1.0
-        interval = Sequence(Parallel(ActorInterval(self.model, phoneBackAnim), ActorInterval(toon, 'phoneBack'), Sequence(Wait(1.0), Func(self.__receiverToPhone), Func(base.playSfx, self.hangUpSfx))), self.scaleInterval(scaleTime, localAvatar.getGeomNode().getScale()[2], blendType='easeInOut'), Func(toon.loop, 'neutral'))
+        interval = Sequence(Parallel(ActorInterval(self.model, phoneBackAnim), ActorInterval(toon, 'phoneBack'), Sequence(Wait(1.0), Func(self.__receiverToPhone), Func(base.playSfx, self.hangUpSfx))), self.scaleInterval(scaleTime, self.__restScale(), blendType='easeInOut'), Func(toon.loop, 'neutral'))
         if self.origToonHpr:
             interval.append(Func(toon.setHpr, self.origToonHpr))
             self.origToonHpr = None
         if toon == base.localAvatar:
             interval.append(Func(self.freeAvatar))
         return interval
+
+    def __restScale(self):
+        # Back to the phone's own size after a call (it went to the local
+        # toon's size before, whoever had called).
+        scale = getattr(self, 'restScale', None)
+        return scale if scale is not None else self.getScale()
 
     def __receiverToHand(self, toon):
         self.receiverGeom.reparentTo(toon.leftHand)
