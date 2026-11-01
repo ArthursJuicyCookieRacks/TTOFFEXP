@@ -424,9 +424,6 @@ class SurvivalArena:
     def mickeyScale(self):
         return getattr(self.parody, 'MICKEY_SCALE', 1.0) if self.parody is not None else 1.0
 
-    def mickeyScale(self):
-        return getattr(self.map, 'MICKEY_SCALE', 1.0) if self.map is not None else 1.0
-
     def mickeySpot(self):
         if self.parody is not None:
             return self.parodySpot(self.parody.MICKEY_SPOT)
