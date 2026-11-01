@@ -80,12 +80,12 @@ MAPS = {
         # Mickey stands inside the tunnel to Donald's Dock, across the
         # playground from the trolley and the pond.
         'mickeyTunnel': 'linktunnel_tt_2301',
-        # The beta's tunnel origins sit deep in the gatehouse passage;
-        # this far out he stands in its mouth, on the sidewalk ring.
-        'mickeyStep': 22.0,
-        # Turned round from looking out of the tunnel: he faces into it
-        # (Arthur's ask). survival-mickey-turn in a prc overrides it.
-        'mickeyTurn': 180.0,
+        # The tunnel's origin is its mouth, under the Donald's Dock sign;
+        # this far out he stands just in front of it.
+        'mickeyStep': 6.0,
+        # Turn from looking straight out of the tunnel (survival-mickey-turn
+        # in a prc overrides it).
+        'mickeyTurn': 0.0,
         'loopyLane': (Point3(81.4, -47.4, 6.1), 61),
         # On the pond's east bank, looking over the water.
         'fisherman': (Point3(-19, 14, -1.33), 90),
@@ -331,7 +331,8 @@ class SurvivalArena:
                 if not node.isEmpty():
                     pos, h = node.getPos(render), node.getH(render)
                     forward = Vec3(-math.sin(math.radians(h)), math.cos(math.radians(h)), 0)
-                    spot = pos + forward * self.map['mickeyStep']
+                    step = ConfigVariableDouble('survival-mickey-step', self.map['mickeyStep']).getValue()
+                    spot = pos + forward * step
                     turn = float(ConfigVariableDouble('survival-mickey-turn', self.map.get('mickeyTurn', 0.0)).getValue())
                     return self.placeOnGround(spot[0], spot[1], h + turn)
         best = None
