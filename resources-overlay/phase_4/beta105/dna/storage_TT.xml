@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<storage scope="global">
+	<model path="phase_4/beta105/phase_4/models/modules/TT_A1" scope="hood">
+		<store_node root="toon_landmark" code="toon_landmark_TT_A1" node="TT_A1" />
+	</model>
+	<model path="phase_4/beta105/phase_4/models/modules/TT_A2" scope="hood">
+		<store_node root="toon_landmark" code="toon_landmark_TT_A2" node="TT_A2" />
+	</model>
+	<model path="phase_4/beta105/phase_4/models/modules/TT_A3" scope="hood">
+		<store_node root="toon_landmark" code="toon_landmark_TT_A3" node="TT_A3" />
+	</model>
+	<model path="phase_4/beta105/phase_4/models/modules/TT_B1" scope="hood">
+		<store_node root="toon_landmark" code="toon_landmark_TT_B1" node="TT_B1" />
+	</model>
+	<model path="phase_4/beta105/phase_4/models/modules/TT_B2" scope="hood">
+		<store_node root="toon_landmark" code="toon_landmark_TT_B2" node="TT_B2" />
+	</model>
+	<model path="phase_4/beta105/phase_4/models/modules/TT_C1" scope="hood">
+		<store_node root="toon_landmark" code="toon_landmark_TT_C1" node="TT_C1" />
+	</model>
+	<model path="phase_4/beta105/phase_4/models/props/trees" scope="hood">
+		<store_node root="prop" code="prop_tree_large_brickbox_ur" />
+		<store_node root="prop" code="prop_tree_large_brickbox_ul" />
+		<store_node root="prop" code="prop_tree_small_brickbox_ur" />
+		<store_node root="prop" code="prop_tree_small_brickbox_ul" />
+		<store_node root="prop" code="prop_tree_large_woodbox_ur" />
+		<store_node root="prop" code="prop_tree_large_woodbox_ul" />
+		<store_node root="prop" code="prop_tree_small_woodbox_ur" />
+		<store_node root="prop" code="prop_tree_small_woodbox_ul" />
+		<store_node root="prop" code="prop_tree_large_ur" node="prop_tree_large_no_box_ur" />
+		<store_node root="prop" code="prop_tree_large_ul" node="prop_tree_large_no_box_ul" />
+		<store_node root="prop" code="prop_tree_small_ur" node="prop_tree_small_nobox_ur" />
+		<store_node root="prop" code="prop_tree_small_ul" node="prop_tree_small_no_box_ul" />
+	</model>
+	<store_texture root="texture" code="street_street_TT_tex" path="phase_4/beta105/phase_4/maps/sidewalk2.jpg" />
+	<store_texture root="texture" code="street_sidewalk_TT_tex" path="phase_4/beta105/phase_4/maps/brick_floorBrown.jpg" />
+	<model path="phase_4/beta105/phase_4/models/props/signs_TTC" scope="hood">
+		<store_node root="sign" code="TTC_sign1" />
+		<store_node root="sign" code="TTC_sign2" />
+		<store_node root="sign" code="TTC_sign3" />
+	</model>
+</storage>

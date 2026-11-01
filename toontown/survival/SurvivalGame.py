@@ -199,8 +199,7 @@ class SurvivalGame(DirectObject):
         self.arena = SurvivalArena()
         # The toon's arms hang close to the camera.
         base.camLens.setNear(0.3)
-        start, h = G.PLAYER_START if hasattr(G, 'PLAYER_START') else (Point3(0, -20, 0), 0)
-        start, h = self.arena.placeOnGround(start[0], start[1], h)
+        start, h = self.arena.playerStart()
         # The trunk is solid: nobody walks through it (Arthur).
         from toontown.survival.SurvivalArena import TRUNK_RADIUS
         self.arena.addBlocker(self.arena.trunkSpot()[0], TRUNK_RADIUS)

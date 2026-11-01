@@ -51,6 +51,56 @@ VIEW_HALF_ANGLE = 60.0
 # Cogs never land in or around these: the gazebo (railings and steps all
 # round, Arthur saw cogs stuck in it) and the stations' corners.
 NO_LANDING = ((GAZEBO[0], 22.0), (FISHERMAN[0], 12.0), (LOOPY_LANE_TUNNEL[0], 16.0))
+# The playgrounds Survival can be played in. 'ttc' is today's Toontown
+# Central. 'beta_ttc' is the Toontown Central of the beta 1.0.5 release
+# (round, with the pond, the gazebo in the middle and tunnels to Daisy's,
+# Donald's and Minnie's), converted by tools/offline/art/beta-ttc into
+# resources-overlay/phase_4/beta105. It is a preview: it is not offered
+# anywhere, only `survival-map beta_ttc` in a .prc file picks it.
+BETA_DNA = 'phase_4/beta105/dna/'
+MAPS = {
+    'ttc': {
+        'storage': STORAGE_FILES,
+        'dna': DNA_FILE,
+        'offset': Point3(0, 0, 0),
+        'mickeyTunnel': None,
+        'mickeyStep': 9.0,
+        'loopyLane': LOOPY_LANE_TUNNEL,
+        'fisherman': FISHERMAN,
+        'gazebo': GAZEBO,
+        'trunkPanelAngle': TRUNK_PANEL_ANGLE,
+        'playerStart': PLAYER_START,
+    },
+    'beta_ttc': {
+        'storage': (BETA_DNA + 'storage.xml', BETA_DNA + 'storage_TT.xml', BETA_DNA + 'storage_TT_sz.xml'),
+        'dna': BETA_DNA + 'toontown_central_sz.xml',
+        # The beta's playground is centred on (110, -30); moved so its
+        # gazebo is at the middle, where the cogs' landing ring is.
+        'offset': Point3(-110, 30, 0),
+        # Mickey stands inside the tunnel to Donald's Dock, across the
+        # playground from the trolley and the pond.
+        'mickeyTunnel': 'linktunnel_tt_2301',
+        # The beta's tunnel origins sit deep in the gatehouse passage;
+        # this far out he stands in its mouth, on the sidewalk ring.
+        'mickeyStep': 22.0,
+        'loopyLane': (Point3(81.4, -47.4, 6.1), 61),
+        # On the pond's east bank, looking over the water.
+        'fisherman': (Point3(-19, 14, -1.33), 90),
+        'gazebo': (Point3(0, 0, -1.33), 180),
+        'trunkPanelAngle': 300.0,
+        # On the path south of the gazebo, facing it and Toon Hall.
+        'playerStart': (Point3(0, -50, 0), 0),
+        'preview': True,
+    },
+}
+
+
+def mapName():
+    from panda3d.core import ConfigVariableString
+    name = ConfigVariableString('survival-map', 'ttc').getValue()
+    return name if name in MAPS else 'ttc'
+
+
 # A landing cell needs this many rings of open cells round it, so a cog
 # (a big one is 3 feet across) never lands against a wall, fence or tree.
 LANDING_CLEARANCE = 1
@@ -59,21 +109,26 @@ LANDING_CLEARANCE = 1
 class SurvivalArena:
     notify = DirectNotifyGlobal.directNotify.newCategory('SurvivalArena')
 
-    def __init__(self):
+    def __init__(self, name=None):
+        self.mapName = name if name in MAPS else mapName()
+        self.map = MAPS[self.mapName]
+        gazebo = self.map['gazebo'][0]
+        self.noLanding = ((gazebo, 22.0), (self.map['fisherman'][0], 12.0), (self.map['loopyLane'][0], 16.0))
         self.root = render.attachNewNode('survivalArena')
         self.dnaStore = DNAStorage()
-        for name in STORAGE_FILES:
+        for name in self.map['storage']:
             loader.loadDNA(name).store(self.dnaStore)
         self.dnaStore.storeFont(ToontownGlobals.getInterfaceFont(), 'humanist')
         self.dnaStore.storeFont(ToontownGlobals.getSignFont(), 'mickey')
         self.dnaStore.storeFont(ToontownGlobals.getSuitFont(), 'suit')
-        tree = loader.loadDNA(DNA_FILE)
+        tree = loader.loadDNA(self.map['dna'])
         node = tree.generate(self.dnaStore)
         if node.getNumParents() == 1:
             self.geom = NodePath(node.getParent(0))
         else:
             self.geom = NodePath(node)
         self.geom.reparentTo(self.root)
+        self.geom.setPos(self.map['offset'])
         # Nothing leads anywhere: the tunnels' triggers go, the doors are
         # plain geometry without a DistributedDoor behind them.
         for trigger in self.geom.findAllMatches('**/tunnel_trigger*'):
@@ -265,6 +320,16 @@ class SurvivalArena:
         # facing the toons who walk up.
         # The tunnel prop's own origin is far back inside the hill; the
         # playground end is its tunnel_origin node, the one facing east.
+        tunnel = self.map['mickeyTunnel']
+        if tunnel:
+            # This playground names the tunnel he stands in.
+            for prop in self.geom.findAllMatches('**/%s*' % tunnel):
+                node = prop.find('**/tunnel_origin')
+                if not node.isEmpty():
+                    pos, h = node.getPos(render), node.getH(render)
+                    forward = Vec3(-math.sin(math.radians(h)), math.cos(math.radians(h)), 0)
+                    spot = pos + forward * self.map['mickeyStep']
+                    return self.placeOnGround(spot[0], spot[1], h)
         best = None
         for node in self.geom.findAllMatches('**/tunnel_origin'):
             h = node.getH(render)
@@ -276,22 +341,22 @@ class SurvivalArena:
             forward = Vec3(-math.sin(math.radians(h)), math.cos(math.radians(h)), 0)
             spot = pos + forward * 9.0
             return self.placeOnGround(spot[0], spot[1], h)
-        origin, h = LOOPY_LANE_TUNNEL
+        origin, h = self.map['loopyLane']
         pos, h = self.placeOnGround(origin[0] + 14.0, origin[1], -90)
         if self.groundZ(pos[0], pos[1]) is None:
             pos = Point3(pos[0], pos[1], origin[2])
         return pos, h
 
     def fishermanSpot(self):
-        origin, h = FISHERMAN
+        origin, h = self.map['fisherman']
         return self.placeOnGround(origin[0], origin[1], h)
 
     def trunkSpot(self):
         # Centred in front of the gazebo's base panel on the far side from
         # the fisherman (Arthur circled it), far enough out that the trunk
         # and its open lid stay clear of the gazebo.
-        middle = GAZEBO[0]
-        a = math.radians(TRUNK_PANEL_ANGLE)
+        middle = self.map['gazebo'][0]
+        a = math.radians(self.map['trunkPanelAngle'])
         away = Vec3(math.cos(a), math.sin(a), 0)
         spot = middle + away * TRUNK_FROM_GAZEBO
         # Heading 0 faces +y; the trunk's back (+y) toward the gazebo.
@@ -309,6 +374,10 @@ class SurvivalArena:
         path = self.root.attachNewNode(node)
         path.setPos(pos)
         return path
+
+    def playerStart(self):
+        start, h = self.map['playerStart']
+        return self.placeOnGround(start[0], start[1], h)
 
     def placeOnGround(self, x, y, h=0.0):
         z = self.groundZ(x, y)
@@ -382,7 +451,7 @@ class SurvivalArena:
             if any((cell[0] + di, cell[1] + dj) not in self.reach
                    for di in range(-ring, ring + 1) for dj in range(-ring, ring + 1)):
                 continue
-            if any((Point3(point[0], point[1], 0) - Point3(spot[0], spot[1], 0)).length() < radius for spot, radius in NO_LANDING):
+            if any((Point3(point[0], point[1], 0) - Point3(spot[0], spot[1], 0)).length() < radius for spot, radius in self.noLanding):
                 continue
             self.landingList.append(point)
         self.flows = {}

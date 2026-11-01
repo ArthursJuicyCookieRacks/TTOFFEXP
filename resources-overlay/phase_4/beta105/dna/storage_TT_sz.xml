@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<storage scope="global">
+	<model path="phase_4/beta105/phase_4/models/neighborhoods/toontown_central" scope="place">
+		<store_node root="prop" code="toontown_central" />
+	</model>
+	<model path="phase_4/beta105/phase_4/models/modules/trolley_station_TT" scope="place">
+		<store_node root="prop" code="prop_trolley_station" />
+	</model>
+	<model path="phase_4/beta105/phase_4/models/modules/safe_zone_tunnel_TT" scope="place">
+		<store_node root="prop" code="prop_safe_zone_tunnel" />
+	</model>
+	<model path="phase_4/beta105/phase_4/models/modules/bank" scope="place">
+		<store_node root="toon_landmark" code="toon_landmark_TT_bank" node="" />
+	</model>
+	<model path="phase_4/beta105/phase_4/models/modules/library" scope="place">
+		<store_node root="toon_landmark" code="toon_landmark_TT_library" node="" />
+	</model>
+	<model path="phase_4/beta105/phase_4/models/modules/school_house" scope="place">
+		<store_node root="toon_landmark" code="toon_landmark_TT_school_house" node="" />
+	</model>
+	<model path="phase_4/beta105/phase_4/models/modules/mercantile" scope="place">
+		<store_node root="toon_landmark" code="toon_landmark_TT_mercantile" node="" />
+	</model>
+	<model path="phase_4/beta105/phase_4/models/modules/gazebo" scope="place">
+		<store_node root="prop" code="prop_gazebo" node="" />
+	</model>
+	<model path="phase_4/beta105/phase_4/models/modules/toonhall" scope="place">
+		<store_node root="toon_landmark" code="toon_landmark_TT_toonhall" node="" />
+	</model>
+</storage>
