@@ -125,7 +125,7 @@ class DownsizerDrive:
         kit.prop('prop_tree_small_ul', pos=(-5, 75, 0))
         kit.prop('prop_tree_fat_ul', pos=(-95, -80, 0))
         # Gardens and yard things.
-        kit.model('phase_5.5/models/estate/planterA', pos=(-48.5, 50, 0), h=90)
+        kit.model('phase_5.5/models/estate/planterA', pos=(-45, 50, 0), h=90)
         kit.model('phase_5.5/models/estate/planterA', pos=(-5, -26, 0), h=180)
         kit.model('phase_5.5/models/estate/wheelbarrel', pos=(-60, 78, 0), h=40)
         kit.model('phase_5.5/models/estate/flowerBasket', pos=(-45, -30, 0), h=0)
@@ -139,7 +139,7 @@ class DownsizerDrive:
         kit.model('phase_5.5/models/estate/planterB', pos=(-62, 62, 0), h=-90)
         kit.model('phase_5.5/models/estate/planterC', pos=(-62, -66, 0), h=90)
         kit.model('phase_5.5/models/estate/planterB', pos=(-14, 26, 0), h=0)
-        kit.model('phase_5.5/models/estate/planterC', pos=(-30, -67, 0), h=0)
+        kit.model('phase_5.5/models/estate/planterC', pos=(-30, -65.5, 0), h=0)
         kit.model('phase_5.5/models/estate/planterD', pos=(-90, 26, 0), h=0)
         kit.model('phase_5.5/models/estate/planterD', pos=(-90, -26, 0), h=180)
         kit.model('phase_5.5/models/estate/watering_cans', pos=(-56, 70, 0), h=30)
