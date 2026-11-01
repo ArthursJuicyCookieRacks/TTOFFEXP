@@ -49,8 +49,10 @@ WallPipes = (-48, 16, 52)
 PosterHeight = 33.0
 PosterScale = 0.95
 CeilingDucts = ((-34, -40, 90), (34, 40, 90), (-40, 32, 0), (40, -32, 0))
-CeilingLamps = ((-30, -30, 40), (30, -30, 40), (-30, 30, 40), (30, 30, 40),
-                (0, -55, 42), (0, 55, 42), (-55, 0, 42), (55, 0, 42))
+# Over the middle of the room, high up: the crane cameras sit out by the
+# walls about 37 up and swing round, and lamps out there hung right in
+# front of them.
+CeilingLamps = ((-18, -18, 45), (18, -18, 45), (-18, 18, 45), (18, 18, 45))
 DressingShade = (0.62, 0.6, 0.6, 1)
 # The same Loan Shark poster as the Cashbot field office building.
 CashbotPosterTextures = {'cogdominium_palette_3cmla_4': 'phase_5/maps/ttoff_cogdominium_palette_cashbot_4.jpg'}
