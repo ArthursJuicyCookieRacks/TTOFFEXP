@@ -12,7 +12,7 @@ class DistCogdoCraneMoneyBag(DistCogdoCraneObject):
     craneFrictionCoef = 0.2
     craneSlideSpeed = 11
     craneRotateSpeed = 22
-    wantsWatchDrift = 0
+    wantsWatchDrift = 1
 
     def __init__(self, cr):
         DistCogdoCraneObject.__init__(self, cr)

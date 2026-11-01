@@ -6,12 +6,15 @@ from toontown.toonbase import ToontownGlobals
 from otp.otpbase import OTPGlobals
 from direct.fsm import FSM
 from direct.task import Task
+from toontown.cogdominium import CogdoCraneGameConsts as GameConsts
 from panda3d.physics import ActorNode, PhysicsCollisionHandler
 smileyDoId = 1
 
 class DistCogdoCraneObject(DistributedSmoothNode.DistributedSmoothNode, FSM.FSM):
     notify = DirectNotifyGlobal.directNotify.newCategory('DistCogdoCraneObject')
     wantsWatchDrift = 1
+    driftStopSpeed = 0.5
+    driftMaxTime = 4.0
 
     def __init__(self, cr):
         DistributedSmoothNode.DistributedSmoothNode.__init__(self, cr)
@@ -45,6 +48,8 @@ class DistCogdoCraneObject(DistributedSmoothNode.DistributedSmoothNode, FSM.FSM)
         else:
             self.cleanedUp = 1
         self.demand('Off')
+        if hasattr(self, 'watchBoundsName'):
+            taskMgr.remove(self.watchBoundsName)
         self.detachNode()
         self.toMagnetSoundInterval.finish()
         self.hitFloorSoundInterval.finish()
@@ -80,6 +85,7 @@ class DistCogdoCraneObject(DistributedSmoothNode.DistributedSmoothNode, FSM.FSM)
         self.handler.addInPattern(self.collideName + '-%in')
         self.handler.addAgainPattern(self.collideName + '-%in')
         self.watchDriftName = self.uniqueName('watchDrift')
+        self.watchBoundsName = self.uniqueName('watchBounds')
 
     def activatePhysics(self):
         if not self.physicsActivated:
@@ -90,12 +96,14 @@ class DistCogdoCraneObject(DistributedSmoothNode.DistributedSmoothNode, FSM.FSM)
             self.accept(self.collideName + '-goon', self.__hitGoon)
             self.acceptOnce(self.collideName + '-headTarget', self.__hitBoss)
             self.accept(self.collideName + '-dropPlane', self.__hitDropPlane)
+            taskMgr.add(self.__watchBounds, self.watchBoundsName)
 
     def deactivatePhysics(self):
         if self.physicsActivated:
             self.craneGame.physicsMgr.removePhysicalNode(self.node())
             self.craneGame.physicsTrav.removeCollider(self.collisionNodePath)
             self.physicsActivated = 0
+            taskMgr.remove(self.watchBoundsName)
             self.ignore(self.collideName + '-floor')
             self.ignore(self.collideName + '-goon')
             self.ignore(self.collideName + '-headTarget')
@@ -161,10 +169,29 @@ class DistCogdoCraneObject(DistributedSmoothNode.DistributedSmoothNode, FSM.FSM)
         return 0
 
     def __watchDrift(self, task):
+        # Once it has (nearly) stopped sliding, or has slid long enough,
+        # it is free to be picked up again. A bag never came to a dead
+        # stop on the floor, so it stayed 'sliding' for good, and the NPC
+        # toons (who only go for free bags) ran out of bags to use.
         v = self.physicsObject.getVelocity()
-        if abs(v[0]) < 0.0001 and abs(v[1]) < 0.0001:
+        if v[0] * v[0] + v[1] * v[1] < self.driftStopSpeed ** 2 or task.time > self.driftMaxTime:
             self.d_requestFree()
             self.demand('Free')
+            return Task.done
+        return Task.cont
+
+    def __outOfBounds(self):
+        x, y, z = self.getX(render), self.getY(render), self.getZ(render)
+        half = GameConsts.RoomHalfSize
+        margin = GameConsts.BagOutOfBoundsMargin
+        return abs(x) > half[0] - margin or abs(y) > half[1] - margin or z < -5 or z > GameConsts.CeilingHeight
+
+    def __watchBounds(self, task):
+        # Thrown out where no one can get at it: back to its spot.
+        if self.state in ('LocalDropped', 'Dropped', 'SlidingFloor') and self.isRunHere() and self.__outOfBounds():
+            self.notify.info('%s went out of bounds.' % self.doId)
+            self.fellOut()
+            return Task.done
         return Task.cont
 
     def prepareGrab(self):

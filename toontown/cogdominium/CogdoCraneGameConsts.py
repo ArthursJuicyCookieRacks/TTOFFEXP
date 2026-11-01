@@ -169,5 +169,8 @@ for _i in range(len(CranePosHprs)):
         _x, _y = craneWorld(_i, 7 * _s, -3)
         MoneyBagPosHprs.append([_x, _y, 0, CranePosHprs[_i][3] + 90 * _s, 0, 0])
 BagReturnDelay = 3.0
+# A dropped bag this close to the room's walls (or under the floor, or
+# over the ceiling) is out of bounds and goes back to its spot.
+BagOutOfBoundsMargin = 6.0
 CraneMinY = 8
 CraneMaxY = 25

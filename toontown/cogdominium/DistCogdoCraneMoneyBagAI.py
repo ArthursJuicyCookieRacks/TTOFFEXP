@@ -8,7 +8,8 @@ class DistCogdoCraneMoneyBagAI(DistCogdoCraneObjectAI):
     # A money bag for the cranes to drop on the cogs. One left lying where
     # no crane can reach it goes back to its spot beside its crane.
     notify = DirectNotifyGlobal.directNotify.newCategory("DistCogdoCraneMoneyBagAI")
-    wantsWatchDrift = 0
+    # The client frees a bag once it stops sliding; this is a fallback.
+    wantsWatchDrift = 1
 
     def __init__(self, air, craneGame, index):
         DistCogdoCraneObjectAI.__init__(self, air, craneGame)
@@ -36,7 +37,9 @@ class DistCogdoCraneMoneyBagAI(DistCogdoCraneObjectAI):
     def inReach(self):
         x, y = self.getX(), self.getY()
         for i in range(len(Consts.CranePosHprs)):
-            if Consts.inCraneReach(i, x, y, slack=1.0):
+            # Same reach the NPC toons use, so none sits where only a
+            # perfect swing could get it.
+            if Consts.inCraneReach(i, x, y, slack=-0.5):
                 return True
         return False
 

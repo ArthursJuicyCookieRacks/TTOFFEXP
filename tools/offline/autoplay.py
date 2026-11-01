@@ -812,6 +812,7 @@ def playCogdoCrane(dist):
     # crane's own NPC pilot work it, with screenshots along the way.
     from toontown.cogdominium import CogdoCraneGameConsts as Consts
     shots = os.environ.get('AUTOPLAY_SHOTS', '/tmp')
+    os.makedirs(shots, exist_ok=True)
     base.screenshot(os.path.join(shots, 'cash-10-start.png'), defaultFilename=0)
     if os.environ.get('AUTOPLAY_COGDO_IDLE'):
         crane = None
@@ -887,6 +888,8 @@ def playCogdoCrane(dist):
                 pilot = getattr(c, 'pilot', None) or {}
                 log('  crane %d: %s, held %s, arm %.0f, trolley %.1f, magnet %s' % (
                     c.index, pilot.get('mode'), c.heldObject and c.heldObject.doId, c.arm.getH(), c.crane.getY(), c.magnetOn))
+            log('  bags: %s' % ', '.join('%d %s (%.0f, %.0f)' % (b.index, b.state, b.getX(render), b.getY(render))
+                                          for b in sorted(dist.moneyBags.values(), key=lambda b: b.index)))
         yield sleep(0.5)
     log('crane game over: %d barrels left, laff %d/%d' % (dist.barrelsLeft, localAvatar.getHp(), localAvatar.getMaxHp()))
     yield sleep(4 if video else 1)
