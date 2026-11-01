@@ -328,7 +328,7 @@ class SurvivalHUD:
         sign = ToontownGlobals.getSignFont()
         face = ToontownGlobals.getInterfaceFont()
         card = DirectFrame(parent=aspect2d, relief=DGG.FLAT, frameColor=(0.05, 0.05, 0.08, 0.9),
-                           frameSize=(-0.75, 0.75, -0.55, 0.55), pos=(0, 0, 0), sortOrder=sort, state=DGG.NORMAL)
+                           frameSize=(-0.75, 0.75, -0.55, 0.55), pos=(0, 0, 0), sortOrder=100, state=DGG.NORMAL)
         OnscreenText(parent=card, text='Settings', font=sign, fg=RED, shadow=(0, 0, 0, 1), scale=0.14, pos=(0, 0.36))
         OnscreenText(parent=card, text='Camera Sensitivity', font=face, fg=(1, 1, 1, 1), shadow=(0, 0, 0, 1), scale=0.065, pos=(0, 0.17))
         valueText = OnscreenText(parent=card, text=str(level), font=sign, fg=(1, 0.95, 0.4, 1), shadow=(0, 0, 0, 1), scale=0.1,

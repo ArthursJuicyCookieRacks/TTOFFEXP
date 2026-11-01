@@ -73,8 +73,30 @@ class SurvivalLauncher(DirectObject):
         self.name = name
         self.menu = None
         self.game = None
-        self.music = getattr(base.cr, 'music', None)
+        self.music = []
         self.showMenu()
+
+    def __chooserMusic(self):
+        # Pick-A-Toon's music is the loading screen's theme (its second
+        # part; the first part plays silently beside it), not only the
+        # client's own music, which the menu used to stop on its own.
+        screen = getattr(base, 'loadingScreen', None)
+        sounds = [getattr(base.cr, 'music', None), getattr(screen, 'musPhase1', None), getattr(screen, 'musPhase2', None)]
+        return [sound for sound in sounds if sound is not None]
+
+    def __stopMusic(self):
+        # Another game right after one ('again') finds it stopped already
+        # and keeps the list from the first.
+        for sound in self.__chooserMusic():
+            if sound.status() == sound.PLAYING:
+                if sound not in self.music:
+                    self.music.append(sound)
+                sound.stop()
+
+    def __resumeMusic(self):
+        for sound in self.music:
+            sound.play()
+        self.music = []
 
     def showMenu(self):
         from toontown.survival.SurvivalGame import SurvivalGame
@@ -91,8 +113,7 @@ class SurvivalLauncher(DirectObject):
 
     def startGame(self, npcs):
         from toontown.survival.SurvivalGame import SurvivalGame
-        if self.music:
-            self.music.stop()
+        self.__stopMusic()
         self.chooser.exit()
         base.transitions.fadeScreen(1.0)
         self.game = SurvivalGame(self.dna, self.name, npcs, 'survivalGameDone')
@@ -106,8 +127,7 @@ class SurvivalLauncher(DirectObject):
             self.startGame(status['npcs'])
             return
         self.chooser.enter()
-        if self.music:
-            self.music.play()
+        self.__resumeMusic()
         if status['mode'] == 'exit':
             # Escaped on the trolley: straight back to Pick-A-Toon.
             self.finish()
