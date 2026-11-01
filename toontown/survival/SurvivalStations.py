@@ -70,28 +70,42 @@ class Station:
 
 
 class MickeyStation(Station):
-    """Pack-a-Punch: Mickey upgrades the held gag for 5000 jellybeans."""
+    """Pack-a-Punch: Mickey upgrades the held gag for 5000 jellybeans. On
+    some maps someone else does it (Pluto in the Brrrgh, Minnie in
+    Melodyland, Donald at his dock, a Toon Resistance toon at the Cog HQs)."""
 
     def __init__(self, game):
         pos, h = game.arena.mickeySpot()
         Station.__init__(self, game, pos, h, 'mickey')
-        self.char = Char.Char()
-        dna = CharDNA.CharDNA()
-        dna.newChar('mk')
-        self.char.setDNA(dna)
-        self.char.setName('Mickey')
-        self.char.reparentTo(self.node)
-        self.char.setScale(game.arena.mickeyScale())
-        self.char.loop('neutral')
-        self.char.nametag3d.stash()
+        kind, what, self.who = game.arena.upgrader()
+        self.char = None
+        self.toon = None
+        if kind == 'toon':
+            self.toon = what(self.who)
+            self.toon.reparentTo(self.node)
+            self.toon.loop('neutral')
+            self.toon.startBlink()
+            self.toon.nametag3d.stash()
+            self.actor = self.toon
+        else:
+            self.char = Char.Char()
+            dna = CharDNA.CharDNA()
+            dna.newChar(what)
+            self.char.setDNA(dna)
+            self.char.setName(self.who)
+            self.char.reparentTo(self.node)
+            self.char.setScale(game.arena.mickeyScale())
+            self.char.loop('neutral')
+            self.char.nametag3d.stash()
+            self.actor = self.char
 
     def prompt(self):
         gag = self.game.gags.gag
         if gag is None:
             return ''
         if gag.upgraded:
-            return 'Mickey: that %s is already upgraded!' % gag.name
-        return 'Use: Mickey upgrades your %s for %d jellybeans' % (gag.name, G.MICKEY_COST)
+            return '%s: that %s is already upgraded!' % (self.who, gag.name)
+        return 'Use: %s upgrades your %s for %d jellybeans' % (self.who, gag.name, G.MICKEY_COST)
 
     def use(self):
         gag = self.game.gags.gag
@@ -104,17 +118,21 @@ class MickeyStation(Station):
         self.working = gag
         self.game.gags.cancelReload()
         self.game.gags.hideHeld()
-        # Mickey only has walk, run and neutral: he paces while he works.
-        self.char.loop('walk')
+        # The characters only have walk, run and neutral: they pace while
+        # they work. A toon thinks it over.
+        if self.toon is not None and 'think' in self.toon.getAnimNames():
+            self.toon.loop('think')
+        else:
+            self.actor.loop('walk')
         self.floatText('Hocus pocus!')
-        self.game.hud.say('Mickey is working on your %s...' % gag.name, G.MICKEY_TIME)
+        self.game.hud.say('%s is working on your %s...' % (self.who, gag.name), G.MICKEY_TIME)
         Sequence(Wait(G.MICKEY_TIME), Func(self.__done)).start()
         return True
 
     def __done(self):
         self.busy = False
-        if self.char is not None and not self.char.isEmpty():
-            self.char.loop('neutral')
+        if self.actor is not None and not self.actor.isEmpty():
+            self.actor.loop('neutral')
         gag = getattr(self, 'working', None) or self.game.gags.gag
         self.working = None
         self.game.gags.upgradeGag(gag)
@@ -123,7 +141,9 @@ class MickeyStation(Station):
         self.game.count('upgrades')
 
     def destroy(self):
-        self.char.delete()
+        if self.toon is not None:
+            self.toon.stopBlink()
+        self.actor.delete()
         Station.destroy(self)
 
 

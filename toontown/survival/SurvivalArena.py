@@ -131,6 +131,11 @@ MAPS['farewell_fair'] = {
     'picture': 'phase_4/maps/survival_map_farewell_fair.jpg',
     'preview': 'farewell_fair',
 }
+# The other playgrounds, straight from their DNA like Toontown Central,
+# and two Cog HQs loaded from their models (toontown/survival/HoodMaps.py
+# has them all). Each names who upgrades the gag there instead of Mickey.
+from toontown.survival.HoodMaps import HOOD_MAPS
+MAPS.update(HOOD_MAPS)
 # Around each station on a parody map no cog lands.
 MAP_STATION_CLEAR = 10.0
 
@@ -166,10 +171,20 @@ class SurvivalArena:
         self.spawnMiddle = Point3(0, 0, 0)
         if self.map.get('preview'):
             self.__buildPreview(self.map['preview'])
+        elif self.map.get('models'):
+            self.__buildModels()
         elif self.map.get('parody'):
             self.__buildParody(*self.map['parody'])
         else:
             self.__buildPlayground()
+        if 'reachSpan' in self.map:
+            self.reachSpan = self.map['reachSpan']
+        if 'reachCenter' in self.map:
+            self.reachCenter = Point3(self.map['reachCenter'])
+        if 'spawnRing' in self.map:
+            self.spawnRing = self.map['spawnRing']
+        if 'spawnMiddle' in self.map:
+            self.spawnMiddle = Point3(self.map['spawnMiddle'])
         self.nav = getNav()
         self.nav.sceneOverride = None
         self.__makeTraversers()
@@ -233,9 +248,20 @@ class SurvivalArena:
         self.skyTask = None
         self.startSky()
 
+    def __spotsNoLanding(self):
+        spots = self.map['spots']
+        out = [(Point3(spots[k][0]), 12.0) for k in ('upgrader', 'fisherman', 'trunk')]
+        out += [(Point3(p), r) for p, r in self.map.get('noLanding', ())]
+        return tuple(out)
+
     def __buildPlayground(self):
-        gazebo = self.map['gazebo'][0]
-        self.noLanding = ((gazebo, 22.0), (self.map['fisherman'][0], 12.0), (self.map['loopyLane'][0], 16.0))
+        if self.map.get('spots'):
+            self.noLanding = self.__spotsNoLanding()
+        else:
+            gazebo = self.map['gazebo'][0]
+            self.noLanding = ((gazebo, 22.0), (self.map['fisherman'][0], 12.0), (self.map['loopyLane'][0], 16.0))
+        self.skyFile = self.map.get('sky', SKY_FILE)
+        self.daySkyFile = self.map.get('daySky', DAY_SKY_FILE)
         self.root = render.attachNewNode('survivalArena')
         self.dnaStore = DNAStorage()
         for name in self.map['storage']:
@@ -276,6 +302,12 @@ class SurvivalArena:
         # trash cans, hydrants and mailboxes dance, the Pet Shop's fish
         # swims, Toon HQ's periscope and telescope look about.
         self.animProps = self.__makeAnimatedProps()
+        # A map's own changes to its playground (Donald's Dock: no water,
+        # the boat aground, the bridges down).
+        setup = self.map.get('setup')
+        if setup:
+            from toontown.survival import HoodMaps
+            getattr(HoodMaps, setup)(self)
         self.geom.flattenMedium()
         if self.map.get('blockTunnels'):
             self.blockTunnels()
@@ -288,10 +320,45 @@ class SurvivalArena:
             except Exception:
                 self.notify.warning('could not start %s' % prop.__class__.__name__)
         if self.night:
-            self.root.setColorScale(NIGHT_SCALE)
+            self.root.setColorScale(self.map.get('nightScale', NIGHT_SCALE))
         self.sky = None
         self.skyTask = None
         self.startSky()
+
+    def __buildModels(self):
+        """A Cog HQ courtyard: its models as the game loads them, under
+        its own sky and fog, with a trolley put down for the way out."""
+        from toontown.survival import HoodMaps
+        self.noLanding = self.__spotsNoLanding()
+        self.root = render.attachNewNode('survivalArena')
+        self.dnaStore = None
+        self.animProps = []
+        self.night = True
+        self.geom = self.root.attachNewNode('survivalModels')
+        for path, pos, hpr, scale in self.map['models']:
+            model = loader.loadModel(path)
+            model.reparentTo(self.geom)
+            model.setPosHprScale(pos, hpr, scale)
+        HoodMaps.addTrolley(self)
+        getattr(HoodMaps, self.map['setup'])(self)
+        gsg = base.win.getGsg()
+        if gsg:
+            self.geom.prepareScene(gsg)
+        self.skyFile = self.map['sky']
+        self.skyColor = None
+        self.background = self.map.get('background', self.background)
+        if self.map.get('fog'):
+            color, density = self.map['fog']
+            self.mapFog = Fog('mapFog')
+            self.mapFog.setColor(*color)
+            self.mapFog.setExpDensity(density)
+            self.root.setFog(self.mapFog)
+        if self.map.get('nightScale'):
+            self.root.setColorScale(self.map['nightScale'])
+        self.sky = None
+        self.skyTask = None
+        self.startSky()
+        self.sky.setScale(self.map.get('skyScale', 1.0))
 
     def __makeTraversers(self):
         # A ray from high up, for the ground anywhere in the playground.
@@ -352,7 +419,7 @@ class SurvivalArena:
         return bool(MAPS.get(name, {}).get('dayAndNight'))
 
     def startSky(self):
-        self.sky = loader.loadModel(self.skyFile if self.night else DAY_SKY_FILE)
+        self.sky = loader.loadModel(self.skyFile if self.night else getattr(self, 'daySkyFile', DAY_SKY_FILE))
         self.sky.setTag('sky', 'Survival')
         # The day sky is a 500-foot dome; the camera only draws 400 feet
         # out, so at full size it was cut away and the sky showed black.
@@ -360,7 +427,7 @@ class SurvivalArena:
         self.sky.setDepthTest(0)
         self.sky.setDepthWrite(0)
         self.sky.setBin('background', 100)
-        if self.night:
+        if self.night and self.skyColor is not None:
             self.sky.setColor(self.skyColor)
         self.sky.reparentTo(camera)
         self.sky.setZ(0.0)
@@ -482,9 +549,25 @@ class SurvivalArena:
     def mickeyScale(self):
         return getattr(self.parody, 'MICKEY_SCALE', 1.0) if self.parody is not None else 1.0
 
+    def upgrader(self):
+        """Who upgrades the gag here: ('char', code, name) for a classic
+        character, ('toon', dna maker, name) for a toon."""
+        return self.map.get('upgrader', ('char', 'mk', 'Mickey'))
+
+    def spot(self, key):
+        """A station's spot a map states outright, on the ground there."""
+        spots = self.map.get('spots')
+        if not spots or key not in spots:
+            return None
+        pos, h = spots[key]
+        z = self.groundZ(pos[0], pos[1], pos[2] + 4)
+        return Point3(pos[0], pos[1], pos[2] if z is None else z), h
+
     def mickeySpot(self):
         if self.parody is not None:
             return self.parodySpot(self.parody.MICKEY_SPOT)
+        if self.spot('upgrader'):
+            return self.spot('upgrader')
         # Just inside the playground from the Loopy Lane tunnel mouth,
         # facing the toons who walk up.
         # The tunnel prop's own origin is far back inside the hill; the
@@ -521,12 +604,16 @@ class SurvivalArena:
     def fishermanSpot(self):
         if self.parody is not None:
             return self.parodySpot(self.parody.FISHERMAN_SPOT)
+        if self.spot('fisherman'):
+            return self.spot('fisherman')
         origin, h = self.map['fisherman']
         return self.placeOnGround(origin[0], origin[1], h)
 
     def trunkSpot(self):
         if self.parody is not None:
             return self.parodySpot(self.parody.TRUNK_SPOT)
+        if self.spot('trunk'):
+            return self.spot('trunk')
         # Centred in front of the gazebo's base panel on the far side from
         # the fisherman (Arthur circled it), far enough out that the trunk
         # and its open lid stay clear of the gazebo.
@@ -553,6 +640,8 @@ class SurvivalArena:
     def playerStart(self):
         if self.parody is not None:
             return self.parodySpot(self.parody.PLAYER_START)
+        if self.spot('start'):
+            return self.spot('start')
         start, h = self.map['playerStart']
         return self.placeOnGround(start[0], start[1], h)
 
