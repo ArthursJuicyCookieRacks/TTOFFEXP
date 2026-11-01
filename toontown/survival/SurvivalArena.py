@@ -122,11 +122,20 @@ MAPS['downsizer'] = {
     'picture': 'phase_4/maps/survival_map_downsizer.jpg',
     'parody': ('toontown.survival.maps.DownsizerDrive', 'DownsizerDrive'),
 }
+# The night maps built in code (toontown/survival/previewmaps).
+MAPS['farewell_fair'] = {
+    'title': 'Farewell Fair',
+    'description': 'A Toontown fair, closed for years and left to rot. Booths line the boardwalk to the old ToonFest tower, '
+                   'the Ferris wheel still creaks round and the carousel turns by itself. Mickey waits by the stage, '
+                   'Fisherman Freddy at the duck tank, and the trunk on the plaza by the tower.',
+    'picture': 'phase_4/maps/survival_map_farewell_fair.jpg',
+    'preview': 'farewell_fair',
+}
 # Around each station on a parody map no cog lands.
 MAP_STATION_CLEAR = 10.0
 
 # The order the Map Select menu lists them in.
-MAP_ORDER = ('ttc', 'beta_ttc', 'downsizer')
+MAP_ORDER = ('ttc', 'beta_ttc', 'downsizer', 'farewell_fair')
 
 
 def mapName():
@@ -148,9 +157,16 @@ class SurvivalArena:
         self.night = night or not self.map_allowsDay(self.mapName)
         self.map = MAPS[self.mapName]
         self.parody = None
+        self.preview = False
+        self.mapFog = None
+        self.skyFile = SKY_FILE
+        self.skyColor = SKY_COLOR
+        self.background = Vec4(0.05, 0.05, 0.1, 1)
         self.spawnRing = SPAWN_RING
         self.spawnMiddle = Point3(0, 0, 0)
-        if self.map.get('parody'):
+        if self.map.get('preview'):
+            self.__buildPreview(self.map['preview'])
+        elif self.map.get('parody'):
             self.__buildParody(*self.map['parody'])
         else:
             self.__buildPlayground()
@@ -184,6 +200,38 @@ class SurvivalArena:
         gsg = base.win.getGsg()
         if gsg:
             self.geom.prepareScene(gsg)
+
+    def __buildPreview(self, key):
+        """One of the night maps built in code: its own sky, fog, light and
+        colour, with the stations where it puts them (some up on terraces)."""
+        from toontown.survival.previewmaps import getPreviewMap
+        cls = getPreviewMap(key)
+        self.night = True
+        self.preview = True
+        self.root = render.attachNewNode('survivalArena')
+        self.dnaStore = None
+        self.animProps = []
+        self.parody = cls(self.root)
+        self.geom = self.root
+        self.spawnRing = cls.SPAWN_RING
+        self.noLanding = tuple((Point3(spot[0], spot[1], 0), radius) for spot, radius in cls.NO_LANDING)
+        self.reachSpan = cls.REACH_SPAN
+        self.skyFile = cls.SKY_FILE
+        self.skyColor = cls.SKY_COLOR
+        self.background = cls.BACKGROUND
+        if cls.FOG:
+            color, density = cls.FOG
+            self.mapFog = Fog('mapFog')
+            self.mapFog.setColor(*color)
+            self.mapFog.setExpDensity(density)
+            self.root.setFog(self.mapFog)
+        self.root.setColorScale(cls.NIGHT_SCALE)
+        gsg = base.win.getGsg()
+        if gsg:
+            self.geom.prepareScene(gsg)
+        self.sky = None
+        self.skyTask = None
+        self.startSky()
 
     def __buildPlayground(self):
         gazebo = self.map['gazebo'][0]
@@ -304,7 +352,7 @@ class SurvivalArena:
         return bool(MAPS.get(name, {}).get('dayAndNight'))
 
     def startSky(self):
-        self.sky = loader.loadModel(SKY_FILE if self.night else DAY_SKY_FILE)
+        self.sky = loader.loadModel(self.skyFile if self.night else DAY_SKY_FILE)
         self.sky.setTag('sky', 'Survival')
         # The day sky is a 500-foot dome; the camera only draws 400 feet
         # out, so at full size it was cut away and the sky showed black.
@@ -313,7 +361,7 @@ class SurvivalArena:
         self.sky.setDepthWrite(0)
         self.sky.setBin('background', 100)
         if self.night:
-            self.sky.setColor(SKY_COLOR)
+            self.sky.setColor(self.skyColor)
         self.sky.reparentTo(camera)
         self.sky.setZ(0.0)
         self.sky.setHpr(0.0, 0.0, 0.0)
@@ -342,7 +390,10 @@ class SurvivalArena:
             if self.sky:
                 self.sky.setColorScale(0.6, 0.55, 0.7, 1)
         else:
-            self.root.clearFog()
+            if self.mapFog is not None:
+                self.root.setFog(self.mapFog)
+            else:
+                self.root.clearFog()
             if self.sky:
                 self.sky.clearColorScale()
 
@@ -377,9 +428,9 @@ class SurvivalArena:
 
     # --- Ground ---
 
-    def groundZ(self, x, y):
-        """The highest floor under (x, y), or None off the playground."""
-        self.groundRay.setOrigin(x, y, 80.0)
+    def groundZ(self, x, y, top=80.0):
+        """The highest floor under (x, y) (below height top), or None off the playground."""
+        self.groundRay.setOrigin(x, y, top)
         self.groundRay.setDirection(0, 0, -1)
         self.groundQueue.clearEntries()
         self.groundTrav.traverse(self.root)
@@ -421,6 +472,11 @@ class SurvivalArena:
 
     def parodySpot(self, spot):
         pos, h = spot
+        if self.preview:
+            # On whatever floor is at the stated height (a terrace, a deck),
+            # not a roof above it.
+            z = self.groundZ(pos[0], pos[1], pos[2] + 3)
+            return Point3(pos[0], pos[1], pos[2] if z is None else z), h
         return self.placeOnGround(pos[0], pos[1], h)
 
     def mickeyScale(self):

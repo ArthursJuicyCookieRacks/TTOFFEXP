@@ -214,7 +214,7 @@ class SurvivalGame(DirectObject):
             base.cTrav = CollisionTraverser('survival')
         self.arena = SurvivalArena(self.mapName, self.night)
         # A parody map is always played in its daylight.
-        base.setBackgroundColor(Vec4(0.05, 0.05, 0.1, 1) if self.arena.night else ToontownGlobals.DefaultBackgroundColor)
+        base.setBackgroundColor(self.arena.background if self.arena.night else ToontownGlobals.DefaultBackgroundColor)
         # The toon's arms hang close to the camera.
         base.camLens.setNear(0.3)
         # A parody map can need the camera to draw further (its sky).
