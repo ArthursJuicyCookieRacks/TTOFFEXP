@@ -121,7 +121,7 @@ class DistributedPondBingoManager(DistributedObject.DistributedObject, FSM.FSM):
             self.card.hide()
 
     def showCard(self):
-        if (self.state != 'Off' or self.state != 'CloseEvent') and self.card.getGame():
+        if self.state not in ('Off', 'CloseEvent') and self.card.getGame():
             self.card.loadCard()
             self.card.show()
         elif self.state == 'GameOver':
@@ -230,7 +230,10 @@ class DistributedPondBingoManager(DistributedObject.DistributedObject, FSM.FSM):
         time = BingoGlobals.TIMEOUT_SESSION - globalClockDelta.localElapsedTime(timeStamp[0])
         self.card.startNextGameCountdown(time)
         if self.hasEntered:
+            # Bingo can start while the toon is already fishing: show the
+            # card with its countdown, not only once the game begins.
             self.card.showNextGameTimer(TTLocalizer.FishBingoNextGame)
+            self.card.show()
 
     def filterWaitCountdown(self, request, args):
         if request == 'Playing':
@@ -321,6 +324,7 @@ class DistributedPondBingoManager(DistributedObject.DistributedObject, FSM.FSM):
         self.notify.debug('enterIntermission: Enter Intermission State')
         if self.hasEntered:
             self.card.showNextGameTimer(TTLocalizer.FishBingoIntermission)
+            self.card.show()
         self.notify.debug('enterIntermission: timestamp %s' % timeStamp[0])
         elapsedTime = globalClockDelta.localElapsedTime(timeStamp[0])
         self.notify.debug('enterIntermission: elapsedTime %s' % elapsedTime)
