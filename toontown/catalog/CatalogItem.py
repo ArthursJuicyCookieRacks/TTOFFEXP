@@ -342,9 +342,12 @@ class CatalogItem:
             dg.putArg(self.posHpr[0], STInt16, 10)
             dg.putArg(self.posHpr[1], STInt16, 10)
             dg.putArg(self.posHpr[2], STInt16, 100)
-            dg.putArg(self.posHpr[3], STInt8, 256 // 360)
-            dg.putArg(self.posHpr[4], STInt8, 256 // 360)
-            dg.putArg(self.posHpr[5], STInt8, 256 // 360)
+            # Angles go in a signed byte: -180 up to (not quite) 180. The
+            # Python 3 port scaled them by 256 // 360, which is 0, so every
+            # piece of furniture was saved facing the same way.
+            for angle in self.posHpr[3:6]:
+                angle = (angle + 180.0) % 360.0 - 180.0
+                dg.putArg(min(127, int(round(angle * 256.0 / 360.0))), STInt8)
         if store & GiftTag:
             dg.addBlob(self.giftTag)
         dg.addUint8(self.specialEventId)

@@ -15,6 +15,81 @@ from .DistributedPhoneAI import DistributedPhoneAI
 from .DistributedClosetAI import DistributedClosetAI
 from .DistributedTrunkAI import DistributedTrunkAI
 
+def _kind(furnitureType):
+    # Boy and girl closets (and trunks) take the same spot.
+    if 500 <= furnitureType < 520:
+        return 500
+    if 4000 <= furnitureType < 4020:
+        return 4000
+    return furnitureType
+
+
+_layouts = None
+
+
+def defaultLayouts(air):
+    """The default furniture of every house layout: a list of
+    [(kind, posHpr)] per layout."""
+    global _layouts
+    if _layouts is None:
+        from toontown.estate import HouseGlobals
+        from .DNAFurnitureReaderAI import DNAFurnitureReaderAI
+        _layouts = []
+        for interior in HouseGlobals.interiors:
+            try:
+                reader = DNAFurnitureReaderAI(air.loadDNA(interior[0]), list(interior[4]))
+                _layouts.append([(_kind(item.furnitureType), tuple(item.posHpr)) for item in reader.getList()])
+            except Exception:
+                pass
+    return _layouts
+
+
+def repairLayout(air, items):
+    """Saved furniture lost its rotation: the Python 3 port wrote headings
+    with a scale of 256 // 360 (0), so every item came back facing the same
+    way, and the bed, closet, trunk, bank and tables ended up in the walls.
+    Items still standing on a default layout's spot get that spot's
+    rotation back, and a trunk that was put beside a turned-around closet
+    goes to the layout's own trunk spot. Returns True if anything changed."""
+    def near(a, b):
+        return abs(a[0] - b[0]) < 0.2 and abs(a[1] - b[1]) < 0.2 and abs(a[2] - b[2]) < 0.2
+
+    flat = [item for item in items if item.posHpr and not any(item.posHpr[3:6])]
+    if not flat:
+        return False
+    best, bestScore = None, 0
+    for layout in defaultLayouts(air):
+        score = sum(1 for item in items if item.posHpr and any(
+            kind == _kind(item.furnitureType) and near(item.posHpr, spot) for kind, spot in layout))
+        if score > bestScore:
+            best, bestScore = layout, score
+    if best is None or bestScore < 3:
+        return False
+    changed = False
+    for item in flat:
+        for kind, spot in best:
+            if kind == _kind(item.furnitureType) and near(item.posHpr, spot) and any(spot[3:6]):
+                item.posHpr = tuple(item.posHpr[:3]) + tuple(spot[3:6])
+                changed = True
+                break
+    trunkSpots = [spot for kind, spot in best if kind == 4000]
+    closets = [item for item in items if _kind(item.furnitureType) == 500 and item.posHpr]
+    for item in items:
+        if _kind(item.furnitureType) != 4000 or not item.posHpr or not trunkSpots:
+            continue
+        # Where the old code set it down: four feet along the closet's x.
+        for closet in closets:
+            x, y, z, h = closet.posHpr[:4]
+            for heading in (0.0, h):
+                angle = math.radians(heading)
+                beside = (x + 4.0 * math.cos(angle), y + 4.0 * math.sin(angle), z)
+                if near(item.posHpr, beside) and not near(item.posHpr, trunkSpots[0]):
+                    item.posHpr = tuple(trunkSpots[0])
+                    changed = True
+                    break
+    return changed
+
+
 class FurnitureError(Exception):
     def __init__(self, code):
         Exception.__init__(self)
@@ -111,8 +186,10 @@ class DistributedFurnitureManagerAI(DistributedObjectAI):
             items.append(item)
             # Since we have modified the items list, should we save it back to the house?
 
+        repaired = repairLayout(self.air, items)
+
         # Every toon has an accessory trunk too (Arthur asked), set down
-        # beside the closet.
+        # beside the closet (layouts have their own trunk spot now).
         if self.ownerId != 0 and not any(item.getFlags() & FLTrunk for item in items):
             closet = [item for item in items if item.getFlags() & FLCloset][0]
             x, y, z, h, p, r = closet.posHpr
@@ -149,6 +226,10 @@ class DistributedFurnitureManagerAI(DistributedObjectAI):
             if self.isGenerated():
                 do.generateWithRequired(self.zoneId)
             self.items.append(do)
+
+        if repaired and self.ownerId != 0:
+            self.notify.info('put the furniture of house %s back the right way round' % self.ownerId)
+            self.house.b_setInteriorItems(self.getItems())
 
     def getItems(self):
         items = CatalogItemList(store=CatalogItem.Customization|CatalogItem.Location)

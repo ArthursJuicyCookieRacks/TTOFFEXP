@@ -28,6 +28,8 @@ DNA2Furniture = {
     'bookcase_low': 1130,
     'ending_table': 1200,
     'jellybeanBank': 1300,
+    # The accessory trunk's spot in each layout.
+    'trunkBoy': 4000,
 
 }
 
