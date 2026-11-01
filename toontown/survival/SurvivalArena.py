@@ -82,7 +82,7 @@ MAPS = {
         'mickeyTunnel': 'linktunnel_tt_2301',
         # The tunnel's origin is its mouth, under the Donald's Dock sign;
         # this far out he stands just in front of it.
-        'mickeyStep': 6.0,
+        'mickeyStep': 2.0,
         # Turn from looking straight out of the tunnel (survival-mickey-turn
         # in a prc overrides it).
         'mickeyTurn': 0.0,
