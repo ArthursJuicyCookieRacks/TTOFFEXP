@@ -39,4 +39,13 @@
 		<store_node root="sign" code="TTC_sign2" />
 		<store_node root="sign" code="TTC_sign3" />
 	</model>
+	<model path="phase_5/models/char/tt_r_ara_ttc_hydrant" scope="hood">
+		<store_node root="anim_prop" code="animated_prop_generic_phase_5_models_char__ttc_hydrant" node="" />
+	</model>
+	<model path="phase_5/models/char/tt_r_ara_ttc_mailbox" scope="hood">
+		<store_node root="anim_prop" code="animated_prop_generic_phase_5_models_char__ttc_mailbox" node="" />
+	</model>
+	<model path="phase_5/models/char/tt_r_ara_ttc_trashcan" scope="hood">
+		<store_node root="anim_prop" code="animated_prop_generic_phase_5_models_char__ttc_trashcan" node="" />
+	</model>
 </storage>

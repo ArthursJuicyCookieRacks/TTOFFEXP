@@ -11,7 +11,7 @@ import math
 import random
 
 from direct.directnotify import DirectNotifyGlobal
-from panda3d.core import (Fog, BitMask32, CollisionHandlerQueue, CollisionNode, CollisionRay, CollisionSegment, CollisionTraverser, CollisionTube,
+from panda3d.core import (Fog, BitMask32, CollisionHandlerQueue, CollisionNode, CollisionPolygon, CollisionRay, CollisionSegment, CollisionTraverser, CollisionTube,
                           CompassEffect, ConfigVariableDouble, ModelPool, NodePath, Point3, TexturePool, Vec3, Vec4)
 
 from toontown.dna.DNAStorage import DNAStorage
@@ -86,6 +86,7 @@ MAPS = {
         # Turn from looking straight out of the tunnel (survival-mickey-turn
         # in a prc overrides it).
         'mickeyTurn': 0.0,
+        'blockTunnels': True,
         'loopyLane': (Point3(81.4, -47.4, 6.1), 61),
         # On the pond's east bank, looking over the water.
         'fisherman': (Point3(-19, 14, -1.33), 90),
@@ -158,6 +159,8 @@ class SurvivalArena:
         # swims, Toon HQ's periscope and telescope look about.
         self.animProps = self.__makeAnimatedProps()
         self.geom.flattenMedium()
+        if self.map.get('blockTunnels'):
+            self.blockTunnels()
         gsg = base.win.getGsg()
         if gsg:
             self.geom.prepareScene(gsg)
@@ -192,6 +195,21 @@ class SurvivalArena:
         segNode.setIntoCollideMask(BitMask32.allOff())
         self.aimSegmentPath = self.root.attachNewNode(segNode)
         self.aimTrav.addCollider(self.aimSegmentPath, self.aimQueue)
+
+    def blockTunnels(self):
+        """The beta's tunnels are long open passages a toon could walk
+        down (and cogs land in). An invisible wall across each mouth, just
+        inside it, keeps everyone in the playground."""
+        half, height, back = 16.0, 30.0, -1.0
+        for origin in self.geom.findAllMatches('**/tunnel_origin'):
+            node = CollisionNode('survivalTunnelBlock')
+            corners = [Point3(-half, back, -2), Point3(half, back, -2), Point3(half, back, height), Point3(-half, back, height)]
+            # Both faces, so it stops a toon from either side.
+            node.addSolid(CollisionPolygon(*corners))
+            node.addSolid(CollisionPolygon(*reversed(corners)))
+            node.setIntoCollideMask(ToontownGlobals.WallBitmask | ToontownGlobals.CameraBitmask)
+            node.setFromCollideMask(BitMask32.allOff())
+            origin.attachNewNode(node)
 
     def __makeAnimatedProps(self):
         import importlib

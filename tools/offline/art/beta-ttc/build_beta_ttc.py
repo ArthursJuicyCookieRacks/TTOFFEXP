@@ -91,6 +91,41 @@ def addGameSigns(sceneXml, gameXml):
     return LANDMARK.sub(fix, sceneXml), added
 
 
+# The beta's hydrant, mailboxes and trash cans are still models; the game's
+# Toontown Central has dancing ones in their place (anim_prop, run by
+# GenericAnimatedProp). Each beta one becomes the game's animated one.
+ANIMATED = {
+    'prop_hydrant': ('hydrant', 'tt_a_ara_ttc_hydrant_idle0'),
+    'prop_mailbox_TT': ('mailbox', 'tt_a_ara_ttc_mailbox_idle0'),
+    'prop_trashcan_metal': ('trashcan', 'tt_a_ara_ttc_trashcan_idleHiccup0'),
+}
+ANIM_CODE = 'animated_prop_generic_phase_5_models_char__ttc_%s'
+PROP = re.compile(r'<prop name="[^"]*" code="([^"]+)">(.*?)</prop>', re.S)
+
+
+def animateProps(sceneXml):
+    count = [0]
+
+    def swap(m):
+        if m.group(1) not in ANIMATED:
+            return m.group(0)
+        kind, anim = ANIMATED[m.group(1)]
+        code = ANIM_CODE % kind
+        count[0] += 1
+        return '<anim_prop name="%s_DNARoot" code="%s" anim="%s">%s</anim_prop>' % (code, code, anim, m.group(2))
+
+    return PROP.sub(swap, sceneXml), count[0]
+
+
+def animatedStorage():
+    lines = []
+    for kind, anim in ANIMATED.values():
+        lines.append('\t<model path="phase_5/models/char/tt_r_ara_ttc_%s" scope="hood">' % kind)
+        lines.append('\t\t<store_node root="anim_prop" code="%s" node="" />' % (ANIM_CODE % kind))
+        lines.append('\t</model>')
+    return '\n'.join(lines) + '\n'
+
+
 def main(betaDir, repoDir):
     overlay = os.path.join(repoDir, 'resources-overlay')
     outRoot = os.path.join(overlay, PREFIX)
@@ -184,6 +219,10 @@ def main(betaDir, repoDir):
             text, added = addGameSigns(text, open(game, encoding='utf-8').read())
             for code in added:
                 report.append('sign from the game added to %s' % code)
+            text, n = animateProps(text)
+            report.append('%d props made the game\'s animated ones' % n)
+        elif name == 'storage_TT':
+            text = text.replace('</storage>', animatedStorage() + '</storage>')
         with open(os.path.join(outRoot, 'dna', name + '.xml'), 'w') as f:
             f.write(text)
 

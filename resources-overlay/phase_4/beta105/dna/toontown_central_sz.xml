@@ -178,15 +178,15 @@
 					<scale x="1.00001" y="1" z="0.999997" />
 					<color r="0.33" g="0.73" b="0.43" a="1" />
 				</prop>
-				<prop name="prop_hydrant_DNARoot" code="prop_hydrant">
+				<anim_prop name="animated_prop_generic_phase_5_models_char__ttc_hydrant_DNARoot" code="animated_prop_generic_phase_5_models_char__ttc_hydrant" anim="tt_a_ara_ttc_hydrant_idle0">
 					<pos x="189.829" y="-21.3176" z="6.66999" />
 					<hpr h="0" p="0" r="0" />
-				</prop>
-				<prop name="prop_mailbox_TT_DNARoot" code="prop_mailbox_TT">
+				</anim_prop>
+				<anim_prop name="animated_prop_generic_phase_5_models_char__ttc_mailbox_DNARoot" code="animated_prop_generic_phase_5_models_char__ttc_mailbox" anim="tt_a_ara_ttc_mailbox_idle0">
 					<pos x="197.282" y="-40.1915" z="6.66999" />
 					<hpr h="0" p="-0.000292012" r="0.000776342" />
 					<scale x="0.999997" y="1" z="0.999995" />
-				</prop>
+				</anim_prop>
 				<prop name="prop_cellar_door_DNARoot" code="prop_cellar_door">
 					<pos x="207.852" y="-46.5174" z="6.66999" />
 					<hpr h="-100" p="1.43594e-06" r="0" />
@@ -197,21 +197,21 @@
 					<hpr h="176" p="0" r="0" />
 					<scale x="0.999997" y="1" z="0.999996" />
 				</prop>
-				<prop name="prop_trashcan_metal_DNARoot" code="prop_trashcan_metal">
+				<anim_prop name="animated_prop_generic_phase_5_models_char__ttc_trashcan_DNARoot" code="animated_prop_generic_phase_5_models_char__ttc_trashcan" anim="tt_a_ara_ttc_trashcan_idleHiccup0">
 					<pos x="46.4355" y="-103.458" z="6.66999" />
 					<hpr h="160" p="-3.93806e-06" r="-1.52588e-05" />
 					<scale x="1" y="0.999999" z="0.999996" />
-				</prop>
-				<prop name="prop_trashcan_metal_DNARoot" code="prop_trashcan_metal">
+				</anim_prop>
+				<anim_prop name="animated_prop_generic_phase_5_models_char__ttc_trashcan_DNARoot" code="animated_prop_generic_phase_5_models_char__ttc_trashcan" anim="tt_a_ara_ttc_trashcan_idleHiccup0">
 					<pos x="17.1232" y="-1.7029" z="6.66999" />
 					<hpr h="160" p="5.62594e-05" r="-6.10352e-05" />
 					<scale x="1" y="0.999987" z="1" />
-				</prop>
-				<prop name="prop_trashcan_metal_DNARoot" code="prop_trashcan_metal">
+				</anim_prop>
+				<anim_prop name="animated_prop_generic_phase_5_models_char__ttc_trashcan_DNARoot" code="animated_prop_generic_phase_5_models_char__ttc_trashcan" anim="tt_a_ara_ttc_trashcan_idleHiccup0">
 					<pos x="202.948" y="-56.725" z="6.66999" />
 					<hpr h="160" p="-1.43007e-05" r="-3.05176e-05" />
 					<scale x="1" y="1" z="1.00001" />
-				</prop>
+				</anim_prop>
 				<prop name="prop_post_one_light_DNARoot" code="prop_post_one_light">
 					<pos x="31.9485" y="-71.2088" z="6.66999" />
 					<hpr h="160" p="-5.16577e-05" r="0" />
@@ -251,11 +251,11 @@
 					<hpr h="160" p="-7.27875e-05" r="0.000366211" />
 					<scale x="1" y="0.999997" z="1" />
 				</prop>
-				<prop name="prop_mailbox_TT_DNARoot" code="prop_mailbox_TT">
+				<anim_prop name="animated_prop_generic_phase_5_models_char__ttc_mailbox_DNARoot" code="animated_prop_generic_phase_5_models_char__ttc_mailbox" anim="tt_a_ara_ttc_mailbox_idle0">
 					<pos x="56.3744" y="-91.2009" z="6.67" />
 					<hpr h="-124" p="-2.03871e-06" r="0" />
 					<scale x="1" y="1" z="0.999993" />
-				</prop>
+				</anim_prop>
 				<prop name="prop_roof_access_DNARoot" code="prop_roof_access">
 					<pos x="9.60587" y="-71.2439" z="24.67" />
 					<hpr h="112" p="0" r="0" />
