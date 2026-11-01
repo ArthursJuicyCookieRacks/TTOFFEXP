@@ -80,10 +80,9 @@ DD_BOAT_AGROUND = (Point3(15, -10, -0.5), Vec3(200, -40, 9))
 # The harbour bed, dried out: from a wet blue to mud.
 DD_MUD = Vec4(1.0, 0.8, 0.58, 1)
 DD_DRY_WALL = Vec4(1.0, 0.72, 0.5, 1)
-# The film of water left in the harbour: just above the bed (-12.333),
-# mostly see-through so the mud shows under it.
-DD_PUDDLE_Z = -12.2
-DD_PUDDLE_TINT = Vec4(1, 1, 1, 0.22)
+# The water left in the harbour: a shallow layer, about a foot deep, over
+# the bed (-12.333).
+DD_PUDDLE_Z = -11.4
 # The bridges let right down, their far ends on the harbour bed, as ramps
 # up from the dry harbour onto the docks (their far ends 17 feet down).
 DD_PIER_PITCH = -44.5
@@ -104,9 +103,9 @@ def dryDock(arena):
             continue
         water.setZ(render, water.getZ(render) + DD_PUDDLE_Z - bottom[0][2])
         stashAll(water, '+CollisionNode')
-        water.setColorScale(DD_PUDDLE_TINT)
+        # Coloured as DDSafeZoneLoader colours the playground's water.
         water.setTransparency(TransparencyAttrib.MAlpha)
-        water.setDepthWrite(False)
+        water.setColor(1, 1, 1, 0.8)
     for bed in geom.findAllMatches('**/under_water_surface'):
         bed.setColorScale(DD_MUD)
     # The harbour walls and pilings are painted wet-blue below the old

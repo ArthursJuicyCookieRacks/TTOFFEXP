@@ -105,7 +105,7 @@ class MickeyStation(Station):
     # model only goes down to his waist. He stands behind a crate on the
     # dock, his hands on its lid, which hides where his legs would be.
     CRATE = 'phase_5/models/props/crate'
-    CRATE_Y = 0.45
+    CRATE_Y = 1.9
     CRATE_HEIGHT = 1.6
     DOCK_LIFT = 0.0
 
@@ -114,7 +114,7 @@ class MickeyStation(Station):
         crate = loader.loadModel(self.CRATE)
         crate.reparentTo(self.node)
         crate.setPos(0, self.CRATE_Y, 0)
-        crate.setScale(1.0, 0.95, self.CRATE_HEIGHT / 2.1061)
+        crate.setScale(1.0, 0.5, self.CRATE_HEIGHT / 2.1061)
         self.crate = crate
         # Odd boxes and barrels washed up round him (Arthur), so from the
         # sides and behind nobody sees he has no legs.
@@ -125,13 +125,13 @@ class MickeyStation(Station):
 
     BARREL = 'phase_6/models/props/small_round_barrel'
     DEBRIS = (
-        (CRATE, (1.85, 0.2, 0), 18, (0.5, 0.5, 0.55)),
-        (CRATE, (1.7, 0.1, 1.15), 40, (0.36, 0.36, 0.36)),
-        (CRATE, (-1.85, 0.3, 0), -14, (0.52, 0.52, 0.6)),
-        (BARREL, (-1.75, -0.9, 0), 0, (0.9, 0.9, 0.9)),
-        (BARREL, (1.75, -1.0, 0), 70, (0.85, 0.85, 0.8)),
-        (CRATE, (0.2, -1.55, 0), 8, (0.62, 0.42, 0.62)),
-        (CRATE, (-0.9, -1.4, 1.3), -25, (0.35, 0.35, 0.35)),
+        (CRATE, (2.3, 0.6, 0), 18, (0.5, 0.5, 0.55)),
+        (CRATE, (2.2, 0.5, 1.15), 40, (0.36, 0.36, 0.36)),
+        (CRATE, (-2.35, 0.6, 0), -14, (0.52, 0.52, 0.6)),
+        (BARREL, (-2.3, -1.3, 0), 0, (0.9, 0.9, 0.9)),
+        (BARREL, (2.3, -1.4, 0), 70, (0.85, 0.85, 0.8)),
+        (CRATE, (0.2, -2.1, 0), 8, (0.62, 0.42, 0.62)),
+        (CRATE, (-1.0, -2.0, 1.3), -25, (0.35, 0.35, 0.35)),
     )
 
     def prompt(self):
