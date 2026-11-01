@@ -146,7 +146,7 @@ class DownsizerDrive:
         kit.model('phase_5.5/models/estate/wheelbarrel', pos=(20, -60, 0), h=-30)
         kit.model('phase_6/models/golf/picnic_table', pos=(-85, 70, 0), h=60)
         kit.prop('prop_tree_small_ur', pos=(-100, 40, 0))
-        kit.prop('prop_tree_fat_ur', pos=(80, 92, 0))
+        kit.prop('prop_tree_fat_ur', pos=(-94, 80, 0))
         kit.prop('prop_tree_small_ul', pos=(40, -90, 0))
         kit.prop('prop_tree_large_ul', pos=(-40, 90, 0))
         kit.prop('prop_big_planter', pos=(84, 0, 0))
@@ -175,8 +175,8 @@ class DownsizerDrive:
         kit.model('phase_5/models/char/tt_r_ara_ttc_hydrant', pos=(-25, -16, 0), h=0)
         kit.model('phase_5/models/char/tt_r_ara_ttc_trashcan', pos=(-82, 16, 0), h=180)
         kit.model('phase_5/models/char/tt_r_ara_ttc_mailbox', pos=(-95, -16, 0), h=20)
-        # The cul-de-sac's fountain, a small copy of the one in Toontown Central.
-        kit.prop('prop_toontown_central_fountain', pos=(48, 0, 0.03), scale=0.4)
+        # The cul-de-sac's fountain, a smaller copy of the one in Toontown Central.
+        kit.prop('prop_toontown_central_fountain', pos=(48, 0, 0.03), scale=0.6)
         # Benches round the cul-de-sac.
         kit.prop('prop_playground_bench', pos=(46, -29.5, 0.04), h=180)
         kit.prop('prop_playground_bench', pos=(46, 29.5, 0.04), h=0)
