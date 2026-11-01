@@ -159,8 +159,8 @@ HOOD_MAPS = {
         'blockTunnels': True,
         'upgrader': ('char', 'p', 'Pluto'),
         'spots': {
-            # In front of Toon HQ, looking out over the playground.
-            'upgrader': (Point3(-72, 62, 6.2), -90),
+            # Right in front of Toon HQ's door (Arthur), looking out over the playground.
+            'upgrader': (Point3(-79, 58.7, 6.2), -90),
             # On the bank of the fishing hole, facing the playground.
             'fisherman': (Point3(-40, -38, 6.2), -125),
             # Beside the snowman, its lid facing the player's way in.
@@ -182,6 +182,11 @@ HOOD_MAPS = {
         'daySky': 'phase_6/models/props/MM_sky',
         'blockTunnels': True,
         'upgrader': ('char', 'mn', 'Minnie'),
+        # The ramps down into the bowl are steeper than a reach cell's
+        # usual three feet.
+        'reachRise': 4.5,
+        # The horn slides are only a few feet wide.
+        'reachStep': 2.5,
         'spots': {
             'upgrader': (Point3(40, 60, 6.5), 180),
             'fisherman': (Point3(-40, -40, -14), 90),

@@ -183,6 +183,10 @@ class SurvivalArena:
             self.reachCenter = Point3(self.map['reachCenter'])
         if 'spawnRing' in self.map:
             self.spawnRing = self.map['spawnRing']
+        if 'reachStep' in self.map:
+            # Finer cells, for a map whose ways up and down are narrow
+            # (Melodyland's horn slides).
+            self.REACH_STEP = self.map['reachStep']
         if 'spawnMiddle' in self.map:
             self.spawnMiddle = Point3(self.map['spawnMiddle'])
         self.nav = getNav()
@@ -704,6 +708,8 @@ class SurvivalArena:
                 # A step up onto the gazebo is a bit more than three feet
                 # from cell to cell; anywhere else three is the most.
                 rise = 3.6 if (nxt in self.stairs or cell in self.stairs) else 3.0
+                # A playground with steeper ramps (Melodyland's) says so.
+                rise = max(rise, self.map.get('reachRise', 0.0))
                 if z is None or abs(z - here[2]) > rise:
                     continue
                 there = Point3(x, y, z)
@@ -713,7 +719,7 @@ class SurvivalArena:
                 frontier.append(nxt)
         self.reachList = [p for c, p in self.reach.items() if c not in self.stairs]
         self.landingList = []
-        ring = LANDING_CLEARANCE
+        ring = max(LANDING_CLEARANCE, int(round(LANDING_CLEARANCE * 5.0 / step)))
         for cell, point in self.reach.items():
             if cell in self.stairs:
                 continue
