@@ -34,6 +34,7 @@ class DownsizerDrive:
         ('house_south', (-18, 6, 7), (-16, -50, 10)),
         ('welcome_sign', (-82, 0, 12), (-109, 0, 16)),
         ('cul_de_sac', (22, -4, 9), (60, 8, 2)),
+        ('fountain', (18, -20, 10), (42, -4, 3)),
         ('backyard_north', (-70, 92, 10), (-20, 60, 4)),
         ('backyard_south', (40, -95, 10), (-20, -60, 4)),
     ]
@@ -129,6 +130,32 @@ class DownsizerDrive:
         kit.model('phase_6/models/golf/picnic_table', pos=(-10, 82, 0), h=-10)
         kit.model('phase_5.5/models/estate/target', pos=(-80, -70, 0), h=30, scale=0.8)
         kit.model('phase_5.5/models/estate/popcornCart', pos=(70, -45, 0), h=-120)
+        # Flower gardens, planters and garden tools so the lawns look lived in.
+        kit.model('phase_5.5/models/estate/planterB', pos=(-62, 62, 0), h=-90)
+        kit.model('phase_5.5/models/estate/planterC', pos=(-62, -66, 0), h=90)
+        kit.model('phase_5.5/models/estate/planterB', pos=(-14, 26, 0), h=0)
+        kit.model('phase_5.5/models/estate/planterC', pos=(-46, -26, 0), h=180)
+        kit.model('phase_5.5/models/estate/planterD', pos=(-90, 26, 0), h=0)
+        kit.model('phase_5.5/models/estate/planterD', pos=(-90, -26, 0), h=180)
+        kit.model('phase_5.5/models/estate/watering_cans', pos=(-56, 70, 0), h=30)
+        kit.model('phase_5.5/models/estate/shovels', pos=(-58, -58, 0), h=-20)
+        kit.model('phase_5.5/models/estate/sack', pos=(-54, -72, 0), h=60)
+        kit.model('phase_5.5/models/estate/flowerBasket', pos=(-15, 30, 0), h=180)
+        kit.model('phase_5.5/models/estate/west_barrelStand', pos=(26, 50, 0), h=-90)
+        kit.model('phase_5.5/models/estate/ttr_r_prp_est_trolleyToaster', pos=(-8, 50, 0), h=-120)
+        kit.model('phase_5.5/models/estate/wheelbarrel', pos=(20, -60, 0), h=-30)
+        kit.model('phase_6/models/golf/picnic_table', pos=(-85, 70, 0), h=60)
+        kit.prop('prop_tree_small_ur', pos=(-100, 40, 0))
+        kit.prop('prop_tree_fat_ur', pos=(80, 92, 0))
+        kit.prop('prop_tree_small_ul', pos=(40, -90, 0))
+        kit.prop('prop_tree_large_ul', pos=(-40, 90, 0))
+        kit.prop('prop_big_planter', pos=(84, 0, 0))
+        # The yellow house's back yard: a picnic, a slide and a barrel.
+        kit.model('phase_6/models/golf/picnic_table', pos=(-5, -80, 0), h=-20)
+        kit.model('phase_5.5/models/estate/cakeSlide', pos=(-95, -45, 0), h=60)
+        kit.model('phase_5.5/models/estate/west_barrelStand', pos=(-35, -88, 0), h=90)
+        kit.model('phase_5.5/models/estate/flowerBasket', pos=(-48, -84, 0), h=0)
+        kit.prop('prop_tree_small_ur', pos=(-20, -70, 0))
 
     def buildStreetProps(self):
         kit = self.kit
@@ -138,6 +165,16 @@ class DownsizerDrive:
         kit.model('phase_5/models/char/tt_r_ara_ttc_hydrant', pos=(-62, 16, 0), h=180)
         kit.model('phase_5/models/char/tt_r_ara_ttc_trashcan', pos=(5, -16, 0), h=0)
         kit.model('phase_5/models/char/tt_r_ara_ttc_mailbox', pos=(30, 16, 0), h=200)
+        kit.model('phase_5/models/char/tt_r_ara_ttc_hydrant', pos=(-25, -16, 0), h=0)
+        kit.model('phase_5/models/char/tt_r_ara_ttc_trashcan', pos=(-82, 16, 0), h=180)
+        kit.model('phase_5/models/char/tt_r_ara_ttc_mailbox', pos=(-95, -16, 0), h=20)
+        # The cul-de-sac's fountain, a small copy of the one in Toontown Central.
+        kit.prop('prop_toontown_central_fountain', pos=(40, -6, 0.03), scale=0.4)
+        # Benches round the cul-de-sac.
+        kit.prop('prop_playground_bench', pos=(46, -29.5, 0.04), h=180)
+        kit.prop('prop_playground_bench', pos=(46, 29.5, 0.04), h=0)
+        kit.prop('prop_playground_bench', pos=(-60, 17.5, 0.04), h=0)
+        kit.prop('prop_playground_bench', pos=(-40, -17.5, 0.04), h=180)
 
     def buildCars(self):
         kit = self.kit
@@ -153,7 +190,9 @@ class DownsizerDrive:
         spots = [('f', (-45, 30, 0), 200), ('p', (-48, 34, 0), 160), ('cc', (-12, -30, 0), 20),
                  ('tm', (-55, -32, 0), -20), ('nd', (30, 8, 0), 120), ('ym', (-85, 4, 0), -90),
                  ('ac', (62, -14, 0), 30), ('bf', (-15, 62, 0), 180), ('sc', (45, 70, 0), 160),
-                 ('mh', (-70, -75, 0), 10)]
+                 ('mh', (-70, -75, 0), 10), ('gh', (32, -14, 0), 40), ('ms', (50, -18, 0), -30),
+                 ('rb', (-60, -4, 0), 80), ('dt', (-95, 60, 0), -60), ('bs', (8, -62, 0), 150),
+                 ('tw', (70, -85, 0), 20), ('sd', (-30, 80, 0), 180), ('pp', (65, 40, 0), 220)]
         for name, pos, h in spots:
             kit.cogStatue(name, pos, h, skeleton=True)
 
