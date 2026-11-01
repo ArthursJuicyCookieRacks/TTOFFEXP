@@ -483,7 +483,7 @@ class TrolleyStation(Station):
     def prompt(self):
         if self.ride is not None:
             return ''
-        return 'Use: Escape Toontown Central for %s jellybeans' % format(G.ESCAPE_COST, ',')
+        return 'Use: Escape %s for %s jellybeans' % (self.game.arena.map.get('title', 'Toontown Central'), format(G.ESCAPE_COST, ','))
 
     def use(self):
         if self.ride is not None or self.car.isEmpty():
