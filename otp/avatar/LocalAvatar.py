@@ -7,6 +7,22 @@ from panda3d.core import *
 #from otp.avatar import ToontownControlManager
 from . import Avatar
 from direct.controls import ControlManager
+
+
+class WASDControlManager(ControlManager.ControlManager):
+    """With the walk controls off (a crane, a cannon...), Panda's manager
+    still passes the arrow keys on as InputState-forward and the rest, but
+    not W/A/S/D, so the Cashbot field office crane (and the CFO's) only
+    moved with the arrows. Pass the WASD keys on too."""
+
+    def disable(self):
+        ControlManager.ControlManager.disable(self)
+        if self.passMessagesThrough and self.wantWASD:
+            ist = self.inputStateTokens
+            ist.append(inputState.watchWithModifiers('forward', 'w', inputSource=inputState.WASD))
+            ist.append(inputState.watchWithModifiers('reverse', 's', inputSource=inputState.WASD))
+            ist.append(inputState.watchWithModifiers('turnLeft', 'a', inputSource=inputState.WASD))
+            ist.append(inputState.watchWithModifiers('turnRight', 'd', inputSource=inputState.WASD))
 from . import DistributedAvatar
 from direct.task import Task
 from . import PositionExaminer
@@ -54,7 +70,7 @@ class LocalAvatar(DistributedAvatar.DistributedAvatar, DistributedSmoothNode.Dis
         base.pushCTrav(self.cTrav)
         self.cTrav.setRespectPrevTransform(1)
         self.avatarControlsEnabled = 0
-        self.controlManager = ControlManager.ControlManager(True, passMessagesThrough)
+        self.controlManager = WASDControlManager(True, passMessagesThrough)
         self.initializeCollisions()
         self.initializeSmartCamera()
         self.cameraPositions = []
