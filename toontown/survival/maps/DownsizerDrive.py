@@ -103,8 +103,11 @@ class DownsizerDrive:
     def buildYards(self):
         kit = self.kit
         # White picket fences along the front of each yard, with gaps for the paths and drives.
+        # Wide openings in each so players can get onto the lawns easily.
+        self.picket((-110, 20.5), (-68, 20.5))
+        self.picket((-50, 20.5), (-36, 20.5))
+        self.picket((-110, -20.5), (-56, -20.5))
         for y in (20.5, -20.5):
-            self.picket((-110, y), (-36, y))
             self.picket((-24, y), (2, y))
         # And between the front and back yards.
         self.picket((30, 30), (30, 90))
