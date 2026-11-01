@@ -79,10 +79,14 @@ def stashAll(geom, *patterns):
 DD_BOAT_AGROUND = (Point3(15, -10, -0.5), Vec3(200, -40, 9))
 # The harbour bed, dried out: from a wet blue to mud.
 DD_MUD = Vec4(1.0, 0.8, 0.58, 1)
+DD_DRY_WALL = Vec4(1.0, 0.72, 0.5, 1)
 # The film of water left in the harbour: just above the bed (-12.333),
 # mostly see-through so the mud shows under it.
-DD_PUDDLE_Z = -12.0
-DD_PUDDLE_TINT = Vec4(1, 1, 1, 0.55)
+DD_PUDDLE_Z = -12.2
+DD_PUDDLE_TINT = Vec4(1, 1, 1, 0.22)
+# The bridges let right down, their far ends on the harbour bed, as ramps
+# up from the dry harbour onto the docks (their far ends 17 feet down).
+DD_PIER_PITCH = -44.5
 
 
 def dryDock(arena):
@@ -105,13 +109,18 @@ def dryDock(arena):
         water.setDepthWrite(False)
     for bed in geom.findAllMatches('**/under_water_surface'):
         bed.setColorScale(DD_MUD)
+    # The harbour walls and pilings are painted wet-blue below the old
+    # waterline: dried out, they read as the water still being there.
+    for pattern in ('boardwalk_supports', 'pylons'):
+        for node in geom.findAllMatches('**/' + pattern):
+            node.setColorScale(DD_DRY_WALL)
     for pond in geom.findAllMatches('**/fishing_pond_1'):
         for node in pond.findAllMatches('**/*water*'):
             node.stash()
     # Bridges down, as DistributedBoat lowers them when the boat docks.
     for name, h in (('east_pier', 90), ('west_pier', -90)):
         for pier in geom.findAllMatches('**/' + name):
-            pier.setHpr(h, 0.25, 0)
+            pier.setHpr(h, DD_PIER_PITCH, 0)
     boat = geom.find('**/donalds_boat')
     if not boat.isEmpty():
         boat.unstash()
