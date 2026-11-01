@@ -28,7 +28,11 @@ import oldbam
 G_OFF, G_OVERALL, G_PER_PRIM, G_PER_COMPONENT, G_PER_VERTEX = range(5)
 B_COORD, B_COLOR, B_NORMAL, B_TEXCOORD = range(4)
 
-TRANSPARENCY = {0: TransparencyAttrib.MNone, 1: TransparencyAttrib.MAlpha, 2: TransparencyAttrib.MAlpha,
+# Plain alpha becomes dual, as the game's own models are built: the opaque
+# part is drawn with the scene and only the soft edge is sorted and blended.
+# With plain alpha a sign's picture was blended as one piece against its
+# board and came out with a dark, stepped rim.
+TRANSPARENCY = {0: TransparencyAttrib.MNone, 1: TransparencyAttrib.MDual, 2: TransparencyAttrib.MAlpha,
                 3: TransparencyAttrib.MMultisample, 4: TransparencyAttrib.MMultisampleMask, 5: TransparencyAttrib.MBinary}
 CULLFACE = {0: CullFaceAttrib.MCullNone, 1: CullFaceAttrib.MCullClockwise, 2: CullFaceAttrib.MCullCounterClockwise,
             3: CullFaceAttrib.MCullClockwise}
@@ -100,6 +104,10 @@ class Converter:
             # get_in() is sqrtf(_in)), and wrote them out that way.
             for sin, sout in rec['switches']:
                 node.addSwitch(math.sqrt(max(sin, 0.0)), math.sqrt(max(sout, 0.0)))
+        elif t == 'SequenceNode' and sum(len(arcs) for g, arcs in rec.get('connections', ())) <= 1:
+            # A one-frame sequence (the beta's sign pictures sit under one)
+            # is only a group.
+            node = PandaNode(name)
         elif t == 'SequenceNode':
             node = SequenceNode(name)
             if rec['cycleTime'] > 0:
