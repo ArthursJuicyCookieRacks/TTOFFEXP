@@ -112,8 +112,8 @@ class DownsizerDrive:
             # Close the corner up to the garage wall.
             self.picket((4, y), (4, y + (1.6 if y > 0 else -1.6)))
         # And between the front and back yards.
-        self.picket((30, 30), (30, 90))
-        self.picket((30, -30), (30, -90))
+        self.picket((30, 30), (30, 100))
+        self.picket((30, -30), (30, -100))
         # Mailboxes by the curb.
         kit.model('phase_5.5/models/estate/mailboxHouse', pos=(-38, 21.5, 0), h=180)
         kit.model('phase_5.5/models/estate/mailboxHouse', pos=(-22, -21.5, 0), h=0)
@@ -125,7 +125,7 @@ class DownsizerDrive:
         kit.prop('prop_tree_small_ul', pos=(-5, 75, 0))
         kit.prop('prop_tree_fat_ul', pos=(-95, -80, 0))
         # Gardens and yard things.
-        kit.model('phase_5.5/models/estate/planterA', pos=(-55, 26, 0), h=0)
+        kit.model('phase_5.5/models/estate/planterA', pos=(-50, 40, 0), h=90)
         kit.model('phase_5.5/models/estate/planterA', pos=(-5, -26, 0), h=180)
         kit.model('phase_5.5/models/estate/wheelbarrel', pos=(-60, 78, 0), h=40)
         kit.model('phase_5.5/models/estate/flowerBasket', pos=(-45, -30, 0), h=0)
@@ -139,7 +139,7 @@ class DownsizerDrive:
         kit.model('phase_5.5/models/estate/planterB', pos=(-62, 62, 0), h=-90)
         kit.model('phase_5.5/models/estate/planterC', pos=(-62, -66, 0), h=90)
         kit.model('phase_5.5/models/estate/planterB', pos=(-14, 26, 0), h=0)
-        kit.model('phase_5.5/models/estate/planterC', pos=(-46, -26, 0), h=180)
+        kit.model('phase_5.5/models/estate/planterC', pos=(-28, -74, 0), h=0)
         kit.model('phase_5.5/models/estate/planterD', pos=(-90, 26, 0), h=0)
         kit.model('phase_5.5/models/estate/planterD', pos=(-90, -26, 0), h=180)
         kit.model('phase_5.5/models/estate/watering_cans', pos=(-56, 70, 0), h=30)
