@@ -680,7 +680,9 @@ class CatalogScreen(DirectFrame):
             weekNumber = currentWeek % ToontownGlobals.CatalogNumWeeksPerSeries + 1
         geom = NodePath('cover')
         cover = guiItems.find('**/cover')
-        maxSeries = ToontownGlobals.CatalogNumWeeks / ToontownGlobals.CatalogNumWeeksPerSeries + 1
+        # Whole numbers: with Python 3's / the cover looked for 'cover_picture1.0',
+        # found nothing, and the cover page stayed blank white.
+        maxSeries = ToontownGlobals.CatalogNumWeeks // ToontownGlobals.CatalogNumWeeksPerSeries + 1
         coverSeries = (seriesNumber - 1) % maxSeries + 1
         coverPicture = cover.find('**/cover_picture%s' % coverSeries)
         if not coverPicture.isEmpty():
