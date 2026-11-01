@@ -42,6 +42,11 @@ VIEW_SCALE = {'ship': 0.05, 'piano': 0.15, 'safe': 0.3, 'weight': 0.35, 'anvil':
               'firehose': 0.3, 'wedding-cake': 0.35, 'birthday-cake': 0.4, 'singing': 0.4, 'fog_horn': 0.4,
               'elephant': 0.4, '1dollar': 0.4}
 CONE_HALF_ANGLE = 32.0
+TNT_IN_HAND = 0.85
+TNT_GLOVE = Point3(0.85, 4.4, -0.55)
+TNT_IN_VIEW_HPR = Vec3(0, 10, -20)
+TNT_FUSE_SOUND = 'phase_5/audio/sfx/TL_dynamite.ogg'
+TNT_BOOM = 'phase_4/audio/sfx/firework_explosion_0%d.ogg'
 MELEE_HIT_SOUND = 'MG_sfx_vine_game_bat_hit.ogg'
 MELEE_MISS_SOUND = 'AA_pie_throw_only.ogg'
 
@@ -490,6 +495,7 @@ class Gag:
     def __init__(self, track, level, upgraded=False):
         self.track = track
         self.level = level
+        self.fromLevel = level
         self.upgraded = upgraded
         damage, clip, reserve, rate, splash, prop = G.GAGS[(track, level)]
         self.clipSize = clip
@@ -551,15 +557,27 @@ class GagHandler:
             self.arms = None
         self.bonkReady = 0.0
         self.presentations = 0
+        # Once the trunk has given the Presentation, Max Gags refills it.
+        self.hasPresentation = False
+        self.tnt = 0
+        self.throwingTnt = False
+        self.tntTrack = None
+        self.grenades = []
         self.flying = []
         self.pendingSwitch = None
         self.showHeld()
 
     def destroy(self):
+        if self.tntTrack:
+            self.tntTrack.pause()
+            self.tntTrack = None
         self.__clearView()
         for item in self.flying:
             item['np'].removeNode()
         self.flying = []
+        for item in self.grenades:
+            item['np'].removeNode()
+        self.grenades = []
         if self.reloading:
             taskMgr.remove(self.reloading)
             self.reloading = None
@@ -750,11 +768,50 @@ class GagHandler:
         self.game.hud.setGag(self.gag, self.current, len(self.gags))
         return True
 
+    def holds(self, key):
+        """Whether the toon already has this gag (BO1's box never hands out
+        a gun you're carrying). An upgraded Birthday Cake that became a
+        Wedding Cake still counts as the Birthday Cake it came from."""
+        if key == G.PRESENTATION:
+            return self.hasPresentation
+        track, level = key
+        for gag in self.gags:
+            if gag.track == track and (gag.level == level or (gag.upgraded and gag.fromLevel == level)):
+                return True
+        return False
+
     def maxGags(self):
         for gag in self.gags:
             gag.maxOut()
-        self.presentations = min(self.presentations + 1, G.PRESENTATION_MAX) if self.presentations else self.presentations
+        if self.hasPresentation:
+            self.presentations = G.PRESENTATION_MAX
+        self.tnt = G.TNT_MAX
+        gag = self.gag
+        if gag is not None and gag.clip == 0:
+            # An empty gag starts reloading at once.
+            self.cancelReload()
+            self.reload()
         self.game.hud.setGag(self.gag, self.current, len(self.gags))
+
+    def givePresentations(self):
+        self.hasPresentation = True
+        self.presentations = G.PRESENTATION_MAX
+        self.game.hud.setGag(self.gag, self.current, len(self.gags))
+
+    def addTnt(self, n):
+        self.tnt = min(G.TNT_MAX, self.tnt + n)
+        self.game.hud.setGag(self.gag, self.current, len(self.gags))
+
+    def __switchIfEmpty(self):
+        """Out of ammo in this gag (clip and reserve): over to the other one,
+        if it has any left."""
+        gag = self.gag
+        if gag is None or gag.clip > 0 or gag.reserve > 0 or self.pendingSwitch is not None:
+            return
+        for i, other in enumerate(self.gags):
+            if i != self.current and (other.clip > 0 or other.reserve > 0):
+                self.switchTo(i)
+                return
 
     # --- Reloading ---
 
@@ -794,13 +851,15 @@ class GagHandler:
     def fire(self, held=False):
         gag = self.gag
         now = globalClock.getFrameTime()
-        if gag is None or self.reloading or now < self.nextShot or self.player.down:
+        if gag is None or self.reloading or now < self.nextShot or self.player.down or self.throwingTnt:
             return False
         if self.arms is not None and (self.arms.lowered or self.pendingSwitch is not None):
             # The arms are down (a switch under way): no firing from the hip.
             return False
         if gag.clip <= 0:
-            if not held:
+            if gag.reserve <= 0:
+                self.__switchIfEmpty()
+            elif not held:
                 self.reload()
             return False
         if held and gag.track not in (G.SQUIRT,) and gag.rate > 0.3:
@@ -821,8 +880,11 @@ class GagHandler:
         else:
             self.__launch(gag, eye, forward)
         self.game.hud.setGag(gag, self.current, len(self.gags))
-        if gag.clip == 0 and gag.reserve > 0:
-            self.reload()
+        if gag.clip == 0:
+            if gag.reserve > 0:
+                self.reload()
+            else:
+                self.__switchIfEmpty()
         return True
 
     def aimPoint(self, eye, forward, maxDist=G.MAX_RANGE):
@@ -864,6 +926,8 @@ class GagHandler:
     def tick(self, dt):
         if self.arms is not None:
             self.arms.animate(dt, getattr(self.player, 'moveState', 'idle'))
+        if self.grenades:
+            self.__tickGrenades(dt)
         if not self.flying:
             return
         done = []
@@ -960,7 +1024,7 @@ class GagHandler:
     def bonk(self):
         """The melee: a whack with the held gag, which uses none of it."""
         now = globalClock.getFrameTime()
-        if now < self.bonkReady or self.player.down:
+        if now < self.bonkReady or self.player.down or self.throwingTnt:
             return False
         if self.arms is not None and (self.arms.lowered or self.pendingSwitch is not None):
             return False
@@ -985,6 +1049,156 @@ class GagHandler:
         else:
             land()
         return True
+
+    # --- TNT (the frag grenade) ---
+
+    def throwTnt(self):
+        """The toon swaps the gag for a stick of TNT, throws it overhand and
+        brings the gag back, as BO1's hands throw a frag."""
+        if self.tnt <= 0 or self.player.down or self.throwingTnt or self.pendingSwitch is not None:
+            return False
+        self.tnt -= 1
+        self.throwingTnt = True
+        self.cancelReload()
+        self.game.hud.setGag(self.gag, self.current, len(self.gags))
+        steps = []
+        if self.arms is not None:
+            steps += [Func(self.arms.putAway, 0.1, 0.0, 0.12, self.__tntInHand), Wait(0.22),
+                      Func(self.arms.shoot, 0.75), Wait(0.28)]
+        steps += [Func(self.__releaseTnt), Wait(0.3), Func(self.__tntThrown)]
+        self.tntTrack = Sequence(*steps)
+        self.tntTrack.start()
+        return True
+
+    def __tntInHand(self):
+        self.__clearView()
+        self.arms.holdPose(G.THROW, 0)
+        # Higher and further in than a pie, clear of the gag box, so the
+        # stick is seen in the glove before it goes.
+        rigMat = self.arms.rig.getMat()
+        self.arms.rig.clearTransform()
+        self.arms.placeGlove(RIGHT, TNT_GLOVE)
+        self.arms.rig.setMat(rigMat)
+        prop = BattleProps.globalPropPool.getProp('tnt')
+        prop.reparentTo(self.arms.hand(RIGHT))
+        self.arms.toon.update(force=True)
+        # The stick is an Actor, whose bounds can't be trusted for fitting:
+        # it gets a fixed size in the glove, as the battle holds it.
+        prop.setScale(TNT_IN_HAND / self.arms.grow)
+        prop.setHpr(camera, TNT_IN_VIEW_HPR)
+        self.seatOnPalm(prop)
+        prop.setBin('fixed', 41)
+        prop.setLightOff()
+        prop.setColorScaleOff()
+        self.viewProp = prop
+
+    def __releaseTnt(self):
+        eye = self.player.getEye()
+        forward = self.player.getForward()
+        # It leaves from the glove (never from inside the camera), at least
+        # a couple of feet out so it doesn't fill the view.
+        start = eye + forward * 2.5 + render.getRelativeVector(camera, Vec3(0.6, 0, -0.2))
+        if self.viewProp is not None and not self.viewProp.isEmpty():
+            hand = self.viewProp.getPos(render)
+            if (hand - eye).length() > 0.5:
+                start = hand + forward * 1.5
+            self.viewProp.hide()
+        np = BattleProps.globalPropPool.getProp('tnt')
+        np.reparentTo(render)
+        np.setScale(0.9)
+        np.setPos(start)
+        vel = forward * G.TNT_THROW_SPEED + Vec3(0, 0, G.TNT_THROW_UP)
+        # The fuse hisses (the battle's dynamite, past its lighting).
+        fuse = base.loader.loadSfx(TNT_FUSE_SOUND)
+        if fuse:
+            fuse.setVolume(0.5)
+            fuse.setTime(0.8)
+            fuse.play()
+        self.grenades.append({'np': np, 'pos': Point3(start), 'vel': vel, 'boom': globalClock.getFrameTime() + G.TNT_FUSE,
+                              'rest': False, 'fuse': fuse})
+        self.game.count('tnt thrown')
+
+    def __tntThrown(self):
+        self.tntTrack = None
+        self.throwingTnt = False
+        self.showHeld()
+
+    def __tickGrenades(self, dt):
+        now = globalClock.getFrameTime()
+        arena = self.game.arena
+        for item in list(self.grenades):
+            np = item['np']
+            if not item['rest']:
+                vel = item['vel']
+                vel.setZ(vel[2] - G.TNT_GRAVITY * dt)
+                old = item['pos']
+                new = old + vel * dt
+                hit = arena.rayHit(old, Vec3(new - old).normalized(), (new - old).length() + 0.3) if (new - old).length() > 1e-4 else None
+                if hit is not None and hit[0] < (new - old).length() + 0.3:
+                    # A wall or the ground: bounce, losing most of the speed.
+                    point = hit[1]
+                    ground = arena.groundZ(point[0], point[1])
+                    if ground is not None and abs(point[2] - ground) < 0.6:
+                        vel.setZ(-vel[2] * 0.3)
+                        vel.setX(vel[0] * 0.5)
+                        vel.setY(vel[1] * 0.5)
+                        new = Point3(new[0], new[1], max(new[2], ground + 0.25))
+                        if abs(vel[2]) < 2.0:
+                            item['rest'] = True
+                            new.setZ(ground + 0.25)
+                    else:
+                        vel.setX(-vel[0] * 0.35)
+                        vel.setY(-vel[1] * 0.35)
+                        new = Point3(old)
+                item['pos'] = new
+                np.setPos(new)
+                np.setHpr(np.getH() + 400 * dt, np.getP() + 300 * dt, 0)
+            if now >= item['boom']:
+                self.grenades.remove(item)
+                self.__boom(item['pos'], item.get('fuse'))
+                np.removeNode()
+
+    def __boom(self, point, fuse=None):
+        damage = G.tntDamage(self.game.roundNum)
+        radius = G.TNT_RADIUS
+        for cog in list(self.game.cogs):
+            if cog.dead or cog.state == 'landing':
+                continue
+            d = (Vec3(cog.pos[0] - point[0], cog.pos[1] - point[1], 0)).length() - cog.radius
+            if d > radius:
+                continue
+            # Full in the middle, a quarter at the edge.
+            share = 1.0 - 0.75 * max(0.0, d) / radius
+            self.game.damageCog(cog, int(damage * share))
+        me = self.player.getPos()
+        d = (Vec3(me - point)).length()
+        if d < G.TNT_SELF_RADIUS and not self.player.down:
+            self.player.hurt(int(G.TNT_SELF_DAMAGE * (1.0 - d / G.TNT_SELF_RADIUS)) + 1)
+        explosion = loader.loadModel('phase_3.5/models/props/explosion')
+        explosion.setBillboardPointEye()
+        explosion.setDepthWrite(False)
+        explosion.setLightOff()
+        explosion.reparentTo(render)
+        explosion.setPos(point + Vec3(0, 0, 1.5))
+        explosion.setScale(1.0)
+        Sequence(LerpScaleInterval(explosion, 0.35, 6.0, startScale=1.0), Func(explosion.removeNode)).start()
+        try:
+            from toontown.battle import BattleParticles
+            BattleParticles.loadParticles()
+            smoke = BattleParticles.createParticleEffect('BigGearExplosion', numParticles=10)
+            smoke.setPos(point)
+            from direct.interval.ParticleInterval import ParticleInterval
+            ParticleInterval(smoke, render, worldRelative=0, duration=0.8, cleanup=True).start()
+        except Exception:
+            pass
+        if fuse is not None:
+            fuse.stop()
+        boom = base.loader.loadSfx(TNT_BOOM % random.randint(1, 3))
+        if boom:
+            base.playSfx(boom, volume=1.0)
+        dist = (camera.getPos(render) - point).length()
+        if dist < radius * 2:
+            self.game.hud.shake()
 
     def throwPresentation(self):
         if self.presentations <= 0 or self.player.down:

@@ -452,7 +452,9 @@ class BottomScreen(DirectObject):
                     picture.copyTo(row['holder'])
                     row['holder'].setScale(1.1)
         gifts = getattr(gags, 'presentations', 0)
-        self.presentLabel['text'] = ('Presentations: %d' % gifts) if gifts else ''
+        tnt = getattr(gags, 'tnt', 0)
+        parts = (['TNT: %d' % tnt] if tnt else []) + (['Presentations: %d' % gifts] if gifts else [])
+        self.presentLabel['text'] = '   '.join(parts)
 
     # --- The laff meter page ---
 

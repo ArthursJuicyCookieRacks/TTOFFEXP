@@ -24,17 +24,23 @@ from toontown.survival.SurvivalGags import GagHandler
 from toontown.survival.SurvivalHUD import SurvivalHUD
 from toontown.survival.SurvivalNPC import SurvivalNPC
 from toontown.survival.SurvivalPlayer import SurvivalPlayer
-from toontown.survival.SurvivalStations import FishermanStation, MickeyStation, TrunkStation
+from toontown.survival.SurvivalStations import FishermanStation, MickeyStation, TrolleyStation, TrunkStation
 from toontown.suit import SuitDNA
 from toontown.toonbase import ToontownGlobals
 
 MUSIC = 'phase_8/audio/bgm/DL_nbrhood.ogg'
 SNATCHER_SOUND = 'phase_5/audio/sfx/lightning_1.ogg'
-ROUND_SOUND = 'phase_4/audio/sfx/SZ_DD_shipbell.ogg'
+# The round changes to the jingle a trolley game ends with (Arthur).
+ROUND_SOUND = 'phase_4/audio/sfx/MG_win.ogg'
 BEAN_SOUND = 'phase_4/audio/sfx/SZ_DD_treasure.ogg'
 POWER_SOUND = 'phase_4/audio/sfx/MG_pairing_match.ogg'
 REVIVE_SOUND = 'phase_5/audio/sfx/AA_heal_tickle.ogg'
 PICKUP_RANGE = 3.5
+# The player's body can't go into a cog's: it is pushed out to this far
+# past the cog's radius.
+PLAYER_RADIUS = 1.3
+# Only the nearest few cogs are heard stepping.
+STEP_COGS = 5
 TOUCH_SETTING = ('survival', 'best-round')
 # Model, piece and scale of the picture over each drop.
 POWER_ICONS = {'maxgags': ('phase_3.5/models/gui/inventory_icons', '**/inventory_cake', 1.2),
@@ -114,7 +120,16 @@ class PowerDrop:
             self.icon.setH(now * 90 % 360)
         left = self.until - now
         if left < G.DROP_BLINK:
-            self.node.setColorScale(1, 1, 1, 0.3 + 0.7 * (0.5 + 0.5 * math.sin(now * 12)))
+            # On and off, slow at first and faster toward the end: the time
+            # for one blink shrinks from DROP_BLINK_SLOW to DROP_BLINK_FAST.
+            k = 1.0 - max(0.0, left) / G.DROP_BLINK
+            period = G.DROP_BLINK_SLOW + (G.DROP_BLINK_FAST - G.DROP_BLINK_SLOW) * k
+            self.blinkPhase = getattr(self, 'blinkPhase', 0.0) + (now - getattr(self, 'lastTick', now)) / period
+            if self.blinkPhase % 1.0 < 0.5:
+                self.node.show()
+            else:
+                self.node.hide()
+        self.lastTick = now
         return left > 0
 
     def destroy(self):
@@ -163,6 +178,8 @@ class SurvivalGame(DirectObject):
         self.cogSerial = 0
         self.lastBonk = -10.0
         self.music = None
+        self.stepCogs = set()
+        self.nextStepPick = 0.0
         self.nextPrompt = 0.0
         self.card = None
         self.build()
@@ -184,7 +201,7 @@ class SurvivalGame(DirectObject):
         self.player = SurvivalPlayer(self, start, h)
         self.hud = SurvivalHUD(self, self.dna)
         self.gags = GagHandler(self, self.player)
-        self.stations = [MickeyStation(self), TrunkStation(self), FishermanStation(self)]
+        self.stations = [MickeyStation(self), TrunkStation(self), FishermanStation(self), TrolleyStation(self)]
         for i in range(self.npcCount):
             angle = math.radians(120 * i - 60)
             spot, sh = self.arena.placeOnGround(start[0] + 5 * math.sin(angle), start[1] + 5 * math.cos(angle) + 3, 0)
@@ -261,6 +278,7 @@ class SurvivalGame(DirectObject):
             self.toSpawn = G.cogsInRound(self.roundNum, self.npcCount)
         self.nextSpawn = globalClock.getFrameTime() + 1.0
         self.dropsThisRound = 0
+        self.gags.addTnt(G.TNT_PER_ROUND)
         self.hud.setRound(self.roundNum)
         self.arena.setFog(self.snatcherRound)
         if self.snatcherRound:
@@ -326,9 +344,16 @@ class SurvivalGame(DirectObject):
                     self.__spawnOne(now)
             elif not any(not c.dead for c in self.cogs):
                 self.endRound()
+        if now >= self.nextStepPick:
+            self.nextStepPick = now + 0.3
+            eye = self.player.getPos()
+            near = sorted((c for c in self.cogs if not c.dead and c.state == 'chase'),
+                          key=lambda c: (c.pos[0] - eye[0]) ** 2 + (c.pos[1] - eye[1]) ** 2)
+            self.stepCogs = set(near[:STEP_COGS])
         for cog in list(self.cogs):
             if not cog.dead:
                 cog.tick(dt, now)
+        self.__keepOutOfCogs()
         for npc in self.npcs:
             npc.tick(dt, now)
         for station in self.stations:
@@ -359,7 +384,38 @@ class SurvivalGame(DirectObject):
             self.hud.lowLaff(self.player.hp < G.LOW_HP and not self.player.down)
         return task.cont
 
+    def __keepOutOfCogs(self):
+        """The player can't walk through a cog: a body that ends up inside
+        one is pushed back out, the way the walls push."""
+        player = self.player
+        if player is None:
+            return
+        body = player.body
+        pos = body.getPos(render)
+        moved = False
+        for cog in self.cogs:
+            if cog.dead or cog.state not in ('chase', 'swing'):
+                continue
+            if abs(cog.pos[2] - pos[2]) > cog.height:
+                continue
+            away = Vec3(pos[0] - cog.pos[0], pos[1] - cog.pos[1], 0)
+            room = cog.radius + PLAYER_RADIUS
+            d = away.length()
+            if d >= room:
+                continue
+            if d < 0.01:
+                away = -player.getFlatForward()
+                d = 1.0
+            away *= (room - d) / d
+            pos = Point3(pos[0] + away[0], pos[1] + away[1], pos[2])
+            moved = True
+        if moved:
+            body.setPos(render, pos)
+
     # --- What the cogs ask ---
+
+    def wantCogSteps(self, cog):
+        return cog in self.stepCogs
 
     def nearestToon(self, pos):
         best, bestDist = None, 1e9
@@ -553,14 +609,13 @@ class SurvivalGame(DirectObject):
                 self.gags.bonk()
         elif action == 'grenade':
             self.gags.throwPresentation()
+        elif action == 'tnt':
+            self.gags.throwTnt()
 
     def __prompt(self):
         if self.player.down:
-            if self.secondWindAt is not None:
-                left = self.secondWindAt - globalClock.getFrameTime()
-                return 'Second Wind in %d...' % max(0, int(left + 0.99))
-            if any(not n.down for n in self.npcs):
-                return 'You went sad! Your friends are coming...'
+            if self.secondWindAt is not None or any(not n.down for n in self.npcs):
+                return 'You are being tooned up'
             return ''
         if self.inMenu():
             return ''
@@ -582,6 +637,7 @@ class SurvivalGame(DirectObject):
             self.menuStation = None
             station.closeMenu()
         self.gags.cancelReload()
+        self.hud.setDowned(True)
         self.beans = int(self.beans * (1 - G.DOWN_LOSS))
         self.hud.setBeans(self.beans)
         if self.hasTonic('wind'):
@@ -595,7 +651,8 @@ class SurvivalGame(DirectObject):
                     cog.fleeFrom(self.player.getPos(), self.secondWindAt)
             self.hud.say('Second Wind! The cogs scatter. Your tonics are gone.', 3.0)
         elif any(not n.down for n in self.npcs):
-            self.hud.say('You went sad! Hold on for your friends.', 3.0)
+            # The prompt in the middle says it ("You are being tooned up").
+            pass
         else:
             self.gameOver()
 
@@ -635,9 +692,22 @@ class SurvivalGame(DirectObject):
             return
         self.paused = True
         self.freezeClock()
+        for npc in self.npcs:
+            npc.stopSteps()
         self.player.grabMouse(False)
+        self.showPauseCard()
+
+    def showPauseCard(self):
         self.hud.showCard('Paused', ['Round %d' % self.roundNum, '%d cogs popped' % self.stats.get('cogs popped', 0)],
-                          [('Resume', self.resume), ('Quit', self.quit)])
+                          [('Resume', self.resume), ('Settings', self.showSettings), ('Quit', self.quit)])
+
+    def showSettings(self):
+        from toontown.survival.SurvivalPlayer import saveSensitivity
+
+        def changed(level):
+            self.player.setSensitivity(level)
+            saveSensitivity(level)
+        self.hud.showSettings(self.player.sensitivity, changed, self.showPauseCard)
 
     def freezeClock(self):
         # The pause stops the game clock itself, so every animation, gag in
@@ -685,6 +755,9 @@ class SurvivalGame(DirectObject):
             return
         self.over = True
         self.paused = True
+        self.hud.setDowned(False)
+        for npc in self.npcs:
+            npc.stopSteps()
         self.player.grabMouse(False)
         best = self.loadBest()
         reached = self.roundNum
@@ -698,6 +771,46 @@ class SurvivalGame(DirectObject):
         if self.music:
             self.music.stop()
         self.hud.showCard('Game Over', lines, [('Again', self.playAgain), ('Quit', self.quit)])
+
+    # --- Winning: the trolley out ---
+
+    def escape(self, ride):
+        """The trolley was bought: the round stops where it is, the
+        toons ride away, and the game is won."""
+        self.over = True
+        self.escaped = True
+        if self.menuStation is not None:
+            station = self.menuStation
+            self.menuStation = None
+            station.closeMenu()
+        self.gags.cancelReload()
+        self.gags.hideHeld()
+        if self.gags.arms is not None:
+            self.gags.arms.rig.hide()
+        self.player.disable()
+        self.hud.setDowned(False)
+        self.hud.setCinematic(True)
+        for npc in self.npcs:
+            npc.stopSteps()
+        self.count('escapes')
+        self.notify.info('escaped on the trolley in round %d' % self.roundNum)
+        ride.start(self.__escaped)
+
+    def __escaped(self):
+        if self.music:
+            self.music.stop()
+        self.player.grabMouse(False)
+        best = self.loadBest()
+        if self.roundNum > best:
+            self.saveBest(self.roundNum)
+        lines = ['You defeated the cogs!', '',
+                 'Escaped in round %d with %d cogs popped.' % (self.roundNum, self.stats.get('cogs popped', 0))]
+        self.hud.showCard('Good Job Toons!', lines, [('Exit', self.exitToChooser)], sort=1100, color=(1, 0.95, 0.4, 1))
+
+    def exitToChooser(self):
+        self.thawClock()
+        base.transitions.noTransitions()
+        messenger.send(self.doneEvent, [{'mode': 'exit'}])
 
     def playAgain(self):
         messenger.send(self.doneEvent, [{'mode': 'again', 'npcs': self.npcCount}])

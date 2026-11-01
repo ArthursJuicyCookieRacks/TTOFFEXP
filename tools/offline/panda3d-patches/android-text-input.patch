@@ -1,5 +1,5 @@
 diff --git a/panda/src/android/PythonActivity.java b/panda/src/android/PythonActivity.java
-index 7f625a1..df47dd1 100644
+index 7f625a1..bb994ff 100644
 --- a/panda/src/android/PythonActivity.java
 +++ b/panda/src/android/PythonActivity.java
 @@ -15,7 +15,17 @@ package org.panda3d.android;
@@ -20,7 +20,7 @@ index 7f625a1..df47dd1 100644
  import android.database.Cursor;
  import android.net.Uri;
  import android.provider.OpenableColumns;
-@@ -114,6 +124,128 @@ public class PythonActivity extends PandaActivity {
+@@ -114,6 +124,172 @@ public class PythonActivity extends PandaActivity {
          }
      }
  
@@ -33,10 +33,18 @@ index 7f625a1..df47dd1 100644
 +    private EditText hiddenEdit = null;
 +
 +    public void askText(String title, String text, int maxLength) {
++        // The state changes at once, on the game's thread: set later on the
++        // UI thread, the game could read the last time's "S:" or "C:" just
++        // after asking and take it as this time's (sending the last message
++        // again, or stopping before a word was typed).
++        if (maxLength < 0) {
++            typedText = "C:" + typedText.substring(2);
++        } else {
++            typedText = "E:" + text;
++        }
 +        runOnUiThread(() -> {
 +            if (maxLength < 0) {
 +                // The game is done with the keyboard.
-+                typedText = "C:" + (hiddenEdit != null ? hiddenEdit.getText().toString() : "");
 +                if (hiddenEdit != null) {
 +                    closeKeyboard();
 +                }
@@ -80,6 +88,26 @@ index 7f625a1..df47dd1 100644
 +                        }
 +                    }
 +                });
++                // While the game wants typing, the field keeps the focus: the
++                // game's surface could take it back (a touch on the screen),
++                // and then the keyboard typed into nothing and its backspace
++                // went to the game as a key, deleting from the game's box
++                // but not from this field.
++                hiddenEdit.setOnFocusChangeListener((view, hasFocus) -> {
++                    if (!hasFocus && typedText.startsWith("E:")) {
++                        view.post(() -> {
++                            if (hiddenEdit != null && typedText.startsWith("E:") && !hiddenEdit.isFocused()) {
++                                hiddenEdit.setFocusable(true);
++                                hiddenEdit.setFocusableInTouchMode(true);
++                                hiddenEdit.requestFocus();
++                                InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
++                                if (imm != null) {
++                                    imm.showSoftInput(hiddenEdit, 0);
++                                }
++                            }
++                        });
++                    }
++                });
 +                hiddenEdit.setOnEditorActionListener((view, action, event) -> {
 +                    typedText = "S:" + hiddenEdit.getText().toString();
 +                    closeKeyboard();
@@ -113,6 +141,22 @@ index 7f625a1..df47dd1 100644
 +            hiddenEdit.post(takeFocus);
 +            hiddenEdit.postDelayed(takeFocus, 250);
 +            hiddenEdit.postDelayed(takeFocus, 700);
++        });
++    }
++
++    // The game's box changed some other way (a key from a hardware keyboard,
++    // the game clearing it): the field takes the same text, so the next
++    // letter typed does not bring back what the box no longer holds.
++    public void setTypedText(String text) {
++        if (!typedText.startsWith("E:")) {
++            return;
++        }
++        typedText = "E:" + text;
++        runOnUiThread(() -> {
++            if (hiddenEdit != null && typedText.startsWith("E:") && !hiddenEdit.getText().toString().equals(text)) {
++                hiddenEdit.setText(text);
++                hiddenEdit.setSelection(hiddenEdit.getText().length());
++            }
 +        });
 +    }
 +
@@ -150,10 +194,10 @@ index 7f625a1..df47dd1 100644
      protected void onActivityResult(int requestCode, int resultCode, Intent intent) {
          if (requestCode == PICK_FILE_REQUEST) {
 diff --git a/pandatool/src/deploy-stub/android_support.cxx b/pandatool/src/deploy-stub/android_support.cxx
-index 757e71f..e09ccdc 100644
+index 757e71f..8d4e5c2 100644
 --- a/pandatool/src/deploy-stub/android_support.cxx
 +++ b/pandatool/src/deploy-stub/android_support.cxx
-@@ -127,11 +127,73 @@ _py_picked_file(PyObject *self, PyObject *args) {
+@@ -127,11 +127,101 @@ _py_picked_file(PyObject *self, PyObject *args) {
    return path;
  }
  
@@ -184,6 +228,33 @@ index 757e71f..e09ccdc 100644
 +  jstring jtext = env->NewStringUTF(text);
 +  env->CallVoidMethod(activity, method, jtitle, jtext, (jint)max_length);
 +  env->DeleteLocalRef(jtitle);
++  env->DeleteLocalRef(jtext);
++  env->DeleteLocalRef(activity_class);
++  Py_RETURN_NONE;
++}
++
++/**
++ * Gives the keyboard's text field the game's text, while typing.
++ */
++static PyObject *
++_py_set_typed_text(PyObject *self, PyObject *args) {
++  char *text;
++  if (!PyArg_ParseTuple(args, "s", &text)) {
++    return NULL;
++  }
++  jobject activity;
++  jclass activity_class;
++  JNIEnv *env = get_activity_env(activity, activity_class);
++  jmethodID method = env ? env->GetMethodID(activity_class, "setTypedText", "(Ljava/lang/String;)V") : nullptr;
++  if (method == nullptr) {
++    if (env != nullptr) {
++      env->ExceptionClear();
++    }
++    PyErr_SetString(PyExc_NotImplementedError, "this activity has no keyboard support");
++    return NULL;
++  }
++  jstring jtext = env->NewStringUTF(text);
++  env->CallVoidMethod(activity, method, jtext);
 +  env->DeleteLocalRef(jtext);
 +  env->DeleteLocalRef(activity_class);
 +  Py_RETURN_NONE;
@@ -221,6 +292,7 @@ index 757e71f..e09ccdc 100644
    { "log_write", &_py_log_write, METH_VARARGS },
    { "find_library", &_py_find_library, METH_VARARGS },
    { "pick_file", &_py_pick_file, METH_VARARGS },
++  { "set_typed_text", &_py_set_typed_text, METH_VARARGS },
    { "picked_file", &_py_picked_file, METH_NOARGS },
 +  { "ask_text", &_py_ask_text, METH_VARARGS },
 +  { "typed_text", &_py_typed_text, METH_NOARGS },

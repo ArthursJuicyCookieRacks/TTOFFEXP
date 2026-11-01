@@ -1,5 +1,5 @@
 diff --git a/panda/src/android/PythonActivity.java b/panda/src/android/PythonActivity.java
-index 7031f8a..0a5c088 100644
+index ed713c7..a79da3a 100644
 --- a/panda/src/android/PythonActivity.java
 +++ b/panda/src/android/PythonActivity.java
 @@ -32,6 +32,14 @@ import android.widget.EditText;
@@ -26,7 +26,7 @@ index 7031f8a..0a5c088 100644
  
  /**
   * Extends PandaActivity with some things that are useful in a Python
-@@ -347,6 +357,153 @@ public class PythonActivity extends PandaActivity {
+@@ -391,6 +401,153 @@ public class PythonActivity extends PandaActivity {
          }
      }
  
@@ -181,10 +181,10 @@ index 7031f8a..0a5c088 100644
      protected void onActivityResult(int requestCode, int resultCode, Intent intent) {
          if (requestCode == SAVE_FILE_REQUEST) {
 diff --git a/pandatool/src/deploy-stub/android_support.cxx b/pandatool/src/deploy-stub/android_support.cxx
-index 95b5eb8..4a11326 100644
+index 74b2535..e6c44fe 100644
 --- a/pandatool/src/deploy-stub/android_support.cxx
 +++ b/pandatool/src/deploy-stub/android_support.cxx
-@@ -249,6 +249,104 @@ _py_saved_file(PyObject *self, PyObject *args) {
+@@ -276,6 +276,104 @@ _py_saved_file(PyObject *self, PyObject *args) {
    return saved;
  }
  
@@ -289,7 +289,7 @@ index 95b5eb8..4a11326 100644
  static PyMethodDef python_simple_funcs[] = {
    { "log_write", &_py_log_write, METH_VARARGS },
    { "find_library", &_py_find_library, METH_VARARGS },
-@@ -256,6 +354,9 @@ static PyMethodDef python_simple_funcs[] = {
+@@ -284,6 +382,9 @@ static PyMethodDef python_simple_funcs[] = {
    { "picked_file", &_py_picked_file, METH_NOARGS },
    { "save_file", &_py_save_file, METH_VARARGS },
    { "saved_file", &_py_saved_file, METH_NOARGS },

@@ -42,6 +42,12 @@ PLAYER_START = (Point3(0, -20, 0), 0)
 SPAWN_RING = (45.0, 130.0)
 SPAWN_CLEAR = 30.0
 VIEW_HALF_ANGLE = 60.0
+# Cogs never land in or around these: the gazebo (railings and steps all
+# round, Arthur saw cogs stuck in it) and the stations' corners.
+NO_LANDING = ((GAZEBO[0], 22.0), (FISHERMAN[0], 12.0), (LOOPY_LANE_TUNNEL[0], 16.0))
+# A landing cell needs this many rings of open cells round it, so a cog
+# (a big one is 3 feet across) never lands against a wall, fence or tree.
+LANDING_CLEARANCE = 1
 
 
 class SurvivalArena:
@@ -83,10 +89,19 @@ class SurvivalArena:
                     door.hide()
         for origin in self.geom.findAllMatches('**/suit_building_origin'):
             origin.removeNode()
+        # The playground's moving props, as SafeZoneLoader makes them: the
+        # trash cans, hydrants and mailboxes dance, the Pet Shop's fish
+        # swims, Toon HQ's periscope and telescope look about.
+        self.animProps = self.__makeAnimatedProps()
         self.geom.flattenMedium()
         gsg = base.win.getGsg()
         if gsg:
             self.geom.prepareScene(gsg)
+        for prop in self.animProps:
+            try:
+                prop.enter()
+            except Exception:
+                self.notify.warning('could not start %s' % prop.__class__.__name__)
         self.root.setColorScale(NIGHT_SCALE)
         self.sky = None
         self.skyTask = None
@@ -113,6 +128,23 @@ class SurvivalArena:
         segNode.setIntoCollideMask(BitMask32.allOff())
         self.aimSegmentPath = self.root.attachNewNode(segNode)
         self.aimTrav.addCollider(self.aimSegmentPath, self.aimQueue)
+
+    def __makeAnimatedProps(self):
+        import importlib
+        props = []
+        for node in self.geom.findAllMatches('**/animated_prop_*'):
+            name = node.getName()
+            if name.startswith('animated_prop_generic'):
+                className = 'GenericAnimatedProp'
+            else:
+                className = name[len('animated_prop_'):-len('_DNARoot')]
+            try:
+                module = importlib.import_module('toontown.hood.' + className)
+                props.append(getattr(module, className)(node))
+            except Exception:
+                self.notify.warning('no animated prop for %s' % name)
+        self.notify.info('%d animated props' % len(props))
+        return props
 
     def startSky(self):
         self.sky = loader.loadModel(SKY_FILE)
@@ -154,6 +186,13 @@ class SurvivalArena:
                 self.sky.clearColorScale()
 
     def destroy(self):
+        for prop in getattr(self, 'animProps', ()):
+            try:
+                prop.exit()
+                prop.delete()
+            except Exception:
+                pass
+        self.animProps = []
         if self.skyTask:
             taskMgr.remove(self.skyTask)
             self.skyTask = None
@@ -288,6 +327,7 @@ class SurvivalArena:
         origin = (int(round(start[0] / step)), int(round(start[1] / step)))
         self.reach = {origin: Point3(origin[0] * step, origin[1] * step, z0)}
         self.reachZ = {}
+        self.stairs = set()
         frontier = [origin]
         while frontier:
             cell = frontier.pop()
@@ -297,17 +337,38 @@ class SurvivalArena:
                 if nxt in self.reach or nxt in self.reachZ or abs(nxt[0]) > half or abs(nxt[1]) > half:
                     continue
                 x, y = nxt[0] * step, nxt[1] * step
-                z = self.spawnZ(x, y)
+                # Steps and stairs join the walk (a cog follows the player
+                # up into the gazebo) but are never landed on.
+                z = self.groundZ(x, y)
+                if z is not None and z < -8:
+                    z = None
+                if z is not None and self.nav.onStairs(x, y, z):
+                    self.stairs.add(nxt)
                 self.reachZ[nxt] = z
-                if z is None or abs(z - here[2]) > 3.0:
+                # A step up onto the gazebo is a bit more than three feet
+                # from cell to cell; anywhere else three is the most.
+                rise = 3.6 if (nxt in self.stairs or cell in self.stairs) else 3.0
+                if z is None or abs(z - here[2]) > rise:
                     continue
                 there = Point3(x, y, z)
                 if not self.clearLine(here, there):
                     continue
                 self.reach[nxt] = there
                 frontier.append(nxt)
-        self.reachList = list(self.reach.values())
-        self.notify.info('reach: %d cells' % len(self.reachList))
+        self.reachList = [p for c, p in self.reach.items() if c not in self.stairs]
+        self.landingList = []
+        ring = LANDING_CLEARANCE
+        for cell, point in self.reach.items():
+            if cell in self.stairs:
+                continue
+            if any((cell[0] + di, cell[1] + dj) not in self.reach
+                   for di in range(-ring, ring + 1) for dj in range(-ring, ring + 1)):
+                continue
+            if any((Point3(point[0], point[1], 0) - Point3(spot[0], spot[1], 0)).length() < radius for spot, radius in NO_LANDING):
+                continue
+            self.landingList.append(point)
+        self.flows = {}
+        self.notify.info('reach: %d cells, %d open for landing' % (len(self.reachList), len(self.landingList)))
 
     def nearestCell(self, p):
         step = self.REACH_STEP
@@ -376,11 +437,51 @@ class SurvivalArena:
         return out
 
     def randomSpot(self):
-        spots = self.landingSpots()
+        spots = getattr(self, 'reachList', None) or []
         return Point3(random.choice(spots)) if spots else None
 
     def landingSpots(self):
-        return getattr(self, 'reachList', None) or []
+        # Only open cells: never against a wall or in the gazebo.
+        return getattr(self, 'landingList', None) or getattr(self, 'reachList', None) or []
+
+    # --- Finding the way (for the cogs) ---
+
+    def flowTo(self, goal):
+        """A map from every open cell to the next cell on the shortest way
+        to goal (breadth first over the playground's cells, eight ways, no
+        cutting corners), refreshed at most every `every` seconds per goal
+        cell. One map serves every cog chasing the same toon, so the cogs
+        walk round the gazebo, fences and trees instead of into them."""
+        reach = getattr(self, 'reach', None)
+        if not reach:
+            return None, None
+        cell = self.nearestCell(goal)
+        if cell is None:
+            return None, None
+        cached = self.flows.get(cell)
+        if cached is not None:
+            return cached, cell
+        came = {cell: None}
+        frontier = [cell]
+        while frontier:
+            nxt = []
+            for here in frontier:
+                for di, dj in ((1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1)):
+                    c = (here[0] + di, here[1] + dj)
+                    if c in came or c not in reach:
+                        continue
+                    if di and dj and ((here[0] + di, here[1]) not in reach or (here[0], here[1] + dj) not in reach):
+                        continue
+                    came[c] = here
+                    nxt.append(c)
+            frontier = nxt
+        if len(self.flows) >= 40:
+            del self.flows[next(iter(self.flows))]
+        self.flows[cell] = came
+        return came, cell
+
+    def cellPoint(self, cell):
+        return self.reach.get(cell)
 
     def pickLanding(self, toons, eye, forward, tries=20):
         """A spot on the open playground the player cannot see, away from

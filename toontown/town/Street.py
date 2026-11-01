@@ -205,13 +205,39 @@ class Street(BattlePlace.BattlePlace):
     def enterElevatorIn(self, requestStatus):
         self._eiwbTask = taskMgr.add(Functor(self._elevInWaitBldgTask, requestStatus['bldgDoId']), uniqueName('elevInWaitBldg'))
 
+    # How long to wait for a building's victory walk-out before deciding the
+    # toon lost and stepping it out of the elevator instead.
+    LostBuildingWait = 2.0
+
     def _elevInWaitBldgTask(self, bldgDoId, task):
         bldg = base.cr.doId2do.get(bldgDoId)
         if bldg:
             if bldg.elevatorNodePath != None:
                 if self._enterElevatorGotElevator():
                     return Task.done
+                # Toons who lose a field office (its game ran out) come back
+                # out of its elevator too, but the building stays a field
+                # office: it never waits for victors, nobody takes
+                # 'insideVictorElevator' and the screen stayed black here
+                # for good.
+                state = bldg.fsm.getCurrentState().getName() if getattr(bldg, 'fsm', None) else ''
+                if not state.startswith('waitForVictors'):
+                    since = getattr(task, 'lostSince', None)
+                    if since is None:
+                        task.lostSince = task.time
+                    elif task.time - since > self.LostBuildingWait:
+                        self._stepOutOfLostBuilding(bldg)
+                        return Task.done
+                else:
+                    task.lostSince = None
         return Task.cont
+
+    def _stepOutOfLostBuilding(self, bldg):
+        av = base.localAvatar
+        av.b_setParent(ToontownGlobals.SPRender)
+        av.setPosHpr(bldg.elevatorNodePath, 0, -10, 0, 180, 0, 0)
+        base.transitions.irisIn()
+        self.fsm.request('walk')
 
     def _enterElevatorGotElevator(self):
         if not messenger.whoAccepts('insideVictorElevator'):

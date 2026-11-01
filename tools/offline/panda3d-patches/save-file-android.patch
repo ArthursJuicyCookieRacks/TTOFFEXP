@@ -1,5 +1,5 @@
 diff --git a/panda/src/android/PythonActivity.java b/panda/src/android/PythonActivity.java
-index 0fa781b..7031f8a 100644
+index 7e7cec9..ed713c7 100644
 --- a/panda/src/android/PythonActivity.java
 +++ b/panda/src/android/PythonActivity.java
 @@ -33,6 +33,7 @@ import android.database.Cursor;
@@ -10,7 +10,7 @@ index 0fa781b..7031f8a 100644
  import java.io.FileOutputStream;
  import java.io.InputStream;
  import java.io.OutputStream;
-@@ -293,8 +294,70 @@ public class PythonActivity extends PandaActivity {
+@@ -337,8 +338,70 @@ public class PythonActivity extends PandaActivity {
          return typedText;
      }
  
@@ -82,10 +82,10 @@ index 0fa781b..7031f8a 100644
              if (resultCode == RESULT_OK && intent != null && intent.getData() != null) {
                  Uri uri = intent.getData();
 diff --git a/pandatool/src/deploy-stub/android_support.cxx b/pandatool/src/deploy-stub/android_support.cxx
-index e09ccdc..95b5eb8 100644
+index 8d4e5c2..74b2535 100644
 --- a/pandatool/src/deploy-stub/android_support.cxx
 +++ b/pandatool/src/deploy-stub/android_support.cxx
-@@ -187,11 +187,75 @@ _py_typed_text(PyObject *self, PyObject *args) {
+@@ -214,12 +214,76 @@ _py_typed_text(PyObject *self, PyObject *args) {
    return text;
  }
  
@@ -155,6 +155,7 @@ index e09ccdc..95b5eb8 100644
    { "log_write", &_py_log_write, METH_VARARGS },
    { "find_library", &_py_find_library, METH_VARARGS },
    { "pick_file", &_py_pick_file, METH_VARARGS },
+   { "set_typed_text", &_py_set_typed_text, METH_VARARGS },
    { "picked_file", &_py_picked_file, METH_NOARGS },
 +  { "save_file", &_py_save_file, METH_VARARGS },
 +  { "saved_file", &_py_saved_file, METH_NOARGS },

@@ -206,7 +206,14 @@ class Gamepad(DirectObject):
             self.pressed = held
         self.__buttons(buttons)
         self.__walk(axes.get('left_x', 0), axes.get('left_y', 0))
-        self.__point(axes.get('right_x', 0), axes.get('right_y', 0), globalClock.getDt())
+        # The pointer runs on real time: a paused game stops the game clock
+        # (Survival's pause freezes it), and with the clock's dt of 0 the
+        # pointer never moved on the pause card.
+        now = globalClock.getRealTime()
+        last = getattr(self, 'lastPointTime', None)
+        self.lastPointTime = now
+        dt = min(0.1, now - last) if last is not None else 0.0
+        self.__point(axes.get('right_x', 0), axes.get('right_y', 0), dt)
         return task.cont
 
     def __checkStuckClick(self):

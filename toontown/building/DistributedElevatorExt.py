@@ -74,17 +74,24 @@ class DistributedElevatorExt(DistributedElevator.DistributedElevator):
         if self.getBldgDoorOrigin():
             self.bossLevel = self.bldg.getBossLevel()
             self.setupElevator()
+            floor = getattr(self, 'currentFloor', -1)
+            if floor >= 0:
+                self.currentFloor = -1
+                self.setFloor(floor)
         else:
             self.notify.warning('setBldgDoId: elevator %d cannot find suitDoorOrigin for bldg %d!' % (self.doId, self.bldgDoId))
         return
 
     def setFloor(self, floorNumber):
-        if self.currentFloor >= 0:
-            if self.bldg.floorIndicator[self.currentFloor]:
-                self.bldg.floorIndicator[self.currentFloor].setColor(LIGHT_OFF_COLOR)
-        if floorNumber >= 0:
-            if self.bldg.floorIndicator[floorNumber]:
-                self.bldg.floorIndicator[floorNumber].setColor(LIGHT_ON_COLOR)
+        # The floor comes with the elevator when a toon arrives on a street
+        # where toons are already inside, before the building it belongs to
+        # (gotBldg): the light is set once the building is here.
+        lights = getattr(getattr(self, 'bldg', None), 'floorIndicator', None)
+        if lights is not None:
+            if 0 <= self.currentFloor < len(lights) and lights[self.currentFloor]:
+                lights[self.currentFloor].setColor(LIGHT_OFF_COLOR)
+            if 0 <= floorNumber < len(lights) and lights[floorNumber]:
+                lights[floorNumber].setColor(LIGHT_ON_COLOR)
         self.currentFloor = floorNumber
 
     def handleEnterSphere(self, collEntry):
