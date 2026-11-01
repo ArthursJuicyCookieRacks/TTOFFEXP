@@ -139,12 +139,34 @@ class ToontownAIRepository(ToontownInternalRepository):
         self.notify.info('District is now ready.')
 
     def incrementPopulation(self):
-        self.districtStats.b_setAvatarCount(self.districtStats.getAvatarCount() + 1)
-        self.statusSender.sendStatus()
+        self.updatePopulation()
 
     def decrementPopulation(self):
-        self.districtStats.b_setAvatarCount(self.districtStats.getAvatarCount() - 1)
-        self.statusSender.sendStatus()
+        self.updatePopulation()
+
+    def countToons(self):
+        # The district's population is every toon in it: the player and
+        # the NPC toons playing alongside (Arthur: "you plus any NPC toon").
+        # Only the players were counted, so the Districts page said 1.
+        from toontown.toon.DistributedToonAI import DistributedToonAI
+        from toontown.toon.DistributedNPCToonBaseAI import DistributedNPCToonBaseAI
+        count = 0
+        for do in list(self.doId2do.values()):
+            if not isinstance(do, DistributedToonAI) or isinstance(do, DistributedNPCToonBaseAI):
+                continue
+            if do.isPlayerControlled() or getattr(do, 'isNPCPlayer', lambda: False)():
+                if not getattr(do, 'isDisabled', lambda: False)():
+                    count += 1
+        return count
+
+    def updatePopulation(self, task=None):
+        if not getattr(self, 'districtStats', None):
+            return task.again if task else None
+        count = self.countToons()
+        if count != self.districtStats.getAvatarCount():
+            self.districtStats.b_setAvatarCount(count)
+            self.statusSender.sendStatus()
+        return task.again if task else None
 
     def allocateZone(self, owner=None):
         zoneId = self.zoneAllocator.allocate()
@@ -171,6 +193,7 @@ class ToontownAIRepository(ToontownInternalRepository):
         self.districtStats.settoontownDistrictId(self.districtId)
         self.districtStats.generateWithRequiredAndId(self.allocateChannel(),
                                                      self.getGameDoId(), 3)
+        taskMgr.doMethodLater(5, self.updatePopulation, 'district-population-%d' % self.districtId)
 
         self.timeManager = TimeManagerAI(self)
         self.timeManager.generateWithRequired(2)
