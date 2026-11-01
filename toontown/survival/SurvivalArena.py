@@ -140,7 +140,7 @@ MAPS.update(HOOD_MAPS)
 MAP_STATION_CLEAR = 10.0
 
 # The order the Map Select menu lists them in.
-MAP_ORDER = ('ttc', 'beta_ttc', 'downsizer', 'farewell_fair')
+MAP_ORDER = ('ttc', 'beta_ttc', 'downsizer', 'farewell_fair', 'brrrgh', 'melodyland', 'dock', 'sellbot_hq', 'bossbot_hq')
 
 
 def mapName():

@@ -92,10 +92,15 @@ class SurvivalMapSelect(DirectObject):
         OnscreenText(parent=self.frame, text=TTLocalizer.SurvivalMapSelect, font=sign, fg=(1, 1, 1, 1), shadow=(0, 0, 0, 1),
                      scale=0.1, pos=(-1.22, 0.665), align=TextNode.ALeft)
         self.rows = []
+        # The rows close up (and their text shrinks a little) so a longer
+        # list still fits between the header and the Back button.
+        step = min(0.14, 0.97 / max(1, len(self.maps) - 1))
+        squeeze = step / 0.14
         for i, (key, info) in enumerate(self.maps):
-            row = DirectButton(parent=self.frame, relief=DGG.FLAT, frameColor=ROW, frameSize=(-0.05, 1.05, -0.045, 0.075),
-                               text=info['title'].upper(), text_font=face, text_fg=(1, 1, 1, 1), text_scale=0.065,
-                               text_align=TextNode.ALeft, pos=(-1.2, 0, 0.42 - 0.14 * i),
+            row = DirectButton(parent=self.frame, relief=DGG.FLAT, frameColor=ROW,
+                               frameSize=(-0.05, 1.05, -0.045 * squeeze, 0.075 * squeeze - 0.008 * (squeeze < 1)),
+                               text=info['title'].upper(), text_font=face, text_fg=(1, 1, 1, 1), text_scale=0.065 * max(0.85, squeeze),
+                               text_align=TextNode.ALeft, pos=(-1.2, 0, 0.42 - step * i),
                                command=self.__click, extraArgs=[i])
             row.bind(DGG.ENTER, self.__hover, [i])
             self.rows.append(row)

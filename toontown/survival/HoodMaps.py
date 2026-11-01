@@ -333,9 +333,9 @@ HOOD_MAPS = {
     },
     'dock': {
         'title': "Donald's Dock",
-        'description': "The harbour's run dry and Donald's boat lies nose down in the mud. The bridges stay down, "
-                       'so you can run across them or down into the old harbour. Donald upgrades your gag, '
-                       'Fisherman Freddy sells Toon Tonics by the empty fishing pond.',
+        'description': "The harbour's drained down to a shallow puddle and Donald's boat lies nose down in it. "
+                       'The bridges tip down as ramps into the old harbour. Donald upgrades your gag at his wheel '
+                       'by Toon HQ, Fisherman Freddy sells Toon Tonics by the empty fishing pond.',
         'picture': 'phase_4/maps/survival_map_dock.jpg',
         'dayAndNight': True,
         'storage': ('phase_4/dna/storage.xml', 'phase_6/dna/storage_DD.xml', 'phase_6/dna/storage_DD_sz.xml'),
