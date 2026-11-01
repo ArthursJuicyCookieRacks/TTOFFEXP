@@ -69,9 +69,12 @@ def stashAll(geom, *patterns):
 
 # --- Donald's Dock: the harbour drained, the boat run aground ---
 
-# The boat's place by the east pier (DDSafeZoneLoader puts it there and
-# the boat's mopaths start there), in the playground's own space.
-DD_BOAT_AGROUND = (Point3(-6, -14, -16.5), Vec3(28, -24, -7))
+# Where Donald's boat ended up when the water went: in the east harbour,
+# nose down in the mud with its bow toward the south docks, its stern up
+# in the air (world space; the boat's bow is its +y).
+DD_BOAT_AGROUND = (Point3(15, -10, -0.5), Vec3(200, -40, 9))
+# The harbour bed, dried out: from a wet blue to mud.
+DD_MUD = Vec4(1.0, 0.8, 0.58, 1)
 
 
 def dryDock(arena):
@@ -83,6 +86,8 @@ def dryDock(arena):
         # The surfaces and the camera's water plane; the harbour bed and
         # its floor collision stay.
         water.stash()
+    for bed in geom.findAllMatches('**/under_water_surface'):
+        bed.setColorScale(DD_MUD)
     for pond in geom.findAllMatches('**/fishing_pond_1'):
         for node in pond.findAllMatches('**/*water*'):
             node.stash()
@@ -94,8 +99,8 @@ def dryDock(arena):
     if not boat.isEmpty():
         boat.unstash()
         pos, hpr = DD_BOAT_AGROUND
-        boat.setPos(boat.getParent(), pos)
-        boat.setHpr(hpr)
+        boat.setPos(render, pos)
+        boat.setHpr(render, hpr)
         wheel = boat.find('**/wheel')
         if not wheel.isEmpty():
             wheel.hide()
@@ -214,12 +219,19 @@ HOOD_MAPS = {
         'daySky': 'phase_3.5/models/props/BR_sky',
         'blockTunnels': True,
         'setup': 'dryDock',
+        # The dry harbour bed is at about -12.
+        'lowest': -20,
         'upgrader': ('char', 'd', 'Donald'),
         'spots': {
-            'upgrader': (Point3(-60, -60, 5.7), 45),
-            'fisherman': (Point3(-20, 160, 3.3), 180),
-            'trunk': (Point3(40, -60, 5.7), 0),
-            'start': (Point3(0, -80, 5.7), 0),
+            # Against Toon HQ's east door (the HQ is a ship in the north
+            # channel), centred on it, looking out.
+            'upgrader': (Point3(-5.2, 104.15, 1.7), -90),
+            # Where the real fisherman stands, at the head of the dry pond.
+            'fisherman': (Point3(-12.5, 178, 3.3), 180),
+            # On the little island in the middle of the dry harbour.
+            'trunk': (Point3(-20, -5, 6), 0),
+            # On the south boardwalk, looking out over the dry harbour.
+            'start': (Point3(-30, -75, 6), -20),
         },
         'reachSpan': 230.0,
         'spawnRing': (40.0, 230.0),
