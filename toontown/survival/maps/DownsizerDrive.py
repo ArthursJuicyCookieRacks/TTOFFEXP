@@ -174,7 +174,7 @@ class DownsizerDrive:
         for x in (-90, -50, -10, 25):
             kit.prop('prop_post_one_light', pos=(x, 17, 0), h=180)
             kit.prop('prop_post_one_light', pos=(x + 20, -17, 0), h=0)
-        kit.model('phase_5/models/char/tt_r_ara_ttc_hydrant', pos=(-62, 16, 0), h=180)
+        kit.model('phase_5/models/char/tt_r_ara_ttc_hydrant', pos=(-45, 16, 0), h=180)
         kit.model('phase_5/models/char/tt_r_ara_ttc_trashcan', pos=(5, -16, 0), h=0)
         kit.model('phase_5/models/char/tt_r_ara_ttc_mailbox', pos=(30, 16, 0), h=200)
         kit.model('phase_5/models/char/tt_r_ara_ttc_hydrant', pos=(-25, -16, 0), h=0)
@@ -185,7 +185,7 @@ class DownsizerDrive:
         # Benches round the cul-de-sac.
         kit.prop('prop_playground_bench', pos=(46, -29.5, 0.04), h=180)
         kit.prop('prop_playground_bench', pos=(46, 29.5, 0.04), h=0)
-        kit.prop('prop_playground_bench', pos=(-60, 17.5, 0.04), h=0)
+        kit.prop('prop_playground_bench', pos=(-40, 17.5, 0.04), h=0)
         kit.prop('prop_playground_bench', pos=(-40, -17.5, 0.04), h=180)
 
     def buildCars(self):
