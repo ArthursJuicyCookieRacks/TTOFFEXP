@@ -34,7 +34,7 @@ class DownsizerDrive:
         ('house_south', (-18, 6, 7), (-16, -50, 10)),
         ('welcome_sign', (-82, 0, 12), (-109, 0, 16)),
         ('cul_de_sac', (22, -4, 9), (60, 8, 2)),
-        ('fountain', (18, -20, 10), (42, -4, 3)),
+        ('fountain', (22, -16, 10), (50, 0, 3)),
         ('backyard_north', (-70, 92, 10), (-20, 60, 4)),
         ('backyard_south', (40, -95, 10), (-20, -60, 4)),
     ]
@@ -150,6 +150,13 @@ class DownsizerDrive:
         kit.prop('prop_tree_small_ul', pos=(40, -90, 0))
         kit.prop('prop_tree_large_ul', pos=(-40, 90, 0))
         kit.prop('prop_big_planter', pos=(84, 0, 0))
+        # A few more trees in the open lawns.
+        kit.prop('prop_tree_large_ur', pos=(82, 38, 0))
+        kit.prop('prop_tree_fat_ul', pos=(80, -42, 0))
+        kit.prop('prop_tree_small_ul', pos=(-78, 92, 0))
+        kit.prop('prop_tree_large_ur', pos=(15, -92, 0))
+        kit.prop('prop_tree_small_ur', pos=(35, -48, 0))
+        kit.prop('prop_tree_fat_ur', pos=(12, 92, 0))
         # The yellow house's back yard: a picnic, a slide and a barrel.
         kit.model('phase_6/models/golf/picnic_table', pos=(-5, -80, 0), h=-20)
         kit.model('phase_5.5/models/estate/cakeSlide', pos=(-95, -45, 0), h=60)
@@ -169,7 +176,7 @@ class DownsizerDrive:
         kit.model('phase_5/models/char/tt_r_ara_ttc_trashcan', pos=(-82, 16, 0), h=180)
         kit.model('phase_5/models/char/tt_r_ara_ttc_mailbox', pos=(-95, -16, 0), h=20)
         # The cul-de-sac's fountain, a small copy of the one in Toontown Central.
-        kit.prop('prop_toontown_central_fountain', pos=(40, -6, 0.03), scale=0.4)
+        kit.prop('prop_toontown_central_fountain', pos=(48, 0, 0.03), scale=0.4)
         # Benches round the cul-de-sac.
         kit.prop('prop_playground_bench', pos=(46, -29.5, 0.04), h=180)
         kit.prop('prop_playground_bench', pos=(46, 29.5, 0.04), h=0)
@@ -178,8 +185,8 @@ class DownsizerDrive:
 
     def buildCars(self):
         kit = self.kit
-        # The trolley, parked in the cul-de-sac like a bus with nowhere to go.
-        kit.model('phase_4/models/modules/trolley_station_TT', find='trolley_car', pos=(54, 12, 0.12), h=200)
+        # The trolley, parked on the edge of the cul-de-sac like a bus with nowhere to go.
+        kit.model('phase_4/models/modules/trolley_station_TT', find='trolley_car', pos=(64, -14, 0.12), h=135)
         # A kart in each driveway and one left in the street.
         kit.model('phase_6/models/karting/Kart3_Final', pos=(13, 17, 0.05), h=90, scale=2.6, color=(0.5, 0.85, 0.5, 1))
         kit.model('phase_6/models/karting/Kart1_Final', pos=(13, -16, 0.05), h=-90, scale=2.6, color=(1.0, 0.85, 0.4, 1))
@@ -189,10 +196,10 @@ class DownsizerDrive:
         kit = self.kit
         spots = [('f', (-45, 30, 0), 200), ('p', (-48, 34, 0), 160), ('cc', (-12, -30, 0), 20),
                  ('tm', (-55, -32, 0), -20), ('nd', (30, 8, 0), 120), ('ym', (-85, 4, 0), -90),
-                 ('ac', (62, -14, 0), 30), ('bf', (-15, 62, 0), 180), ('sc', (45, 70, 0), 160),
-                 ('mh', (-70, -75, 0), 10), ('gh', (32, -14, 0), 40), ('ms', (50, -18, 0), -30),
-                 ('rb', (-60, -4, 0), 80), ('dt', (-95, 60, 0), -60), ('bs', (8, -62, 0), 150),
-                 ('tw', (70, -85, 0), 20), ('sd', (-30, 80, 0), 180), ('pp', (65, 40, 0), 220)]
+                 ('ac', (60, 18, 0), 200), ('bf', (-15, 62, 0), 180), ('sc', (45, 70, 0), 160),
+                 ('mh', (-70, -75, 0), 10), ('gh', (-72, -16.5, 0), 0), ('ms', (84, 82, 0), 225),
+                 ('rb', (-5, 16.5, 0), 180), ('dt', (-95, 60, 0), -60), ('bs', (-104, -94, 0), -45),
+                 ('tw', (86, -90, 0), 45), ('sd', (-104, 94, 0), -135), ('pp', (65, 40, 0), 220)]
         for name, pos, h in spots:
             kit.cogStatue(name, pos, h, skeleton=True)
 
