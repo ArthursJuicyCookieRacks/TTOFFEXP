@@ -12,7 +12,7 @@ import random
 
 from direct.directnotify import DirectNotifyGlobal
 from panda3d.core import (Fog, BitMask32, CollisionHandlerQueue, CollisionNode, CollisionRay, CollisionSegment, CollisionTraverser, CollisionTube,
-                          CompassEffect, ModelPool, NodePath, Point3, TexturePool, Vec3, Vec4)
+                          CompassEffect, ConfigVariableDouble, ModelPool, NodePath, Point3, TexturePool, Vec3, Vec4)
 
 from toontown.dna.DNAStorage import DNAStorage
 from toontown.hood import SkyUtil
@@ -83,6 +83,9 @@ MAPS = {
         # The beta's tunnel origins sit deep in the gatehouse passage;
         # this far out he stands in its mouth, on the sidewalk ring.
         'mickeyStep': 22.0,
+        # Turned round from looking out of the tunnel: he faces into it
+        # (Arthur's ask). survival-mickey-turn in a prc overrides it.
+        'mickeyTurn': 180.0,
         'loopyLane': (Point3(81.4, -47.4, 6.1), 61),
         # On the pond's east bank, looking over the water.
         'fisherman': (Point3(-19, 14, -1.33), 90),
@@ -329,7 +332,8 @@ class SurvivalArena:
                     pos, h = node.getPos(render), node.getH(render)
                     forward = Vec3(-math.sin(math.radians(h)), math.cos(math.radians(h)), 0)
                     spot = pos + forward * self.map['mickeyStep']
-                    return self.placeOnGround(spot[0], spot[1], h)
+                    turn = float(ConfigVariableDouble('survival-mickey-turn', self.map.get('mickeyTurn', 0.0)).getValue())
+                    return self.placeOnGround(spot[0], spot[1], h + turn)
         best = None
         for node in self.geom.findAllMatches('**/tunnel_origin'):
             h = node.getH(render)
