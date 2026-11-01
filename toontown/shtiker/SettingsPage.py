@@ -19,6 +19,15 @@ CAPTURE_PREFIX = 'settings-capture-'
 CAPTURE_EVENT = 'settings-capture-key'
 
 
+def fitText(widget, scale, maxWidth):
+    # Shrinks a button's words to fit inside it ("Camera Down (Page Down)"
+    # ran over the edges).
+    widget['text_scale'] = scale
+    width = widget.component('text0').textNode.getWidth() * scale
+    if width > maxWidth:
+        widget['text_scale'] = (scale * maxWidth / width, scale)
+
+
 class SettingsPage(ShtikerPage.ShtikerPage):
     notify = DirectNotifyGlobal.directNotify.newCategory('SettingsPage')
 
@@ -43,15 +52,20 @@ class SettingsPage(ShtikerPage.ShtikerPage):
         rolloverColor = (0.15, 0.82, 1.0, 1)
         disabledColor = (1.0, 0.98, 0.15, 1)
         self.tabs = []
-        for mode, text, surface, imagePos, x in (
-                (GENERAL, TTLocalizer.SettingsPageGeneralTab, 'polySurface1', (0.55, 1, -0.91), -0.55),
-                (KEYBOARD, TTLocalizer.SettingsPageKeyboardTab, 'polySurface2', (0.12, 1, -0.91), -0.13),
-                (CONTROLLER, TTLocalizer.SettingsPageControllerTab, 'polySurface3', (-0.28, 1, -0.91), 0.28)):
+        # (mode, word, tab picture, picture offset, x, middle of the picture)
+        for mode, text, surface, imagePos, x, center in (
+                (GENERAL, TTLocalizer.SettingsPageGeneralTab, 'polySurface1', (0.55, 1, -0.91), -0.55, 0.131),
+                (KEYBOARD, TTLocalizer.SettingsPageKeyboardTab, 'polySurface2', (0.12, 1, -0.91), -0.13, 0.13),
+                (CONTROLLER, TTLocalizer.SettingsPageControllerTab, 'polySurface3', (-0.28, 1, -0.91), 0.28, 0.148)):
             tab = DirectButton(parent=self, relief=None, text=text, text_scale=0.06, text_align=TextNode.ALeft,
                                text_pos=(-0.01, 0.0, 0.0), image=gui.find('**/tabs/' + surface), image_pos=imagePos,
                                image_hpr=(0, 0, -90), image_scale=(0.033, 0.033, 0.035), image_color=normalColor,
                                image1_color=clickColor, image2_color=rolloverColor, image3_color=disabledColor,
                                text_fg=TEXT_COLOR, command=self.setMode, extraArgs=[mode], pos=(x, 0, 0.775))
+            # The word in the middle of its tab (the tab pictures sit at
+            # different offsets from their buttons).
+            tab['text_align'] = TextNode.ACenter
+            tab['text_pos'] = (center, 0.0)
             self.tabs.append(tab)
         gui.removeNode()
         self.frames = [DirectFrame(parent=self, relief=None) for i in range(3)]
@@ -71,14 +85,15 @@ class SettingsPage(ShtikerPage.ShtikerPage):
             ('cursor', TTLocalizer.SettingsPageCursor, 1, 10, 1, KeyBindings.getCursorSpeed,
              KeyBindings.setCursorSpeed),
         )
-        z = 0.42
+        z = 0.45
         for name, label, low, high, step, getter, setter in rows:
+            # The name on its own line, the slider and its value under it.
             DirectLabel(parent=frame, relief=None, text=label, text_align=TextNode.ALeft, text_scale=0.055,
                         text_fg=TEXT_COLOR, pos=(-0.72, 0, z))
             value = DirectLabel(parent=frame, relief=None, text='', text_align=TextNode.ACenter, text_scale=0.055,
-                                text_fg=TEXT_COLOR, pos=(0.62, 0, z))
+                                text_fg=TEXT_COLOR, pos=(0.62, 0, z - 0.085))
             slider = DirectSlider(parent=frame, range=(low, high), value=getter(), pageSize=step, scrollSize=step,
-                                  pos=(0.12, 0, z + 0.015), scale=(0.38, 1, 0.4), frameColor=(0.55, 0.45, 0.3, 1),
+                                  pos=(-0.06, 0, z - 0.07), scale=(0.6, 1, 0.4), frameColor=(0.55, 0.45, 0.3, 1),
                                   thumb_relief=DGG.FLAT, thumb_frameColor=(1, 0.85, 0.2, 1),
                                   thumb_frameSize=(-0.05, 0.05, -0.1, 0.1))
             slider['command'] = self.__sliderMoved
@@ -86,7 +101,7 @@ class SettingsPage(ShtikerPage.ShtikerPage):
             self.sliders[name] = (slider, value, low, high, step, getter, setter)
             z -= 0.2
         DirectLabel(parent=frame, relief=None, text=TTLocalizer.SettingsPageCursorHelp, text_align=TextNode.ALeft,
-                    text_scale=0.04, text_wordwrap=34, text_fg=TEXT_COLOR, pos=(-0.72, 0, z + 0.07))
+                    text_scale=0.04, text_wordwrap=34, text_fg=TEXT_COLOR, pos=(-0.72, 0, z + 0.04))
         DirectButton(parent=frame, relief=None, image=self.btnImage, image_scale=(0.9, 1, 1), text=TTLocalizer.SettingsPageReset,
                      text_scale=0.05, text_pos=(0, -0.02), pos=(0, 0, -0.5), command=self.__resetGeneral)
 
@@ -211,6 +226,7 @@ class SettingsPage(ShtikerPage.ShtikerPage):
     def __refreshPad(self):
         for button, widget in self.padButtons.items():
             widget['text'] = KeyBindings.PAD_LABELS.get(KeyBindings.getPad(button), '-')
+            fitText(widget, 0.036, 0.36)
 
     def __openPadList(self, button):
         # A popup listing every action; picking one gives it to the button.
@@ -230,11 +246,12 @@ class SettingsPage(ShtikerPage.ShtikerPage):
         for i, action in enumerate(order):
             row, col = divmod(i, columns)
             chosen = action == current
-            DirectButton(parent=popup, relief=None, image=self.btnImage, image_scale=(0.82, 1, 0.85),
+            choice = DirectButton(parent=popup, relief=None, image=self.btnImage, image_scale=(0.82, 1, 0.85),
                          image_color=(0.55, 1, 0.55, 1) if chosen else (1, 1, 1, 1),
                          text=KeyBindings.PAD_LABELS[action], text_scale=0.034, text_pos=(0, -0.012),
                          pos=(-0.5 + col * 0.5, 0, top - 0.2 - row * 0.1),
                          command=self.__pickPad, extraArgs=[button, action])
+            fitText(choice, 0.034, 0.32)
         DirectButton(parent=popup, relief=None, image=self.btnImage, image_scale=(0.7, 1, 0.9),
                      text=TTLocalizer.SettingsPageCancel, text_scale=0.045, text_pos=(0, -0.015),
                      pos=(0, 0, -top + 0.08), command=self.__closePadList)
