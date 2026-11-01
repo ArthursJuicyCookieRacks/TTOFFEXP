@@ -36,12 +36,21 @@ ROUTE_EVERY = 0.35
 ROUTE_LOOKAHEAD = 5
 # Footsteps: heard this far, by the nearest few cogs.
 STEP_SOUND = 'phase_5/audio/sfx/ENC_cogside_step.ogg'
-STEP_HEAR = 45.0
-STEP_VOLUME = 0.35
+# Arthur: cogs behind the toon couldn't be heard. Louder, heard further,
+# and fading slowly so the ones just behind are clear.
+STEP_HEAR = 70.0
+STEP_VOLUME = 0.8
+# Now and then a cog talks the way it does on the streets (its murmurs,
+# statements and questions), loudest close by.
+VOICE_EVERY = (4.0, 11.0)
+VOICE_HEAR = 55.0
+VOICE_VOLUME = 0.7
 # How long a heading chosen to get round a wall is kept.
 DETOUR_TIME = 0.8
 GROUND_EVERY = 0.1
 HEAD_FRACTION = 0.72
+# The neck counts as the head, a little below where the head joint is.
+NECK_MARGIN = 0.04
 POP_TIME = 0.35
 HURT_FLASH = 0.12
 
@@ -75,6 +84,7 @@ class SurvivalCog:
         self.speed = G.COG_SPEEDS[self.speedClass]
         self.radius = self.suit.getRadius()
         self.height = self.suit.height
+        self.headFraction = HEAD_FRACTION
         self.state = 'landing'
         self.target = None
         self.lure = None
@@ -98,6 +108,7 @@ class SurvivalCog:
         self.stillSince = 0.0
         self.stepPhase = random.random()
         self.stepSound = None
+        self.nextVoice = globalClock.getFrameTime() + random.uniform(*VOICE_EVERY)
         self.suit.setPos(landing)
         self.suit.setH(random.uniform(0, 360))
         self.__flyIn(landing)
@@ -133,7 +144,21 @@ class SurvivalCog:
             self.prop = None
         self.suit.clearTransparency()
         self.state = 'chase'
+        self.__findNeck()
         self.__moveAnim(self.speed if self.lure is None else max(self.speed, G.COG_SPEEDS[-1]))
+
+    def __findNeck(self):
+        """Where the head starts: hits from the neck up are headshots."""
+        try:
+            self.suit.pose('neutral', 0)
+            self.suit.update(force=True)
+            head = self.suit.find('**/joint_head')
+            if not head.isEmpty() and self.height > 0:
+                z = head.getZ(render) - self.pos[2]
+                self.headFraction = max(0.5, min(0.85, z / self.height - NECK_MARGIN))
+        except Exception:
+            pass
+        self.anim = None
 
     def __moveAnim(self, speed):
         """Walk or run with the feet keeping up with the ground: the cycle
@@ -156,11 +181,29 @@ class SurvivalCog:
             self.stepSound = base.loader.loadSfx(STEP_SOUND)
         if self.stepSound:
             dist = (camera.getPos(render) - self.suit.getPos(render)).length()
-            volume = STEP_VOLUME * max(0.0, 1.0 - dist / STEP_HEAR)
+            volume = STEP_VOLUME * max(0.0, 1.0 - dist / STEP_HEAR) ** 0.6
             if volume > 0.01:
                 self.stepSound.setVolume(volume)
                 self.stepSound.setPlayRate(random.uniform(0.9, 1.1))
                 self.stepSound.play()
+
+    def __talk(self, now):
+        if now < self.nextVoice:
+            return
+        self.nextVoice = now + random.uniform(*VOICE_EVERY)
+        # Only the nearest few talk, so a crowd isn't a din.
+        if not self.game.wantCogSteps(self):
+            return
+        try:
+            sounds = [snd for snd in self.suit.getDialogueArray() if snd]
+        except Exception:
+            sounds = []
+        if not sounds:
+            return
+        dist = (camera.getPos(render) - self.suit.getPos(render)).length()
+        volume = VOICE_VOLUME * max(0.0, 1.0 - dist / VOICE_HEAR)
+        if volume > 0.02:
+            base.playSfx(random.choice(sounds[:4]), volume=volume)
 
     def __loop(self, anim, rate=1.0):
         if self.anim != (anim, rate):
@@ -231,6 +274,7 @@ class SurvivalCog:
                     routed=self.routed)
         self.__moveAnim(speed)
         self.__footstep(speed, dt)
+        self.__talk(now)
 
     def __clearWide(self, a, b):
         """A walk from a to b with room for the cog's body: the middle line
@@ -359,15 +403,28 @@ class SurvivalCog:
         if now >= self.nextGround:
             self.nextGround = now + GROUND_EVERY
             z = self.arena.nav.groundZ(new[0], new[1], pos[2])
-            if z is not None:
-                new.setZ(z)
-            else:
-                new.setZ(pos[2])
+            if z is None:
+                # Off a ledge deeper than a step: down to the floor below
+                # (before, the cog kept its height and walked on air).
+                low = self.arena.groundZ(new[0], new[1])
+                if low is not None and low < pos[2]:
+                    z = low
+            new.setZ(z if z is not None else pos[2])
         else:
             new.setZ(pos[2])
         self.pos = new
         self.suit.setPos(new)
         self.__face(new + direction)
+
+    def nudge(self, dx, dy):
+        """Pushed aside by a cog it walked into (SurvivalGame keeps them
+        from standing in each other)."""
+        a = Point3(self.pos[0], self.pos[1], self.pos[2] + 2)
+        b = Point3(self.pos[0] + dx, self.pos[1] + dy, self.pos[2] + 2)
+        if not self.arena.clearLine(a, b):
+            return
+        self.pos = Point3(self.pos[0] + dx, self.pos[1] + dy, self.pos[2])
+        self.suit.setPos(self.pos)
 
     def __face(self, point):
         d = point - self.pos
@@ -386,7 +443,9 @@ class SurvivalCog:
         self.suit.play(anim)
 
     def __hit(self):
-        if self.target is None or not self.target.alive():
+        # A cog popped mid-swing never lands its hit (Arthur: one popped by
+        # a melee still knocked the toon down).
+        if self.dead or self.target is None or not self.target.alive():
             return
         flat = Point3(self.target.getPos()[0], self.target.getPos()[1], 0) - Point3(self.pos[0], self.pos[1], 0)
         if flat.length() <= G.COG_REACH + self.radius + 1.0:
@@ -419,13 +478,16 @@ class SurvivalCog:
         hitZ = origin[2] + direction[2] * t
         if hitZ < self.pos[2] - 0.5 or hitZ > self.pos[2] + self.height + 0.5:
             return None
-        return t, hitZ > self.pos[2] + self.height * HEAD_FRACTION
+        return t, hitZ > self.pos[2] + self.height * self.headFraction
 
     def hurt(self, damage, head=False, bonk=False):
         if self.dead:
             return 0
         if self.game.power('instapop'):
             damage = self.hp
+        elif head:
+            # Neck and up: BO1's headshot damage.
+            damage = int(damage * G.HEAD_MULT)
         self.hp -= damage
         self.__flash()
         if self.hp <= 0:
@@ -435,7 +497,10 @@ class SurvivalCog:
 
     def __flash(self):
         suit = self.suit
-        Sequence(Func(suit.setColorScale, 1, 0.45, 0.45, 1), Wait(HURT_FLASH), Func(suit.setColorScale, 1, 1, 1, 1)).start()
+        if getattr(self, 'flashTrack', None):
+            self.flashTrack.finish()
+        self.flashTrack = Sequence(Func(suit.setColorScale, 1, 0.45, 0.45, 1), Wait(HURT_FLASH), Func(suit.setColorScale, 1, 1, 1, 1))
+        self.flashTrack.start()
 
     def pop(self, head=False, bonk=False):
         """Gears everywhere, the way a cog goes in battle, but quick."""
@@ -443,6 +508,7 @@ class SurvivalCog:
             return
         self.dead = True
         self.state = 'dead'
+        self.swingAt = None
         if self.track:
             self.track.finish()
             self.track = None
@@ -480,6 +546,9 @@ class SurvivalCog:
         self.destroy()
 
     def destroy(self):
+        if getattr(self, 'flashTrack', None):
+            self.flashTrack.pause()
+            self.flashTrack = None
         if self.track:
             self.track.finish()
             self.track = None

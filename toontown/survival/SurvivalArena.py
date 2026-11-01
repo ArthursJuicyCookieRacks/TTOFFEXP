@@ -11,7 +11,7 @@ import math
 import random
 
 from direct.directnotify import DirectNotifyGlobal
-from panda3d.core import (Fog, BitMask32, CollisionHandlerQueue, CollisionNode, CollisionRay, CollisionSegment, CollisionTraverser,
+from panda3d.core import (Fog, BitMask32, CollisionHandlerQueue, CollisionNode, CollisionRay, CollisionSegment, CollisionTraverser, CollisionTube,
                           CompassEffect, ModelPool, NodePath, Point3, TexturePool, Vec3, Vec4)
 
 from toontown.dna.DNAStorage import DNAStorage
@@ -35,6 +35,8 @@ GAZEBO = (Point3(-60.94, -8.8, -2), -178)
 # railing behind him so the open lid never reaches it.
 TRUNK_BESIDE = 6.0
 TRUNK_AHEAD = 3.0
+TRUNK_FROM_GAZEBO = 17.0
+TRUNK_RADIUS = 1.7
 # The player starts on the grass in front of Toon Hall.
 PLAYER_START = (Point3(0, -20, 0), 0)
 # Cogs land out of sight, this far out from the middle and this far from
@@ -281,16 +283,28 @@ class SurvivalArena:
         return self.placeOnGround(origin[0], origin[1], h)
 
     def trunkSpot(self):
-        # Directly left of the fisherman as the player faces him (his own
-        # right), level with him and facing the same way, so the lid opens
-        # toward the gazebo behind without reaching it.
-        origin, h = FISHERMAN
-        right = Vec3(math.cos(math.radians(h)), math.sin(math.radians(h)), 0)
-        forward = Vec3(-math.sin(math.radians(h)), math.cos(math.radians(h)), 0)
-        spot = origin + right * TRUNK_BESIDE + forward * TRUNK_AHEAD
-        # The trunk model's open side is its -y, so it turns about to face
-        # the playground the way the fisherman does.
-        return self.placeOnGround(spot[0], spot[1], h + 180)
+        # On the far side of the gazebo from the fisherman (Arthur), out
+        # past its railing, its open side to the playground and its back to
+        # the gazebo.
+        middle = GAZEBO[0]
+        away = Vec3(middle[0] - FISHERMAN[0][0], middle[1] - FISHERMAN[0][1], 0)
+        away.normalize()
+        spot = middle + away * TRUNK_FROM_GAZEBO
+        # Heading 0 faces +y; the trunk's back (+y) toward the gazebo.
+        h = math.degrees(math.atan2(away[0], -away[1]))
+        return self.placeOnGround(spot[0], spot[1], h)
+
+    def addBlocker(self, pos, radius, height=3.0):
+        """Something solid where the playground had nothing (the trunk):
+        a wall the toons walk round and the cogs' way-finding sees."""
+        tube = CollisionTube(0, 0, 0.2, 0, 0, height, radius)
+        node = CollisionNode('survivalBlocker')
+        node.addSolid(tube)
+        node.setIntoCollideMask(ToontownGlobals.WallBitmask)
+        node.setFromCollideMask(BitMask32.allOff())
+        path = self.root.attachNewNode(node)
+        path.setPos(pos)
+        return path
 
     def placeOnGround(self, x, y, h=0.0):
         z = self.groundZ(x, y)

@@ -28,7 +28,8 @@ from toontown.survival.SurvivalStations import FishermanStation, MickeyStation, 
 from toontown.suit import SuitDNA
 from toontown.toonbase import ToontownGlobals
 
-MUSIC = 'phase_8/audio/bgm/DL_nbrhood.ogg'
+# The cog battle music (Arthur).
+MUSIC = 'phase_3.5/audio/bgm/encntr_general_bg.ogg'
 SNATCHER_SOUND = 'phase_5/audio/sfx/lightning_1.ogg'
 # The round changes to the jingle a trolley game ends with (Arthur).
 ROUND_SOUND = 'phase_4/audio/sfx/MG_win.ogg'
@@ -39,8 +40,10 @@ PICKUP_RANGE = 3.5
 # The player's body can't go into a cog's: it is pushed out to this far
 # past the cog's radius.
 PLAYER_RADIUS = 1.3
+# Two cogs keep at least this share of their two radii between them.
+COG_SPACING = 0.85
 # Only the nearest few cogs are heard stepping.
-STEP_COGS = 5
+STEP_COGS = 8
 TOUCH_SETTING = ('survival', 'best-round')
 # Model, piece and scale of the picture over each drop.
 POWER_ICONS = {'maxgags': ('phase_3.5/models/gui/inventory_icons', '**/inventory_cake', 1.2),
@@ -177,6 +180,7 @@ class SurvivalGame(DirectObject):
         self.roundChangeAt = 0.0
         self.cogSerial = 0
         self.lastBonk = -10.0
+        self.toonadoAt = -10.0
         self.music = None
         self.stepCogs = set()
         self.nextStepPick = 0.0
@@ -197,6 +201,9 @@ class SurvivalGame(DirectObject):
         base.camLens.setNear(0.3)
         start, h = G.PLAYER_START if hasattr(G, 'PLAYER_START') else (Point3(0, -20, 0), 0)
         start, h = self.arena.placeOnGround(start[0], start[1], h)
+        # The trunk is solid: nobody walks through it (Arthur).
+        from toontown.survival.SurvivalArena import TRUNK_RADIUS
+        self.arena.addBlocker(self.arena.trunkSpot()[0], TRUNK_RADIUS)
         self.arena.buildReach(start)
         self.player = SurvivalPlayer(self, start, h)
         self.hud = SurvivalHUD(self, self.dna)
@@ -293,10 +300,19 @@ class SurvivalGame(DirectObject):
         self.roundChangeAt = globalClock.getFrameTime() + G.INTERMISSION
         self.hud.say('Round %d cleared!' % self.roundNum, 3.0)
         if self.snatcherRound:
-            # BO1: a Max Ammo where the last hound fell.
+            # BO1: a Max Ammo where the last hound fell; if a Toonado got
+            # the last one, right in front of the player instead.
             self.arena.setFog(False)
-            pos = self.lastPop if self.lastPop is not None else self.player.getPos()
-            self.drops.append(PowerDrop(self, 'maxgags', pos, globalClock.getFrameTime()))
+            now = globalClock.getFrameTime()
+            pos = self.lastPop
+            if pos is None or now - self.toonadoAt < 1.0:
+                pos = self.player.getPos() + self.player.getFlatForward() * 5.0
+                ground = self.arena.groundZ(pos[0], pos[1])
+                if ground is not None and abs(ground - pos[2]) < 4.0:
+                    pos.setZ(ground)
+                else:
+                    pos = self.player.getPos()
+            self.drops.append(PowerDrop(self, 'maxgags', pos, now))
         self.count('rounds cleared')
         # BO1: the fallen get up between rounds.
         for npc in self.npcs:
@@ -353,6 +369,7 @@ class SurvivalGame(DirectObject):
         for cog in list(self.cogs):
             if not cog.dead:
                 cog.tick(dt, now)
+        self.__keepCogsApart()
         self.__keepOutOfCogs()
         for npc in self.npcs:
             npc.tick(dt, now)
@@ -383,6 +400,28 @@ class SurvivalGame(DirectObject):
             self.hud.setPrompt(self.__prompt())
             self.hud.lowLaff(self.player.hp < G.LOW_HP and not self.player.down)
         return task.cont
+
+    def __keepCogsApart(self):
+        """Cogs in a crowd never stand in (or on) each other: any two that
+        overlap are pushed apart, half each."""
+        cogs = [c for c in self.cogs if not c.dead and c.state in ('chase', 'swing')]
+        for i in range(len(cogs)):
+            a = cogs[i]
+            for j in range(i + 1, len(cogs)):
+                b = cogs[j]
+                dx = b.pos[0] - a.pos[0]
+                dy = b.pos[1] - a.pos[1]
+                room = (a.radius + b.radius) * COG_SPACING
+                d2 = dx * dx + dy * dy
+                if d2 >= room * room:
+                    continue
+                d = math.sqrt(d2)
+                if d < 0.01:
+                    angle = random.uniform(0, 6.283)
+                    dx, dy, d = math.cos(angle), math.sin(angle), 1.0
+                push = (room - d) * 0.5 / d
+                a.nudge(-dx * push, -dy * push)
+                b.nudge(dx * push, dy * push)
 
     def __keepOutOfCogs(self):
         """The player can't walk through a cog: a body that ends up inside
@@ -489,6 +528,8 @@ class SurvivalGame(DirectObject):
             amount *= 2
         self.beans += amount
         self.hud.setBeans(self.beans)
+        if not silent and amount > 0:
+            self.hud.beanPop(amount)
         self.count('beans earned', amount)
 
     def spend(self, cost):
@@ -522,7 +563,11 @@ class SurvivalGame(DirectObject):
         chance = G.DROP_CHANCE + (G.DROP_CHANCE_STEP if not self.drops else 0)
         if random.random() >= chance:
             return
-        key = random.choice(G.POWERUPS)
+        choices = G.POWERUPS
+        if self.snatcherRound:
+            # The round's own Max Gags comes from the last one: no second.
+            choices = [k for k in choices if k != 'maxgags']
+        key = random.choice(choices)
         if key == 'trunksale' and self.power('trunksale'):
             key = 'doublebeans'
         now = globalClock.getFrameTime()
@@ -539,9 +584,12 @@ class SurvivalGame(DirectObject):
         if key == 'maxgags':
             self.gags.maxGags()
         elif key == 'toonado':
-            # BO1's Nuke: every cog on the ground pops; 400 beans.
+            # BO1's Nuke: every cog pops, swinging or still flying in (before,
+            # only walking ones did); 400 beans. On a Gag-Snatcher round the
+            # Max Gags from the last one lands right in front of the player.
+            self.toonadoAt = now
             for cog in list(self.cogs):
-                if not cog.dead and cog.state == 'chase':
+                if not cog.dead:
                     cog.lastHitByNPC = False
                     cog.hurt(cog.hp + 1)
             self.earn(G.BEANS_TOONADO)
@@ -587,6 +635,11 @@ class SurvivalGame(DirectObject):
         if action == 'pause':
             self.togglePause()
             return
+        if action == 'tntUp':
+            # Always heard, or a stick let go on the pause screen would cook
+            # in the hand for good.
+            self.gags.letGoTnt()
+            return
         if self.paused or self.inMenu() or self.player.down:
             return
         if action == 'reload':
@@ -595,6 +648,8 @@ class SurvivalGame(DirectObject):
             self.gags.switchTo(0)
         elif action == 'gag2':
             self.gags.switchTo(1)
+        elif action == 'gag3':
+            self.gags.switchTo(2)
         elif action == 'swap':
             pos = self.player.getPos()
             for station in self.stations:
@@ -637,6 +692,9 @@ class SurvivalGame(DirectObject):
             self.menuStation = None
             station.closeMenu()
         self.gags.cancelReload()
+        self.gags.dropTnt()
+        if self.hasTonic('tracks'):
+            self.gags.dropExtraGags()
         self.hud.setDowned(True)
         self.beans = int(self.beans * (1 - G.DOWN_LOSS))
         self.hud.setBeans(self.beans)
@@ -730,6 +788,8 @@ class SurvivalGame(DirectObject):
     def resume(self):
         self.thawClock()
         self.paused = False
+        # Nothing pressed on the pause screen carries over.
+        self.player.firing = False
         self.hud.closeCard()
         if self.menuStation is not None:
             station = self.menuStation
