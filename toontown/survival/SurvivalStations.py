@@ -116,6 +116,23 @@ class MickeyStation(Station):
         crate.setPos(0, self.CRATE_Y, 0)
         crate.setScale(1.0, 0.95, self.CRATE_HEIGHT / 2.1061)
         self.crate = crate
+        # Odd boxes and barrels washed up round him (Arthur), so from the
+        # sides and behind nobody sees he has no legs.
+        for model, pos, h, scale in self.DEBRIS:
+            junk = loader.loadModel(model)
+            junk.reparentTo(self.node)
+            junk.setPosHprScale(pos, (h, 0, 0), scale)
+
+    BARREL = 'phase_6/models/props/small_round_barrel'
+    DEBRIS = (
+        (CRATE, (1.85, 0.2, 0), 18, (0.5, 0.5, 0.55)),
+        (CRATE, (1.7, 0.1, 1.15), 40, (0.36, 0.36, 0.36)),
+        (CRATE, (-1.85, 0.3, 0), -14, (0.52, 0.52, 0.6)),
+        (BARREL, (-1.75, -0.9, 0), 0, (0.9, 0.9, 0.9)),
+        (BARREL, (1.75, -1.0, 0), 70, (0.85, 0.85, 0.8)),
+        (CRATE, (0.2, -1.55, 0), 8, (0.62, 0.42, 0.62)),
+        (CRATE, (-0.9, -1.4, 1.3), -25, (0.35, 0.35, 0.35)),
+    )
 
     def prompt(self):
         gag = self.game.gags.gag
