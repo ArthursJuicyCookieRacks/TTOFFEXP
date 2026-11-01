@@ -58,8 +58,9 @@ FloorColorScale = (1.25, 1.22, 1.22, 1)
 ElevatorPosHpr = (0, -74.5, 0, 180, 0, 0)
 ExitPosHpr = (0, 74.5, 0, 0, 0, 0)
 StomperModel = 'phase_5/models/cogdominium/ttoff_m_ara_ccg_stompOMatic'
-HangingMagnets = (Point3(-30, 64, 40), Point3(-10, 68, 37), Point3(26, 64, 39),
-                  Point3(66, 22, 41), Point3(64, -30, 38))
+# No hanging magnets for show: only the four cranes' magnets, so it's
+# clear which ones work.
+HangingMagnets = ()
 
 # --- The cogs ---
 
@@ -91,8 +92,21 @@ CogHitHeight = 7.5
 # By difficulty (0 for a Toontown Central field office, up to 1 for
 # Donald's Dreamland): seconds between cogs, how many walk at once, and
 # how many coins fill the machine.
+# An office's difficulty mixes its playground with its level (the
+# building's difficulty, 0 for a level 1 office up to 8 for level 5), the
+# level counting for most of it, so every level is harder than the one
+# below it.
+LevelDifficultyMax = 8.0
+LevelWeight = 0.65
 SpawnPeriodRange = (9.0, 4.5)
 MaxCogsRange = (3, 6)
+# How much faster than a street cog they walk.
+WalkSpeedScaleRange = (1.0, 1.45)
+# Laff every toon loses each time a cog gets a coin into the machine, and
+# again each time it stomps a barrel. Toons can go sad: a 15 laff toon
+# only gets through if they play it really well.
+CoinDamageRange = (1, 4)
+StompDamageRange = (2, 5)
 CoinsPerStomp = 3
 NumBarrels = 7
 # The toons share this much laff for each barrel still whole at the end.

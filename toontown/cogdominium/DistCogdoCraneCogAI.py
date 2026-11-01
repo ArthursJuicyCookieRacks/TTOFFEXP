@@ -10,18 +10,19 @@ class DistCogdoCraneCogAI(DistributedObjectAI):
     # dazed for a moment and flies off with nothing.
     notify = DirectNotifyGlobal.directNotify.newCategory("DistCogdoCraneCogAI")
 
-    def __init__(self, air, craneGame, dna, entranceId, spawnTime):
+    def __init__(self, air, craneGame, dna, entranceId, spawnTime, walkSpeed=Consts.CogWalkSpeed):
         DistributedObjectAI.__init__(self, air)
         self.craneGame = craneGame
         self.dna = dna
         self.entranceId = entranceId
         self.spawnTime = spawnTime
+        self.walkSpeed = walkSpeed
         self.state = 'Walk'
         self.stunTime = 0
 
     def generate(self):
         DistributedObjectAI.generate(self)
-        walk = (Consts.HallwayDistance - Consts.MachineDistance) / Consts.CogWalkSpeed
+        walk = (Consts.HallwayDistance - Consts.MachineDistance) / self.walkSpeed
         taskMgr.doMethodLater(walk, self.__atMachine, self.uniqueName('atMachine'))
 
     def delete(self):
@@ -38,7 +39,7 @@ class DistCogdoCraneCogAI(DistributedObjectAI):
         return self.dna.makeNetString()
 
     def getSpawnInfo(self):
-        return [self.entranceId, self.__networkTime(self.spawnTime)]
+        return [self.entranceId, self.__networkTime(self.spawnTime), int(round(self.walkSpeed * 100))]
 
     def __networkTime(self, realTime):
         from direct.distributed.ClockDelta import globalClockDelta

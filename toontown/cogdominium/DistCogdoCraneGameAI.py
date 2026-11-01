@@ -56,7 +56,25 @@ class DistCogdoCraneGameAI(DistCogdoGameAI):
         self.sendUpdate('setBarrels', self.getBarrels())
 
     def getDifficulty(self):
-        return DistCogdoGameAI.getDifficulty(self)
+        # The playground's difficulty and the office's level together.
+        zone = DistCogdoGameAI.getDifficulty(self)
+        bldg = getattr(self.interior, 'bldg', None)
+        level = getattr(bldg, 'difficulty', 0) / Consts.LevelDifficultyMax
+        level = max(0.0, min(1.0, level))
+        return (1.0 - Consts.LevelWeight) * zone + Consts.LevelWeight * level
+
+    def __hurtToons(self, damageRange):
+        damage = int(round(Consts.lerpDifficulty(damageRange, self.getDifficulty())))
+        for avId in list(self.getActiveToons()):
+            toon = self.air.doId2do.get(avId)
+            if toon is not None and hasattr(toon, 'takeDamage'):
+                self.damageToon(avId, damage)
+
+    def toonWentSad(self, avId):
+        # Off their crane; the game goes on for the others.
+        for crane in self.cranes:
+            crane.removeToon(avId)
+        DistCogdoGameAI.toonWentSad(self, avId)
 
     # --- The game ---
 
@@ -107,7 +125,8 @@ class DistCogdoCraneGameAI(DistCogdoGameAI):
         level = 1 + int(difficulty * 4) + random.randint(0, 2)
         dna = SuitDNA.SuitDNA()
         dna.newSuitRandom(level=min(level, 7), dept='m')
-        cog = DistCogdoCraneCogAI(self.air, self, dna, lane, globalClock.getRealTime())
+        speed = Consts.CogWalkSpeed * Consts.lerpDifficulty(Consts.WalkSpeedScaleRange, difficulty)
+        cog = DistCogdoCraneCogAI(self.air, self, dna, lane, globalClock.getRealTime(), speed)
         cog.generateWithRequired(self.zoneId)
         self.cogs[cog.doId] = cog
 
@@ -120,10 +139,14 @@ class DistCogdoCraneGameAI(DistCogdoGameAI):
         if self.finished or self.barrelsLeft <= 0:
             return
         self.coins += 1
+        # The cog got its coin in: every toon feels it.
+        self.__hurtToons(Consts.CoinDamageRange)
         if self.coins >= Consts.CoinsPerStomp:
             self.coins = 0
             self.barrelsLeft -= 1
             self.sendUpdate('stomp', [self.barrelsLeft, self.getNetworkTime()])
+            # And a barrel of their laff gets stomped.
+            self.__hurtToons(Consts.StompDamageRange)
         self.d_setBarrels()
         if self.barrelsLeft <= 0:
             # Every barrel is smashed: nothing left to save up here.

@@ -2432,7 +2432,7 @@ dclass DistCogdoCraneMoneyBag : DistCogdoCraneObject {
 dclass DistCogdoCraneCog : DistributedObject {
   setGameId(uint32 gameId) required broadcast ram;
   setDNAString(blob dnaString) required broadcast ram;
-  setSpawnInfo(uint8 entranceId, int16 timestamp) required broadcast ram;
+  setSpawnInfo(uint8 entranceId, int16 timestamp, uint16 walkSpeed) required broadcast ram;
   setStunned(int16 timestamp) broadcast ram;
   insertCoin(int16 timestamp) broadcast;
 };

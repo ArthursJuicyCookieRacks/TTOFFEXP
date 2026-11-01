@@ -56,9 +56,11 @@ class DistCogdoCraneGame(CogdoCraneGameBase, DistCogdoGame):
         self.timer.stash()
 
     def disable(self):
-        self.timer.destroy()
-        self.timer = None
+        # Leave the game state first: exitGame still uses the timer.
         DistCogdoGame.disable(self)
+        if self.timer is not None:
+            self.timer.destroy()
+            self.timer = None
 
     # --- Loading ---
 
@@ -261,8 +263,9 @@ class DistCogdoCraneGame(CogdoCraneGameBase, DistCogdoGame):
         taskMgr.remove(self._physicsTask)
         taskMgr.remove(self._hitTask)
         taskMgr.remove(self._roomTask)
-        self.timer.stop()
-        self.timer.stash()
+        if self.timer is not None:
+            self.timer.stop()
+            self.timer.stash()
         DistCogdoGame.exitGame(self)
 
     def enterFinish(self):

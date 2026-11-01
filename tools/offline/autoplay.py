@@ -882,13 +882,13 @@ def playCogdoCrane(dist):
             base.screenshot(os.path.join(shots, 'cash-%02d-play.png' % (10 + n)), defaultFilename=0)
             if n % 2 == 1:
                 shotFrom('cash-%02d-over.png' % (10 + n), Point3(0, -60, 45), Point3(0, 0, 0))
-            log('crane game: %d barrels, %d coins, %d cogs out, %d stunned' % (dist.barrelsLeft, dist.coins, len(dist.cogs), dist.stunCount))
+            log('crane game: %d barrels, %d coins, %d cogs out, %d stunned, laff %d/%d' % (dist.barrelsLeft, dist.coins, len(dist.cogs), dist.stunCount, localAvatar.getHp(), localAvatar.getMaxHp()))
             for c in sorted(dist.cranes.values(), key=lambda c: c.index):
                 pilot = getattr(c, 'pilot', None) or {}
                 log('  crane %d: %s, held %s, arm %.0f, trolley %.1f, magnet %s' % (
                     c.index, pilot.get('mode'), c.heldObject and c.heldObject.doId, c.arm.getH(), c.crane.getY(), c.magnetOn))
         yield sleep(0.5)
-    log('crane game over: %d barrels left' % dist.barrelsLeft)
+    log('crane game over: %d barrels left, laff %d/%d' % (dist.barrelsLeft, localAvatar.getHp(), localAvatar.getMaxHp()))
     yield sleep(4 if video else 1)
     taskMgr.remove('autoplayVideo')
     base.screenshot(os.path.join(shots, 'cash-90-finish.png'), defaultFilename=0)
@@ -903,7 +903,7 @@ def scenarioCogdo(track='s'):
         manager = air.buildingManagers[street]
         block = manager.getToonBlocks()[0]
         building = manager.getBuilding(block)
-        building.cogdoTakeOver(track, 0, 0)
+        building.cogdoTakeOver(track, int(os.environ.get('AUTOPLAY_FO_DIFFICULTY', 0)), 0)
         return block, building.getExteriorAndInteriorZoneId()[0]
 
     block, zoneId = onDistrict(takeOver)
@@ -1935,6 +1935,8 @@ def restock(air, avId):
     # Stands in for a trip to the Gag Shop and the playground between
     # fights, so a new 15-laff toon does not go sad.
     av = air.doId2do[avId]
+    if os.environ.get('AUTOPLAY_LAFF'):
+        av.b_setMaxHp(int(os.environ['AUTOPLAY_LAFF']))
     av.b_setHp(av.getMaxHp())
     av.inventory.maxOutInv()
     av.b_setInventory(av.inventory.makeNetString())

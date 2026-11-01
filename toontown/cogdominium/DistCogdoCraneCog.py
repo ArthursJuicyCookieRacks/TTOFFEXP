@@ -19,6 +19,7 @@ class DistCogdoCraneCog(Suit, DistributedObject):
         self._gameId = 0
         self.entranceId = 0
         self.walkStart = 0
+        self.walkSpeed = GameConsts.CogWalkSpeed
         self.state = 'Walk'
         self.hit = False
         self.prop = None
@@ -60,14 +61,16 @@ class DistCogdoCraneCog(Suit, DistributedObject):
     def _lanePos(self, distance):
         return GameConsts.lanePoint(GameConsts.LaneAngles[self.entranceId], distance)
 
-    def setSpawnInfo(self, entranceId, timestamp):
+    def setSpawnInfo(self, entranceId, timestamp, walkSpeed=0):
         self.entranceId = entranceId
+        # Faster in harder offices.
+        self.walkSpeed = walkSpeed / 100.0 if walkSpeed else GameConsts.CogWalkSpeed
         self.walkStart = globalClockDelta.networkToLocalTime(timestamp, bits=16)
         if self.isGenerated():
             self._startWalk()
 
     def _walkDuration(self):
-        return (GameConsts.HallwayDistance - GameConsts.MachineDistance) / GameConsts.CogWalkSpeed
+        return (GameConsts.HallwayDistance - GameConsts.MachineDistance) / self.walkSpeed
 
     def _startWalk(self):
         self._stopMoveIval()
@@ -100,7 +103,7 @@ class DistCogdoCraneCog(Suit, DistributedObject):
         if self.state != 'Walk':
             return None
         t = globalClock.getFrameTime() - self.walkStart + dt
-        d = GameConsts.HallwayDistance - t * GameConsts.CogWalkSpeed
+        d = GameConsts.HallwayDistance - t * self.walkSpeed
         if d < GameConsts.MachineDistance:
             return None
         return self._lanePos(d)

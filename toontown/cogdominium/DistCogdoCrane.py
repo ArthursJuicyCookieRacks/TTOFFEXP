@@ -823,12 +823,12 @@ class DistCogdoCrane(DistributedObject.DistributedObject, FSM.FSM):
         # passes closest to the crane, or a little ahead of the cog if it
         # is past that), so the bag hangs still over it as the cog walks in.
         now = globalClock.getFrameTime()
-        speed = GameConsts.CogWalkSpeed
         hinge = self.hinge.getPos(render)
         best = None
         for cog in self.craneGame.cogs.values():
             if not cog.canBeHit() or cog.state != 'Walk':
                 continue
+            speed = getattr(cog, 'walkSpeed', GameConsts.CogWalkSpeed)
             dc = GameConsts.HallwayDistance - (now - cog.walkStart) * speed
             angle = GameConsts.LaneAngles[cog.entranceId]
             u = GameConsts.lanePoint(angle, 1)
