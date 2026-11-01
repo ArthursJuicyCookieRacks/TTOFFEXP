@@ -198,10 +198,11 @@ class DownsizerDrive:
                  ('tm', (-55, -32, 0), -20), ('nd', (-90, -35, 0), 60), ('ym', (-85, 4, 0), -90),
                  ('ac', (-72, 30, 0), 200), ('bf', (-15, 62, 0), 180), ('sc', (45, 70, 0), 160),
                  ('mh', (-70, -75, 0), 10), ('gh', (-72, -16.5, 0), 0), ('ms', (84, 82, 0), 225),
-                 ('rb', (-5, 16.5, 0), 180), ('dt', (-95, 60, 0), -60), ('bs', (-104, -94, 0), -45),
+                 ('rb', (-20, 16.5, 0), 180), ('dt', (-95, 60, 0), -60), ('bs', (-104, -94, 0), -45),
                  ('tw', (86, -90, 0), 45), ('sd', (-104, 94, 0), -135), ('pp', (65, 40, 0), 220)]
         for name, pos, h in spots:
-            kit.cogStatue(name, pos, h, skeleton=True)
+            # A bit over game size, to match the scaled-up houses and karts.
+            kit.cogStatue(name, pos, h, skeleton=True).setScale(1.25)
 
     def buildEdges(self):
         kit = self.kit
