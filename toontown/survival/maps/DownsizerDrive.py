@@ -108,7 +108,9 @@ class DownsizerDrive:
         self.picket((-50, 20.5), (-36, 20.5))
         self.picket((-110, -20.5), (-56, -20.5))
         for y in (20.5, -20.5):
-            self.picket((-24, y), (2, y))
+            self.picket((-24, y), (4, y))
+            # Close the corner up to the garage wall.
+            self.picket((4, y), (4, y + (1.6 if y > 0 else -1.6)))
         # And between the front and back yards.
         self.picket((30, 30), (30, 90))
         self.picket((30, -30), (30, -90))
