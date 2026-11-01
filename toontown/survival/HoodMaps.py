@@ -160,7 +160,7 @@ HOOD_MAPS = {
         'upgrader': ('char', 'p', 'Pluto'),
         'spots': {
             # Right in front of Toon HQ's door (Arthur), looking out over the playground.
-            'upgrader': (Point3(-79, 58.7, 6.2), -90),
+            'upgrader': (Point3(-88.6, 60.7, 6.2), -90),
             # On the bank of the fishing hole, facing the playground.
             'fisherman': (Point3(-40, -38, 6.2), -125),
             # Beside the snowman, its lid facing the player's way in.
@@ -187,6 +187,8 @@ HOOD_MAPS = {
         'reachRise': 4.5,
         # The horn slides are only a few feet wide.
         'reachStep': 2.5,
+        # The bowl's floor is at about -15.
+        'lowest': -20,
         'spots': {
             'upgrader': (Point3(40, 60, 6.5), 180),
             'fisherman': (Point3(-40, -40, -14), 90),

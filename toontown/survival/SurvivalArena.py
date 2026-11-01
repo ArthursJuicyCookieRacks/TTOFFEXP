@@ -529,7 +529,7 @@ class SurvivalArena:
 
     def spawnZ(self, x, y):
         z = self.groundZ(x, y)
-        if z is None or z < -8 or self.nav.onStairs(x, y, z):
+        if z is None or z < self.map.get('lowest', -8) or self.nav.onStairs(x, y, z):
             return None
         return z
 
@@ -700,7 +700,9 @@ class SurvivalArena:
                 # Steps and stairs join the walk (a cog follows the player
                 # up into the gazebo) but are never landed on.
                 z = self.groundZ(x, y)
-                if z is not None and z < -8:
+                # Below this is water or off the map (Melodyland's bowl
+                # floor is lower than that).
+                if z is not None and z < self.map.get('lowest', -8):
                     z = None
                 if z is not None and self.nav.onStairs(x, y, z):
                     self.stairs.add(nxt)
