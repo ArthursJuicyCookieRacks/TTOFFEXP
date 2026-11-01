@@ -275,8 +275,10 @@ class RaceGUI:
 
     def enableResultMode(self):
         self.endPanel.enable()
-        if not self.race.circuitLoop:
+        if self.race.raceType != RaceGlobals.Circuit:
             taskMgr.doMethodLater(180, self.endPanel.closeButtonPressed, 'clearRaceEndPanel', extraArgs=[])
+        # A Grand Prix waits for every racer: the last race's points and
+        # tickets come once all have crossed the line (see circuitFinished).
 
     def destroy(self):
         self.disable()

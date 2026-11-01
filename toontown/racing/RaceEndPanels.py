@@ -182,6 +182,11 @@ class RaceResultsPanel(DirectFrame):
             self.notify.debug('Not the last race in a circuit, pressing next race in 30 secs')
             self.circuitFinishSeq.append(Wait(30))
             self.circuitFinishSeq.append(Func(self.raceEndPanel.closeButtonPressed))
+        else:
+            # The end of the Grand Prix: back to the Speedway after a while,
+            # as after any race.
+            self.circuitFinishSeq.append(Wait(180))
+            self.circuitFinishSeq.append(Func(self.raceEndPanel.closeButtonPressed))
         self.circuitFinishSeq.start()
 
     def destroy(self):
@@ -191,7 +196,9 @@ class RaceResultsPanel(DirectFrame):
 
         del self.entryListSeqs
         if self.circuitFinishSeq:
-            self.circuitFinishSeq.finish()
+            # Paused, not finished: finishing would press "Next Race" (or
+            # "Exit") again while the panel is already going away.
+            self.circuitFinishSeq.pause()
             del self.circuitFinishSeq
         del self.entryList
         del self.pointsLabel

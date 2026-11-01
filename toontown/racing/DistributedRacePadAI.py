@@ -2,6 +2,7 @@ from direct.directnotify import DirectNotifyGlobal
 from toontown.racing.DistributedKartPadAI import DistributedKartPadAI
 from toontown.racing.DistributedRaceAI import DistributedRaceAI
 from toontown.racing import RaceGlobals
+from toontown.toonbase import ToontownGlobals
 from direct.fsm.FSM import FSM
 from direct.distributed.ClockDelta import *
 from direct.task import *
@@ -73,7 +74,7 @@ class DistributedRacePadAI(DistributedKartPadAI, FSM):
     
     def changeTrack(self):
         nri = RaceGlobals.getNextRaceInfo(self.trackId, self.nameType, self.index)
-        self.b_setTrackInfo([nri[0], nri[1]])
+        self.b_setTrackInfo([nri[0], raceType(self.air, nri[1])])
         taskMgr.doMethodLater(30, DistributedRacePadAI.changeTrack, 'changeTrack%i' % self.doId, [self])
     
     def updateTimer(self):
@@ -128,7 +129,14 @@ class DistributedRacePadAI(DistributedKartPadAI, FSM):
         race.setZoneId(self.raceZone)
         race.setTrackId(self.trackId)
         race.setRaceType(self.trackType)
-        race.setCircuitLoop([])
+        if self.trackType == RaceGlobals.Circuit:
+            # A Grand Prix: this track and the next ones of its loop, one
+            # after the other, for points (see DistributedRaceAI).
+            loop = RaceGlobals.getCircuitLoop(self.trackId)
+            race.setCircuitLoop(loop[1:])
+            race.circuitFee = RaceGlobals.getEntryFee(self.trackId, self.trackType)
+        else:
+            race.setCircuitLoop([])
         race.setAvatars(avatars)
         race.setStartingPlaces(list(range(len(avatars))))
         race.setLapCount(3)
@@ -174,6 +182,20 @@ class DistributedRacePadAI(DistributedKartPadAI, FSM):
         self.setTrackInfo(trackInfo)
         self.d_setTrackInfo(trackInfo)
 
+def grandPrixRunning(air):
+    manager = getattr(air, 'holidayManager', None)
+    return manager is not None and manager.isHolidayRunning(ToontownGlobals.CIRCUIT_RACING_EVENT,
+                                                           ToontownGlobals.SILLY_SATURDAY_CIRCUIT)
+
+
+def raceType(air, trackType):
+    # On Grand Prix Monday (and Silly Saturday's Grand Prix hour) the Toon
+    # Battle pads race Grand Prix circuits instead.
+    if trackType == RaceGlobals.ToonBattle and grandPrixRunning(air):
+        return RaceGlobals.Circuit
+    return trackType
+
+
 @dnaSpawn(DNANode, 'racing_pad_([0-9]+)_(.*)')
 def spawn(air, zone, element, match):
     index = int(match.group(1))
@@ -183,7 +205,7 @@ def spawn(air, zone, element, match):
     pad.nameType = dest
     pad.index = index
     nri = RaceGlobals.getNextRaceInfo(-1, dest, index)
-    pad.setTrackInfo(nri[:2])
+    pad.setTrackInfo([nri[0], raceType(air, nri[1])])
     pad.generateWithRequired(zone)
     for child in element.children:
         if isinstance(child, DNAProp) and child.code == 'gs_parkingspot':
