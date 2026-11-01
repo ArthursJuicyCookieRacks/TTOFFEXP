@@ -15,7 +15,7 @@ PLAYER_HP = 100
 TONIC_HP = 250
 # A cog's hit, its reach and the time between its swings.
 COG_HIT = 50
-COG_REACH = 3.8
+COG_REACH = 4.6
 COG_SWING_TIME = 1.1
 # Health comes back after a moment out of the cogs' reach.
 REGEN_DELAY = 3.0
@@ -35,10 +35,10 @@ REVERSE_SCALE = 0.7
 SPRINT_SCALE = 1.5
 SPRINT_SPEED = WALK_SPEED * SPRINT_SCALE
 SPRINT_TIME = 4.0
-SPRINT_MIN = 1.0
+SPRINT_MIN = 0.5
 # Seconds to fill an empty sprint meter, after a short breather.
 SPRINT_RECOVER = 5.0
-SPRINT_RECOVER_PAUSE = 0.6
+SPRINT_RECOVER_PAUSE = 0.3
 SPRINT_SODA_SPEED = 1.07
 SPRINT_SODA_TIME = 2.0
 JUMP_FORCE = 24.0
@@ -61,19 +61,20 @@ def cogHp(roundNum):
 
 
 def cogsInRound(roundNum, npcs):
-    early = (6, 8, 13, 18, 24)
+    # Arthur (2026-11-01): more cogs a round and more at once.
+    early = (8, 12, 18, 24, 30)
     if roundNum <= len(early):
-        return early[roundNum - 1] + 2 * npcs
-    share = 0.5 if npcs == 0 else npcs
+        return early[roundNum - 1] + 3 * npcs
+    share = 0.75 if npcs == 0 else npcs
     mult = max(1.0, roundNum / 5.0)
     if roundNum >= 10:
         mult *= roundNum * 0.15
-    return 24 + int(6 * share * mult)
+    return 32 + int(8 * share * mult)
 
 
 def aliveCap(roundNum, npcs):
     # Arthur's: 8 at the start rising to 26, a few more with helpers.
-    return min(26, 8 + 2 * (roundNum - 1)) + 2 * npcs
+    return min(34, 10 + 3 * (roundNum - 1)) + 2 * npcs
 
 
 def spawnDelay(roundNum):
@@ -138,7 +139,8 @@ DOWN_LOSS = 0.05
 # --- Melee ---
 BONK_DAMAGE = 150
 BONK_REACH = 5.0
-BONK_TIME = 1.2
+# Ready again the moment the swing ends (Arthur).
+BONK_TIME = 0.6
 
 # --- Stations ---
 TRUNK_COST = 950
@@ -152,6 +154,8 @@ TRUNK_REUSE = 0.4
 # climb; the trunk shuts for a while and the beans come back.
 DOODLE_ODDS = ((3, 0.0), (7, 0.15), (12, 0.3), (999, 0.5))
 DOODLE_SHUT = 30.0
+# At least this many goes between two Doodles.
+DOODLE_GAP = 3
 MICKEY_COST = 5000
 # The trolley out of Toontown Central wins the game.
 ESCAPE_COST = 100000
@@ -165,7 +169,13 @@ TONICS = (
     ('seltzer', 'Speedy Seltzer', 3000, 'Reload gags twice as fast.'),
     ('wind', 'Second Wind', 500, 'Go sad and get back up after 8 seconds. Costs your other tonics. Three a game.'),
     ('sprint', 'Sprint Soda', 2000, 'Sprint faster and twice as long.'),
+    ('tracks', 'Training Tracks', 4000, 'Carry three gags. Go sad and the third is gone.'),
+    ('organic', 'Organic Gags', 3500, 'Fire faster, and every shot hits twice as hard.'),
 )
+# Organic Gags: the time between shots shrinks to this, and a shot counts
+# as two.
+ORGANIC_RATE = 0.7
+ORGANIC_DAMAGE = 2
 TONIC_LIMIT = 4
 SECOND_WIND_BUYS = 3
 
@@ -193,34 +203,36 @@ LURE = ToontownBattleGlobals.LURE_TRACK
 
 # (track, level): damage, clip, reserve, seconds between shots, splash
 # radius (0 = one cog; sound: the cone's reach), prop name.
+# Arthur (2026-11-01): a lot more of everything, the rapid squirts up to
+# 400, the rest 150-300, the Seltzer a little more than before.
 GAGS = {
-    (THROW, 0): (30, 16, 48, 0.45, 0, 'tart'),
-    (THROW, 1): (50, 16, 64, 0.4, 0, 'fruitpie-slice'),
-    (THROW, 2): (85, 10, 60, 0.5, 0, 'creampie-slice'),
-    (THROW, 3): (135, 12, 72, 0.4, 2, 'fruitpie'),
-    (THROW, 4): (200, 8, 48, 0.55, 2.5, 'creampie'),
-    (THROW, 5): (500, 4, 32, 0.8, 4, 'birthday-cake'),
-    (THROW, 6): (600, 3, 24, 0.9, 6, 'wedding-cake'),
-    (SQUIRT, 0): (20, 30, 120, 0.12, 0, 'squirting-flower'),
-    (SQUIRT, 1): (40, 30, 150, 0.12, 0, 'glass'),
-    (SQUIRT, 2): (60, 40, 200, 0.1, 0, 'water-gun'),
-    (SQUIRT, 3): (105, 35, 210, 0.1, 0, 'bottle'),
-    (SQUIRT, 4): (150, 50, 250, 0.08, 0, 'firehose'),
-    (SQUIRT, 5): (400, 6, 36, 0.7, 5, 'stormcloud'),
-    (SQUIRT, 6): (525, 2, 16, 1.0, 7, 'geyser'),
-    (SOUND, 0): (20, 8, 40, 0.5, 10, 'bikehorn'),
-    (SOUND, 1): (35, 8, 40, 0.5, 12, 'whistle'),
-    (SOUND, 2): (55, 6, 36, 0.6, 14, 'bugle'),
-    (SOUND, 3): (80, 6, 36, 0.6, 15, 'aoogah'),
-    (SOUND, 4): (105, 5, 30, 0.7, 16, 'elephant'),
-    (SOUND, 5): (250, 4, 24, 0.9, 18, 'fog_horn'),
-    (SOUND, 6): (450, 4, 12, 1.5, 22, 'singing'),
-    (DROP, 0): (50, 6, 36, 0.6, 2, 'flowerpot'),
-    (DROP, 1): (90, 6, 36, 0.6, 2.5, 'sandbag'),
-    (DROP, 2): (150, 5, 30, 0.7, 3, 'anvil'),
-    (DROP, 3): (225, 4, 28, 0.8, 3.5, 'weight'),
-    (DROP, 4): (300, 3, 24, 0.9, 4, 'safe'),
-    (DROP, 5): (850, 2, 16, 1.2, 5, 'piano'),
+    (THROW, 0): (30, 16, 240, 0.45, 0, 'tart'),
+    (THROW, 1): (50, 16, 240, 0.4, 0, 'fruitpie-slice'),
+    (THROW, 2): (85, 10, 180, 0.5, 0, 'creampie-slice'),
+    (THROW, 3): (135, 12, 200, 0.4, 2, 'fruitpie'),
+    (THROW, 4): (200, 8, 160, 0.55, 2.5, 'creampie'),
+    (THROW, 5): (500, 4, 60, 0.8, 4, 'birthday-cake'),
+    (THROW, 6): (600, 3, 45, 0.9, 6, 'wedding-cake'),
+    (SQUIRT, 0): (20, 30, 300, 0.12, 0, 'squirting-flower'),
+    (SQUIRT, 1): (40, 30, 300, 0.12, 0, 'glass'),
+    (SQUIRT, 2): (60, 40, 400, 0.1, 0, 'water-gun'),
+    (SQUIRT, 3): (105, 40, 360, 0.1, 0, 'bottle'),
+    (SQUIRT, 4): (150, 50, 400, 0.08, 0, 'firehose'),
+    (SQUIRT, 5): (400, 6, 60, 0.7, 5, 'stormcloud'),
+    (SQUIRT, 6): (525, 2, 24, 1.0, 7, 'geyser'),
+    (SOUND, 0): (20, 8, 160, 0.5, 22, 'bikehorn'),
+    (SOUND, 1): (35, 8, 160, 0.5, 24, 'whistle'),
+    (SOUND, 2): (55, 6, 150, 0.6, 26, 'bugle'),
+    (SOUND, 3): (80, 6, 150, 0.6, 28, 'aoogah'),
+    (SOUND, 4): (105, 5, 150, 0.7, 30, 'elephant'),
+    (SOUND, 5): (250, 4, 72, 0.9, 32, 'fog_horn'),
+    (SOUND, 6): (450, 4, 40, 1.5, 38, 'singing'),
+    (DROP, 0): (50, 6, 160, 0.6, 2, 'flowerpot'),
+    (DROP, 1): (90, 6, 160, 0.6, 2.5, 'sandbag'),
+    (DROP, 2): (150, 5, 150, 0.7, 3, 'anvil'),
+    (DROP, 3): (225, 4, 150, 0.8, 3.5, 'weight'),
+    (DROP, 4): (300, 3, 120, 0.9, 4, 'safe'),
+    (DROP, 5): (850, 2, 40, 1.2, 5, 'piano'),
     (DROP, 6): (900, 1, 36, 1.5, 9, 'ship'),
 }
 # Arthur (2026-10-30): Drop and Sound hit harder than the table above.
@@ -229,7 +241,18 @@ for _key in list(GAGS):
     if _key[0] in (DROP, SOUND):
         _row = GAGS[_key]
         GAGS[_key] = (int(_row[0] * DROP_SOUND_BOOST),) + _row[1:]
+# Arthur (2026-11-01): the first five levels were too weak by round 8.
+LOW_LEVEL_BOOST = 1.8
+for _key in list(GAGS):
+    if _key[1] < 5:
+        _row = GAGS[_key]
+        GAGS[_key] = (int(_row[0] * LOW_LEVEL_BOOST),) + _row[1:]
 del _key, _row
+# Mickey's upgrade (and a Max Gags after it) carries this many times the
+# reserve.
+UPGRADE_RESERVE = 2.5
+# Hits from the neck up.
+HEAD_MULT = 2.0
 # What the trunk hands out: every gag but the level 7s, no Toon-Up, no
 # Trap, Lure only as the Presentation.
 PRESENTATION = (LURE, 6)
@@ -252,7 +275,8 @@ STARTING_GAG = (THROW, 0)
 # it can hurt the toon who threw it.
 TNT_PER_ROUND = 2
 TNT_MAX = 4
-TNT_FUSE = 2.2
+# BO1's frag fuse runs from the moment it is pressed (cooking).
+TNT_FUSE = 3.5
 TNT_RADIUS = 15.0
 TNT_THROW_SPEED = 38.0
 TNT_THROW_UP = 12.0

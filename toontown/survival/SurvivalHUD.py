@@ -13,6 +13,13 @@ from toontown.toon import LaffMeter
 from toontown.toonbase import ToontownBattleGlobals, ToontownGlobals
 
 RED = (0.85, 0.08, 0.08, 1)
+GRENADE_Z = 0.165
+GRENADE_SIZE = 0.115
+GRENADE_STEP = 0.06
+TNT_ICON = '**/inventory_tnt'
+PRESENTATION_ICON = '**/inventory_screen'
+BEAN_POP_TIME = 0.9
+BEAN_POP_RISE = 0.12
 PANEL = (0.75, 0.05, 0.05, 0.55)
 
 
@@ -41,7 +48,7 @@ class SurvivalHUD:
                                       scale=0.045, pos=(-0.05, -0.36), align=TextNode.ARight, mayChange=True)
         # Jellybeans, bottom right, a little up from the bottom.
         self.beanBox = DirectFrame(parent=base.a2dBottomRight, relief=DGG.FLAT, frameColor=PANEL,
-                                   frameSize=(-0.72, 0.02, -0.11, 0.11), pos=(-0.08, 0, 0.36))
+                                   frameSize=(-0.72, 0.02, -0.11, 0.11), pos=(-0.08, 0, 0.5))
         jar = loader.loadModel('phase_3.5/models/gui/jar_gui')
         self.beanIcon = DirectLabel(parent=self.beanBox, relief=None, image=jar.find('**/Jar'), image_scale=0.22, pos=(-0.58, 0, -0.01))
         jar.removeNode()
@@ -63,8 +70,15 @@ class SurvivalHUD:
                                        barColor=(1, 0.9, 0.3, 1), frameColor=(0, 0, 0, 0))
         self.reloadBar.hide()
         self.reloadTrack = None
-        self.grenadeText = OnscreenText(parent=self.gagBox, text='', font=face, fg=(1, 0.85, 0.4, 1), shadow=(0, 0, 0, 1),
-                                        scale=0.045, pos=(-0.02, 0.115), align=TextNode.ARight, mayChange=True)
+        # TNT and Presentations as pictures in a row just over the gag box
+        # (BO1's grenades): TNT from the left, Presentations from the right,
+        # the first of each in full and the rest tucked a little behind it.
+        self.grenadeRow = self.gagBox.attachNewNode('grenades')
+        self.grenadeRow.setZ(GRENADE_Z)
+        self.grenadeIcons = []
+        self.grenadeShown = None
+        # Jellybeans just earned float up beside the count (BO1's "+10").
+        self.beanPops = []
         # Active power-ups: their pictures along the bottom middle, each
         # with the seconds left in small print just above it (BO1).
         self.powerRow = base.a2dBottomCenter.attachNewNode('survivalPowers')
@@ -88,6 +102,10 @@ class SurvivalHUD:
 
     def destroy(self):
         self.setDowned(False)
+        for holder, track in list(self.beanPops):
+            track.pause()
+            holder.removeNode()
+        self.beanPops = []
         for track in (self.noticeTrack, self.hurtTrack, self.reloadTrack):
             if track:
                 track.finish()
@@ -136,12 +154,46 @@ class SurvivalHUD:
         gags = self.game.gags
         gifts = getattr(gags, 'presentations', 0) if gags else 0
         tnt = getattr(gags, 'tnt', 0) if gags else 0
-        parts = []
-        if tnt:
-            parts.append('TNT x%d' % tnt)
-        if gifts:
-            parts.append('Presentation x%d' % gifts)
-        self.grenadeText.setText('   '.join(parts))
+        self.setGrenades(tnt, gifts)
+
+    def setGrenades(self, tnt, gifts):
+        if self.grenadeShown == (tnt, gifts):
+            return
+        self.grenadeShown = (tnt, gifts)
+        for icon in self.grenadeIcons:
+            icon.removeNode()
+        self.grenadeIcons = []
+        # Drawn back to front, so the first of each row is on top.
+        for part, count, x0, step in ((TNT_ICON, tnt, -0.64, GRENADE_STEP), (PRESENTATION_ICON, gifts, -0.06, -GRENADE_STEP)):
+            model = self.invModel.find(part)
+            if model.isEmpty():
+                continue
+            for i in reversed(range(count)):
+                icon = model.copyTo(self.grenadeRow)
+                icon.setPos(x0 + step * i, 0, 0)
+                icon.setScale(GRENADE_SIZE / 0.1 * (1.0 - 0.06 * i))
+                shade = 1.0 - 0.18 * i
+                icon.setColorScale(shade, shade, shade, 1)
+                self.grenadeIcons.append(icon)
+
+    def beanPop(self, amount):
+        """A "+10" that floats up beside the jellybean count and fades."""
+        import random
+        holder = self.beanBox.attachNewNode('beanPop')
+        holder.setPos(-0.04 - random.uniform(0, 0.1), 0, 0.15 + random.uniform(0, 0.03))
+        OnscreenText(parent=holder, text='+%d' % amount, font=ToontownGlobals.getSignFont(), fg=(1, 0.9, 0.3, 1),
+                     shadow=(0, 0, 0, 1), scale=0.06, align=TextNode.ARight, pos=(0, 0))
+        start = holder.getPos()
+        track = Sequence(Parallel(LerpPosInterval(holder, BEAN_POP_TIME, start + Point3(0, 0, BEAN_POP_RISE)),
+                                  Sequence(Wait(BEAN_POP_TIME * 0.5),
+                                           LerpColorScaleInterval(holder, BEAN_POP_TIME * 0.5, Vec4(1, 1, 1, 0)))),
+                         Func(self.__beanPopDone, holder))
+        self.beanPops.append((holder, track))
+        track.start()
+
+    def __beanPopDone(self, text):
+        self.beanPops = [(t, tr) for t, tr in self.beanPops if t is not text]
+        text.removeNode()
 
     def setReloading(self, seconds):
         if seconds <= 0:
@@ -247,8 +299,8 @@ class SurvivalHUD:
             for x in range(size):
                 dx, dy = (x - half) / half, (y - half) / half
                 d = min(1.0, (dx * dx + dy * dy) ** 0.5 / 1.2)
-                a = max(0.0, (d - 0.3) / 0.7) ** 1.25
-                image.setXelA(x, y, 0.8, 0.0, 0.0, min(0.95, a * 1.1))
+                a = max(0.0, (d - 0.55) / 0.45) ** 1.6
+                image.setXelA(x, y, 0.8, 0.0, 0.0, min(0.8, a * 0.9))
         tex = Texture('survivalDownVignette')
         tex.load(image)
         tex.setWrapU(Texture.WMClamp)
@@ -288,13 +340,16 @@ class SurvivalHUD:
             return task.done
         grey, ring = self.downFrames
         t = globalClock.getFrameTime() - self.downStart
-        # A heartbeat: two quick beats, then a rest; quicker as time runs out.
-        rate = 0.9 + min(1.0, t / G.BLEED_OUT) * 0.6
+        # A slow heartbeat, one soft beat about every two seconds, a little
+        # quicker near the end (Arthur: the old one blinked too fast and
+        # filled the screen).
+        rate = 0.5 + min(1.0, t / G.BLEED_OUT) * 0.25
         beat = (t * rate) % 1.0
-        pulse = math.exp(-((beat - 0.08) / 0.06) ** 2) + 0.7 * math.exp(-((beat - 0.3) / 0.06) ** 2)
-        ring.setColorScale(1, 1, 1, 0.45 + 0.55 * min(1.0, pulse))
-        ring.setScale(1.0 + 0.04 * pulse)
-        grey['frameColor'] = (0.45 + 0.12 * pulse, 0.36, 0.38, 0.5 + 0.08 * pulse)
+        pulse = math.exp(-((beat - 0.15) / 0.12) ** 2)
+        # Only a thin red edge that beats; the middle stays clear (Arthur:
+        # it shouldn't fog the screen up).
+        ring.setColorScale(1, 1, 1, 0.18 + 0.17 * pulse)
+        grey['frameColor'] = (0.42, 0.4, 0.42, 0.3)
         return task.cont
 
     def ring(self, reach):
@@ -328,7 +383,7 @@ class SurvivalHUD:
         sign = ToontownGlobals.getSignFont()
         face = ToontownGlobals.getInterfaceFont()
         card = DirectFrame(parent=aspect2d, relief=DGG.FLAT, frameColor=(0.05, 0.05, 0.08, 0.9),
-                           frameSize=(-0.75, 0.75, -0.55, 0.55), pos=(0, 0, 0), sortOrder=sort, state=DGG.NORMAL)
+                           frameSize=(-0.75, 0.75, -0.55, 0.55), pos=(0, 0, 0), sortOrder=100, state=DGG.NORMAL)
         OnscreenText(parent=card, text='Settings', font=sign, fg=RED, shadow=(0, 0, 0, 1), scale=0.14, pos=(0, 0.36))
         OnscreenText(parent=card, text='Camera Sensitivity', font=face, fg=(1, 1, 1, 1), shadow=(0, 0, 0, 1), scale=0.065, pos=(0, 0.17))
         valueText = OnscreenText(parent=card, text=str(level), font=sign, fg=(1, 0.95, 0.4, 1), shadow=(0, 0, 0, 1), scale=0.1,
@@ -382,11 +437,12 @@ class SurvivalHUD:
         OnscreenText(parent=card, text='\n'.join(lines), font=face, fg=(1, 1, 1, 1), shadow=(0, 0, 0, 1), scale=0.055, pos=(0, 0.2), wordwrap=24)
         gui = loader.loadModel('phase_3/models/gui/quit_button')
         up, down, over = gui.find('**/QuitBtn_UP'), gui.find('**/QuitBtn_DN'), gui.find('**/QuitBtn_RLVR')
-        y = -0.42 + 0.0
-        x0 = -0.3 * (len(buttons) - 1) / 1.0
+        # The buttons one under the other, top to bottom (Arthur).
+        gap = 0.15
+        y0 = -0.42 + gap * (len(buttons) - 1)
         for i, (label, command) in enumerate(buttons):
-            DirectButton(parent=card, relief=None, image=(up, down, over), image_scale=(1.1, 1, 1.2), text=label, text_font=sign,
-                         text_fg=(1, 0.95, 0.4, 1), text_scale=0.07, text_pos=(0, -0.02), pos=(x0 + 0.6 * i, 0, y), command=command)
+            DirectButton(parent=card, relief=None, image=(up, down, over), image_scale=(1.1, 1, 1.1), text=label, text_font=sign,
+                         text_fg=(1, 0.95, 0.4, 1), text_scale=0.07, text_pos=(0, -0.02), pos=(0, 0, y0 - gap * i), command=command)
         gui.removeNode()
         self.card = card
         return card

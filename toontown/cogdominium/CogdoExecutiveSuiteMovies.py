@@ -35,6 +35,7 @@ class CogdoExecutiveSuiteIntro(CogdoGameMovie):
         self.toonHead.reparentTo(aspect2d)
         self._toonDialogueSfx.play()
         self.toonHead.setClipPlane(self.clipPlane)
+        CogdoUtil.clipToBox(self.toonHead)
 
     def makeSuit(self, suitType):
         self.notify.debug('makeSuit()')

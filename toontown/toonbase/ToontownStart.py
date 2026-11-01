@@ -63,6 +63,9 @@ print('ToontownStart: loading game settings')
 from toontown.settings.ToontownSettings import ToontownSettings
 settings = ToontownSettings()
 settings.loadFromSettings()
+# Every animation interpolates between its frames (the setting's default).
+from toontown.toonbase import SmoothAnimations
+SmoothAnimations.install()
 
 if ConfigVariableBool('want-retro-rewritten', False):
     # Poll for game finished

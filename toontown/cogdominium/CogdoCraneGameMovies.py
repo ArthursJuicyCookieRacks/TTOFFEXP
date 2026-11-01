@@ -42,11 +42,13 @@ class CogdoCraneGameIntro(CogdoGameMovie):
             self.cogHead.reparentTo(hidden)
             self._toonDialogueSfx.play()
             self.toonHead.setClipPlane(self.clipPlane)
+            CogdoUtil.clipToBox(self.toonHead)
         else:
             self.toonHead.reparentTo(hidden)
             self.cogHead.reparentTo(aspect2d)
             self._cogDialogueSfx.play()
             self.cogHead.setClipPlane(self.cogClipPlane, 100)
+            CogdoUtil.clipToBox(self.cogHead, -0.8)
 
     def makeSuit(self, suitType):
         # The Toon Resistance's toon, in a cog suit.

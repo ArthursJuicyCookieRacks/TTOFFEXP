@@ -97,6 +97,7 @@ ACTIONS = {
     'use': ('e', 'f'),
     'gag1': ('1',),
     'gag2': ('2',),
+    'gag3': ('3',),
     # BO1 on a computer: G throws the lethal grenade (TNT), Q the special
     # one (the Presentation); the wheel or Tab swaps gags.
     'swap': ('tab', 'wheel_up', 'wheel_down'),
@@ -245,7 +246,16 @@ class SurvivalPlayer(DirectObject):
                 forcing.setdefault(token, set()).update(sources)
             self.slideForcedOff = {}
 
+    def __blocked(self):
+        # Paused, over, or in Freddy's menu: a press now is dropped, never
+        # kept for later (Arthur: buttons pressed on the pause screen went
+        # off when it closed). Letting go always counts.
+        game = self.game
+        return game.paused or game.over or game.inMenu()
+
     def __set(self, token, down):
+        if down and self.__blocked():
+            return
         if token == 'sprint':
             self.setSprint(down)
             return
@@ -260,13 +270,22 @@ class SurvivalPlayer(DirectObject):
         self.sensitivity = max(1, min(10, int(level)))
         self.lookScale = sensitivityFactor(self.sensitivity)
 
-    def setSprint(self, down):
-        if down and not self.sprinting:
-            # A fresh press: a spent sprint may go again.
+    def setSprint(self, down, held=False):
+        """down: the sprint button is pressed. held: the touch stick, which
+        says each frame whether it is pushed to the edge."""
+        if down and (not self.sprinting or not held):
+            # A fresh press: a spent sprint goes again as soon as there is
+            # breath for it, without stopping first (Arthur).
+            self.sprintSpent = False
+        elif down and held and self.sprintSpent and self.stamina >= G.SPRINT_MIN:
+            # The stick never lets go to press again: it starts again by
+            # itself once there is breath.
             self.sprintSpent = False
         self.sprinting = down
 
     def __action(self, action, down):
+        if down and action != 'pause' and self.__blocked():
+            return
         if action == 'fire':
             self.firing = down
             if down:
@@ -288,6 +307,9 @@ class SurvivalPlayer(DirectObject):
                 else:
                     # The end of a hold: the use (a revive) stops.
                     self.using = False
+        elif action == 'tnt':
+            # Held, the TNT cooks; let go, it is thrown.
+            self.game.playerAction('tnt' if down else 'tntUp')
         elif down:
             self.game.playerAction(action)
 
@@ -490,7 +512,10 @@ class SurvivalPlayer(DirectObject):
             return
         self.hp -= damage
         self.lastHurt = globalClock.getFrameTime()
-        if self.hp <= 0:
+        # Laff comes back a fraction at a time, so after the regen a hit
+        # could leave 0.4: the meter said 0 and the toon stayed up (Arthur,
+        # with Toon-Up and Second Wind). Under one point is down.
+        if self.hp < 1:
             self.hp = 0
             self.goDown()
         self.game.hud.setLaff(self.hp, self.maxHp)

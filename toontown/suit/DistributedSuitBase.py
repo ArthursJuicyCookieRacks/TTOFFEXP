@@ -131,7 +131,16 @@ class DistributedSuitBase(DistributedAvatar.DistributedAvatar, Suit.Suit, SuitBa
             self.currHP = self.maxHP
         else:
             self.currHP = hp
+        self.shownHP = self.currHP
         return None
+
+    def getShownHP(self):
+        """The laff the player has seen this cog left with: the AI sends a
+        cog's HP at the start of each round, before the round's damage, so
+        currHP lags a round behind; this counts every number the battle has
+        shown over the cog since, bonus damage included (the bottom screen's
+        Cogs row uses it)."""
+        return getattr(self, 'shownHP', self.currHP)
 
     def getDialogueArray(self, *args):
         return Suit.Suit.getDialogueArray(self, *args)
@@ -364,6 +373,8 @@ class DistributedSuitBase(DistributedAvatar.DistributedAvatar, Suit.Suit, SuitBa
             Suit.Suit.makeSkeleton(self)
 
     def showHpText(self, number, bonus = 0, scale = 1, attackTrack = -1):
+        if number < 0:
+            self.shownHP = max(0, self.getShownHP() + number)
         if self.HpTextEnabled and not self.ghostMode:
             if number != 0:
                 if self.hpText:

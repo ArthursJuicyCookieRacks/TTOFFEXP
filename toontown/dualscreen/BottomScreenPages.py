@@ -556,7 +556,8 @@ class BottomScreen(DirectObject):
         self.label('Cogs', (0, 0, height / 2.0 - 0.075), scale=0.06, parent=box)
         for i, suit in enumerate(suits):
             z = height / 2.0 - 0.15 - i * 0.09
-            hp, maxHp = getattr(suit, 'currHP', 0), max(1, getattr(suit, 'maxHP', 1))
+            hp = suit.getShownHP() if hasattr(suit, 'getShownHP') else getattr(suit, 'currHP', 0)
+            maxHp = max(1, getattr(suit, 'maxHP', 1))
             name = '%s (level %d)' % (suit.getName(), suit.getActualLevel()) if hasattr(suit, 'getActualLevel') else suit.getName()
             self.label(name, (-0.62, 0, z - 0.015), scale=0.048, parent=box, align=TextNode.ALeft)
             DirectFrame(parent=box, relief=DGG.FLAT, frameColor=(0.75, 0.75, 0.78, 1), frameSize=(0, 0.36, -0.022, 0.022), pos=(0.1, 0, z))

@@ -92,6 +92,14 @@ class Walk(StateData.StateData):
         return {'arrow_up', keymap.get('MOVE_UP', getattr(base, 'MOVE_UP', 'arrow_up'))}
 
     def __forwardPressed(self):
+        # The touch joystick (and a controller's stick) presses the arrow
+        # and W together: one push, one press. Counted as two, every push
+        # of the stick was a double tap and started a sprint (Arthur: "you
+        # still run forever").
+        frame = globalClock.getFrameCount()
+        if frame == getattr(self, 'lastForwardFrame', None):
+            return
+        self.lastForwardFrame = frame
         now = globalClock.getFrameTime()
         if self.lastForwardPress is not None and now - self.lastForwardPress <= SprintDoubleTap:
             self.lastForwardPress = None

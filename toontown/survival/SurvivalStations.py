@@ -161,6 +161,7 @@ class TrunkStation(Station):
         self.stage = self.node.attachNewNode('trunkStage')
         self.stage.setPos(0, 0, 1.6)
         self.uses = 0
+        self.lastDoodle = 0
         self.saleOpen = False
         self.offer = None
         self.offerUntil = 0.0
@@ -275,6 +276,10 @@ class TrunkStation(Station):
             if self.uses <= limit:
                 doodle = self.uses > 3 and random.random() < odds
                 break
+        if self.uses - self.lastDoodle <= G.DOODLE_GAP:
+            # Never shut twice in a row: a few goes after each Doodle first
+            # (Arthur).
+            doodle = False
         if self.saleOpen:
             # A Trunk Sale never ends with the trunk shutting itself.
             doodle = False
@@ -287,6 +292,7 @@ class TrunkStation(Station):
             self.floatText('A Doodle! Not now...', (0.6, 0.9, 1, 1))
             self.game.earn(self.cost(), silent=True)
             self.shutUntil = now + G.DOODLE_SHUT
+            self.lastDoodle = self.uses
             self.busy = False
             self.__openLid(False)
             self.game.count('doodles')
@@ -326,7 +332,7 @@ class TrunkStation(Station):
 
 
 class TonicMenu:
-    """Fisherman Freddy's menu: the four Toon Tonics, each with its price
+    """Fisherman Freddy's menu: the Toon Tonics, each with its price
     and what it does, and a Buy button. The game waits while it is open."""
 
     def __init__(self, station):
@@ -343,13 +349,15 @@ class TonicMenu:
         self.rows = []
         gui = loader.loadModel('phase_3/models/gui/quit_button')
         up, down, over = gui.find('**/QuitBtn_UP'), gui.find('**/QuitBtn_DN'), gui.find('**/QuitBtn_RLVR')
-        colors = {'toonup': (0.3, 0.75, 0.35, 1), 'seltzer': (0.35, 0.6, 1, 1), 'wind': (1, 0.6, 0.25, 1), 'sprint': (0.85, 0.4, 0.9, 1)}
+        colors = {'toonup': (0.3, 0.75, 0.35, 1), 'seltzer': (0.35, 0.6, 1, 1), 'wind': (1, 0.6, 0.25, 1), 'sprint': (0.85, 0.4, 0.9, 1),
+                  'tracks': (0.95, 0.85, 0.3, 1), 'organic': (0.5, 0.9, 0.3, 1)}
         for i, (key, name, cost, blurb) in enumerate(G.TONICS):
-            z = 0.26 - i * 0.19
-            row = DirectFrame(parent=self.frame, relief=DGG.FLAT, frameColor=(1, 1, 1, 0.08), frameSize=(-0.88, 0.88, -0.08, 0.08), pos=(0, 0, z))
+            # Six tonics fit between the title and the Close button.
+            z = 0.28 - i * 0.135
+            row = DirectFrame(parent=self.frame, relief=DGG.FLAT, frameColor=(1, 1, 1, 0.08), frameSize=(-0.88, 0.88, -0.062, 0.062), pos=(0, 0, z))
             bottle = DirectFrame(parent=row, relief=DGG.FLAT, frameColor=colors.get(key, (1, 1, 1, 1)), frameSize=(-0.035, 0.035, -0.055, 0.055), pos=(-0.8, 0, 0))
             OnscreenText(parent=row, text=name, font=sign, fg=(1, 1, 1, 1), shadow=(0, 0, 0, 1), scale=0.06, pos=(-0.72, 0.015), align=TextNode.ALeft)
-            OnscreenText(parent=row, text=blurb, font=face, fg=(0.85, 0.85, 0.85, 1), scale=0.04, pos=(-0.72, -0.045), align=TextNode.ALeft, wordwrap=26)
+            OnscreenText(parent=row, text=blurb, font=face, fg=(0.85, 0.85, 0.85, 1), scale=0.03, pos=(-0.72, -0.028), align=TextNode.ALeft, wordwrap=38)
             price = OnscreenText(parent=row, text='%d' % cost, font=sign, fg=(1, 0.95, 0.4, 1), shadow=(0, 0, 0, 1), scale=0.06, pos=(0.5, -0.02), align=TextNode.ARight)
             button = DirectButton(parent=row, relief=None, image=(up, down, over, up), image_scale=(0.42, 1, 0.75), image3_color=(0.5, 0.5, 0.5, 0.6),
                                   text='Buy', text_font=sign, text_fg=(1, 0.95, 0.4, 1), text3_fg=(0.7, 0.7, 0.7, 1), text_scale=0.045, text_pos=(0, -0.015),

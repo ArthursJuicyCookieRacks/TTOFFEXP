@@ -295,7 +295,7 @@ class SurvivalNPC:
                 return trunk
         if freddy is not None and len(self.tonics) < 3:
             for key, name, cost, blurb in G.TONICS:
-                if key in self.tonics or key == 'wind':
+                if key in self.tonics or key in ('wind', 'tracks', 'organic'):
                     continue
                 if self.beans >= cost + 300:
                     return freddy
@@ -345,7 +345,7 @@ class SurvivalNPC:
             self.game.count('npc trunk gags')
         else:
             for key, name, cost, blurb in G.TONICS:
-                if key in self.tonics or key == 'wind' or self.beans < cost:
+                if key in self.tonics or key in ('wind', 'tracks', 'organic') or self.beans < cost:
                     continue
                 self.beans -= cost
                 self.tonics.append(key)

@@ -84,8 +84,8 @@ class SurvivalTouch(DirectObject):
     def __press(self, action, down, event=None):
         if action == 'jump':
             self.player.press('jump', down)
-        elif action == 'fire':
-            self.player.pressAction('fire', down)
+        elif action in ('fire', 'tnt'):
+            self.player.pressAction(action, down)
         elif down:
             self.player.pressAction(action, True)
 
@@ -119,7 +119,7 @@ class SurvivalTouch(DirectObject):
                 x, z = x / d, z / d
             self.thumb.setPos(x * STICK_RADIUS, 0, z * STICK_RADIUS)
             self.player.touchMove(x, z)
-            self.player.setSprint(d > 0.95)
+            self.player.setSprint(d > 0.95, held=True)
         if self.looking:
             cur = (mouse[0], mouse[1])
             if self.lastLook is not None:

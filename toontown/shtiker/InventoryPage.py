@@ -47,7 +47,9 @@ class InventoryPage(ShtikerPage.ShtikerPage):
     def updateSwapButton(self):
         state = TrackSwapPanel.swapState(base.localAvatar)
         self.swapButton['state'] = DGG.NORMAL if state == 'ready' else DGG.DISABLED
-        self.swapNote['text'] = {'notYet': TTLocalizer.TrackSwapNotYet, 'locked': TTLocalizer.TrackSwapLocked}.get(state, '')
+        # A maxed toon just gets the greyed-out button, no text under it
+        # (Arthur, 2026-11-01).
+        self.swapNote['text'] = {'notYet': TTLocalizer.TrackSwapNotYet}.get(state, '')
 
     def openSwap(self):
         if self.swapPanel is not None or TrackSwapPanel.swapState(base.localAvatar) != 'ready':
