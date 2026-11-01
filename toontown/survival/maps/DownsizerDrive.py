@@ -33,7 +33,8 @@ class DownsizerDrive:
     # facing the fountain.
     FISHERMAN_SPOT = ((80, 24, 0), 127)
     # Mickey (the gag upgrades) at the closed end of the street, facing up it.
-    MICKEY_SPOT = ((-85, 4, 0), -90)
+    MICKEY_SPOT = ((-93, 4, 0), -90)
+    MICKEY_SCALE = 1.2
     # Where the trolley out is: the one parked by the cul-de-sac.
     ESCAPE_NAME = 'Downsizer Drive'
     # The toons' ground: inside the board fence.
@@ -98,6 +99,7 @@ class DownsizerDrive:
         mickey.setDNA(dna)
         mickey.reparentTo(self.root)
         mickey.setPosHpr(self.MICKEY_SPOT[0], (self.MICKEY_SPOT[1], 0, 0))
+        mickey.setScale(self.MICKEY_SCALE)
         mickey.loop('neutral')
         mickey.nametag3d.stash()
         self.actors = [freddy, mickey]
@@ -304,7 +306,7 @@ class DownsizerDrive:
         for i, y in enumerate((-10, -4, 2, 8)):
             kit.model('phase_6/models/karting/cone', pos=(-104, y, 0), h=i * 30, scale=1.5)
         kit.prop('prop_construction_sign', pos=(-102, 15, 0), h=90)
-        for pos in ((-108, -8, 0), (-108, 0, 0), (-108, 8, 0), (-108, 4, 5)):
+        for pos in ((-108, -8, 0), (-108, 0, 0), (-108, 8, 0), (-108, 4, 4.0)):
             kit.model('phase_6/models/karting/krate', pos=pos, h=0, scale=2.5)
         # The Cogs' buildings out in the sand, watching.
         kit.prop('suit_landmark_s1', pos=(-200, 210, 0), h=-135)

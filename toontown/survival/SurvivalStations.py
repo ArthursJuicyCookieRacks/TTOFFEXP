@@ -79,6 +79,7 @@ class MickeyStation(Station):
         self.char.setDNA(dna)
         self.char.setName('Mickey')
         self.char.reparentTo(self.node)
+        self.char.setScale(game.arena.mickeyScale())
         self.char.loop('neutral')
         self.char.nametag3d.stash()
 
