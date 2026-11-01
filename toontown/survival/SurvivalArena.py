@@ -112,19 +112,21 @@ MAPS = {
 }
 
 # The parody maps (toontown/survival/maps) are built by their own class
-# instead of from a playground's DNA, in the map's own daylight. They are
-# left out of MAP_ORDER, so only survival-map in a prc picks one, until
-# Arthur OKs them for Map Select.
+# instead of from a playground's DNA, in the map's own daylight. One left
+# out of MAP_ORDER can still be picked with survival-map in a prc.
 MAPS['downsizer'] = {
     'title': 'Downsizer Drive',
-    'description': 'A pretend Toontown street the Cogs built out in Sellbot country to try out their Downsizers.',
+    'description': 'A pretend Toontown street the Cogs built out in Sellbot country to test their Downsizers, '
+                   'with two toon houses, fenced yards and a cul-de-sac. Mickey waits by the crates at the closed end, '
+                   'the trunk and Fisherman Freddy stand by the fountain.',
+    'picture': 'phase_4/maps/survival_map_downsizer.jpg',
     'parody': ('toontown.survival.maps.DownsizerDrive', 'DownsizerDrive'),
 }
 # Around each station on a parody map no cog lands.
 MAP_STATION_CLEAR = 10.0
 
 # The order the Map Select menu lists them in.
-MAP_ORDER = ('ttc', 'beta_ttc')
+MAP_ORDER = ('ttc', 'beta_ttc', 'downsizer')
 
 
 def mapName():
