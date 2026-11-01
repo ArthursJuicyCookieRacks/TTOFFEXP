@@ -47,8 +47,12 @@ CONE_HALF_ANGLE = 32.0
 SOUND_NEAR_WIDTH = 1.0
 # Drop gags fall at the size a battle drops them on a cog, and lie there a
 # moment; the Storm Cloud grows over its cog and rains.
-DROP_SCALE = {'piano': 2.2, 'safe': 1.4, 'weight': 1.3, 'anvil': 1.3, 'ship': 1.0}
+DROP_SCALE = {}
 DROP_STAY = 0.9
+# The frame of each drop's battle animation where it lies flat on the
+# ground, and how far that pose sits below its origin (feet, at scale 1).
+DROP_REST_FRAME = {'piano': 30, 'safe': 30, 'weight': 30, 'anvil': 2, 'flowerpot': 15, 'sandbag': 4}
+DROP_REST_LIFT = {'piano': 0.6, 'flowerpot': 0.9, 'sandbag': 0.6}
 CLOUD_GROW = 0.5
 CLOUD_RAIN = 1.4
 # Over the cog's head, low enough to stay in a first-person view.
@@ -99,7 +103,7 @@ BATTLE_POSES = {
 # the frame.
 VIEW_POSE = {'throw': (Point3(1.25, 4.8, -1.35), 15), 'water-gun': (Point3(1.0, 3.8, -0.95), 25),
              'hold-bottle': (Point3(1.0, 4.0, -0.6), 10), 'spit': (Point3(1.0, 4.0, -0.7), 5),
-             'firehose': (Point3(1.1, 4.6, -1.3), -10), 'sound': (Point3(1.05, 4.4, -1.05), 10),
+             'firehose': (Point3(1.1, 4.6, -1.3), -10), 'sound': (Point3(0.8, 4.6, -0.72), 10),
              'pushbutton': (Point3(0.7, 4.4, -1.2), 20)}
 ARMS_SCALE = 0.8
 # First person (sound gags): the eyes over the neck joint, toon units, and
@@ -167,7 +171,7 @@ INSTRUMENT_IN_MEGAPHONE = (Point3(-1.1, -1.4, 0.1), (145, 0, 0))
 # in toward the crosshair.
 MEGAPHONE_TURN = Vec3(0, 0, 0)
 # The megaphone is a big prop; this close to the camera it is shrunk.
-MEGAPHONE_SCALE = 0.6
+MEGAPHONE_SCALE = 0.7
 INSTRUMENT_SCALE = {'bikehorn': 0.5, 'whistle': 0.6, 'bugle': 0.6, 'aoogah': 0.6, 'elephant': 0.5, 'fog_horn': 0.5, 'singing': 0.5}
 HAND_SCALE = {'ship': 0.05, 'piano': 0.1, 'safe': 0.22, 'weight': 0.25, 'anvil': 0.3, 'sandbag': 0.6, 'flowerpot': 0.6,
               'geyser': 0.1, 'stormcloud': 0.25, 'firehose': 1.0, 'wedding-cake': 1.0, 'birthday-cake': 1.0,
@@ -669,6 +673,8 @@ class GagHandler:
                 aim = megaphone.getQuat(self.arms.toon)
                 megaphone.setQuat(camera, aim)
                 megaphone.setHpr(megaphone, MEGAPHONE_TURN)
+                # Smaller than in a battle so the arm holding it shows.
+                megaphone.setScale(megaphone.getScale() * MEGAPHONE_SCALE)
             else:
                 prop.reparentTo(self.arms.hand(RIGHT))
                 pos, hpr = PROP_IN_HAND.get(gag.prop, (Point3(0, 0, 0), (0, 0, 0)))
@@ -1094,11 +1100,20 @@ class GagHandler:
         shadow.setScale(0.1)
         shadow.setColor(0, 0, 0, 0.5)
         shadow.setTransparency(1)
+        # Animated drops (the piano, the safe...): the battle animation does
+        # its own fall from high up, then lies on the ground a while. The
+        # prop is held in that lying pose, flat (Arthur: the piano came down
+        # tipped up, the model's pose before any animation).
+        land = Wait(DROP_STAY)
+        if hasattr(prop, 'getNumFrames') and prop.getNumFrames(gag.prop):
+            prop.pose(gag.prop, DROP_REST_FRAME.get(gag.prop, 0))
+        lift = DROP_REST_LIFT.get(gag.prop, 0.0) * scale
+        point = Point3(point[0], point[1], point[2] + lift)
         Sequence(Parallel(LerpPosInterval(prop, G.DROP_FALL, point, blendType='easeIn'),
                           LerpScaleInterval(shadow, G.DROP_FALL, gag.splash * 0.4 + 0.5)),
                  Func(self.__dropped, gag, point),
                  Func(shadow.removeNode),
-                 Wait(DROP_STAY),
+                 land,
                  LerpScaleInterval(prop, 0.3, 0.01),
                  Func(prop.removeNode)).start()
 

@@ -35,7 +35,11 @@ GAZEBO = (Point3(-60.94, -8.8, -2), -178)
 # railing behind him so the open lid never reaches it.
 TRUNK_BESIDE = 6.0
 TRUNK_AHEAD = 3.0
-TRUNK_FROM_GAZEBO = 17.0
+# The gazebo's base is a hexagon about 7 feet from its middle to each panel;
+# the panel facing away from the fisherman is centred on this heading
+# (measured with rays round the gazebo).
+TRUNK_PANEL_ANGLE = 302.0
+TRUNK_FROM_GAZEBO = 10.5
 TRUNK_RADIUS = 1.7
 # The player starts on the grass in front of Toon Hall.
 PLAYER_START = (Point3(0, -20, 0), 0)
@@ -283,12 +287,12 @@ class SurvivalArena:
         return self.placeOnGround(origin[0], origin[1], h)
 
     def trunkSpot(self):
-        # On the far side of the gazebo from the fisherman (Arthur), out
-        # past its railing, its open side to the playground and its back to
-        # the gazebo.
+        # Centred in front of the gazebo's base panel on the far side from
+        # the fisherman (Arthur circled it), far enough out that the trunk
+        # and its open lid stay clear of the gazebo.
         middle = GAZEBO[0]
-        away = Vec3(middle[0] - FISHERMAN[0][0], middle[1] - FISHERMAN[0][1], 0)
-        away.normalize()
+        a = math.radians(TRUNK_PANEL_ANGLE)
+        away = Vec3(math.cos(a), math.sin(a), 0)
         spot = middle + away * TRUNK_FROM_GAZEBO
         # Heading 0 faces +y; the trunk's back (+y) toward the gazebo.
         h = math.degrees(math.atan2(away[0], -away[1]))

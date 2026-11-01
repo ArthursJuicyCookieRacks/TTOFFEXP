@@ -180,7 +180,7 @@ class SurvivalHUD:
         """A "+10" that floats up beside the jellybean count and fades."""
         import random
         holder = self.beanBox.attachNewNode('beanPop')
-        holder.setPos(-0.76 - random.uniform(0, 0.12), 0, random.uniform(-0.05, 0.05))
+        holder.setPos(-0.04 - random.uniform(0, 0.1), 0, 0.15 + random.uniform(0, 0.03))
         OnscreenText(parent=holder, text='+%d' % amount, font=ToontownGlobals.getSignFont(), fg=(1, 0.9, 0.3, 1),
                      shadow=(0, 0, 0, 1), scale=0.06, align=TextNode.ARight, pos=(0, 0))
         start = holder.getPos()
@@ -299,7 +299,7 @@ class SurvivalHUD:
             for x in range(size):
                 dx, dy = (x - half) / half, (y - half) / half
                 d = min(1.0, (dx * dx + dy * dy) ** 0.5 / 1.2)
-                a = max(0.0, (d - 0.3) / 0.7) ** 1.25
+                a = max(0.0, (d - 0.55) / 0.45) ** 1.6
                 image.setXelA(x, y, 0.8, 0.0, 0.0, min(0.8, a * 0.9))
         tex = Texture('survivalDownVignette')
         tex.load(image)
@@ -346,8 +346,10 @@ class SurvivalHUD:
         rate = 0.5 + min(1.0, t / G.BLEED_OUT) * 0.25
         beat = (t * rate) % 1.0
         pulse = math.exp(-((beat - 0.15) / 0.12) ** 2)
-        ring.setColorScale(1, 1, 1, 0.3 + 0.25 * pulse)
-        grey['frameColor'] = (0.44 + 0.05 * pulse, 0.4, 0.42, 0.45)
+        # Only a thin red edge that beats; the middle stays clear (Arthur:
+        # it shouldn't fog the screen up).
+        ring.setColorScale(1, 1, 1, 0.18 + 0.17 * pulse)
+        grey['frameColor'] = (0.42, 0.4, 0.42, 0.3)
         return task.cont
 
     def ring(self, reach):
