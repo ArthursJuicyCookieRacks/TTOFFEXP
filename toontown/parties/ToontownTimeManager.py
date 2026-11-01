@@ -4,43 +4,41 @@ from direct.distributed import DistributedObject
 from direct.directnotify import DirectNotifyGlobal
 from toontown.toonbase import TTLocalizer
 
-# This is a cheap implementation of US/Pacific time that only calculates
-# correct DST for dates post-2006, because Toontown is far too silly a place
-# to care about perfect DST.
+# Toontown time is the device's own local time (Arthur: "if the clock on
+# their device is in Eastern then the Toontown time should be Eastern"). It
+# used to be US/Pacific, the original servers' time zone, so the clock in
+# the Shticker Book, the calendar and the party planner were hours off for
+# most players. The offset (and daylight saving) comes from the device for
+# each date, so it is right all year.
 class ToontownTimeZone(tzinfo):
-    OFFSET = -8
-    DST_BEGIN = datetime(1, 3, 8, 2) # DST begins on the second Sunday of March
-    DST_END = datetime(1, 11, 1, 1) # ...and ends on the first Sunday of November
-    NAMES = ('PST', 'PDT')
 
     @staticmethod
-    def forward_to_sunday(dt):
-        days_to_go = 6 - dt.weekday()
-        if days_to_go:
-            dt += timedelta(days_to_go)
-        return dt
-
-    def dst(self, dt):
-        # Find out if DST is active for the dt.
-        beginning = self.forward_to_sunday(self.DST_BEGIN.replace(year=dt.year))
-        ending = self.forward_to_sunday(self.DST_END.replace(year=dt.year))
-
-        if beginning <= dt.replace(tzinfo=None) < ending:
-            return timedelta(hours=1)
-        else:
-            return timedelta(0)
+    def _local(dt):
+        try:
+            stamp = time.mktime((dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second, 0, 0, -1))
+            return time.localtime(stamp)
+        except (OverflowError, ValueError):
+            return time.localtime()
 
     def utcoffset(self, dt):
-        offset = timedelta(hours=self.OFFSET)
-        offset += self.dst(dt)
-        return offset
-    
+        if dt is None:
+            return timedelta(seconds=time.localtime().tm_gmtoff)
+        return timedelta(seconds=self._local(dt).tm_gmtoff)
+
+    def dst(self, dt):
+        local = self._local(dt) if dt is not None else time.localtime()
+        return timedelta(hours=1) if local.tm_isdst > 0 else timedelta(0)
+
     def tzname(self, dt):
-        standard_name, dst_name = self.NAMES
-        if self.dst(dt):
-            return dst_name
-        else:
-            return standard_name
+        local = self._local(dt) if dt is not None else time.localtime()
+        return local.tm_zone
+
+    def fromutc(self, dt):
+        # Straight from the device's clock rules, so the hour that repeats
+        # when daylight saving ends comes out right.
+        stamp = (dt.replace(tzinfo=None) - datetime(1970, 1, 1)).total_seconds()
+        local = time.localtime(stamp)
+        return datetime(*local[:6], microsecond=dt.microsecond, tzinfo=self)
 
 
 # UTC is very simple, though:
