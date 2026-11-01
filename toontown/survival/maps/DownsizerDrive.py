@@ -176,7 +176,7 @@ class DownsizerDrive:
         kit.model('phase_5/models/char/tt_r_ara_ttc_trashcan', pos=(-82, 16, 0), h=180)
         kit.model('phase_5/models/char/tt_r_ara_ttc_mailbox', pos=(-95, -16, 0), h=20)
         # The cul-de-sac's fountain, a smaller copy of the one in Toontown Central.
-        kit.prop('prop_toontown_central_fountain', pos=(48, 0, 0.03), scale=0.6)
+        kit.prop('prop_toontown_central_fountain', pos=(48, 0, 0.03), scale=0.8)
         # Benches round the cul-de-sac.
         kit.prop('prop_playground_bench', pos=(46, -29.5, 0.04), h=180)
         kit.prop('prop_playground_bench', pos=(46, 29.5, 0.04), h=0)
@@ -186,7 +186,7 @@ class DownsizerDrive:
     def buildCars(self):
         kit = self.kit
         # The trolley, parked on the edge of the cul-de-sac like a bus with nowhere to go.
-        kit.model('phase_4/models/modules/trolley_station_TT', find='trolley_car', pos=(64, -14, 0.12), h=135)
+        kit.model('phase_4/models/modules/trolley_station_TT', find='trolley_car', pos=(66, -16, 0.12), h=135)
         # A kart in each driveway and one left in the street.
         kit.model('phase_6/models/karting/Kart3_Final', pos=(13, 17, 0.05), h=90, scale=2.6, color=(0.5, 0.85, 0.5, 1))
         kit.model('phase_6/models/karting/Kart1_Final', pos=(13, -16, 0.05), h=-90, scale=2.6, color=(1.0, 0.85, 0.4, 1))
