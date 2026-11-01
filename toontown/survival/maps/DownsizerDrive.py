@@ -71,7 +71,7 @@ class DownsizerDrive:
         kit.ring(48, 0, 25.8, 33, z=0.04, tex=SIDEWALK_TEX, tile=8, a0=-150, a1=150, name='walkEnd')
         # Grass right out to the board fence, so no sand shows inside the site.
         x0, y0, x1, y1 = SITE
-        kit.rect(x0, y0, x1, y1, z=0.01, tex=GRASS_TEX, tile=20, name='siteLawn')
+        kit.rect(x0, y0, x1, y1, z=-0.02, tex=GRASS_TEX, tile=20, name='siteLawn')
         # The lawns, front and back.
         kit.rect(-100, 20, 30, 90, z=0.03, tex=GRASS_TEX, tile=20, name='yardN')
         kit.rect(-100, -90, 30, -20, z=0.03, tex=GRASS_TEX, tile=20, name='yardS')
