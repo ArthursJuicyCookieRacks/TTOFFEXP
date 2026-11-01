@@ -51,11 +51,15 @@ def resistanceToon(name, seed, gender, head, color):
 
 
 def wall(parent, a, b, low=-2.0, high=30.0, name='survivalWall'):
-    """An invisible two-sided wall from a to b (x, y)."""
-    corners = [Point3(a[0], a[1], low), Point3(b[0], b[1], low), Point3(b[0], b[1], high), Point3(a[0], a[1], high)]
+    """An invisible wall from a to b (x, y). Thick capsules stacked up,
+    not a flat polygon: a toon moving a long way in one slow frame can
+    step its centre past a flat wall, and then its back face pushes the
+    toon on through."""
     node = CollisionNode(name)
-    node.addSolid(CollisionPolygon(*corners))
-    node.addSolid(CollisionPolygon(*reversed(corners)))
+    z = low + 1.5
+    while z < high:
+        node.addSolid(CollisionTube(a[0], a[1], z, b[0], b[1], z, 2.0))
+        z += 3.0
     node.setIntoCollideMask(ToontownGlobals.WallBitmask)
     node.setFromCollideMask(BitMask32.allOff())
     return parent.attachNewNode(node)
@@ -127,6 +131,9 @@ def addTrolley(arena):
     holder.setH(h)
 
 
+SELLBOT_TUNNEL_WALLS = (((-40, -256), (40, -256)), ((140, -195), (140, -115)))
+
+
 def sellbotCourtyard(arena):
     geom = arena.geom
     # The tunnels and doors lead nowhere: walls across them.
@@ -140,6 +147,10 @@ def sellbotCourtyard(arena):
         copy = sign.copyTo(geom)
         copy.setPosHprScale(x, y, z, h, 0, 0, 1.5, 1.5, 1.5 * 0.81)
     signs.removeNode()
+    # Invisible walls across the tunnel mouths (to Daisy Gardens and to the
+    # factory), so nobody walks off down them.
+    for a, b in SELLBOT_TUNNEL_WALLS:
+        wall(geom, a, b)
 
 
 def bossbotCourtyard(arena):
@@ -243,16 +254,22 @@ HOOD_MAPS = {
         'picture': 'phase_4/maps/survival_map_sellbot_hq.jpg',
         'models': (('phase_9/models/cogHQ/SellbotHQExterior', Point3(0, 0, 0), Vec3(0, 0, 0), 1.0),),
         'setup': 'sellbotCourtyard',
+        # The crater in the middle of the courtyard goes down to about -20.
+        'lowest': -30,
         'sky': 'phase_9/models/cogHQ/cog_sky',
         'skyScale': 2.0,
         'upgrader': resistanceToon('Agent Ace Fizzlesprocket', 4001, 'm', 'dls', 6),
         'spots': {
-            'upgrader': (Point3(-40, -150, 0), 0),
-            'fisherman': (Point3(40, -150, 0), 0),
-            'trunk': (Point3(0, -120, 0), 180),
-            'start': (Point3(0, -200, 0), 0),
+            # In front of the tunnel back to Daisy Gardens, the way the
+            # toons came in, like Mickey at Toontown Central's tunnel.
+            'upgrader': (Point3(0, -246, 0), 0),
+            'fisherman': (Point3(-95, -130, 0), -90),
+            'trunk': (Point3(72, -120, 0), -90),
+            # On the courtyard in front of the Sellbot towers, looking out
+            # over the crater.
+            'start': (Point3(0, -95, 0), 180),
         },
-        'trolley': (Point3(-60, -230, 0), 90),
+        'trolley': (Point3(-95, -100, 0), 90),
         'reachSpan': 260.0,
         'spawnRing': (40.0, 260.0),
     },
@@ -263,6 +280,7 @@ HOOD_MAPS = {
         'picture': 'phase_4/maps/survival_map_bossbot_hq.jpg',
         'models': (('phase_12/models/bossbotHQ/CogGolfExterior', Point3(0, 0, 0), Vec3(0, 0, 0), 1.0),),
         'setup': 'bossbotCourtyard',
+        'lowest': -30,
         'sky': 'phase_12/models/bossbotHQ/ttr_m_bossbothq_sky',
         'fog': ((0.15, 0.15, 0.15), 0.004),
         'upgrader': resistanceToon('Agent Penny Pinwheel', 4002, 'f', 'cls', 12),
