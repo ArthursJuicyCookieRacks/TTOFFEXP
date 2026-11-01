@@ -193,6 +193,15 @@ class SurvivalGame(DirectObject):
     # --- Setting up and tearing down ---
 
     def build(self):
+        # From Pick-A-Toon the sound effects are still at the start-up 20%
+        # (ToontownStart turns them down after the settings are applied;
+        # only a toon going into the game puts the player's volume back),
+        # so footsteps and cog voices were too quiet to hear (Arthur).
+        try:
+            from toontown.toonbase import GameSettings
+            GameSettings.applySfxVolume(GameSettings.getSfxVolume())
+        except Exception:
+            self.notify.warning('could not apply the sound volume')
         base.setBackgroundColor(Vec4(0.05, 0.05, 0.1, 1) if self.night else ToontownGlobals.DefaultBackgroundColor)
         # From Pick-A-Toon there is no collision traverser yet.
         self.ownTrav = not isinstance(base.cTrav, CollisionTraverser)
