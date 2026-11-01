@@ -25,10 +25,19 @@ YELLOW_HOUSE = (1.0, 0.86, 0.38)
 class DownsizerDrive:
     NAME = 'Downsizer Drive'
     PLAYER_START = ((-40, 0, 0), -90)
-    # Where the accessory trunk stands, by the cul-de-sac facing the fountain.
-    # In Survival this is the Mystery Box spot (TrunkStation), so the arena
-    # should place its working trunk here instead of this static one.
+    # Survival's stations (Arthur placed them). Played in Survival the
+    # working ones stand here; the preview shows them standing still.
+    # The accessory trunk (the Mystery Box), by the cul-de-sac facing the fountain.
     TRUNK_SPOT = ((75, 10, 0), -70)
+    # Fisherman Freddy (the Toon Tonics) on the grass past the cul-de-sac,
+    # facing the fountain.
+    FISHERMAN_SPOT = ((80, 24, 0), 127)
+    # Mickey (the gag upgrades) at the closed end of the street, facing up it.
+    MICKEY_SPOT = ((-85, 4, 0), -90)
+    # Where the trolley out is: the one parked by the cul-de-sac.
+    ESCAPE_NAME = 'Downsizer Drive'
+    # The toons' ground: inside the board fence.
+    SITE = (-110, -100, 90, 100)
     SHOTS = [
         ('overview', (-170, -170, 130), (-10, 0, 0)),
         ('overview_high', (0, -20, 260), (0, 0, 0)),
@@ -49,7 +58,10 @@ class DownsizerDrive:
         # The street signs' font, which the Toontown Central storage leaves out.
         self.kit.store.storeFont(loader.loadFont('phase_3/models/fonts/Comedy'), 'TT_Comedy')
 
-    def build(self):
+    def build(self, survival=False):
+        # In Survival the stations are the real thing: leave out the
+        # standing-still copies.
+        self.survival = survival
         self.buildGround()
         self.buildHouses()
         self.buildYards()
@@ -58,9 +70,47 @@ class DownsizerDrive:
         self.buildDummies()
         self.buildEdges()
         self.buildSky()
+        self.buildStations()
+        self.buildSolids()
 
     def destroy(self):
+        for actor in getattr(self, 'actors', []):
+            actor.delete()
+        self.actors = []
         self.kit.destroy()
+
+    def buildStations(self):
+        self.actors = []
+        if self.survival:
+            return
+        from toontown.char import Char, CharDNA
+        from toontown.toon import NPCToons
+        kit = self.kit
+        kit.model('phase_5.5/models/estate/tt_m_ara_est_accessoryTrunkBoy', pos=self.TRUNK_SPOT[0], h=self.TRUNK_SPOT[1])
+        freddy = NPCToons.createLocalNPC(2012)
+        freddy.reparentTo(self.root)
+        freddy.setPosHpr(self.FISHERMAN_SPOT[0], (self.FISHERMAN_SPOT[1], 0, 0))
+        freddy.loop('neutral')
+        freddy.nametag3d.stash()
+        mickey = Char.Char()
+        dna = CharDNA.CharDNA()
+        dna.newChar('mk')
+        mickey.setDNA(dna)
+        mickey.reparentTo(self.root)
+        mickey.setPosHpr(self.MICKEY_SPOT[0], (self.MICKEY_SPOT[1], 0, 0))
+        mickey.loop('neutral')
+        mickey.nametag3d.stash()
+        self.actors = [freddy, mickey]
+
+    # Things without collisions of their own get a box round them.
+    SOLID_MODELS = ('flowerBasket', 'picnic_table', 'target', 'watering_cans', 'shovels', 'Kart3_Final', 'Kart1_Final',
+                    'Coggolf_cart3')
+
+    def buildSolids(self):
+        kit = self.kit
+        for child in self.root.getChildren():
+            if child.getName().split('.')[0] in self.SOLID_MODELS:
+                kit.solid(child)
 
     # The street, the cul-de-sac and the yards.
     def buildGround(self):
@@ -76,6 +126,8 @@ class DownsizerDrive:
         # Grass right out to the board fence, so no sand shows inside the site.
         x0, y0, x1, y1 = SITE
         kit.rect(x0, y0, x1, y1, z=-0.02, tex=GRASS_TEX, tile=20, name='siteLawn')
+        # One flat floor for walking on, the whole site.
+        kit.collideFloor(x0, y0, x1, y1)
         # The lawns, front and back.
         kit.rect(-100, 20, 30, 90, z=0.03, tex=GRASS_TEX, tile=20, name='yardN')
         kit.rect(-100, -90, 30, -20, z=0.03, tex=GRASS_TEX, tile=20, name='yardS')
@@ -103,6 +155,7 @@ class DownsizerDrive:
 
     def picket(self, a, b):
         self.kit.wallQuad(a, b, 0, 4, tex=PICKET_TEX[0], alpha=PICKET_TEX[1], tile=8, tileZ=4, name='picket')
+        self.kit.collideWall(a, b, 4, name='picketCollide')
 
     def buildYards(self):
         kit = self.kit
@@ -184,8 +237,6 @@ class DownsizerDrive:
         kit.model('phase_5/models/char/tt_r_ara_ttc_mailbox', pos=(-95, -16, 0), h=20)
         # The cul-de-sac's fountain, a smaller copy of the one in Toontown Central.
         kit.prop('prop_toontown_central_fountain', pos=(48, 0, 0.03), scale=0.8)
-        # The accessory trunk (the Mystery Box spot in Survival).
-        kit.model('phase_5.5/models/estate/tt_m_ara_est_accessoryTrunkBoy', pos=self.TRUNK_SPOT[0], h=self.TRUNK_SPOT[1])
         # Benches round the cul-de-sac.
         kit.prop('prop_playground_bench', pos=(46, -29.5, 0.04), h=180)
         kit.prop('prop_playground_bench', pos=(46, 29.5, 0.04), h=0)
@@ -195,7 +246,10 @@ class DownsizerDrive:
     def buildCars(self):
         kit = self.kit
         # The trolley, parked on the edge of the cul-de-sac like a bus with nowhere to go.
-        kit.model('phase_4/models/modules/trolley_station_TT', find='trolley_car', pos=(66, -16, 0.12), h=135)
+        # Under a node named like a trolley station, so Survival finds it for the way out.
+        station = self.root.attachNewNode('trolley_station_downsizer')
+        self.trolley = kit.model('phase_4/models/modules/trolley_station_TT', find='trolley_car', pos=(66, -16, 0.12), h=135,
+                                 parent=station)
         # A kart in each driveway and one left in the street.
         kit.model('phase_6/models/karting/Kart3_Final', pos=(13, 17, 0.05), h=90, scale=2.6, color=(0.5, 0.85, 0.5, 1))
         kit.model('phase_6/models/karting/Kart1_Final', pos=(13, -16, 0.05), h=-90, scale=2.6, color=(1.0, 0.85, 0.4, 1))
@@ -203,8 +257,8 @@ class DownsizerDrive:
 
     def buildDummies(self):
         kit = self.kit
-        spots = [('f', (-45, 30, 0), 200), ('p', (80, 24, 0), 120), ('cc', (-12, -30, 0), 20),
-                 ('tm', (-55, -32, 0), -20), ('nd', (-90, -35, 0), 60), ('ym', (-85, 4, 0), -90),
+        spots = [('f', (-45, 30, 0), 200), ('cc', (-12, -30, 0), 20),
+                 ('tm', (-55, -32, 0), -20), ('nd', (-90, -35, 0), 60), ('ym', (-99, -2, 0), -90),
                  ('ac', (-72, 30, 0), 200), ('bf', (-15, 62, 0), 180), ('sc', (45, 70, 0), 160),
                  ('mh', (-70, -75, 0), 10), ('gh', (-72, -16.5, 0), 0), ('ms', (84, 82, 0), 225),
                  ('rb', (-20, 16.5, 0), 180), ('dt', (-95, 60, 0), -60), ('bs', (-104, -94, 0), -45),
@@ -212,6 +266,8 @@ class DownsizerDrive:
         for name, pos, h in spots:
             # A bit over game size, to match the scaled-up houses and karts.
             kit.cogStatue(name, pos, h, skeleton=True).setScale(1.25)
+            # Solid, like any statue.
+            kit.collideTube(pos, 1.3, 6.0, name='dummyCollide')
 
     def buildEdges(self):
         kit = self.kit

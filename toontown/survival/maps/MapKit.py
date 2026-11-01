@@ -321,6 +321,53 @@ class MapKit:
             np.setColor(*color)
         return np
 
+    # Collisions (for playing the map in Survival) ------------------------------
+    def collideFloor(self, x0, y0, x1, y1, z=0.0, name='mapFloor'):
+        """A flat floor toons and cogs stand on."""
+        from panda3d.core import BitMask32, CollisionNode, CollisionPolygon, Point3
+        node = CollisionNode(name)
+        node.addSolid(CollisionPolygon(Point3(x0, y0, z), Point3(x1, y0, z), Point3(x1, y1, z), Point3(x0, y1, z)))
+        node.setIntoCollideMask(ToontownGlobals.FloorBitmask)
+        node.setFromCollideMask(BitMask32.allOff())
+        return self.root.attachNewNode(node)
+
+    def collideWall(self, a, b, height, parent=None, name='mapWall'):
+        """A wall from a to b that stops toons and cogs from both sides."""
+        from panda3d.core import BitMask32, CollisionNode, CollisionPolygon, Point3
+        node = CollisionNode(name)
+        p = [Point3(a[0], a[1], 0), Point3(b[0], b[1], 0), Point3(b[0], b[1], height), Point3(a[0], a[1], height)]
+        node.addSolid(CollisionPolygon(p[0], p[1], p[2], p[3]))
+        node.addSolid(CollisionPolygon(p[3], p[2], p[1], p[0]))
+        node.setIntoCollideMask(ToontownGlobals.WallBitmask)
+        node.setFromCollideMask(BitMask32.allOff())
+        return (parent or self.root).attachNewNode(node)
+
+    def solid(self, np, shrink=0.9, name='mapSolid'):
+        """Make a model without collisions of its own solid: a box round
+        what it shows, in its own space (so it turns and scales with it)."""
+        from panda3d.core import BitMask32, CollisionBox, CollisionNode, Point3
+        low, high = np.getTightBounds(np)
+        if low is None:
+            return None
+        mid = (low + high) * 0.5
+        half = (high - low) * 0.5
+        hx, hy = max(half[0] * shrink, 0.3), max(half[1] * shrink, 0.3)
+        node = CollisionNode(name)
+        node.addSolid(CollisionBox(Point3(mid[0], mid[1], low[2] + half[2]), hx, hy, max(half[2], 0.5)))
+        node.setIntoCollideMask(ToontownGlobals.WallBitmask)
+        node.setFromCollideMask(BitMask32.allOff())
+        return np.attachNewNode(node)
+
+    def collideTube(self, pos, radius, height=4.0, name='mapTube'):
+        from panda3d.core import BitMask32, CollisionNode, CollisionTube
+        node = CollisionNode(name)
+        node.addSolid(CollisionTube(0, 0, 0.2, 0, 0, height, radius))
+        node.setIntoCollideMask(ToontownGlobals.WallBitmask)
+        node.setFromCollideMask(BitMask32.allOff())
+        path = self.root.attachNewNode(node)
+        path.setPos(pos[0], pos[1], pos[2] if len(pos) > 2 else 0)
+        return path
+
     # Text ----------------------------------------------------------------
     def text(self, text, pos=(0, 0, 0), h=0, scale=1.0, color=(1, 1, 1, 1), font='sign', parent=None,
              align=TextNode.ACenter, shadow=None, wordwrap=None):
