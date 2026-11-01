@@ -203,8 +203,7 @@ class SettingsPage(ShtikerPage.ShtikerPage):
                         text_fg=TEXT_COLOR, pos=(x, 0, z))
             widget = DirectButton(parent=frame, relief=None, image=self.btnImage, image_scale=(0.95, 1, 0.85),
                                   text='', text_scale=0.036, text_pos=(0, -0.012), pos=(x + 0.46, 0, z + 0.012),
-                                  command=self.__cyclePad, extraArgs=[button, 1])
-            widget.bind(DGG.B3PRESS, lambda event, button=button: self.__cyclePad(button, -1))
+                                  command=self.__openPadList, extraArgs=[button])
             self.padButtons[button] = widget
         DirectButton(parent=frame, relief=None, image=self.btnImage, image_scale=(0.9, 1, 1), text=TTLocalizer.SettingsPageReset,
                      text_scale=0.05, text_pos=(0, -0.02), pos=(0, 0, -0.5), command=self.__resetPad)
@@ -213,14 +212,51 @@ class SettingsPage(ShtikerPage.ShtikerPage):
         for button, widget in self.padButtons.items():
             widget['text'] = KeyBindings.PAD_LABELS.get(KeyBindings.getPad(button), '-')
 
-    def __cyclePad(self, button, step):
+    def __openPadList(self, button):
+        # A popup listing every action; picking one gives it to the button.
+        self.__closePadList()
         order = KeyBindings.PAD_ACTION_ORDER
         current = KeyBindings.getPad(button)
-        index = order.index(current) if current in order else 0
-        KeyBindings.setPad(button, order[(index + step) % len(order)])
+        columns = 3
+        rows = (len(order) + columns - 1) // columns
+        height = 0.32 + rows * 0.1
+        top = height / 2.0
+        popup = DirectFrame(parent=self, relief=DGG.RIDGE, borderWidth=(0.015, 0.015),
+                            frameColor=(1, 0.97, 0.85, 1), frameSize=(-0.78, 0.78, -top, top),
+                            pos=(0, 0, 0.02), sortOrder=DGG.FOREGROUND_SORT_INDEX)
+        popup.setBin('gui-popup', 0)
+        DirectLabel(parent=popup, relief=None, text=TTLocalizer.SettingsPagePadChoose % KeyBindings.PAD_BUTTON_LABELS[button],
+                    text_scale=0.055, text_fg=TEXT_COLOR, pos=(0, 0, top - 0.09))
+        for i, action in enumerate(order):
+            row, col = divmod(i, columns)
+            chosen = action == current
+            DirectButton(parent=popup, relief=None, image=self.btnImage, image_scale=(0.82, 1, 0.85),
+                         image_color=(0.55, 1, 0.55, 1) if chosen else (1, 1, 1, 1),
+                         text=KeyBindings.PAD_LABELS[action], text_scale=0.034, text_pos=(0, -0.012),
+                         pos=(-0.5 + col * 0.5, 0, top - 0.2 - row * 0.1),
+                         command=self.__pickPad, extraArgs=[button, action])
+        DirectButton(parent=popup, relief=None, image=self.btnImage, image_scale=(0.7, 1, 0.9),
+                     text=TTLocalizer.SettingsPageCancel, text_scale=0.045, text_pos=(0, -0.015),
+                     pos=(0, 0, -top + 0.08), command=self.__closePadList)
+        self.padList = popup
+        # The list covers the buttons, so they can't be clicked through it.
+        self.frames[CONTROLLER].hide()
+
+    def __pickPad(self, button, action):
+        KeyBindings.setPad(button, action)
+        self.__closePadList()
         self.__refreshPad()
 
+    def __closePadList(self):
+        popup = getattr(self, 'padList', None)
+        if popup is not None:
+            popup.destroy()
+            if self.mode == CONTROLLER:
+                self.frames[CONTROLLER].show()
+        self.padList = None
+
     def __resetPad(self):
+        self.__closePadList()
         KeyBindings.resetPad()
         self.__refreshPad()
 
@@ -229,6 +265,7 @@ class SettingsPage(ShtikerPage.ShtikerPage):
     def setMode(self, mode):
         messenger.send('wakeup')
         self.__stopCapture()
+        self.__closePadList()
         self.mode = mode
         for i, frame in enumerate(self.frames):
             if i == mode:
@@ -250,6 +287,7 @@ class SettingsPage(ShtikerPage.ShtikerPage):
 
     def exit(self):
         self.__stopCapture()
+        self.__closePadList()
         ShtikerPage.ShtikerPage.exit(self)
 
     def unload(self):

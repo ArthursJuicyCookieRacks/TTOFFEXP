@@ -314,7 +314,9 @@ SettingsPageKeyHelp = 'Click an action, then press the key you want for it. The 
 SettingsPageKeyWaiting = 'Press the new key for %s (Escape to cancel).'
 SettingsPageKeyReserved = '%s cannot be used. Press another key (Escape to cancel).'
 SettingsPagePressKey = '...'
-SettingsPagePadHelp = 'Click a button to change what it does (right-click goes back). The left stick always walks.'
+SettingsPagePadHelp = 'Click a button to pick what it does from a list. The left stick always walks.'
+SettingsPagePadChoose = 'What should %s do?'
+SettingsPageCancel = 'Cancel'
 # Building tasks a field office counts for too.
 QuestsBuildingQuestDescFO = 'a %(type)s Building or Field Office'
 QuestsBuildingQuestDescFFO = 'a %(floors)s story %(type)s Building or Field Office'
