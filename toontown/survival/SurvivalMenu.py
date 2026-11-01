@@ -2,7 +2,7 @@
 glue that runs a game from there and brings Pick-A-Toon back after."""
 
 from direct.gui import DirectGuiGlobals as DGG
-from direct.gui.DirectGui import DirectButton, DirectFrame, OnscreenText
+from direct.gui.DirectGui import DirectButton, DirectFrame, OnscreenImage, OnscreenText
 from direct.showbase.DirectObject import DirectObject
 from panda3d.core import TextNode, Vec4
 
@@ -15,10 +15,10 @@ class SurvivalMenu(DirectObject):
     """A dark card: the Survival Mode button, a description under it, how
     many NPC toons come along, the best round and Back."""
 
-    def __init__(self, doneEvent, bestRound):
+    def __init__(self, doneEvent, bestRound, npcs=0):
         DirectObject.__init__(self)
         self.doneEvent = doneEvent
-        self.npcs = 0
+        self.npcs = npcs
         sign = ToontownGlobals.getSignFont()
         face = ToontownGlobals.getInterfaceFont()
         self.frame = DirectFrame(parent=aspect2d, relief=DGG.FLAT, frameColor=(0.03, 0.03, 0.06, 0.95),
@@ -44,7 +44,7 @@ class SurvivalMenu(DirectObject):
                                        text=TTLocalizer.SurvivalBack, text_font=sign, text_fg=(1, 0.95, 0.4, 1), text_scale=0.07,
                                        text_pos=(0, -0.02), pos=(0, 0, -0.6), command=self.__back)
         gui.removeNode()
-        self.__setNpcs(0)
+        self.__setNpcs(npcs)
 
     def __setNpcs(self, n):
         self.npcs = n
@@ -52,10 +52,130 @@ class SurvivalMenu(DirectObject):
             b.setColorScale(Vec4(1, 1, 1, 1) if i == n else Vec4(0.55, 0.55, 0.55, 1))
 
     def __play(self):
-        messenger.send(self.doneEvent, [{'mode': 'play', 'npcs': self.npcs}])
+        messenger.send(self.doneEvent, [{'mode': 'maps', 'npcs': self.npcs}])
 
     def __back(self):
         messenger.send(self.doneEvent, [{'mode': 'back'}])
+
+    def destroy(self):
+        self.ignoreAll()
+        self.frame.destroy()
+
+
+DARK_RED = (0.22, 0.03, 0.03, 0.96)
+HEADER = (0.1, 0.01, 0.01, 1)
+ROW = (0.1, 0.01, 0.01, 0.85)
+ROW_LIT = (1, 1, 1, 1)
+
+
+class SurvivalMapSelect(DirectObject):
+    """Map Select: the maps listed on the left; the one under the pointer
+    lights up and shows its name, a picture and a few words on the right.
+    Clicking a map plays it. On a touch screen, where nothing hovers, the
+    first tap shows a map and a second tap on it plays it."""
+
+    def __init__(self, doneEvent, npcs):
+        DirectObject.__init__(self)
+        from toontown.survival.SurvivalArena import MAPS, MAP_ORDER
+        from toontown.toonbase import TouchControls
+        self.doneEvent = doneEvent
+        self.npcs = npcs
+        self.maps = [(key, MAPS[key]) for key in MAP_ORDER]
+        self.touch = TouchControls.wantTouchControls()
+        self.lit = None
+        self.timePopup = None
+        sign = ToontownGlobals.getSignFont()
+        face = ToontownGlobals.getInterfaceFont()
+        self.frame = DirectFrame(parent=aspect2d, relief=DGG.FLAT, frameColor=DARK_RED,
+                                 frameSize=(-1.3, 1.3, -0.8, 0.8), sortOrder=50, state=DGG.NORMAL)
+        DirectFrame(parent=self.frame, relief=DGG.FLAT, frameColor=HEADER, frameSize=(-1.3, 1.3, 0.6, 0.8))
+        OnscreenText(parent=self.frame, text=TTLocalizer.SurvivalMapSelect, font=sign, fg=(1, 1, 1, 1), shadow=(0, 0, 0, 1),
+                     scale=0.1, pos=(-1.22, 0.665), align=TextNode.ALeft)
+        self.rows = []
+        for i, (key, info) in enumerate(self.maps):
+            row = DirectButton(parent=self.frame, relief=DGG.FLAT, frameColor=ROW, frameSize=(-0.05, 1.05, -0.045, 0.075),
+                               text=info['title'].upper(), text_font=face, text_fg=(1, 1, 1, 1), text_scale=0.065,
+                               text_align=TextNode.ALeft, pos=(-1.2, 0, 0.42 - 0.14 * i),
+                               command=self.__click, extraArgs=[i])
+            row.bind(DGG.ENTER, self.__hover, [i])
+            self.rows.append(row)
+        self.title = OnscreenText(parent=self.frame, text='', font=sign, fg=(1, 1, 1, 1), shadow=(0, 0, 0, 1),
+                                  scale=0.1, pos=(0.62, 0.43))
+        # The picture is 16:9, the screenshots' own shape.
+        self.picture = None
+        self.description = OnscreenText(parent=self.frame, text='', font=face, fg=(1, 1, 1, 1), shadow=(0, 0, 0, 1),
+                                        scale=0.048, pos=(0.62, -0.4), wordwrap=23, align=TextNode.ACenter)
+        gui = loader.loadModel('phase_3/models/gui/quit_button')
+        up, down, over = gui.find('**/QuitBtn_UP'), gui.find('**/QuitBtn_DN'), gui.find('**/QuitBtn_RLVR')
+        self.backButton = DirectButton(parent=self.frame, relief=None, image=(up, down, over), image_scale=(1.1, 1, 1.2),
+                                       text=TTLocalizer.SurvivalBack, text_font=sign, text_fg=(1, 0.95, 0.4, 1), text_scale=0.07,
+                                       text_pos=(0, -0.02), pos=(-1.0, 0, -0.68), command=self.__back)
+        gui.removeNode()
+        self.__light(0)
+
+    def __light(self, i):
+        if i == self.lit:
+            return
+        self.lit = i
+        for j, row in enumerate(self.rows):
+            on = j == i
+            row['frameColor'] = ROW_LIT if on else ROW
+            row['text_fg'] = (0, 0, 0, 1) if on else (1, 1, 1, 1)
+        key, info = self.maps[i]
+        self.title.setText(info['title'].upper())
+        self.description.setText(info['description'])
+        if self.picture:
+            self.picture.destroy()
+        # The picture is 16:9, the screenshots' own shape.
+        self.picture = OnscreenImage(parent=self.frame, image=info['picture'], pos=(0.62, 0, 0.0), scale=(0.56, 1, 0.315))
+
+    def __hover(self, i, event=None):
+        self.__light(i)
+
+    def __click(self, i):
+        if self.timePopup:
+            return
+        if self.touch and self.lit != i:
+            self.__light(i)
+            return
+        self.__light(i)
+        key, info = self.maps[i]
+        if info.get('dayAndNight'):
+            self.__askTime(key)
+            return
+        self.__play(key, True)
+
+    def __askTime(self, key):
+        """A map with a daytime and a night-time version asks which."""
+        sign = ToontownGlobals.getSignFont()
+        gui = loader.loadModel('phase_3/models/gui/quit_button')
+        up, down, over = gui.find('**/QuitBtn_UP'), gui.find('**/QuitBtn_DN'), gui.find('**/QuitBtn_RLVR')
+        self.timePopup = DirectFrame(parent=self.frame, relief=DGG.FLAT, frameColor=(0.06, 0.01, 0.01, 0.97),
+                                     frameSize=(-0.62, 0.62, -0.36, 0.36), sortOrder=10, state=DGG.NORMAL)
+        OnscreenText(parent=self.timePopup, text=self.title.getText(), font=sign, fg=(1, 1, 1, 1), shadow=(0, 0, 0, 1),
+                     scale=0.075, pos=(0, 0.2))
+        for label, night, x in ((TTLocalizer.SurvivalDayTime, False, -0.3), (TTLocalizer.SurvivalNightTime, True, 0.3)):
+            DirectButton(parent=self.timePopup, relief=None, image=(up, down, over), image_scale=(1.15, 1, 1.4),
+                         text=label, text_font=sign, text_fg=(1, 0.95, 0.4, 1), text_scale=0.065, text_pos=(0, -0.02),
+                         pos=(x, 0, 0.0), command=self.__play, extraArgs=[key, night])
+        DirectButton(parent=self.timePopup, relief=None, image=(up, down, over), image_scale=(0.9, 1, 1.0),
+                     text=TTLocalizer.SurvivalBack, text_font=sign, text_fg=(1, 0.95, 0.4, 1), text_scale=0.055,
+                     text_pos=(0, -0.015), pos=(0, 0, -0.24), command=self.__closeTime)
+        gui.removeNode()
+
+    def __closeTime(self):
+        if self.timePopup:
+            self.timePopup.destroy()
+            self.timePopup = None
+
+    def __play(self, key, night):
+        messenger.send(self.doneEvent, [{'mode': 'play', 'npcs': self.npcs, 'map': key, 'night': night}])
+
+    def __back(self):
+        if self.timePopup:
+            self.__closeTime()
+            return
+        messenger.send(self.doneEvent, [{'mode': 'back', 'npcs': self.npcs}])
 
     def destroy(self):
         self.ignoreAll()
@@ -98,25 +218,39 @@ class SurvivalLauncher(DirectObject):
             sound.play()
         self.music = []
 
-    def showMenu(self):
+    def showMenu(self, npcs=0):
         from toontown.survival.SurvivalGame import SurvivalGame
-        self.menu = SurvivalMenu('survivalMenuDone', SurvivalGame.loadBest())
+        self.menu = SurvivalMenu('survivalMenuDone', SurvivalGame.loadBest(), npcs)
         self.acceptOnce('survivalMenuDone', self.__menuDone)
 
     def __menuDone(self, status):
         self.menu.destroy()
         self.menu = None
-        if status['mode'] == 'play':
-            self.startGame(status['npcs'])
+        if status['mode'] == 'maps':
+            self.showMaps(status['npcs'])
+        elif status['mode'] == 'play':
+            self.startGame(status['npcs'], status.get('map'), status.get('night', True))
         else:
             self.finish()
 
-    def startGame(self, npcs):
+    def showMaps(self, npcs):
+        self.menu = SurvivalMapSelect('survivalMapsDone', npcs)
+        self.acceptOnce('survivalMapsDone', self.__mapsDone)
+
+    def __mapsDone(self, status):
+        self.menu.destroy()
+        self.menu = None
+        if status['mode'] == 'play':
+            self.startGame(status['npcs'], status['map'], status.get('night', True))
+        else:
+            self.showMenu(status['npcs'])
+
+    def startGame(self, npcs, mapName=None, night=True):
         from toontown.survival.SurvivalGame import SurvivalGame
         self.__stopMusic()
         self.chooser.exit()
         base.transitions.fadeScreen(1.0)
-        self.game = SurvivalGame(self.dna, self.name, npcs, 'survivalGameDone')
+        self.game = SurvivalGame(self.dna, self.name, npcs, 'survivalGameDone', mapName, night)
         base.transitions.fadeIn(0.8)
         self.acceptOnce('survivalGameDone', self.__gameDone)
 
@@ -124,7 +258,7 @@ class SurvivalLauncher(DirectObject):
         self.game.destroy()
         self.game = None
         if status['mode'] == 'again':
-            self.startGame(status['npcs'])
+            self.startGame(status['npcs'], status.get('map'), status.get('night', True))
             return
         self.chooser.enter()
         self.__resumeMusic()

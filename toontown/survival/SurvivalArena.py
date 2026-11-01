@@ -25,6 +25,9 @@ SKY_FILE = 'phase_3.5/models/props/BR_sky'
 # Moonlight over the playground.
 NIGHT_SCALE = Vec4(0.42, 0.46, 0.62, 1)
 SKY_COLOR = Vec4(0.22, 0.24, 0.36, 1)
+# Maps that can be played in the daytime keep their own lighting and the
+# playground's blue sky.
+DAY_SKY_FILE = 'phase_3.5/models/props/TT_sky'
 
 # Where things are in the playground (from its DNA).
 LOOPY_LANE_TUNNEL = (Point3(-239.67, 64.08, -6.18), -90)
@@ -55,11 +58,16 @@ NO_LANDING = ((GAZEBO[0], 22.0), (FISHERMAN[0], 12.0), (LOOPY_LANE_TUNNEL[0], 16
 # Central. 'beta_ttc' is the Toontown Central of the beta 1.0.5 release
 # (round, with the pond, the gazebo in the middle and tunnels to Daisy's,
 # Donald's and Minnie's), converted by tools/offline/art/beta-ttc into
-# resources-overlay/phase_4/beta105. It is a preview: it is not offered
-# anywhere, only `survival-map beta_ttc` in a .prc file picks it.
+# resources-overlay/phase_4/beta105. Map Select offers it as
+# "Old School Toontown".
 BETA_DNA = 'phase_4/beta105/dna/'
 MAPS = {
     'ttc': {
+        'title': 'Toontown Central',
+        'description': 'The playground after dark. Cogs fall from the sky in rounds, more of them each round, tougher and faster. '
+                       'Mickey upgrades your gag by the Loopy Lane tunnel, the trunk by the gazebo hands out a random one, '
+                       'and Fisherman Freddy sells Toon Tonics.',
+        'picture': 'phase_4/maps/survival_map_ttc.jpg',
         'storage': STORAGE_FILES,
         'dna': DNA_FILE,
         'offset': Point3(0, 0, 0),
@@ -72,6 +80,12 @@ MAPS = {
         'playerStart': PLAYER_START,
     },
     'beta_ttc': {
+        'title': 'Old School Toontown',
+        'description': 'Toontown Central as it looked in the 2001 beta: a round playground with a pond, the gazebo in the middle '
+                       'and tunnels to Daisy\'s, Donald\'s and Minnie\'s. Mickey waits at the Donald\'s Dock tunnel.',
+        'picture': 'phase_4/maps/survival_map_beta_ttc.jpg',
+        # Map Select asks Day Time or Night Time for this one.
+        'dayAndNight': True,
         'storage': (BETA_DNA + 'storage.xml', BETA_DNA + 'storage_TT.xml', BETA_DNA + 'storage_TT_sz.xml'),
         'dna': BETA_DNA + 'toontown_central_sz.xml',
         # The beta's playground is centred on (110, -30); moved so its
@@ -94,9 +108,11 @@ MAPS = {
         'trunkPanelAngle': 300.0,
         # On the path south of the gazebo, facing it and Toon Hall.
         'playerStart': (Point3(0, -50, 0), 0),
-        'preview': True,
     },
 }
+
+# The order the Map Select menu lists them in.
+MAP_ORDER = ('ttc', 'beta_ttc')
 
 
 def mapName():
@@ -113,8 +129,9 @@ LANDING_CLEARANCE = 1
 class SurvivalArena:
     notify = DirectNotifyGlobal.directNotify.newCategory('SurvivalArena')
 
-    def __init__(self, name=None):
+    def __init__(self, name=None, night=True):
         self.mapName = name if name in MAPS else mapName()
+        self.night = night or not self.map_allowsDay(self.mapName)
         self.map = MAPS[self.mapName]
         gazebo = self.map['gazebo'][0]
         self.noLanding = ((gazebo, 22.0), (self.map['fisherman'][0], 12.0), (self.map['loopyLane'][0], 16.0))
@@ -169,7 +186,8 @@ class SurvivalArena:
                 prop.enter()
             except Exception:
                 self.notify.warning('could not start %s' % prop.__class__.__name__)
-        self.root.setColorScale(NIGHT_SCALE)
+        if self.night:
+            self.root.setColorScale(NIGHT_SCALE)
         self.sky = None
         self.skyTask = None
         self.startSky()
@@ -228,14 +246,21 @@ class SurvivalArena:
         self.notify.info('%d animated props' % len(props))
         return props
 
+    @staticmethod
+    def map_allowsDay(name):
+        return bool(MAPS.get(name, {}).get('dayAndNight'))
+
     def startSky(self):
-        self.sky = loader.loadModel(SKY_FILE)
+        self.sky = loader.loadModel(SKY_FILE if self.night else DAY_SKY_FILE)
         self.sky.setTag('sky', 'Survival')
-        self.sky.setScale(1.0)
+        # The day sky is a 500-foot dome; the camera only draws 400 feet
+        # out, so at full size it was cut away and the sky showed black.
+        self.sky.setScale(1.0 if self.night else 0.6)
         self.sky.setDepthTest(0)
         self.sky.setDepthWrite(0)
         self.sky.setBin('background', 100)
-        self.sky.setColor(SKY_COLOR)
+        if self.night:
+            self.sky.setColor(SKY_COLOR)
         self.sky.reparentTo(camera)
         self.sky.setZ(0.0)
         self.sky.setHpr(0.0, 0.0, 0.0)

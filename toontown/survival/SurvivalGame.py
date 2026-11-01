@@ -142,8 +142,10 @@ class PowerDrop:
 class SurvivalGame(DirectObject):
     notify = DirectNotifyGlobal.directNotify.newCategory('SurvivalGame')
 
-    def __init__(self, dna, name, npcCount, doneEvent):
+    def __init__(self, dna, name, npcCount, doneEvent, mapName=None, night=True):
         DirectObject.__init__(self)
+        self.mapName = mapName
+        self.night = night
         self.dna = dna
         self.name = name
         self.npcCount = max(0, min(3, int(npcCount)))
@@ -191,12 +193,12 @@ class SurvivalGame(DirectObject):
     # --- Setting up and tearing down ---
 
     def build(self):
-        base.setBackgroundColor(Vec4(0.05, 0.05, 0.1, 1))
+        base.setBackgroundColor(Vec4(0.05, 0.05, 0.1, 1) if self.night else ToontownGlobals.DefaultBackgroundColor)
         # From Pick-A-Toon there is no collision traverser yet.
         self.ownTrav = not isinstance(base.cTrav, CollisionTraverser)
         if self.ownTrav:
             base.cTrav = CollisionTraverser('survival')
-        self.arena = SurvivalArena()
+        self.arena = SurvivalArena(self.mapName, self.night)
         # The toon's arms hang close to the camera.
         base.camLens.setNear(0.3)
         start, h = self.arena.playerStart()
@@ -872,7 +874,7 @@ class SurvivalGame(DirectObject):
         messenger.send(self.doneEvent, [{'mode': 'exit'}])
 
     def playAgain(self):
-        messenger.send(self.doneEvent, [{'mode': 'again', 'npcs': self.npcCount}])
+        messenger.send(self.doneEvent, [{'mode': 'again', 'npcs': self.npcCount, 'map': self.arena.mapName, 'night': self.arena.night}])
 
     def quit(self):
         self.thawClock()
