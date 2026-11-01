@@ -324,6 +324,22 @@
 					<door code="door_double_round_ur">
 						<color r="0.88" g="0.45" b="0.38" a="1" />
 					</door>
+					<sign>
+						<pos x="0" y="0" z="-1.13" />
+						<scale x="1.2" y="1" z="1.2" />
+						<baseline code="mickey" kern="-0.099751" width="134.553" height="134.553">
+							<color r="1" g="1" b="0" a="1" />
+							<pos x="0.3" y="0" z="-1.4" />
+							<scale x="2.2" y="1" z="2.3" />
+							<text>TOON  HALL</text>
+						</baseline>
+						<baseline code="mickey" kern="-0.108469" width="19.1721" height="19.1721">
+							<color r="1" g="1" b="0" a="1" />
+							<pos x="0" y="0" z="1.08" />
+							<scale x="1.7" y="1" z="1.7" />
+							<text>mickey</text>
+						</baseline>
+					</sign>
 				</landmark_building>
 				<landmark_building id="tb16:toon_landmark_TT_school_house_DNARoot" code="toon_landmark_TT_school_house">
 					<pos x="71.7547" y="56.2167" z="6.67" />
@@ -331,6 +347,22 @@
 					<door code="door_double_square_ur">
 						<color r="0.88" g="0.45" b="0.38" a="1" />
 					</door>
+					<sign code="TTC_sign3">
+						<pos x="-0.35" y="0" z="0.3" />
+						<scale x="0.9" y="1" z="0.9" />
+						<baseline code="mickey" kern="-0.028793" width="40.778" height="40.778">
+							<color r="1" g="0.501961" b="0" a="1" />
+							<pos x="0" y="0" z="-0.49" />
+							<scale x="1.5" y="1" z="1.8" />
+							<text>School House</text>
+						</baseline>
+						<baseline code="mickey" width="24.3433" height="24.3433">
+							<color r="1" g="1" b="0.501961" a="1" />
+							<pos x="0" y="0" z="1.24" />
+							<scale x="1.1" y="1" z="1.1" />
+							<text>toontown</text>
+						</baseline>
+					</sign>
 				</landmark_building>
 				<flat_building id="tb0:random_DNARoot" width="25">
 					<pos x="20.6552" y="-74.4369" z="6.67" />
@@ -498,6 +530,17 @@
 					<door code="door_double_round_ur">
 						<color r="0.88" g="0.45" b="0.38" a="1" />
 					</door>
+					<sign>
+						<color r="1" g="1" b="0.776471" a="1" />
+						<pos x="-0.31" y="0" z="0.98" />
+						<scale x="1.2" y="1" z="0.9" />
+						<baseline code="mickey" kern="0.092795" width="50" height="50" flags="c">
+							<color r="1" g="0.662745" b="0.32549" a="1" />
+							<pos x="0" y="0" z="-1.58" />
+							<scale x="2.9" y="1" z="3.4" />
+							<text>Bank</text>
+						</baseline>
+					</sign>
 				</landmark_building>
 				<landmark_building id="tb18:toon_landmark_TT_library_DNARoot" code="toon_landmark_TT_library">
 					<pos x="172.762" y="-118.386" z="6.67" />
@@ -505,6 +548,22 @@
 					<door code="door_double_round_ur">
 						<color r="0.88" g="0.45" b="0.38" a="1" />
 					</door>
+					<sign code="TTC_sign3">
+						<pos x="1.52" y="0" z="3.88" />
+						<scale x="1" y="1" z="0.8" />
+						<baseline code="mickey" kern="-0.074144" width="32.3782" height="32.3782">
+							<color r="1" g="0.611765" b="0.129412" a="1" />
+							<pos x="0" y="0" z="-0.63" />
+							<scale x="2.4" y="1" z="2.4" />
+							<text>Library</text>
+						</baseline>
+						<baseline code="mickey" width="29.3574" height="29.3574">
+							<color r="1" g="1" b="0.501961" a="1" />
+							<pos x="-0.18" y="0" z="1.24" />
+							<scale x="1.1" y="1" z="1.4" />
+							<text>toontown</text>
+						</baseline>
+					</sign>
 				</landmark_building>
 				<flat_building id="tb0:10_10_10_DNARoot" width="20.7">
 					<pos x="183.707" y="-96.2929" z="6.67" />

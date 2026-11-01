@@ -16,6 +16,7 @@ replaces a file the game already has:
 """
 
 import os
+import re
 import shutil
 import sys
 
@@ -43,6 +44,51 @@ GAME_MODELS = {
     'phase_4/models/props/goofySZ': 'phase_4/models/props/goofySZ',
     'phase_4/models/props/plutoSZ': 'phase_4/models/props/plutoSZ',
 }
+
+
+LANDMARK = re.compile(r'(<landmark_building[^>]*code="([^"]+)"[^>]*>)(.*?)(\n(\t*)</landmark_building>)', re.S)
+
+
+# Where the beta model's sign_origin sits away from the game model's
+# (game minus beta, x and z): the sign is moved by that much so its text
+# lands where the game puts it.
+SIGN_SHIFT = {
+    'toon_landmark_TT_bank': (-0.31, 1.62),
+}
+
+
+def shiftSign(text, dx, dz):
+    def move(m):
+        return '<pos x="%g" y="%s" z="%g" />' % (float(m.group(1)) + dx, m.group(2), float(m.group(3)) + dz)
+    # The sign's own pos is the first one in the block.
+    return re.sub(r'<pos x="([^"]+)" y="([^"]+)" z="([^"]+)" />', move, text, count=1)
+
+
+def addGameSigns(sceneXml, gameXml):
+    """The beta's DNA gives Toon Hall, the School House, the Bank and the
+    Library no sign, so their sign boards are blank. Each one that has
+    none gets the sign the game's own Toontown Central gives that
+    building (same text, colors and font)."""
+    signs = {}
+    for m in LANDMARK.finditer(gameXml):
+        sign = re.search(r'\n(\t*)<sign.*?</sign>', m.group(3), re.S)
+        if sign:
+            signs.setdefault(m.group(2), (sign.group(0), sign.group(1)))
+    added = []
+
+    def fix(m):
+        if '<sign' in m.group(3) or m.group(2) not in signs:
+            return m.group(0)
+        text, indent = signs[m.group(2)]
+        if m.group(2) in SIGN_SHIFT:
+            text = shiftSign(text, *SIGN_SHIFT[m.group(2)])
+        want = m.group(5) + '\t'
+        text = '\n'.join(want + line[len(indent):] if line.startswith(indent) else line
+                         for line in text.split('\n'))
+        added.append(m.group(2))
+        return m.group(1) + m.group(3) + text + m.group(4)
+
+    return LANDMARK.sub(fix, sceneXml), added
 
 
 def main(betaDir, repoDir):
@@ -108,6 +154,13 @@ def main(betaDir, repoDir):
             converted[path] = path
             return path
         np, conv = convert_oldbam.convert(src, textureLoader=loadTexture, log=report.append)
+        # The game puts a building's sign on its "sign_origin" node; the
+        # beta's School House and Library call theirs "sign_origin_1".
+        if np.find('**/sign_origin').isEmpty():
+            for n in np.findAllMatches('**/sign_origin_*'):
+                n.setName('sign_origin')
+                report.append('%s: sign_origin_1 renamed sign_origin' % path)
+                break
         dst = os.path.join(outRoot, path + '.bam')
         os.makedirs(os.path.dirname(dst), exist_ok=True)
         np.writeBamFile(Filename.fromOsSpecific(dst))
@@ -125,8 +178,14 @@ def main(betaDir, repoDir):
             w.storage(items)
         else:
             w.scene(items, '2000')
+        text = w.text()
+        if not name.startswith('storage'):
+            game = os.path.join(repoDir, 'resources', 'phase_4', 'dna', name + '.xml')
+            text, added = addGameSigns(text, open(game, encoding='utf-8').read())
+            for code in added:
+                report.append('sign from the game added to %s' % code)
         with open(os.path.join(outRoot, 'dna', name + '.xml'), 'w') as f:
-            f.write(w.text())
+            f.write(text)
 
     print('%d models converted, %d pictures copied' % (len(converted), len(copied)))
     for line in sorted(set(report)):
