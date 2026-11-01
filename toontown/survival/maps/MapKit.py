@@ -331,29 +331,56 @@ class MapKit:
         node.setFromCollideMask(BitMask32.allOff())
         return self.root.attachNewNode(node)
 
-    def collideWall(self, a, b, height, parent=None, name='mapWall'):
-        """A wall from a to b that stops toons and cogs from both sides."""
-        from panda3d.core import BitMask32, CollisionNode, CollisionPolygon, Point3
+    def collideWall(self, a, b, height, parent=None, name='mapWall', thick=0.3):
+        """A wall from a to b that stops toons and cogs from both sides: a
+        stack of thin capsules along it, a foot or so apart up to height.
+        (Two polygons back to back don't work: a toon touching both is
+        pushed both ways at once and walks through; a CollisionBox pushes
+        toons the wrong way from one side.)"""
+        from panda3d.core import BitMask32, CollisionCapsule, CollisionNode, Point3
         node = CollisionNode(name)
-        p = [Point3(a[0], a[1], 0), Point3(b[0], b[1], 0), Point3(b[0], b[1], height), Point3(a[0], a[1], height)]
-        node.addSolid(CollisionPolygon(p[0], p[1], p[2], p[3]))
-        node.addSolid(CollisionPolygon(p[3], p[2], p[1], p[0]))
+        radius = max(0.15, thick * 0.5)
+        z = 0.6
+        while True:
+            node.addSolid(CollisionCapsule(Point3(a[0], a[1], z), Point3(b[0], b[1], z), radius))
+            if z >= height - 0.3:
+                break
+            z = min(height - 0.3, z + 1.2)
         node.setIntoCollideMask(ToontownGlobals.WallBitmask)
         node.setFromCollideMask(BitMask32.allOff())
         return (parent or self.root).attachNewNode(node)
 
-    def solid(self, np, shrink=0.9, name='mapSolid'):
-        """Make a model without collisions of its own solid: a box round
-        what it shows, in its own space (so it turns and scales with it)."""
-        from panda3d.core import BitMask32, CollisionBox, CollisionNode, Point3
+    def solid(self, np, shrink=0.9, name='mapSolid', minSize=None):
+        """Make a model without collisions of its own solid: a ring of
+        upright posts round the box it fills (in its own space, so they turn
+        and scale with it). An upright post always pushes a toon straight
+        out sideways; lying capsules or a CollisionBox pushed it up, down or
+        the wrong way, and it walked through (Arthur). minSize (feet) widens
+        a flat model, such as the flower basket card."""
+        from panda3d.core import BitMask32, CollisionNode, CollisionTube, Point3
         low, high = np.getTightBounds(np)
         if low is None:
             return None
+        scale = max(abs(np.getScale()[0]), 0.001)
         mid = (low + high) * 0.5
-        half = (high - low) * 0.5
-        hx, hy = max(half[0] * shrink, 0.3), max(half[1] * shrink, 0.3)
+        half = [(high[i] - low[i]) * 0.5 * shrink for i in range(2)]
+        if minSize:
+            half = [max(h, minSize * 0.5 / scale) for h in half]
+        x0, x1 = mid[0] - half[0], mid[0] + half[0]
+        y0, y1 = mid[1] - half[1], mid[1] + half[1]
+        top = low[2] + max(high[2] - low[2], 4.0 / scale)
+        radius = 0.45 / scale
+        step = 0.8 / scale
         node = CollisionNode(name)
-        node.addSolid(CollisionBox(Point3(mid[0], mid[1], low[2] + half[2]), hx, hy, max(half[2], 0.5)))
+        corners = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
+        for i in range(4):
+            (ax, ay), (bx, by) = corners[i], corners[(i + 1) % 4]
+            length = ((bx - ax) ** 2 + (by - ay) ** 2) ** 0.5
+            count = max(1, int(length / step + 0.999))
+            for j in range(count):
+                t = float(j) / count
+                x, y = ax + (bx - ax) * t, ay + (by - ay) * t
+                node.addSolid(CollisionTube(Point3(x, y, low[2]), Point3(x, y, top), radius))
         node.setIntoCollideMask(ToontownGlobals.WallBitmask)
         node.setFromCollideMask(BitMask32.allOff())
         return np.attachNewNode(node)

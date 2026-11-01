@@ -37,6 +37,8 @@ BEAN_SOUND = 'phase_4/audio/sfx/SZ_DD_treasure.ogg'
 POWER_SOUND = 'phase_4/audio/sfx/MG_pairing_match.ogg'
 REVIVE_SOUND = 'phase_5/audio/sfx/AA_heal_tickle.ogg'
 PICKUP_RANGE = 3.5
+# How far round Mickey and Freddy is solid.
+STATION_RADIUS = 1.6
 # The player's body can't go into a cog's: it is pushed out to this far
 # past the cog's radius.
 PLAYER_RADIUS = 1.3
@@ -215,10 +217,17 @@ class SurvivalGame(DirectObject):
         base.setBackgroundColor(Vec4(0.05, 0.05, 0.1, 1) if self.arena.night else ToontownGlobals.DefaultBackgroundColor)
         # The toon's arms hang close to the camera.
         base.camLens.setNear(0.3)
+        # A parody map can need the camera to draw further (its sky).
+        far = getattr(self.arena.parody, 'CAMERA_FAR', None)
+        if far:
+            base.camLens.setFar(far)
         start, h = self.arena.playerStart()
         # The trunk is solid: nobody walks through it (Arthur).
         from toontown.survival.SurvivalArena import TRUNK_RADIUS
         self.arena.addBlocker(self.arena.trunkSpot()[0], TRUNK_RADIUS)
+        # Nor through Mickey or Fisherman Freddy, on any map (Arthur).
+        self.arena.addBlocker(self.arena.mickeySpot()[0], STATION_RADIUS, 4.0)
+        self.arena.addBlocker(self.arena.fishermanSpot()[0], STATION_RADIUS, 4.0)
         self.arena.buildReach(start)
         self.player = SurvivalPlayer(self, start, h)
         self.hud = SurvivalHUD(self, self.dna)
@@ -278,6 +287,7 @@ class SurvivalGame(DirectObject):
         camera.reparentTo(render)
         camera.setPosHpr(0, 0, 0, 0, 0, 0)
         base.camLens.setNear(ToontownGlobals.DefaultCameraNear)
+        base.camLens.setFar(ToontownGlobals.DefaultCameraFar)
         self.arena.destroy()
         if self.ownTrav:
             base.cTrav = 0

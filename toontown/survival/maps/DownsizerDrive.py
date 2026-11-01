@@ -37,6 +37,9 @@ class DownsizerDrive:
     MICKEY_SCALE = 1.2
     # Where the trolley out is: the one parked by the cul-de-sac.
     ESCAPE_NAME = 'Downsizer Drive'
+    # The sky reaches 500 feet up and the factory stands 800 feet out:
+    # Survival's camera draws this far here, not its usual 400.
+    CAMERA_FAR = 1000.0
     # The toons' ground: inside the board fence.
     SITE = (-110, -100, 90, 100)
     SHOTS = [
@@ -56,6 +59,7 @@ class DownsizerDrive:
     def __init__(self):
         self.root = render.attachNewNode('downsizerDrive')
         self.kit = MapKit(self.root)
+        self.actors = []
         # The street signs' font, which the Toontown Central storage leaves out.
         self.kit.store.storeFont(loader.loadFont('phase_3/models/fonts/Comedy'), 'TT_Comedy')
 
@@ -81,7 +85,6 @@ class DownsizerDrive:
         self.kit.destroy()
 
     def buildStations(self):
-        self.actors = []
         if self.survival:
             return
         from toontown.char import Char, CharDNA
@@ -102,7 +105,7 @@ class DownsizerDrive:
         mickey.setScale(self.MICKEY_SCALE)
         mickey.loop('neutral')
         mickey.nametag3d.stash()
-        self.actors = [freddy, mickey]
+        self.actors += [freddy, mickey]
 
     # Things without collisions of their own get a box round them.
     SOLID_MODELS = ('flowerBasket', 'picnic_table', 'target', 'watering_cans', 'shovels', 'Kart3_Final', 'Kart1_Final',
@@ -111,8 +114,31 @@ class DownsizerDrive:
     def buildSolids(self):
         kit = self.kit
         for child in self.root.getChildren():
-            if child.getName().split('.')[0] in self.SOLID_MODELS:
-                kit.solid(child)
+            kind = child.getName().split('.')[0]
+            if kind in self.SOLID_MODELS:
+                # The flower basket is a flat card: give it a toon's width.
+                kit.solid(child, minSize=1.6 if kind == 'flowerBasket' else None)
+        # The trolley's own collisions are only its seats: a box round it.
+        kit.solid(self.trolley, shrink=0.85)
+        # The board fence all round. Its flats' own walls are pairs of
+        # polygons back to back, which a toon walks through (Arthur).
+        x0, y0, x1, y1 = SITE
+        for a, b in (((x0, y0), (x1, y0)), ((x1, y0), (x1, y1)), ((x1, y1), (x0, y1)), ((x0, y1), (x0, y0))):
+            kit.collideWall(a, b, 14, name='fenceCollide', thick=1.0)
+        # The flats' camera barriers face out and pushed a toon at the fence
+        # through it: they only keep the camera in now.
+        from toontown.toonbase import ToontownGlobals
+        for barrier in self.root.findAllMatches('**/wall_camera_barrier*'):
+            barrier.node().setIntoCollideMask(barrier.node().getIntoCollideMask() & ToontownGlobals.CameraBitmask)
+        # The fountain's pond walls face in: a toon who stepped over the rim
+        # couldn't get out without jumping. Without them the rim is a slope
+        # to walk up and down either way; the statue in the middle stays solid.
+        for walls in self.fountain.findAllMatches('**/collide_water_walls'):
+            walls.stash()
+        # Far away the trolley switched to its low-detail models, which
+        # are missing pieces: always draw the full one.
+        for lod in self.root.findAllMatches('**/+LODNode'):
+            lod.node().forceSwitch(0)
 
     # The street, the cul-de-sac and the yards.
     def buildGround(self):
@@ -231,19 +257,33 @@ class DownsizerDrive:
         for x in (-90, -50, -10, 25):
             kit.prop('prop_post_one_light', pos=(x, 17, 0), h=180)
             kit.prop('prop_post_one_light', pos=(x + 20, -17, 0), h=0)
-        kit.model('phase_5/models/char/tt_r_ara_ttc_hydrant', pos=(-45, 16, 0), h=180)
-        kit.model('phase_5/models/char/tt_r_ara_ttc_trashcan', pos=(5, -16, 0), h=0)
-        kit.model('phase_5/models/char/tt_r_ara_ttc_mailbox', pos=(30, 16, 0), h=200)
-        kit.model('phase_5/models/char/tt_r_ara_ttc_hydrant', pos=(-25, -16, 0), h=0)
-        kit.model('phase_5/models/char/tt_r_ara_ttc_trashcan', pos=(-82, 16, 0), h=180)
-        kit.model('phase_5/models/char/tt_r_ara_ttc_mailbox', pos=(-95, -16, 0), h=20)
+        # The hydrants, trash cans and mailboxes dance the way Toontown
+        # Central's do (its own idle animations).
+        self.animProp('hydrant', 'idle0', (-45, 16, 0), 180)
+        self.animProp('trashcan', 'idleHiccup0', (5, -16, 0), 0)
+        self.animProp('mailbox', 'idle0', (30, 16, 0), 200)
+        self.animProp('hydrant', 'idle0', (-25, -16, 0), 0)
+        self.animProp('trashcan', 'idleHiccup0', (-82, 16, 0), 180)
+        self.animProp('mailbox', 'idle0', (-95, -16, 0), 20)
         # The cul-de-sac's fountain, a smaller copy of the one in Toontown Central.
-        kit.prop('prop_toontown_central_fountain', pos=(48, 0, 0.03), scale=0.8)
+        self.fountain = kit.prop('prop_toontown_central_fountain', pos=(48, 0, 0.03), scale=0.8)
         # Benches round the cul-de-sac.
         kit.prop('prop_playground_bench', pos=(46, -29.5, 0.04), h=180)
         kit.prop('prop_playground_bench', pos=(46, 29.5, 0.04), h=0)
         kit.prop('prop_playground_bench', pos=(-40, 17.5, 0.04), h=0)
         kit.prop('prop_playground_bench', pos=(-40, -17.5, 0.04), h=180)
+
+    def animProp(self, kind, anim, pos, h):
+        from direct.actor.Actor import Actor
+        prop = Actor('phase_5/models/char/tt_r_ara_ttc_%s' % kind, {'idle': 'phase_5/models/char/tt_a_ara_ttc_%s_%s' % (kind, anim)})
+        prop.reparentTo(self.root)
+        prop.setPosHpr(pos[0], pos[1], pos[2], h, 0, 0)
+        prop.loop('idle')
+        # Not all in step.
+        prop.pose('idle', hash((pos[0], pos[1])) % max(1, prop.getNumFrames('idle')))
+        prop.loop('idle', restart=0)
+        self.actors.append(prop)
+        return prop
 
     def buildCars(self):
         kit = self.kit
@@ -254,7 +294,7 @@ class DownsizerDrive:
                                  parent=station)
         # A kart in each driveway and one left in the street.
         kit.model('phase_6/models/karting/Kart3_Final', pos=(13, 17, 0.05), h=90, scale=2.6, color=(0.5, 0.85, 0.5, 1))
-        kit.model('phase_6/models/karting/Kart1_Final', pos=(13, -16, 0.05), h=-90, scale=2.6, color=(1.0, 0.85, 0.4, 1))
+        kit.model('phase_6/models/karting/Kart1_Final', pos=(16.5, -16, 0.05), h=-90, scale=2.6, color=(1.0, 0.85, 0.4, 1))
         kit.model('phase_12/models/bossbotHQ/Coggolf_cart3', pos=(-70, -5, 0.05), h=75)
 
     def buildDummies(self):
@@ -301,7 +341,7 @@ class DownsizerDrive:
     <text>A Cog Testing Community</text>
   </baseline>
 </sign>""")
-        sign.setPosHprScale(-109, 0, 17, 90, 0, 0, 1.6, 1, 1.4)
+        sign.setPosHprScale(-109, 0, 15.8, 90, 0, 0, 1.6, 1, 1.4)
         # The street is closed off where it meets the fence.
         for i, y in enumerate((-10, -4, 2, 8)):
             kit.model('phase_6/models/karting/cone', pos=(-104, y, 0), h=i * 30, scale=1.5)

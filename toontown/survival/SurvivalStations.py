@@ -21,6 +21,8 @@ from toontown.toon import NPCToons
 from toontown.toonbase import ToontownGlobals
 
 USE_RANGE = 7.0
+# How close to a solid trolley's side the escape prompt shows.
+TROLLEY_SIDE_RANGE = 4.0
 FISHERMAN_ID = 2012
 
 
@@ -479,7 +481,19 @@ class TrolleyStation(Station):
     def near(self, pos):
         if self.car.isEmpty():
             return False
-        return (Point3(pos[0], pos[1], 0) - Point3(self.node.getX(), self.node.getY(), 0)).length() < G.ESCAPE_RANGE
+        if (Point3(pos[0], pos[1], 0) - Point3(self.node.getX(), self.node.getY(), 0)).length() < G.ESCAPE_RANGE:
+            return True
+        # A trolley the toon can't walk into (Downsizer Drive): near
+        # anywhere along its sides, not only by its middle.
+        if self.car.find('**/mapSolid').isEmpty():
+            return False
+        low, high = self.car.getTightBounds(self.car)
+        if low is None:
+            return False
+        local = self.car.getRelativePoint(self.game.arena.root, Point3(pos[0], pos[1], pos[2]))
+        dx = max(low[0] - local[0], 0, local[0] - high[0])
+        dy = max(low[1] - local[1], 0, local[1] - high[1])
+        return (dx * dx + dy * dy) ** 0.5 * abs(self.car.getScale(self.game.arena.root)[0]) < TROLLEY_SIDE_RANGE
 
     def prompt(self):
         if self.ride is not None:
