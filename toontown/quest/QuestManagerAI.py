@@ -3,6 +3,10 @@ from direct.directnotify.DirectNotifyGlobal import directNotify
 from toontown.toonbase import ToontownBattleGlobals
 import random
 
+def fieldOfficeLevel(difficulty):
+    return max(1, min(5, difficulty // 2 + 1))
+
+
 class QuestManagerAI:
     notify = directNotify.newCategory('QuestManagerAI')
     def __init__(self, air):
@@ -118,10 +122,12 @@ class QuestManagerAI:
         toon.updateQuests()
 
     def toonKilledCogdo(self, toon, track, difficulty, floors, zoneId, activeToons):
-        # A field office counts for any building task of its department
-        # (or any department), however many floors the task asks for:
-        # Arthur wants every building task doable in a field office.
-        self.toonKilledBuilding(toon, track, difficulty, max(floors + 1, 99), zoneId, activeToons)
+        # A field office counts for building tasks of its department (or
+        # any department) as a building as tall as its level: a 4+ story
+        # task needs a level 4 or 5 field office. Its level comes from its
+        # difficulty (levels 1-5 are difficulties 0, 2, 4, 6, 8; see
+        # DistributedBuildingAI.FieldOfficeLevels).
+        self.toonKilledBuilding(toon, track, difficulty, fieldOfficeLevel(difficulty), zoneId, activeToons)
 
     def toonRecoveredCogSuitPart(self, toon, zoneId, toonList):
         pass

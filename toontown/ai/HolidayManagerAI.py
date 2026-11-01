@@ -27,6 +27,7 @@ class HolidayManagerAI:
         (ToontownGlobals.VALENTINES_DAY, (2, 9, 0, 0), (2, 16, 23, 59)),
         (ToontownGlobals.IDES_OF_MARCH, (3, 14, 0, 0), (3, 20, 23, 59)),
         (ToontownGlobals.APRIL_FOOLS_COSTUMES, (3, 29, 0, 0), (4, 11, 23, 59)),
+        (ToontownGlobals.SILLYMETER_HOLIDAY, (3, 29, 0, 0), (4, 11, 23, 59)),
         (ToontownGlobals.HYDRANT_ZERO_HOLIDAY, (3, 29, 0, 0), (4, 4, 23, 59)),
         (ToontownGlobals.MAILBOX_ZERO_HOLIDAY, (4, 1, 0, 0), (4, 7, 23, 59)),
         (ToontownGlobals.TRASHCAN_ZERO_HOLIDAY, (4, 5, 0, 0), (4, 11, 23, 59)),
@@ -37,10 +38,10 @@ class HolidayManagerAI:
         (ToontownGlobals.BLACK_CAT_DAY, (10, 31, 0, 0), (10, 31, 23, 59)),
     ]
 
-    # The Silly Meter runs all year (it was only up March 29 - April 11, and
-    # the rest of the year Toon Hall showed it "Out For Repairs"): it fills
-    # through its 16 phases over each month and starts again on the 1st.
-    MonthlyHolidays = [ToontownGlobals.SILLYMETER_HOLIDAY]
+    # Holidays that run every month, from the 1st to the end of the month.
+    # The Silly Meter is not one: Arthur wants it only in its own season
+    # (March 29 - April 11), "Out For Repairs" the rest of the year.
+    MonthlyHolidays = []
 
     # Weekly holidays: (holidayId, weekday), Monday being 0.
     WeeklyHolidays = [
