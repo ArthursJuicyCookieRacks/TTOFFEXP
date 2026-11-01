@@ -25,6 +25,10 @@ YELLOW_HOUSE = (1.0, 0.86, 0.38)
 class DownsizerDrive:
     NAME = 'Downsizer Drive'
     PLAYER_START = ((-40, 0, 0), -90)
+    # Where the accessory trunk stands, by the cul-de-sac facing the fountain.
+    # In Survival this is the Mystery Box spot (TrunkStation), so the arena
+    # should place its working trunk here instead of this static one.
+    TRUNK_SPOT = ((75, 10, 0), -70)
     SHOTS = [
         ('overview', (-170, -170, 130), (-10, 0, 0)),
         ('overview_high', (0, -20, 260), (0, 0, 0)),
@@ -180,6 +184,8 @@ class DownsizerDrive:
         kit.model('phase_5/models/char/tt_r_ara_ttc_mailbox', pos=(-95, -16, 0), h=20)
         # The cul-de-sac's fountain, a smaller copy of the one in Toontown Central.
         kit.prop('prop_toontown_central_fountain', pos=(48, 0, 0.03), scale=0.8)
+        # The accessory trunk (the Mystery Box spot in Survival).
+        kit.model('phase_5.5/models/estate/tt_m_ara_est_accessoryTrunkBoy', pos=self.TRUNK_SPOT[0], h=self.TRUNK_SPOT[1])
         # Benches round the cul-de-sac.
         kit.prop('prop_playground_bench', pos=(46, -29.5, 0.04), h=180)
         kit.prop('prop_playground_bench', pos=(46, 29.5, 0.04), h=0)
