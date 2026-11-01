@@ -32,6 +32,18 @@ import dna2xml
 PREFIX = 'phase_4/beta105'
 DNA_FILES = ('storage', 'storage_TT', 'storage_TT_sz', 'toontown_central_sz')
 
+# The beta's character pictures (the ones on the tunnel signs) are flat
+# blue silhouettes. The game's own copies are the same shape and size,
+# in full color, so those are used instead.
+GAME_MODELS = {
+    'phase_4/models/props/mickeySZ': 'phase_3.5/models/props/mickeySZ',
+    'phase_4/models/props/minnieSZ': 'phase_4/models/props/minnieSZ',
+    'phase_4/models/props/donaldSZ': 'phase_4/models/props/donaldSZ',
+    'phase_4/models/props/daisySZ': 'phase_4/models/props/daisySZ',
+    'phase_4/models/props/goofySZ': 'phase_4/models/props/goofySZ',
+    'phase_4/models/props/plutoSZ': 'phase_4/models/props/plutoSZ',
+}
+
 
 def main(betaDir, repoDir):
     overlay = os.path.join(repoDir, 'resources-overlay')
@@ -86,6 +98,9 @@ def main(betaDir, repoDir):
         if os.path.splitext(path)[1] in ('.jpg', '.rgb', '.png'):
             return copyPicture(path) or path
         if path in converted:
+            return converted[path]
+        if path in GAME_MODELS:
+            converted[path] = GAME_MODELS[path]
             return converted[path]
         src = betaPath(path + '.bam')
         if not os.path.exists(src):

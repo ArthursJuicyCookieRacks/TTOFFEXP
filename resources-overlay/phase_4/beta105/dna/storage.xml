@@ -221,22 +221,22 @@
 	<model path="phase_4/beta105/phase_4/models/props/construction_sign">
 		<store_node root="prop" code="prop_construction_sign" />
 	</model>
-	<model path="phase_4/beta105/phase_4/models/props/mickeySZ">
+	<model path="phase_3.5/models/props/mickeySZ">
 		<store_node root="graphic" code="mickeySZ" />
 	</model>
-	<model path="phase_4/beta105/phase_4/models/props/minnieSZ">
+	<model path="phase_4/models/props/minnieSZ">
 		<store_node root="graphic" code="minnieSZ" />
 	</model>
-	<model path="phase_4/beta105/phase_4/models/props/donaldSZ">
+	<model path="phase_4/models/props/donaldSZ">
 		<store_node root="graphic" code="donaldSZ" />
 	</model>
-	<model path="phase_4/beta105/phase_4/models/props/daisySZ">
+	<model path="phase_4/models/props/daisySZ">
 		<store_node root="graphic" code="daisySZ" />
 	</model>
-	<model path="phase_4/beta105/phase_4/models/props/goofySZ">
+	<model path="phase_4/models/props/goofySZ">
 		<store_node root="graphic" code="goofySZ" />
 	</model>
-	<model path="phase_4/beta105/phase_4/models/props/plutoSZ">
+	<model path="phase_4/models/props/plutoSZ">
 		<store_node root="graphic" code="plutoSZ" />
 	</model>
 </storage>
