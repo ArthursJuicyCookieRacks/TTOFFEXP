@@ -127,6 +127,9 @@ def addTrolley(arena):
     station = loader.loadModel(TROLLEY_MODEL)
     holder = arena.geom.attachNewNode('prop_trolley_station_DNARoot')
     station.reparentTo(holder)
+    # Just the trolley, its platform and awning: the green Toontown hill
+    # and its tunnels behind it belong to a playground, not a Cog HQ.
+    stashAll(station, 'hill_1', 'tunnelL', 'tunnelR')
     holder.setPos(pos)
     holder.setH(h)
 
@@ -158,6 +161,9 @@ def bossbotCourtyard(arena):
     stashAll(geom, '*tunnel_sphere*', '*door_trigger*', '*trigger*')
     for hole in geom.findAllMatches('**/doorFrameHole*'):
         hole.hide()
+    # An invisible wall just inside the tunnel to Chip 'n Dale's Acorn
+    # Acres, so nobody walks off down it.
+    wall(geom, (415, -30), (415, 35), low=-14.0)
 
 
 HOOD_MAPS = {
@@ -269,29 +275,31 @@ HOOD_MAPS = {
             # over the crater.
             'start': (Point3(0, -95, 0), 180),
         },
-        'trolley': (Point3(-95, -100, 0), 90),
+        'trolley': (Point3(-85, -185, 0), 90),
         'reachSpan': 260.0,
         'spawnRing': (40.0, 260.0),
     },
     'bossbot_hq': {
         'title': 'Bossbot HQ',
-        'description': "The Bossbots' golf course in the rain. A Toon Resistance agent upgrades your gag, "
+        'description': "The Bossbots' golf grounds round the fountain. A Toon Resistance agent upgrades your gag, "
                        'Fisherman Freddy came along with his tonics, and the trunk sits by the fountain.',
         'picture': 'phase_4/maps/survival_map_bossbot_hq.jpg',
         'models': (('phase_12/models/bossbotHQ/CogGolfExterior', Point3(0, 0, 0), Vec3(0, 0, 0), 1.0),),
         'setup': 'bossbotCourtyard',
         'lowest': -30,
         'sky': 'phase_12/models/bossbotHQ/ttr_m_bossbothq_sky',
-        'fog': ((0.15, 0.15, 0.15), 0.004),
+        'fog': ((0.15, 0.15, 0.15), 0.002),
         'upgrader': resistanceToon('Agent Penny Pinwheel', 4002, 'f', 'cls', 12),
         'spots': {
-            'upgrader': (Point3(-40, 0, 0), 90),
-            'fisherman': (Point3(40, 0, 0), -90),
-            'trunk': (Point3(0, 40, 0), 180),
-            'start': (Point3(0, -40, 0), 0),
+            # East of the fountain, facing the tunnel from Chip 'n Dale's
+            # Acorn Acres, the way the toons came in.
+            'upgrader': (Point3(62, 0, 0), -90),
+            'fisherman': (Point3(-62, 0, 0), 90),
+            'trunk': (Point3(0, -62, 0), 0),
+            'start': (Point3(130, 0, 0), 90),
         },
-        'trolley': (Point3(0, -100, 0), 0),
-        'reachSpan': 260.0,
-        'spawnRing': (40.0, 260.0),
+        'trolley': (Point3(0, 110, 0), 180),
+        'reachSpan': 200.0,
+        'spawnRing': (40.0, 200.0),
     },
 }
