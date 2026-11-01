@@ -11,8 +11,9 @@ from direct.gui.DirectGuiBase import DirectGuiWidget
 from direct.task import Task
 from panda3d.core import MouseButton
 
-HOLD_DELAY = 0.5
-REPEAT_TIME = 0.35
+# Arthur (2026-11-01): a little faster again.
+HOLD_DELAY = 0.4
+REPEAT_TIME = 0.22
 
 
 def mouseHeld():

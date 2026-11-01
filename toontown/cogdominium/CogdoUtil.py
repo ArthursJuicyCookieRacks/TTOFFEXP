@@ -1,4 +1,4 @@
-from panda3d.core import ColorBlendAttrib
+from panda3d.core import ColorBlendAttrib, Point3, ScissorEffect
 ModelPhase = 5
 ModelTypes = {'animation': 'a',
  'model': 'm',
@@ -176,3 +176,14 @@ def takeToon(toon):
     open); a riding toon stays in the elevator, which lets it out."""
     if not isRidingElevator(toon):
         toon.reparentTo(render)
+
+
+# The intro and dialogue movies cut the speaker's head off at the bottom
+# edge of the talk box with a clip plane. Phones (OpenGL ES 2) have no clip
+# planes, so the whole toon or cog showed outside the box. A scissor cut, in
+# screen space, does the same job everywhere.
+BOX_CLIP_Z = -1.27 + 2.45 * 0.18
+
+
+def clipToBox(node, z = BOX_CLIP_Z):
+    node.setEffect(ScissorEffect.makeNode(Point3(-10, 0, z), Point3(10, 0, 10), aspect2d))
