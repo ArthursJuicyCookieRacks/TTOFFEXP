@@ -33,6 +33,8 @@ INCOMPLETE_WRONG_NPC = 4
 COMPLETE = 5
 LEAVING = 6
 Any = 1
+# Departments whose cog buildings can be field offices (DistributedSuitPlannerAI.CogdoTracks).
+FieldOfficeTracks = ('s', 'l')
 OBSOLETE = 'OBSOLETE'
 Start = 1
 Cont = 0
@@ -1042,6 +1044,17 @@ class BuildingQuest(CogQuest):
             return TTLocalizer.QuestsBuildingQuestProgressString % {'progress': questDesc[4],
              'num': self.getNumBuildings()}
 
+    def hasFieldOffices(self):
+        # The departments whose buildings can be field offices: a field
+        # office counts for these tasks too.
+        track = self.getBuildingTrack()
+        return track == Any or track in FieldOfficeTracks
+
+    def buildingText(self, name):
+        if self.hasFieldOffices():
+            return getattr(TTLocalizer, name + 'FO', getattr(TTLocalizer, name))
+        return getattr(TTLocalizer, name)
+
     def getObjectiveStrings(self):
         count = self.getNumBuildings()
         floors = TTLocalizer.QuestsBuildingQuestFloorNumbers[self.getNumFloors() - 1]
@@ -1052,13 +1065,13 @@ class BuildingQuest(CogQuest):
             type = self.trackNames[self.trackCodes.index(buildingTrack)]
         if count == 1:
             if floors == '':
-                text = TTLocalizer.QuestsBuildingQuestDesc
+                text = self.buildingText('QuestsBuildingQuestDesc')
             else:
-                text = TTLocalizer.QuestsBuildingQuestDescF
+                text = self.buildingText('QuestsBuildingQuestDescF')
         elif floors == '':
-            text = TTLocalizer.QuestsBuildingQuestDescC
+            text = self.buildingText('QuestsBuildingQuestDescC')
         else:
-            text = TTLocalizer.QuestsBuildingQuestDescCF
+            text = self.buildingText('QuestsBuildingQuestDescCF')
         return (text % {'count': count,
           'floors': floors,
           'type': type},)
@@ -1078,13 +1091,13 @@ class BuildingQuest(CogQuest):
             type = self.trackNames[self.trackCodes.index(buildingTrack)]
         if count == 1:
             if floors == '':
-                text = TTLocalizer.QuestsBuildingQuestDesc
+                text = self.buildingText('QuestsBuildingQuestDesc')
             else:
-                text = TTLocalizer.QuestsBuildingQuestDescF
+                text = self.buildingText('QuestsBuildingQuestDescF')
         elif floors == '':
-            text = TTLocalizer.QuestsBuildingQuestDescI
+            text = self.buildingText('QuestsBuildingQuestDescI')
         else:
-            text = TTLocalizer.QuestsBuildingQuestDescIF
+            text = self.buildingText('QuestsBuildingQuestDescIF')
         objective = text % {'floors': floors,
          'type': type}
         location = self.getLocationName()

@@ -118,9 +118,10 @@ class QuestManagerAI:
         toon.updateQuests()
 
     def toonKilledCogdo(self, toon, track, difficulty, floors, zoneId, activeToons):
-        # A field office counts as a cog building of its department, with
-        # the executive suite as its top floor.
-        self.toonKilledBuilding(toon, track, difficulty, floors + 1, zoneId, activeToons)
+        # A field office counts for any building task of its department
+        # (or any department), however many floors the task asks for:
+        # Arthur wants every building task doable in a field office.
+        self.toonKilledBuilding(toon, track, difficulty, max(floors + 1, 99), zoneId, activeToons)
 
     def toonRecoveredCogSuitPart(self, toon, zoneId, toonList):
         pass

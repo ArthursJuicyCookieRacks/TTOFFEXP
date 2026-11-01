@@ -177,6 +177,51 @@ class QuestPoster(DirectFrame):
         suit = None
         return head
 
+    def createBuildingIcon(self, quest, track, numFloors):
+        """The picture for a building task: the cog building, and for a
+        department that has field offices, its field office as well, the
+        two taking turns (Arthur: a field office counts for these tasks)."""
+        building = self.__buildingGeom(track, numFloors)
+        if not (hasattr(quest, 'hasFieldOffices') and quest.hasFieldOffices()):
+            return building
+        frames = [building]
+        if track == Quests.Any:
+            tracks = Quests.FieldOfficeTracks
+        else:
+            tracks = (track,)
+        for t in tracks:
+            frames.append(self.__fieldOfficeGeom(t))
+        seq = SequenceNode('buildingIcon')
+        seq.setFrameRate(0.5)
+        icon = NodePath(seq)
+        for geom, scale in frames:
+            holder = icon.attachNewNode('frame')
+            geom.reparentTo(holder)
+            holder.setScale(scale)
+        seq.loop(True)
+        return icon, 1.0
+
+    def __buildingGeom(self, track, numFloors):
+        models = {'c': 'suit_landmark_corp', 'l': 'suit_landmark_legal',
+                  'm': 'suit_landmark_money', 's': 'suit_landmark_sales'}
+        if track in models:
+            geom = loader.loadModel('phase_4/models/modules/' + models[track])
+            self.loadElevator(geom, numFloors)
+            geom.setH(180)
+            self.fitGeometry(geom, fFlip=0)
+            return geom, IMAGE_SCALE_SMALL
+        bookModel = loader.loadModel('phase_3.5/models/gui/stickerbook_gui')
+        geom = bookModel.find('**/COG_building').copyTo(hidden)
+        bookModel.removeNode()
+        return geom, 0.13
+
+    def __fieldOfficeGeom(self, track):
+        from toontown.building.DistributedBuilding import FO_DICT
+        geom = loader.loadModel('phase_5/models/cogdominium/%s' % FO_DICT[track])
+        geom.setH(180)
+        self.fitGeometry(geom, fFlip=0)
+        return geom, IMAGE_SCALE_SMALL
+
     def loadElevator(self, building, numFloors):
         elevatorNodePath = hidden.attachNewNode('elevatorNodePath')
         elevatorModel = loader.loadModel('phase_4/models/modules/elevator')
@@ -432,25 +477,7 @@ class QuestPoster(DirectFrame):
             frameBgColor = 'blue'
             track = quest.getBuildingTrack()
             numFloors = quest.getNumFloors()
-            if track == 'c':
-                lIconGeom = loader.loadModel('phase_4/models/modules/suit_landmark_corp')
-            elif track == 'l':
-                lIconGeom = loader.loadModel('phase_4/models/modules/suit_landmark_legal')
-            elif track == 'm':
-                lIconGeom = loader.loadModel('phase_4/models/modules/suit_landmark_money')
-            elif track == 's':
-                lIconGeom = loader.loadModel('phase_4/models/modules/suit_landmark_sales')
-            else:
-                bookModel = loader.loadModel('phase_3.5/models/gui/stickerbook_gui')
-                lIconGeom = bookModel.find('**/COG_building')
-                bookModel.removeNode()
-            if lIconGeom and track != Quests.Any:
-                self.loadElevator(lIconGeom, numFloors)
-                lIconGeom.setH(180)
-                self.fitGeometry(lIconGeom, fFlip=0)
-                lIconGeomScale = IMAGE_SCALE_SMALL
-            else:
-                lIconGeomScale = 0.13
+            lIconGeom, lIconGeomScale = self.createBuildingIcon(quest, track, numFloors)
             if not fComplete:
                 infoText = quest.getLocationName()
                 if infoText == '':
@@ -459,25 +486,7 @@ class QuestPoster(DirectFrame):
             frameBgColor = 'blue'
             track = quest.getBuildingTrack()
             numFloors = quest.getNumFloors()
-            if track == 'c':
-                rIconGeom = loader.loadModel('phase_4/models/modules/suit_landmark_corp')
-            elif track == 'l':
-                rIconGeom = loader.loadModel('phase_4/models/modules/suit_landmark_legal')
-            elif track == 'm':
-                rIconGeom = loader.loadModel('phase_4/models/modules/suit_landmark_money')
-            elif track == 's':
-                rIconGeom = loader.loadModel('phase_4/models/modules/suit_landmark_sales')
-            else:
-                bookModel = loader.loadModel('phase_3.5/models/gui/stickerbook_gui')
-                rIconGeom = bookModel.find('**/COG_building')
-                bookModel.removeNode()
-            if rIconGeom and track != Quests.Any:
-                self.loadElevator(rIconGeom, numFloors)
-                rIconGeom.setH(180)
-                self.fitGeometry(rIconGeom, fFlip=0)
-                rIconGeomScale = IMAGE_SCALE_SMALL
-            else:
-                rIconGeomScale = 0.13
+            rIconGeom, rIconGeomScale = self.createBuildingIcon(quest, track, numFloors)
             if not fComplete:
                 headlineString = TTLocalizer.QuestsNewbieQuestHeadline
                 captions = [quest.getCaption()]
