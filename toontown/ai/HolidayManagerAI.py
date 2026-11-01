@@ -27,7 +27,6 @@ class HolidayManagerAI:
         (ToontownGlobals.VALENTINES_DAY, (2, 9, 0, 0), (2, 16, 23, 59)),
         (ToontownGlobals.IDES_OF_MARCH, (3, 14, 0, 0), (3, 20, 23, 59)),
         (ToontownGlobals.APRIL_FOOLS_COSTUMES, (3, 29, 0, 0), (4, 11, 23, 59)),
-        (ToontownGlobals.SILLYMETER_HOLIDAY, (3, 29, 0, 0), (4, 11, 23, 59)),
         (ToontownGlobals.HYDRANT_ZERO_HOLIDAY, (3, 29, 0, 0), (4, 4, 23, 59)),
         (ToontownGlobals.MAILBOX_ZERO_HOLIDAY, (4, 1, 0, 0), (4, 7, 23, 59)),
         (ToontownGlobals.TRASHCAN_ZERO_HOLIDAY, (4, 5, 0, 0), (4, 11, 23, 59)),
@@ -37,6 +36,11 @@ class HolidayManagerAI:
         (ToontownGlobals.TRICK_OR_TREAT, (10, 18, 0, 0), (11, 1, 23, 59)),
         (ToontownGlobals.BLACK_CAT_DAY, (10, 31, 0, 0), (10, 31, 23, 59)),
     ]
+
+    # The Silly Meter runs all year (it was only up March 29 - April 11, and
+    # the rest of the year Toon Hall showed it "Out For Repairs"): it fills
+    # through its 16 phases over each month and starts again on the 1st.
+    MonthlyHolidays = [ToontownGlobals.SILLYMETER_HOLIDAY]
 
     # Weekly holidays: (holidayId, weekday), Monday being 0.
     WeeklyHolidays = [
@@ -118,6 +122,7 @@ class HolidayManagerAI:
                     running = stamp >= start or stamp <= end
                 if running:
                     holidays.append(holidayId)
+            holidays.extend(self.MonthlyHolidays)
             for holidayId, weekday in self.WeeklyHolidays:
                 if now.tm_wday == weekday:
                     if holidayId == ToontownGlobals.SILLY_SATURDAY_BINGO:
@@ -157,6 +162,12 @@ class HolidayManagerAI:
             start = self.forcedStartTimes[holidayId]
             return start, start + 86400
         local = time.localtime(now)
+        if holidayId in self.MonthlyHolidays:
+            year, month = local.tm_year, local.tm_mon
+            nextYear, nextMonth = (year + 1, 1) if month == 12 else (year, month + 1)
+            startTime = time.mktime((year, month, 1, 0, 0, 0, 0, 0, -1))
+            endTime = time.mktime((nextYear, nextMonth, 1, 0, 0, 0, 0, 0, -1))
+            return int(startTime), int(endTime)
         for yearlyId, start, end in self.YearlyHolidays:
             if yearlyId != holidayId:
                 continue

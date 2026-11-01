@@ -15,13 +15,17 @@ class DistributedPhaseEventMgrAI(DistributedObjectAI):
         self.holidayId = holidayId
         holidayManager = air.holidayManager
         self.numPhases = holidayManager.PhasedHolidays[holidayId]
-        start, end = holidayManager.getHolidayRun(holidayId)
-        self.holidayDates = []
-        for phase in range(self.numPhases + 1):
-            stamp = time.localtime(start + (end - start) * phase // self.numPhases)
-            self.holidayDates.append(list(stamp[:6]))
+        self.holidayDates = self.__runDates()
         self.curPhase = holidayManager.getHolidayPhase(holidayId)
         self.isRunning = True
+
+    def __runDates(self):
+        start, end = self.air.holidayManager.getHolidayRun(self.holidayId)
+        dates = []
+        for phase in range(self.numPhases + 1):
+            stamp = time.localtime(start + (end - start) * phase // self.numPhases)
+            dates.append(list(stamp[:6]))
+        return dates
 
     def announceGenerate(self):
         DistributedObjectAI.announceGenerate(self)
@@ -42,6 +46,12 @@ class DistributedPhaseEventMgrAI(DistributedObjectAI):
     def __updatePhase(self, holidayId):
         if holidayId != self.holidayId:
             return
+        # A holiday that runs again (the Silly Meter's new month) has new
+        # phase dates.
+        dates = self.__runDates()
+        if dates != self.holidayDates:
+            self.holidayDates = dates
+            self.sendUpdate('setDates', [dates])
         phase = self.air.holidayManager.getHolidayPhase(self.holidayId)
         if phase != self.curPhase:
             self.b_setCurPhase(phase)
