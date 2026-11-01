@@ -419,6 +419,10 @@ class SurvivalCog:
     def nudge(self, dx, dy):
         """Pushed aside by a cog it walked into (SurvivalGame keeps them
         from standing in each other)."""
+        if abs(dx) + abs(dy) < 0.001:
+            # Too small to move, and a line check from a point to itself
+            # fails an assertion in Panda.
+            return
         a = Point3(self.pos[0], self.pos[1], self.pos[2] + 2)
         b = Point3(self.pos[0] + dx, self.pos[1] + dy, self.pos[2] + 2)
         if not self.arena.clearLine(a, b):
@@ -557,7 +561,10 @@ class SurvivalCog:
             self.prop.removeNode()
             self.prop = None
         if self.suit is not None:
-            self.suit.cleanup()
+            # delete(), not just cleanup(): cleanup() leaves the cog's name
+            # tag alive, and each one ran a task every frame for the rest of
+            # the session (hundreds after a long game: the lag in Toontown).
+            self.suit.delete()
             self.suit.removeNode()
             self.suit = None
         self.game.cogGone(self)

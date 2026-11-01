@@ -174,6 +174,9 @@ class NPCNav:
         scene = self.getScene()
         if scene is None:
             return False
+        if (Point3(*a) - Point3(*b)).lengthSquared() < 1e-6:
+            # A segment from a point to itself fails an assertion in Panda.
+            return True
         self.segment.setPointA(a[0], a[1], a[2] + CHEST)
         self.segment.setPointB(b[0], b[1], b[2] + CHEST)
         self.traverser.clearColliders()
