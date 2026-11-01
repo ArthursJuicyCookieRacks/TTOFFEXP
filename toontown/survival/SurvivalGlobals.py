@@ -138,7 +138,7 @@ DOWN_LOSS = 0.05
 
 # --- Melee ---
 BONK_DAMAGE = 150
-BONK_REACH = 5.0
+BONK_REACH = 5.5
 # Ready again the moment the swing ends (Arthur).
 BONK_TIME = 0.6
 
