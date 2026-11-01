@@ -46,6 +46,7 @@ class ShtikerBook(DirectFrame, StateData.StateData):
          TTLocalizer.GolfPageTitle,
          TTLocalizer.PhotoPageTitle,
          TTLocalizer.EventsPageName,
+         TTLocalizer.SettingsPageTitle,
          TTLocalizer.NewsPageName]
         return
 
@@ -267,6 +268,11 @@ class ShtikerBook(DirectFrame, StateData.StateData):
         elif pageName == TTLocalizer.EventsPageName:
             iconModels = loader.loadModel('phase_4/models/parties/partyStickerbook')
             iconGeom = iconModels.find('**/Stickerbook_PartyIcon')
+            iconModels.detachNode()
+        elif pageName == TTLocalizer.SettingsPageTitle:
+            iconModels = loader.loadModel('phase_3.5/models/gui/sos_textures')
+            iconGeom = iconModels.find('**/switch')
+            iconColor = Vec4(0.55, 0.85, 1, 1)
             iconModels.detachNode()
         elif pageName == TTLocalizer.PhotoPageTitle:
             iconGeom = iconModels = loader.loadModel('phase_4/models/minigames/photogame_filmroll')

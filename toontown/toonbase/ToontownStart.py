@@ -107,6 +107,9 @@ base.gamepad = Gamepad()
 # The player's key bindings (Shticker Book > Settings).
 from . import KeyBindings
 KeyBindings.install()
+# Field of view and volume (Shticker Book > Settings).
+from . import GameSettings
+GameSettings.install()
 
 # The bottom screen of a dual-screen handheld, from the launcher on.
 from toontown.dualscreen import SecondScreen

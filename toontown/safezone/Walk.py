@@ -75,7 +75,9 @@ class Walk(StateData.StateData):
 
     def enterWalking(self):
         if base.localAvatar.hp > 0:
-            base.camLens.setMinFov(52.0/(4./3.))
+            from toontown.toonbase import ToontownGlobals
+            # The player's field of view (Shticker Book > Settings).
+            base.camLens.setMinFov(ToontownGlobals.DefaultCameraFov/(4./3.))
             base.localAvatar.startTrackAnimToSpeed()
             base.localAvatar.setWalkSpeedNormal()
             # Two quick presses of forward, or the left stick pushed in on a

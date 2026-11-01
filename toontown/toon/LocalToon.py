@@ -408,6 +408,7 @@ class LocalToon(DistributedToon.DistributedToon, LocalAvatar.LocalAvatar):
             self.loadGardenPages()
         self.addGolfPage()
         self.addEventsPage()
+        self.addSettingsPage()
         if WantNewsPage:
             self.addNewsPage()
         self.book.setPage(self.mapPage, enterPage=False)
@@ -1932,6 +1933,17 @@ class LocalToon(DistributedToon.DistributedToon, LocalAvatar.LocalAvatar):
         self.eventsPage.load()
         self.book.addPage(self.eventsPage, pageName=TTLocalizer.EventsPageName)
         return
+
+    def addSettingsPage(self):
+        # Field of view, volume, keyboard and controller (below Events).
+        if getattr(self, 'settingsPage', None) is not None:
+            return
+        from toontown.shtiker import SettingsPage
+        from toontown.toonbase import GameSettings
+        GameSettings.install()
+        self.settingsPage = SettingsPage.SettingsPage()
+        self.settingsPage.load()
+        self.book.addPage(self.settingsPage, pageName=TTLocalizer.SettingsPageTitle)
 
     def addNewsPage(self):
         self.newsPage = NewsPage.NewsPage()
