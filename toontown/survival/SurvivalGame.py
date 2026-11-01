@@ -232,7 +232,10 @@ class SurvivalGame(DirectObject):
         self.player = SurvivalPlayer(self, start, h)
         self.hud = SurvivalHUD(self, self.dna)
         self.gags = GagHandler(self, self.player)
-        self.stations = [MickeyStation(self), TrunkStation(self), FishermanStation(self), TrolleyStation(self)]
+        self.stations = [MickeyStation(self), TrunkStation(self), FishermanStation(self)]
+        # A map with no trolley (the Cog HQs) has no way out: fight on.
+        if not self.arena.geom.find('**/*trolley_station*').isEmpty():
+            self.stations.append(TrolleyStation(self))
         for i in range(self.npcCount):
             angle = math.radians(120 * i - 60)
             spot, sh = self.arena.placeOnGround(start[0] + 5 * math.sin(angle), start[1] + 5 * math.cos(angle) + 3, 0)

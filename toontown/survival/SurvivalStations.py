@@ -98,6 +98,24 @@ class MickeyStation(Station):
             self.char.loop('neutral')
             self.char.nametag3d.stash()
             self.actor = self.char
+            if kind == 'dockChar':
+                self.__behindCrate()
+
+    # Donald's Dock's own Donald is the one from the boat's wheel: the
+    # model only goes down to his waist. He stands behind a crate on the
+    # dock, his hands on its lid, which hides where his legs would be.
+    CRATE = 'phase_5/models/props/crate'
+    CRATE_Y = 0.45
+    CRATE_HEIGHT = 1.6
+    DOCK_LIFT = 0.0
+
+    def __behindCrate(self):
+        self.char.setZ(self.DOCK_LIFT)
+        crate = loader.loadModel(self.CRATE)
+        crate.reparentTo(self.node)
+        crate.setPos(0, self.CRATE_Y, 0)
+        crate.setScale(1.0, 0.95, self.CRATE_HEIGHT / 2.1061)
+        self.crate = crate
 
     def prompt(self):
         gag = self.game.gags.gag
@@ -122,7 +140,7 @@ class MickeyStation(Station):
         # they work. A toon thinks it over.
         if self.toon is not None and 'think' in self.toon.getAnimNames():
             self.toon.loop('think')
-        else:
+        elif 'walk' in self.actor.getAnimNames():
             self.actor.loop('walk')
         self.floatText('Hocus pocus!')
         self.game.hud.say('%s is working on your %s...' % (self.who, gag.name), G.MICKEY_TIME)

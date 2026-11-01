@@ -79,6 +79,10 @@ def stashAll(geom, *patterns):
 DD_BOAT_AGROUND = (Point3(15, -10, -0.5), Vec3(200, -40, 9))
 # The harbour bed, dried out: from a wet blue to mud.
 DD_MUD = Vec4(1.0, 0.8, 0.58, 1)
+# The film of water left in the harbour: just above the bed (-12.333),
+# mostly see-through so the mud shows under it.
+DD_PUDDLE_Z = -12.0
+DD_PUDDLE_TINT = Vec4(1, 1, 1, 0.55)
 
 
 def dryDock(arena):
@@ -87,9 +91,18 @@ def dryDock(arena):
     (the piers that swing up for the boat) always down."""
     geom = arena.geom
     for water in geom.findAllMatches('**/water'):
-        # The surfaces and the camera's water plane; the harbour bed and
-        # its floor collision stay.
-        water.stash()
+        # The harbour water, let down to a thin film over the mud (Arthur:
+        # a very thin layer, too shallow to swim in). Only the picture of
+        # it: anything to collide with goes, so toons walk the bed.
+        bottom = water.getTightBounds(render)
+        if bottom is None:
+            water.stash()
+            continue
+        water.setZ(render, water.getZ(render) + DD_PUDDLE_Z - bottom[0][2])
+        stashAll(water, '+CollisionNode')
+        water.setColorScale(DD_PUDDLE_TINT)
+        water.setTransparency(TransparencyAttrib.MAlpha)
+        water.setDepthWrite(False)
     for bed in geom.findAllMatches('**/under_water_surface'):
         bed.setColorScale(DD_MUD)
     for pond in geom.findAllMatches('**/fishing_pond_1'):
@@ -164,6 +177,93 @@ def bossbotCourtyard(arena):
     # An invisible wall just inside the tunnel to Chip 'n Dale's Acorn
     # Acres, so nobody walks off down it.
     wall(geom, (415, -30), (415, 35), low=-14.0)
+    # The courtyard moving the way BossbotCogHQLoader makes it move.
+    arena.animProps.append(BossbotMotion(geom))
+
+
+class BossbotMotion:
+    """Bossbot HQ's moving parts, as BossbotCogHQLoader starts them: the
+    fountain's three gear tiers turning (17 seconds a turn, the middle one
+    the other way), oil spouting from its four geysers, and the geysers
+    out on the grounds rising up and sinking back, five at a time. Kept
+    with the arena's animated props, which stop it with the map."""
+    GEAR_TIME = 17.0
+    ACTIVE = 5
+    MODEL = 'phase_12/models/bossbotHQ/ttr_m_ara_bbhq_geyser'
+
+    def __init__(self, geom):
+        from direct.interval.IntervalGlobal import LerpHprInterval
+        self.geom = geom
+        self.lerps = []
+        for name, turn in (('Top', 360), ('Middle', -360), ('Bottom', 360)):
+            for gear in geom.findAllMatches('**/Fountain_Geom:' + name):
+                self.lerps.append(LerpHprInterval(gear, self.GEAR_TIME, (turn, 0, 0), (0, 0, 0)))
+        geyser = loader.loadModel(self.MODEL)
+        for i in range(1, 5):
+            spot = geom.find('**/Fountain_Geom:fountain_geyser%d' % i)
+            if not spot.isEmpty():
+                geyser.copyTo(spot)
+        self.spouts = []
+        for spot in geom.findAllMatches('**/geyser*'):
+            copy = geyser.copyTo(spot)
+            copy.setScale(0.001)
+            self.spouts.append(copy)
+        geyser.removeNode()
+        self.active = []
+        self.tasks = []
+        self.tracks = []
+        for lerp in self.lerps:
+            lerp.loop()
+        if self.spouts:
+            for i in range(min(self.ACTIVE, len(self.spouts))):
+                name = 'survivalGeyser-%d-%d' % (id(self), i)
+                taskMgr.doMethodLater(i * 2.0, self.__spout, name)
+                self.tasks.append(name)
+
+    def __spout(self, task):
+        import random
+        from direct.interval.IntervalGlobal import Func, Sequence
+        free = [g for g in self.spouts if g not in self.active and not g.isEmpty()]
+        if not free:
+            task.delayTime = 3.0
+            return task.again
+        geyser = random.choice(free)
+        scale = random.randint(5, 18) / 10.0
+        length = random.randint(5, 12)
+        bob = Sequence()
+        t = 0.0
+        while t < length:
+            bob.append(geyser.scaleInterval(1.25, scale + 0.1, blendType='easeInOut'))
+            bob.append(geyser.scaleInterval(1.25, scale, blendType='easeInOut'))
+            t += 2.5
+        track = Sequence(Func(self.active.append, geyser),
+                         geyser.scaleInterval(1.5, scale, startScale=0.001, blendType='easeOut'), bob,
+                         geyser.scaleInterval(1.5, 0.001, blendType='easeIn'),
+                         Func(self.__done, geyser))
+        self.tracks.append(track)
+        track.start()
+        task.delayTime = length + 3 + 3
+        return task.again
+
+    def __done(self, geyser):
+        if geyser in self.active:
+            self.active.remove(geyser)
+        self.tracks = [t for t in self.tracks if t.isPlaying()]
+
+    def enter(self):
+        pass
+
+    def exit(self):
+        for name in self.tasks:
+            taskMgr.remove(name)
+        self.tasks = []
+        for track in self.tracks + self.lerps:
+            track.pause()
+        self.tracks = []
+        self.lerps = []
+
+    def delete(self):
+        self.exit()
 
 
 HOOD_MAPS = {
@@ -215,7 +315,7 @@ HOOD_MAPS = {
             # Against Toon HQ's north door, centred on it, looking out.
             'upgrader': (Point3(76.4, -10.5, -13.5), 0),
             # At the edge of the fishing pond in the middle, facing out.
-            'fisherman': (Point3(-12, -36, -13), 139),
+            'fisherman': (Point3(-15, -50, -13), 139),
             # Out on the bowl's floor, the lid toward the pond.
             'trunk': (Point3(-35, 35, -15), 32.5),
             'start': (Point3(0, 40, -15), 180),
@@ -238,15 +338,15 @@ HOOD_MAPS = {
         'setup': 'dryDock',
         # The dry harbour bed is at about -12.
         'lowest': -20,
-        'upgrader': ('char', 'd', 'Donald'),
+        'upgrader': ('dockChar', 'dw', 'Donald'),
         'spots': {
             # Against Toon HQ's east door (the HQ is a ship in the north
             # channel), centred on it, looking out.
-            'upgrader': (Point3(-5.2, 104.15, 1.7), -90),
+            'upgrader': (Point3(-5.2, 104.6, 1.7), -90),
             # Where the real fisherman stands, at the head of the dry pond.
             'fisherman': (Point3(-12.5, 178, 3.3), 180),
             # On the little island in the middle of the dry harbour.
-            'trunk': (Point3(-20, -5, 6), 0),
+            'trunk': (Point3(-24, 0, 6), 0),
             # On the south boardwalk, looking out over the dry harbour.
             'start': (Point3(-30, -75, 6), -20),
         },
@@ -275,7 +375,6 @@ HOOD_MAPS = {
             # over the crater.
             'start': (Point3(0, -95, 0), 180),
         },
-        'trolley': (Point3(-85, -185, 0), 90),
         'reachSpan': 260.0,
         'spawnRing': (40.0, 260.0),
     },
@@ -293,12 +392,11 @@ HOOD_MAPS = {
         'spots': {
             # East of the fountain, facing the tunnel from Chip 'n Dale's
             # Acorn Acres, the way the toons came in.
-            'upgrader': (Point3(62, 0, 0), -90),
-            'fisherman': (Point3(-62, 0, 0), 90),
-            'trunk': (Point3(0, -62, 0), 0),
+            'upgrader': (Point3(27, 0, 0), -90),
+            'fisherman': (Point3(-27, 0, 0), 90),
+            'trunk': (Point3(0, -27, 0), 0),
             'start': (Point3(130, 0, 0), 90),
         },
-        'trolley': (Point3(0, 110, 0), 180),
         'reachSpan': 200.0,
         'spawnRing': (40.0, 200.0),
     },
