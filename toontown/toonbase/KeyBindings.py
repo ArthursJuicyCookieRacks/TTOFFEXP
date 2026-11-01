@@ -273,6 +273,15 @@ def translate(name):
     return '-'.join(mods + [new]) + suffix
 
 
+# Survival Mode has keys of its own: the game's bindings rest while it runs.
+_suspended = False
+
+
+def setSuspended(on):
+    global _suspended
+    _suspended = bool(on)
+
+
 def install():
     """Renames the key events on their way to the game."""
     global _installed
@@ -284,7 +293,7 @@ def install():
     original = mgr.processEvent
 
     def processEvent(event):
-        if _rename and event.name:
+        if _rename and event.name and not _suspended:
             new = translate(event.name)
             if new is not None:
                 if new:

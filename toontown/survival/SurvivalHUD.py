@@ -375,7 +375,7 @@ class SurvivalHUD:
             self.card.destroy()
             self.card = None
 
-    def showSettings(self, level, onChange, onBack):
+    def showSettings(self, level, onChange, onBack, onKeys=None):
         """The pause menu's Settings: camera sensitivity from 1 (very slow)
         to 10 (very fast), a slider with - and + beside it (easy with a
         controller's pointer too), and Back."""
@@ -410,8 +410,14 @@ class SurvivalHUD:
             DirectButton(parent=card, relief=None, image=(up, down, over), image_scale=(0.35, 1, 1.0), text=label, text_font=sign,
                          text_fg=(1, 0.95, 0.4, 1), text_scale=0.09, text_pos=(0, -0.03), pos=(x, 0, 0.03),
                          command=lambda step=step: setLevel(state['level'] + step))
+        if onKeys is not None:
+            # Keyboard and mouse only (no key bindings on a touch screen).
+            DirectButton(parent=card, relief=None, image=(up, down, over), image_scale=(1.3, 1, 1.2), text='Key Bindings',
+                         text_font=sign, text_fg=(1, 0.95, 0.4, 1), text_scale=0.06, text_pos=(0, -0.02), pos=(-0.3, 0, -0.42),
+                         command=onKeys)
         DirectButton(parent=card, relief=None, image=(up, down, over), image_scale=(1.1, 1, 1.2), text='Back', text_font=sign,
-                     text_fg=(1, 0.95, 0.4, 1), text_scale=0.07, text_pos=(0, -0.02), pos=(0, 0, -0.42), command=onBack)
+                     text_fg=(1, 0.95, 0.4, 1), text_scale=0.07, text_pos=(0, -0.02), pos=(0.3 if onKeys is not None else 0, 0, -0.42),
+                     command=onBack)
         gui.removeNode()
         self.card = card
         return card
@@ -442,7 +448,7 @@ class SurvivalHUD:
         y0 = -0.42 + gap * (len(buttons) - 1)
         for i, (label, command) in enumerate(buttons):
             DirectButton(parent=card, relief=None, image=(up, down, over), image_scale=(1.1, 1, 1.1), text=label, text_font=sign,
-                         text_fg=(1, 0.95, 0.4, 1), text_scale=0.07, text_pos=(0, -0.02), pos=(0, 0, y0 - gap * i), command=command)
+                         text_fg=(1, 0.95, 0.4, 1), text_scale=0.07 if len(label) <= 9 else 0.055, text_pos=(0, -0.02), pos=(0, 0, y0 - gap * i), command=command)
         gui.removeNode()
         self.card = card
         return card

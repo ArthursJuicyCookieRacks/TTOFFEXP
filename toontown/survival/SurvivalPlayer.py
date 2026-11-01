@@ -167,17 +167,7 @@ class SurvivalPlayer(DirectObject):
         if self.enabled:
             return
         self.enabled = True
-        for token, keys in KEYS.items():
-            for key in keys:
-                self.accept(key, self.__set, [token, True])
-                self.accept(key + '-up', self.__set, [token, False])
-        for action, keys in ACTIONS.items():
-            for key in keys:
-                if self.touchMode and key.startswith(('mouse', 'wheel')):
-                    # Touches drive the on-screen buttons instead.
-                    continue
-                self.accept(key, self.__action, [action, True])
-                self.accept(key + '-up', self.__action, [action, False])
+        self.acceptKeys()
         self.walker.enableAvatarControls()
         self.__allowSliding(True)
         if self.touchMode:
@@ -189,6 +179,29 @@ class SurvivalPlayer(DirectObject):
         if gamepad is not None:
             gamepad.setGame(self)
         taskMgr.add(self.__tick, 'survivalPlayer', priority=24)
+
+    def acceptKeys(self):
+        """Listen for the keys, as the player has bound them (Settings >
+        Key Bindings); called again after a key is changed."""
+        from toontown.survival import SurvivalKeys
+        for key in getattr(self, 'keysAccepted', ()):
+            self.ignore(key)
+            self.ignore(key + '-up')
+        self.keysAccepted = []
+        SurvivalKeys.load()
+        for token in KEYS:
+            for key in SurvivalKeys.keysFor(token):
+                self.accept(key, self.__set, [token, True])
+                self.accept(key + '-up', self.__set, [token, False])
+                self.keysAccepted.append(key)
+        for action in ACTIONS:
+            for key in SurvivalKeys.keysFor(action):
+                if self.touchMode and key.startswith(('mouse', 'wheel')):
+                    # Touches drive the on-screen buttons instead.
+                    continue
+                self.accept(key, self.__action, [action, True])
+                self.accept(key + '-up', self.__action, [action, False])
+                self.keysAccepted.append(key)
 
     def disable(self):
         if not self.enabled:

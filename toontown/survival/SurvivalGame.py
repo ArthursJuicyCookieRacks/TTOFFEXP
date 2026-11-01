@@ -202,6 +202,9 @@ class SurvivalGame(DirectObject):
             GameSettings.applySfxVolume(GameSettings.getSfxVolume())
         except Exception:
             self.notify.warning('could not apply the sound volume')
+        # Survival's own key bindings, not the regular game's renamed keys.
+        from toontown.toonbase import KeyBindings
+        KeyBindings.setSuspended(True)
         base.setBackgroundColor(Vec4(0.05, 0.05, 0.1, 1) if self.night else ToontownGlobals.DefaultBackgroundColor)
         # From Pick-A-Toon there is no collision traverser yet.
         self.ownTrav = not isinstance(base.cTrav, CollisionTraverser)
@@ -279,6 +282,8 @@ class SurvivalGame(DirectObject):
         if self.ownTrav:
             base.cTrav = 0
         base.setBackgroundColor(ToontownGlobals.DefaultBackgroundColor)
+        from toontown.toonbase import KeyBindings
+        KeyBindings.setSuspended(False)
 
     def count(self, key, n=1):
         self.stats[key] = self.stats.get(key, 0) + n
@@ -769,7 +774,14 @@ class SurvivalGame(DirectObject):
 
     def showPauseCard(self):
         self.hud.showCard('Paused', ['Round %d' % self.roundNum, '%d cogs popped' % self.stats.get('cogs popped', 0)],
-                          [('Resume', self.resume), ('Settings', self.showSettings), ('Quit', self.quit)])
+                          [('Resume', self.resume), ('Restart Level', self.restart), ('Settings', self.showSettings), ('Quit', self.quit)])
+
+    def restart(self):
+        """Start the same map over from round 1 (Arthur): the launcher tears
+        this game down and builds a fresh one, as Play Again does."""
+        self.thawClock()
+        self.hud.closeCard()
+        self.playAgain()
 
     def showSettings(self):
         from toontown.survival.SurvivalPlayer import saveSensitivity
@@ -777,7 +789,13 @@ class SurvivalGame(DirectObject):
         def changed(level):
             self.player.setSensitivity(level)
             saveSensitivity(level)
-        self.hud.showSettings(self.player.sensitivity, changed, self.showPauseCard)
+        keys = None if self.player.touchMode else self.showKeyBindings
+        self.hud.showSettings(self.player.sensitivity, changed, self.showPauseCard, keys)
+
+    def showKeyBindings(self):
+        from toontown.survival.SurvivalKeyCard import SurvivalKeyCard
+        self.hud.closeCard()
+        self.hud.card = SurvivalKeyCard(self, self.showSettings)
 
     def freezeClock(self):
         # The pause stops the game clock itself, so every animation, gag in
