@@ -1016,6 +1016,10 @@ class DistCogdoCrane(DistributedObject.DistributedObject, FSM.FSM):
             # Back and up a little from the CFO crane camera, so the machine
             # and both lanes fit in the view.
             camera.setPosHpr(0, -27, -1, 0, -24, 0)
+            # The crane's own trolley rides right over the camera and
+            # swung or slid into the top of the view, so this toon's camera
+            # doesn't draw it (the cable and the magnet stay in view).
+            self.armModel.hide(base.cam.node().getCameraMask())
             self.tube.stash()
             localAvatar.setPosHpr(self.controls, 0, 0, 0, 0, 0, 0)
             localAvatar.sendCurrentPosition()
@@ -1051,6 +1055,7 @@ class DistCogdoCrane(DistributedObject.DistributedObject, FSM.FSM):
             self.__disableControlInterface()
             self.__deactivatePhysics()
             self.tube.unstash()
+            self.armModel.show(base.cam.node().getCameraMask())
             camera.reparentTo(base.localAvatar)
             camera.setPos(base.localAvatar.cameraPositions[0][0])
             camera.setHpr(0, 0, 0)
