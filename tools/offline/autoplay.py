@@ -883,6 +883,34 @@ def playCogdoCrane(dist):
             base.screenshot(os.path.join(shots, 'cash-%02d-play.png' % (10 + n)), defaultFilename=0)
             if n % 2 == 1:
                 shotFrom('cash-%02d-over.png' % (10 + n), Point3(0, -60, 45), Point3(0, 0, 0))
+            if os.environ.get('AUTOPLAY_CRANE_SHADOWS'):
+                # The magnets' and trolleys' shadows on the floor, from
+                # the side and from above, to check they lie on it.
+                for c in sorted(dist.cranes.values(), key=lambda c: c.index):
+                    if c.shadow:
+                        log('  crane %d shadow: magnet at %s, its shadow at %s, trolley shadow at %s' % (
+                            c.index, tuple(round(v, 1) for v in c.magnet.getPos(render)),
+                            tuple(round(v, 1) for v in c.magnetShadow.getPos(render)),
+                            tuple(round(v, 1) for v in c.craneShadow.getPos(render))))
+                mine = next((c for c in dist.cranes.values() if c.avId == localAvatar.doId), None)
+                if mine:
+                    from panda3d.core import Mat4, RopeNode
+                    m = mine.magnet.getPos(render)
+                    offsets = [float(v) for v in os.environ['AUTOPLAY_CRANE_SHADOWS'].split(',') if v.strip()] or [None]
+                    for offset in offsets:
+                        # Optionally at other heights over the floor, to compare.
+                        for c in dist.cranes.values():
+                            if c.shadow and offset is not None:
+                                c.shadowOffset = offset
+                                c.magnetShadow.setZ(offset)
+                                c.craneShadow.setZ(offset)
+                                for rope in c.shadow.findAllMatches('**/+RopeNode'):
+                                    rope.node().setMatrix(Mat4.translateMat(0, 0, offset) * Mat4.scaleMat(1, 1, 0.01))
+                        tag = '' if offset is None else '-z%g' % offset
+                        base.graphicsEngine.renderFrame()
+                        base.graphicsEngine.renderFrame()
+                        base.screenshot(os.path.join(shots, 'cash-%02d-shadow-crane%s.png' % (10 + n, tag)), defaultFilename=0)
+                        shotFrom('cash-%02d-shadow-side%s.png' % (10 + n, tag), Point3(m[0] + 22, m[1] - 22, 14), Point3(m[0], m[1], 3))
             log('crane game: %d barrels, %d coins, %d cogs out, %d stunned, laff %d/%d' % (dist.barrelsLeft, dist.coins, len(dist.cogs), dist.stunCount, localAvatar.getHp(), localAvatar.getMaxHp()))
             for c in sorted(dist.cranes.values(), key=lambda c: c.index):
                 pilot = getattr(c, 'pilot', None) or {}

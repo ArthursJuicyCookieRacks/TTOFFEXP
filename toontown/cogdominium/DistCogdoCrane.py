@@ -30,7 +30,9 @@ class DistCogdoCrane(DistributedObject.DistributedObject, FSM.FSM):
     armMaxH = GameConsts.CraneMaxH
     # How much of the arm's swing the crane camera turns with.
     cameraFollow = 0.75
-    shadowOffset = 7
+    # The room's floor is at z 0, as the CFO's is: 7 (the old cogdo
+    # value) left the shadows floating 7 units over the floor.
+    shadowOffset = 1
     emptySlideSpeed = 10
     # The arm swings a long way here, so it turns faster than a CFO crane.
     emptyRotateSpeed = 26
