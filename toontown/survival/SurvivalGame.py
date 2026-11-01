@@ -199,6 +199,8 @@ class SurvivalGame(DirectObject):
         if self.ownTrav:
             base.cTrav = CollisionTraverser('survival')
         self.arena = SurvivalArena(self.mapName, self.night)
+        # A parody map is always played in its daylight.
+        base.setBackgroundColor(Vec4(0.05, 0.05, 0.1, 1) if self.arena.night else ToontownGlobals.DefaultBackgroundColor)
         # The toon's arms hang close to the camera.
         base.camLens.setNear(0.3)
         start, h = self.arena.playerStart()
@@ -225,7 +227,7 @@ class SurvivalGame(DirectObject):
             self.music.setVolume(0.5)
             self.music.play()
         self.player.enable()
-        self.player.setLook(0, 0)
+        self.player.setLook(h, 0)
         taskMgr.add(self.__tick, 'survivalGame')
         self.hud.say('Cogs incoming! Hold on to your laff.', 3.0)
         self.roundState = 'intermission'

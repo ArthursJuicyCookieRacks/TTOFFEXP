@@ -111,6 +111,18 @@ MAPS = {
     },
 }
 
+# The parody maps (toontown/survival/maps) are built by their own class
+# instead of from a playground's DNA, in the map's own daylight. They are
+# left out of MAP_ORDER, so only survival-map in a prc picks one, until
+# Arthur OKs them for Map Select.
+MAPS['downsizer'] = {
+    'title': 'Downsizer Drive',
+    'description': 'A pretend Toontown street the Cogs built out in Sellbot country to try out their Downsizers.',
+    'parody': ('toontown.survival.maps.DownsizerDrive', 'DownsizerDrive'),
+}
+# Around each station on a parody map no cog lands.
+MAP_STATION_CLEAR = 10.0
+
 # The order the Map Select menu lists them in.
 MAP_ORDER = ('ttc', 'beta_ttc')
 
@@ -133,6 +145,45 @@ class SurvivalArena:
         self.mapName = name if name in MAPS else mapName()
         self.night = night or not self.map_allowsDay(self.mapName)
         self.map = MAPS[self.mapName]
+        self.parody = None
+        self.spawnRing = SPAWN_RING
+        self.spawnMiddle = Point3(0, 0, 0)
+        if self.map.get('parody'):
+            self.__buildParody(*self.map['parody'])
+        else:
+            self.__buildPlayground()
+        self.nav = getNav()
+        self.nav.sceneOverride = None
+        self.__makeTraversers()
+
+    def __buildParody(self, moduleName, className):
+        """One of the parody maps, lit the way it is built (Arthur: not dark
+        and gloomy), under its own sky, with the stations where it puts them."""
+        import importlib
+        cls = getattr(importlib.import_module(moduleName), className)
+        self.night = False
+        self.root = render.attachNewNode('survivalArena')
+        self.dnaStore = None
+        self.animProps = []
+        self.sky = None
+        self.skyTask = None
+        self.parody = cls()
+        self.parody.build(survival=True)
+        self.parody.root.reparentTo(self.root)
+        self.geom = self.parody.root
+        x0, y0, x1, y1 = cls.SITE
+        # Cogs land anywhere on the map out of sight, never on a station.
+        self.spawnMiddle = Point3((x0 + x1) * 0.5, (y0 + y1) * 0.5, 0)
+        self.spawnRing = (0.0, math.hypot(x1 - x0, y1 - y0))
+        self.noLanding = tuple((Point3(*spot[0]), MAP_STATION_CLEAR)
+                               for spot in (cls.MICKEY_SPOT, cls.TRUNK_SPOT, cls.FISHERMAN_SPOT))
+        self.reachCenter = self.spawnMiddle
+        self.reachSpan = max(x1 - x0, y1 - y0) * 0.5 + 10
+        gsg = base.win.getGsg()
+        if gsg:
+            self.geom.prepareScene(gsg)
+
+    def __buildPlayground(self):
         gazebo = self.map['gazebo'][0]
         self.noLanding = ((gazebo, 22.0), (self.map['fisherman'][0], 12.0), (self.map['loopyLane'][0], 16.0))
         self.root = render.attachNewNode('survivalArena')
@@ -191,8 +242,8 @@ class SurvivalArena:
         self.sky = None
         self.skyTask = None
         self.startSky()
-        self.nav = getNav()
-        self.nav.sceneOverride = None
+
+    def __makeTraversers(self):
         # A ray from high up, for the ground anywhere in the playground.
         self.groundTrav = CollisionTraverser('survivalGround')
         self.groundQueue = CollisionHandlerQueue()
@@ -284,7 +335,8 @@ class SurvivalArena:
             fog = Fog('snatcherFog')
             fog.setColor(0.18, 0.16, 0.22)
             fog.setExpDensity(0.012)
-            self.root.setFog(fog)
+            # Over the parody maps' own fog.
+            self.root.setFog(fog, 1)
             if self.sky:
                 self.sky.setColorScale(0.6, 0.55, 0.7, 1)
         else:
@@ -306,13 +358,17 @@ class SurvivalArena:
         if self.sky:
             self.sky.removeNode()
             self.sky = None
+        if self.parody is not None:
+            self.parody.destroy()
+            self.parody = None
         self.root.removeNode()
-        try:
-            self.dnaStore.reset()
-        except Exception:
-            # The repo's DNAStorage.reset trips over itself; the store goes
-            # away with us either way.
-            pass
+        if self.dnaStore is not None:
+            try:
+                self.dnaStore.reset()
+            except Exception:
+                # The repo's DNAStorage.reset trips over itself; the store goes
+                # away with us either way.
+                pass
         self.dnaStore = None
         ModelPool.garbageCollect()
         TexturePool.garbageCollect()
@@ -361,7 +417,16 @@ class SurvivalArena:
 
     # --- Where the stations stand ---
 
+    def parodySpot(self, spot):
+        pos, h = spot
+        return self.placeOnGround(pos[0], pos[1], h)
+
+    def mickeyScale(self):
+        return getattr(self.parody, 'MICKEY_SCALE', 1.0) if self.parody is not None else 1.0
+
     def mickeySpot(self):
+        if self.parody is not None:
+            return self.parodySpot(self.parody.MICKEY_SPOT)
         # Just inside the playground from the Loopy Lane tunnel mouth,
         # facing the toons who walk up.
         # The tunnel prop's own origin is far back inside the hill; the
@@ -396,10 +461,14 @@ class SurvivalArena:
         return pos, h
 
     def fishermanSpot(self):
+        if self.parody is not None:
+            return self.parodySpot(self.parody.FISHERMAN_SPOT)
         origin, h = self.map['fisherman']
         return self.placeOnGround(origin[0], origin[1], h)
 
     def trunkSpot(self):
+        if self.parody is not None:
+            return self.parodySpot(self.parody.TRUNK_SPOT)
         # Centred in front of the gazebo's base panel on the far side from
         # the fisherman (Arthur circled it), far enough out that the trunk
         # and its open lid stay clear of the gazebo.
@@ -424,6 +493,8 @@ class SurvivalArena:
         return path
 
     def playerStart(self):
+        if self.parody is not None:
+            return self.parodySpot(self.parody.PLAYER_START)
         start, h = self.map['playerStart']
         return self.placeOnGround(start[0], start[1], h)
 
@@ -455,7 +526,10 @@ class SurvivalArena:
         inside buildings, behind fences, on the hill or off the edge never
         join, so cogs only ever land where the player could stand."""
         step = self.REACH_STEP
-        half = int(self.REACH_SPAN / step)
+        center = getattr(self, 'reachCenter', Point3(0, 0, 0))
+        span = getattr(self, 'reachSpan', self.REACH_SPAN)
+        lo = (int((center[0] - span) / step), int((center[1] - span) / step))
+        hi = (int((center[0] + span) / step), int((center[1] + span) / step))
         z0 = self.spawnZ(start[0], start[1])
         if z0 is None:
             z0 = start[2]
@@ -469,7 +543,7 @@ class SurvivalArena:
             here = self.reach[cell]
             for di, dj in ((1, 0), (-1, 0), (0, 1), (0, -1)):
                 nxt = (cell[0] + di, cell[1] + dj)
-                if nxt in self.reach or nxt in self.reachZ or abs(nxt[0]) > half or abs(nxt[1]) > half:
+                if nxt in self.reach or nxt in self.reachZ or not (lo[0] <= nxt[0] <= hi[0] and lo[1] <= nxt[1] <= hi[1]):
                     continue
                 x, y = nxt[0] * step, nxt[1] * step
                 # Steps and stairs join the walk (a cog follows the player
@@ -627,12 +701,12 @@ class SurvivalArena:
                 cell = random.choice(spots)
                 x = cell[0] + random.uniform(-1.5, 1.5)
                 y = cell[1] + random.uniform(-1.5, 1.5)
-                dist = math.hypot(x, y)
-                if not SPAWN_RING[0] <= dist <= SPAWN_RING[1]:
+                dist = math.hypot(x - self.spawnMiddle[0], y - self.spawnMiddle[1])
+                if not self.spawnRing[0] <= dist <= self.spawnRing[1]:
                     continue
             else:
                 angle = random.uniform(0, 2 * math.pi)
-                dist = random.uniform(*SPAWN_RING)
+                dist = random.uniform(*self.spawnRing)
                 x, y = dist * math.cos(angle), dist * math.sin(angle)
             z = self.spawnZ(x, y)
             if z is None:
