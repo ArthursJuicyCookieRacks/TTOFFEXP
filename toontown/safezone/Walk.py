@@ -9,10 +9,15 @@ from otp.otpbase import OTPGlobals
 
 # How much faster a sprint is than walking, and how quickly the second press
 # of forward must follow the first.
-SprintFactor = 1.5
+# Arthur asked for a slightly slower sprint (it was 1.5).
+SprintFactor = 1.35
 SprintDoubleTap = 0.3
+# A double tap is two short taps: a press of forward held longer than this
+# was walking, and stopping then going again straight after must not sprint
+# (Arthur: "you'll still be running instead of going into walking").
+SprintTapHold = 0.25
 # How long a sprinting toon can stand still before it goes back to walking.
-SprintStopStill = 0.25
+SprintStopStill = 0.0
 SprintStartGrace = 1.5
 
 class Walk(StateData.StateData):
@@ -76,20 +81,22 @@ class Walk(StateData.StateData):
             # Two quick presses of forward, or the left stick pushed in on a
             # controller, sprint.
             self.lastForwardPress = None
+            self.lastForwardRelease = None
+            self.lastTapShort = False
             for key in self.getForwardKeys():
                 self.accept(key, self.__forwardPressed)
+                self.accept(key + '-up', self.__forwardReleased)
             self.accept('running-on', self.__startSprint)
         else:
             self.fsm.request('slowWalking')
 
     def getForwardKeys(self):
         # The arrow (the controller's stick presses it too) and the
-        # player's own forward key.
-        try:
-            keymap = settings.get('keymap', {})
-        except NameError:
-            keymap = {}
-        return {'arrow_up', keymap.get('MOVE_UP', getattr(base, 'MOVE_UP', 'arrow_up'))}
+        # player's own forward key. The keymap's MOVE_UP was never set, so
+        # W (want-WASD's forward) never counted and a double tap of W did
+        # not sprint.
+        from toontown.toonbase import KeyBindings
+        return KeyBindings.forwardKeys()
 
     def __forwardPressed(self):
         # The touch joystick (and a controller's stick) presses the arrow
@@ -101,11 +108,32 @@ class Walk(StateData.StateData):
             return
         self.lastForwardFrame = frame
         now = globalClock.getFrameTime()
-        if self.lastForwardPress is not None and now - self.lastForwardPress <= SprintDoubleTap:
+        # A controller runs with its run button (L3) only: letting go of the
+        # stick and pushing it again was taken for a double tap, so the toon
+        # sprinted again after every quick stop.
+        from toontown.toonbase import Gamepad
+        if Gamepad.isActive():
             self.lastForwardPress = None
+            return
+        # Only a short tap, let go of and pressed again quickly, sprints.
+        release = getattr(self, 'lastForwardRelease', None)
+        if (getattr(self, 'lastTapShort', False) and release is not None
+                and now - release <= SprintDoubleTap):
+            self.lastForwardPress = None
+            self.lastTapShort = False
             self.__startSprint(byKey=True)
         else:
             self.lastForwardPress = now
+
+    def __forwardReleased(self):
+        frame = globalClock.getFrameCount()
+        if frame == getattr(self, 'lastReleaseFrame', None):
+            return
+        self.lastReleaseFrame = frame
+        now = globalClock.getFrameTime()
+        press = getattr(self, 'lastForwardPress', None)
+        self.lastTapShort = press is not None and now - press <= SprintTapHold
+        self.lastForwardRelease = now
 
     def __startSprint(self, byKey=False):
         # A double tap sprints while forward is held; the controller's run
@@ -150,7 +178,9 @@ class Walk(StateData.StateData):
         if inputState.isSet('forward'):
             return True
         controls = getattr(base.localAvatar.controlManager, 'currentControls', None)
-        speed = abs(getattr(controls, 'speed', 0.0) or 0.0)
+        # Backing up is not running: pulling the stick back to stop kept
+        # the sprint going.
+        speed = getattr(controls, 'speed', 0.0) or 0.0
         slide = abs(getattr(controls, 'slideSpeed', 0.0) or 0.0)
         return speed > 0.1 or slide > 0.1
 
@@ -169,6 +199,7 @@ class Walk(StateData.StateData):
     def exitWalking(self):
         for key in self.getForwardKeys():
             self.ignore(key)
+            self.ignore(key + '-up')
         self.ignore('running-on')
         base.localAvatar.stopTrackAnimToSpeed()
         base.localAvatar.setWalkSpeedNormal()

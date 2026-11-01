@@ -104,6 +104,9 @@ from direct.gui.DirectGui import *
 # A game controller works from the start, in the launcher too.
 from .Gamepad import Gamepad
 base.gamepad = Gamepad()
+# The player's key bindings (Shticker Book > Settings).
+from . import KeyBindings
+KeyBindings.install()
 
 # The bottom screen of a dual-screen handheld, from the launcher on.
 from toontown.dualscreen import SecondScreen

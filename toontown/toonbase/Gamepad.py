@@ -232,27 +232,51 @@ class Gamepad(DirectObject):
             base.win.getInputDevice(0).buttonUp(MouseButton.one())
             self.stuckSince = None
 
+    @staticmethod
+    def __sprinting():
+        place = getattr(getattr(base, 'cr', None), 'playGame', None)
+        place = getattr(place, 'getPlace', lambda: None)()
+        walk = getattr(place, 'walkStateData', None)
+        fsm = getattr(walk, 'fsm', None)
+        try:
+            return fsm.getCurrentState().getName() == 'sprinting'
+        except AttributeError:
+            return False
+
     def __sprintStopped(self):
         # The toon stopped sprinting (a battle, a door...): the next press of
         # the run button starts it again rather than "stopping" it.
         self.running = False
 
     def __buttons(self, buttons):
+        # What each button does comes from the controller bindings (the
+        # Shticker Book's Settings page); BUTTON_KEYS is the default layout.
+        from toontown.toonbase import KeyBindings
+        held = getattr(self, 'heldKeys', None)
+        if held is None:
+            held = self.heldKeys = {}
         for name in buttons - self.pressed:
-            if name in BUTTON_KEYS:
-                for key in BUTTON_KEYS[name]:
-                    self.__key(key, True)
-            elif name in CLICK_BUTTONS:
+            action = KeyBindings.getPad(name) if name in KeyBindings.DEFAULT_PAD else None
+            if action == 'click':
                 self.__click(True)
-            elif name == RUN_BUTTON:
-                self.running = not self.running
+            elif action == 'run':
+                # Toggle from what the toon is really doing: a press while
+                # the toon could not sprint (the book was open, a door...)
+                # left the toggle "on", so the next press only switched it
+                # off again and the one after that sprinted.
+                self.running = not self.__sprinting()
                 messenger.send('running-on' if self.running else 'running-off')
+            elif action is not None:
+                keys = KeyBindings.padKeys(name)
+                held[name] = keys
+                for key in keys:
+                    self.__key(key, True)
         for name in self.pressed - buttons:
-            if name in BUTTON_KEYS:
-                for key in reversed(BUTTON_KEYS[name]):
+            if name in held:
+                for key in reversed(held.pop(name)):
                     self.__key(key, False)
-            elif name in CLICK_BUTTONS:
-                self.__click(bool((buttons & set(CLICK_BUTTONS))))
+            elif KeyBindings.getPad(name) == 'click' if name in KeyBindings.DEFAULT_PAD else False:
+                self.__click(any(KeyBindings.getPad(b) == 'click' for b in buttons if b in KeyBindings.DEFAULT_PAD))
         self.pressed = buttons
 
     def __walk(self, x, y):
@@ -281,7 +305,8 @@ class Gamepad(DirectObject):
             mouse = base.win.getPointer(0)
             self.pointer = [mouse.getX(), mouse.getY()] if mouse.getInWindow() else [width / 2.0, height / 2.0]
         # Slow near the middle of the stick, for aiming at small buttons.
-        speed = POINTER_SPEED * height * dt
+        from toontown.toonbase import KeyBindings
+        speed = POINTER_SPEED * KeyBindings.cursorSpeedFactor() * height * dt
         self.pointer[0] = min(max(self.pointer[0] + x * abs(x) * speed, 0), width - 1)
         self.pointer[1] = min(max(self.pointer[1] - y * abs(y) * speed, 0), height - 1)
         px, py = int(self.pointer[0]), int(self.pointer[1])
