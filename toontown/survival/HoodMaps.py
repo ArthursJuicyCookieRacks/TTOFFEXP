@@ -172,8 +172,8 @@ HOOD_MAPS = {
     },
     'melodyland': {
         'title': "Minnie's Melodyland",
-        'description': 'The musical playground after dark, round the sunken pond. Minnie upgrades your gag, '
-                       'the trunk waits by the stage and Fisherman Freddy sells Toon Tonics.',
+        'description': 'The musical playground after dark: a deep bowl round the piano-key pond, horn slides down from '
+                       'the rim. Minnie upgrades your gag at Toon HQ, Fisherman Freddy sells Toon Tonics at the pond.',
         'picture': 'phase_4/maps/survival_map_melodyland.jpg',
         'dayAndNight': True,
         'storage': ('phase_4/dna/storage.xml', 'phase_6/dna/storage_MM.xml', 'phase_6/dna/storage_MM_sz.xml'),
@@ -190,10 +190,13 @@ HOOD_MAPS = {
         # The bowl's floor is at about -15.
         'lowest': -20,
         'spots': {
-            'upgrader': (Point3(40, 60, 6.5), 180),
-            'fisherman': (Point3(-40, -40, -14), 90),
-            'trunk': (Point3(30, -60, -14), 0),
-            'start': (Point3(0, 60, 6.5), 180),
+            # Against Toon HQ's north door, centred on it, looking out.
+            'upgrader': (Point3(76.4, -10.5, -13.5), 0),
+            # At the edge of the fishing pond in the middle, facing out.
+            'fisherman': (Point3(-12, -36, -13), 139),
+            # Out on the bowl's floor, the lid toward the pond.
+            'trunk': (Point3(-35, 35, -15), 32.5),
+            'start': (Point3(0, 40, -15), 180),
         },
         'reachSpan': 220.0,
         'spawnRing': (40.0, 220.0),
