@@ -37,6 +37,26 @@ GREY = Vec4(0.6, 0.6, 0.6, 1)
 PRICE_GREEN = Vec4(0.1, 0.5, 0.1, 1)
 
 TAB_LOOKS, TAB_TRAITS, TAB_NAME, TAB_WEAR = range(4)
+
+# The two boards sit side by side, the same height, centred on the screen.
+BOARD_Z = -0.03
+BOARD_HEIGHT = 1.6
+STAGE_WIDTH = 0.95
+BOARD_WIDTH = 1.3
+BOARD_GAP = 0.08
+STAGE_X = -(STAGE_WIDTH + BOARD_GAP + BOARD_WIDTH) / 2.0 + STAGE_WIDTH / 2.0
+BOARD_X = STAGE_X + STAGE_WIDTH / 2.0 + BOARD_GAP + BOARD_WIDTH / 2.0
+PANEL_WIDTH = 0.82
+SUM_X = 0.35
+# The pages: their middle, help line and the middle of their rows.
+PAGE_Z = -0.08
+HELP_Z = 0.58
+ROWS_MID = -0.06
+# The columns of every row.
+COL_LABEL = -0.55
+COL_LEFT = -0.17
+COL_RIGHT = 0.3
+COL_PRICE = 0.55
 TILE_COLUMNS = 4
 TILE_ROWS = 3
 TILES_PER_PAGE = TILE_COLUMNS * TILE_ROWS
@@ -123,56 +143,80 @@ class PetCreatorGUI(DirectFrame):
         self.dialogGeom = DGG.getDefaultDialogGeom()
 
     def __makeStage(self):
-        # The doodle on the adoption board.
-        scale = 0.06
-        self.stage = DirectFrame(parent=self, relief=None, geom=self.adoptArt.find('**/PannelUP'),
-                                 geom_scale=scale, pos=(-0.73, 0, -0.8))
-        self.jar = DirectFrame(parent=self.stage, relief=None, geom=self.adoptArt.find('**/Jar'), geom_scale=scale)
-        self.moneyLabel = DirectLabel(parent=self.stage, relief=None, text='', text_scale=0.07,
-                                      text_fg=(0.95, 0.95, 0, 1), text_shadow=(0, 0, 0, 1),
-                                      text_font=ToontownGlobals.getSignFont(), pos=(0.24, 0, 0.36))
-        self.titleLabel = DirectLabel(parent=self.stage, relief=None,
-                                      text=TTLocalizer.PetRestyleTitle if self.restyle else TTLocalizer.PetCreatorTitle,
-                                      text_scale=0.075, text_fg=Vec4(0.36, 0.94, 0.93, 1), text_shadow=(0, 0, 0, 1),
-                                      text_font=ToontownGlobals.getSignFont(), pos=(-0.04, 0, 1.2))
+        # The left board: the doodle, turning on the paw buttons, and what it
+        # costs, with the toon's jellybeans.
+        self.stage = DirectFrame(parent=self, relief=None, image=self.dialogGeom, image_color=BOARD_GREEN,
+                                 image_scale=(STAGE_WIDTH, 1, BOARD_HEIGHT), pos=(STAGE_X, 0, BOARD_Z))
+        title = TTLocalizer.PetRestyleTitle if self.restyle else TTLocalizer.PetCreatorTitle
+        self.titleLabel = DirectLabel(parent=self.stage, relief=None, text=title,
+                                      text_scale=0.058 if self.restyle else 0.07,
+                                      text_fg=Vec4(0.36, 0.94, 0.93, 1), text_shadow=(0, 0, 0, 1),
+                                      text_font=ToontownGlobals.getSignFont(), pos=(0, 0, 0.69))
         self.nameLabel = DirectLabel(parent=self.stage, relief=None, text='', text_scale=0.065,
-                                     text_fg=PURPLE, text_shadow=(1, 1, 1, 1), pos=(-0.07, 0, 1.06))
-        self.costLabel = DirectLabel(parent=self.stage, relief=None, text='', text_scale=0.045,
-                                     text_fg=PURPLE, text_shadow=(1, 1, 1, 1), text_wordwrap=14,
-                                     pos=(-0.04, 0, 0.12))
+                                     text_fg=PURPLE, text_shadow=(1, 1, 1, 1), pos=(0, 0, 0.585))
+        # The doodle's window.
+        DirectFrame(parent=self.stage, relief=None, image=self.dialogGeom, image_color=PALE_TEAL,
+                    image_scale=(PANEL_WIDTH, 1, 0.64), pos=(0, 0, 0.215))
         self.petView = self.stage.attachNewNode('petView')
-        self.petView.setPos(-0.12, 0, 0.22)
+        self.petView.setPos(0, 0, -0.035)
         self.petTurn = self.petView.attachNewNode('petTurn')
         self.petTurn.setH(200)
-        okArt = (self.adoptArt.find('**/CheckButtonUp'), self.adoptArt.find('**/CheckButtonDown'),
-                 self.adoptArt.find('**/CheckButtonRollover'), self.adoptArt.find('**/CheckButtonUp'))
-        cancelArt = (self.adoptArt.find('**/CancelButtonUp'), self.adoptArt.find('**/CancelButtonDown'),
-                     self.adoptArt.find('**/CancelRollover'))
-        self.cancelButton = DirectButton(parent=self.stage, relief=None, image=cancelArt,
-                                         geom=self.adoptArt.find('**/CancelIcon'), scale=scale,
-                                         text=('', TTLocalizer.PetshopGoBack), text_pos=(-5.8, 4.4), text_scale=0.7,
-                                         pressEffect=False, command=self.__cancel)
-        self.okButton = DirectButton(parent=self.stage, relief=None, image=okArt, image3_color=GREY,
-                                     geom=self.adoptArt.find('**/CheckIcon'), geom3_color=GREY, scale=scale,
-                                     text=('', TTLocalizer.PetCreatorSave if self.restyle else TTLocalizer.PetshopAdopt),
-                                     text_pos=(5.8, 4.4), text_scale=0.7, pressEffect=False, command=self.__confirm)
         pawL = (self.shopArt.find('**/Paw1Up'), self.shopArt.find('**/Paw1Down'), self.shopArt.find('**/Paw1Rollover'))
         pawR = (self.shopArt.find('**/Paw2Up'), self.shopArt.find('**/Paw2Down'), self.shopArt.find('**/Paw2Rollover'))
-        for art, arrow, x, turn in ((pawL, 'Arrow1', -0.47, -45), (pawR, 'Arrow2', 0.33, 45)):
+        for art, arrow, x, turn in ((pawL, 'Arrow1', -0.31, -45), (pawR, 'Arrow2', 0.31, 45)):
             paw = DirectButton(parent=self.stage, relief=None, image=art, geom=self.shopArt.find('**/' + arrow),
-                               scale=0.085, pos=(x, 0, 0.55), pressEffect=False, command=self.__turnPet,
+                               scale=0.075, pos=(x, 0, 0.215), pressEffect=False, command=self.__turnPet,
                                extraArgs=[turn])
             # The shop's paws were placed for its own board; this puts the
             # paw (and its arrow) where we want it.
             bounds = paw.getBounds()
             paw.setPos(paw, -(bounds[0] + bounds[1]) / 2.0, 0, -(bounds[2] + bounds[3]) / 2.0)
+        # The price, adding up as the doodle changes.
+        DirectFrame(parent=self.stage, relief=None, image=self.dialogGeom, image_color=PALE_TEAL,
+                    image_scale=(PANEL_WIDTH, 1, 0.42), pos=(0, 0, -0.355))
+        self.sumLines = []
+        for z, size in ((-0.215, 0.048), (-0.29, 0.048), (-0.395, 0.062), (-0.49, 0.045)):
+            left = DirectLabel(parent=self.stage, relief=None, text='', text_scale=size, text_fg=DARK,
+                               text_align=TextNode.ALeft, pos=(-SUM_X, 0, z))
+            right = DirectLabel(parent=self.stage, relief=None, text='', text_scale=size, text_fg=DARK,
+                                text_align=TextNode.ARight, pos=(SUM_X, 0, z))
+            self.sumLines.append((left, right))
+        self.sumRule = DirectFrame(parent=self.stage, relief=DGG.FLAT, frameColor=DARK,
+                                   frameSize=(-SUM_X, SUM_X, -0.003, 0.003), pos=(0, 0, -0.335))
+        self.sumNote = DirectLabel(parent=self.stage, relief=None, text='', text_scale=0.06, text_fg=PURPLE,
+                                   text_wordwrap=12, pos=(0, 0, -0.34))
+        # Going back, and adopting (or saving).
+        scale = 0.06
+        okArt = (self.adoptArt.find('**/CheckButtonUp'), self.adoptArt.find('**/CheckButtonDown'),
+                 self.adoptArt.find('**/CheckButtonRollover'), self.adoptArt.find('**/CheckButtonUp'))
+        cancelArt = (self.adoptArt.find('**/CancelButtonUp'), self.adoptArt.find('**/CancelButtonDown'),
+                     self.adoptArt.find('**/CancelRollover'))
+        self.cancelButton = self.__placed(DirectButton(parent=self.stage, relief=None, image=cancelArt,
+                                                       geom=self.adoptArt.find('**/CancelIcon'), scale=scale,
+                                                       pressEffect=False, command=self.__cancel), -0.2, -0.655)
+        self.okButton = self.__placed(DirectButton(parent=self.stage, relief=None, image=okArt, image3_color=GREY,
+                                                   geom=self.adoptArt.find('**/CheckIcon'), geom3_color=GREY,
+                                                   scale=scale, pressEffect=False, command=self.__confirm),
+                                      0.2, -0.655)
+        for x, text in ((-0.2, TTLocalizer.PetshopGoBack),
+                        (0.2, TTLocalizer.PetCreatorSave if self.restyle else TTLocalizer.PetshopAdopt)):
+            DirectLabel(parent=self.stage, relief=None, text=text, text_scale=0.045, text_fg=DARK,
+                        pos=(x, 0, -0.77))
+
+    def __placed(self, button, x, z):
+        # The adoption board's buttons were drawn in place on that board;
+        # this moves one so its middle is at (x, z).
+        bounds = button.getBounds()
+        button.setPos(button, -(bounds[0] + bounds[1]) / 2.0, 0, -(bounds[2] + bounds[3]) / 2.0)
+        button.setPos(button.getPos() + Point3(x, 0, z))
+        return button
 
     def __makeBoard(self):
         # The board of choices on the right.
         self.board = DirectFrame(parent=self, relief=None, image=self.dialogGeom, image_color=BOARD_GREEN,
-                                 image_scale=(1.27, 1, 1.6), pos=(0.68, 0, -0.03))
-        inner = DirectFrame(parent=self.board, relief=None, image=self.dialogGeom, image_color=PALE_TEAL,
-                            image_scale=(1.17, 1, 1.32), pos=(0, 0, -0.1))
+                                 image_scale=(BOARD_WIDTH, 1, BOARD_HEIGHT), pos=(BOARD_X, 0, BOARD_Z))
+        DirectFrame(parent=self.board, relief=None, image=self.dialogGeom, image_color=PALE_TEAL,
+                    image_scale=(BOARD_WIDTH - 0.1, 1, 1.36), pos=(0, 0, PAGE_Z))
         tabs = (TAB_NAME, TAB_WEAR) if self.restyle else (TAB_LOOKS, TAB_TRAITS, TAB_NAME, TAB_WEAR)
         tabArt = tuple(self.__centered(self.nameArt, name, 0.27) for name in
                        ('SubmitUpButton', 'SubmitDownButton', 'SubmitRolloverButton', 'SubmitUpButton'))
@@ -184,10 +228,10 @@ class PetCreatorGUI(DirectFrame):
         for n, tab in enumerate(tabs):
             button = DirectButton(parent=self.board, relief=None, image=tabArt,
                                   text=TTLocalizer.PetCreatorTabs[tab], text_scale=0.05, text_pos=(0, -0.015),
-                                  text_fg=PURPLE, pos=(left + n * width, 0, 0.67), pressEffect=False,
+                                  text_fg=PURPLE, pos=(left + n * width, 0, 0.7), pressEffect=False,
                                   command=self.__showTab, extraArgs=[tab])
             self.tabButtons[tab] = button
-            page = DirectFrame(parent=self.board, relief=None)
+            page = DirectFrame(parent=self.board, relief=None, pos=(0, 0, PAGE_Z))
             page.hide()
             self.tabPages[tab] = page
         if not self.restyle:
@@ -196,22 +240,25 @@ class PetCreatorGUI(DirectFrame):
         self.__makeNamePage(self.tabPages[TAB_NAME])
         self.__makeWearPage(self.tabPages[TAB_WEAR])
 
-    def __makeRow(self, page, key, label, z, scale, changer, spread=0.215):
+    def __makeRow(self, page, key, label, z, scale, changer):
+        # One choice: its name, the arrows round what it is now, and what it
+        # adds to the price. Every row lines up on the same columns.
         arrowArt = (self.matArt.find('**/tt_t_gui_mat_shuffleArrowUp'),
                     self.matArt.find('**/tt_t_gui_mat_shuffleArrowDown'),
                     self.matArt.find('**/tt_t_gui_mat_shuffleArrowUp'),
                     self.matArt.find('**/tt_t_gui_mat_shuffleArrowDisabled'))
         row = DirectFrame(parent=page, relief=None, pos=(0, 0, z))
+        textZ = -scale * 0.35
         DirectLabel(parent=row, relief=None, text=label, text_scale=scale, text_align=TextNode.ALeft,
-                    text_fg=DARK, pos=(-0.56, 0, -scale * 0.35))
-        left = DirectButton(parent=row, relief=None, image=arrowArt, image_scale=(0.55, 1, 0.55),
-                            pos=(0.115 - spread, 0, 0), pressEffect=False, command=changer, extraArgs=[-1])
-        right = DirectButton(parent=row, relief=None, image=arrowArt, image_scale=(-0.55, 1, 0.55),
-                             pos=(0.115 + spread, 0, 0), pressEffect=False, command=changer, extraArgs=[1])
+                    text_fg=DARK, pos=(COL_LABEL, 0, textZ))
+        left = DirectButton(parent=row, relief=None, image=arrowArt, image_scale=(0.5, 1, 0.5),
+                            pos=(COL_LEFT, 0, 0), pressEffect=False, command=changer, extraArgs=[-1])
+        right = DirectButton(parent=row, relief=None, image=arrowArt, image_scale=(-0.5, 1, 0.5),
+                             pos=(COL_RIGHT, 0, 0), pressEffect=False, command=changer, extraArgs=[1])
         value = DirectLabel(parent=row, relief=None, text='', text_scale=scale, text_fg=PURPLE,
-                            pos=(0.115, 0, -scale * 0.35))
-        price = DirectLabel(parent=row, relief=None, text='', text_scale=scale * 0.9, text_align=TextNode.ARight,
-                            text_fg=PRICE_GREEN, pos=(0.57, 0, -scale * 0.35))
+                            pos=((COL_LEFT + COL_RIGHT) / 2.0, 0, textZ))
+        price = DirectLabel(parent=row, relief=None, text='', text_scale=scale, text_align=TextNode.ARight,
+                            text_fg=PRICE_GREEN, pos=(COL_PRICE, 0, textZ))
         self.rows[key] = (row, value, price, left, right)
         return row
 
@@ -221,30 +268,35 @@ class PetCreatorGUI(DirectFrame):
                 ('gender', TTLocalizer.PetCreatorGender), ('head', TTLocalizer.PetCreatorHead),
                 ('ears', TTLocalizer.PetCreatorEars), ('nose', TTLocalizer.PetCreatorNose),
                 ('tail', TTLocalizer.PetCreatorTail))
-        z = 0.5
+        DirectLabel(parent=page, relief=None, text=TTLocalizer.PetCreatorLooksHelp, text_scale=0.042,
+                    text_fg=DARK, pos=(0, 0, HELP_Z))
+        step = 0.13
+        z = ROWS_MID + step * (len(rows) - 1) / 2.0
         for field, label in rows:
-            self.__makeRow(page, field, label, z, 0.055, lambda step, field=field: self.__changeLook(field, step))
-            z -= 0.135
+            self.__makeRow(page, field, label, z, 0.052, lambda step, field=field: self.__changeLook(field, step))
+            z -= step
         swatchRow = self.rows['color'][0]
-        self.swatch = DirectFrame(parent=swatchRow, relief=DGG.SUNKEN, borderWidth=(0.01, 0.01),
-                                  frameSize=(-0.035, 0.035, -0.035, 0.035), pos=(-0.2, 0, 0))
+        self.swatch = DirectFrame(parent=swatchRow, relief=DGG.SUNKEN, borderWidth=(0.008, 0.008),
+                                  frameSize=(-0.03, 0.03, -0.03, 0.03), pos=(COL_LEFT - 0.1, 0, 0))
 
     def __makeTraitsPage(self, page):
-        DirectLabel(parent=page, relief=None, text=TTLocalizer.PetCreatorTraitsHelp, text_scale=0.04,
-                    text_fg=DARK, text_wordwrap=27, pos=(0, 0, 0.53))
-        z = 0.42
-        for i, name in enumerate(PetTraits.getTraitNames()):
-            self.__makeRow(page, ('trait', i), TTLocalizer.PetCreatorTraitNames[name], z, 0.04,
-                           lambda step, i=i: self.__changeTrait(i, step), spread=0.27)
-            z -= 0.087
+        DirectLabel(parent=page, relief=None, text=TTLocalizer.PetCreatorTraitsHelp, text_scale=0.042,
+                    text_fg=DARK, pos=(0, 0, HELP_Z))
+        names = PetTraits.getTraitNames()
+        step = 0.09
+        z = ROWS_MID + step * (len(names) - 1) / 2.0
+        for i, name in enumerate(names):
+            self.__makeRow(page, ('trait', i), TTLocalizer.PetCreatorTraitNames[name], z, 0.042,
+                           lambda step, i=i: self.__changeTrait(i, step))
+            z -= step
 
     def __makeNamePage(self, page):
         DirectLabel(parent=page, relief=None, text=TTLocalizer.PetCreatorNameHelp, text_scale=0.055,
-                    text_fg=DARK, pos=(0, 0, 0.35))
+                    text_fg=DARK, pos=(0, 0, 0.27))
         # The entry's own units are its text's: 12 letters wide.
         self.nameEntry = DirectEntry(parent=page, relief=None, image=self.dialogGeom, image_color=Vec4(1, 1, 1, 1),
                                      image_scale=(12.6, 1, 2.0), image_pos=(6.0, 0, 0.3), scale=0.07,
-                                     pos=(-0.42, 0, 0.13), width=12, numLines=1, text_fg=PURPLE, focus=0,
+                                     pos=(-0.42, 0, 0.06), width=12, numLines=1, text_fg=PURPLE, focus=0,
                                      cursorKeys=1, initialText='', command=self.__nameEntered,
                                      focusOutCommand=self.__nameTyped)
         self.nameEntry.bind(DGG.TYPE, self.__nameTyped)
@@ -255,9 +307,9 @@ class PetCreatorGUI(DirectFrame):
                           ('RandomUpButton', 'RandomDownButton', 'RandomRolloverButton'))
         DirectButton(parent=page, relief=None, image=randomArt,
                      text=TTLocalizer.PetCreatorRandomName, text_scale=0.05, text_pos=(0, -0.015),
-                     text_fg=GOLD, pos=(0, 0, -0.1), pressEffect=False, command=self.__randomName)
+                     text_fg=GOLD, pos=(0, 0, -0.17), pressEffect=False, command=self.__randomName)
         self.nameWarning = DirectLabel(parent=page, relief=None, text='', text_scale=0.045, text_fg=Vec4(0.8, 0, 0, 1),
-                                       text_wordwrap=24, pos=(0, 0, -0.3))
+                                       text_wordwrap=24, pos=(0, 0, -0.37))
 
     def __makeWearPage(self, page):
         kindArt = tuple(self.__centered(self.nameArt, name, 0.24) for name in
@@ -269,30 +321,31 @@ class PetCreatorGUI(DirectFrame):
             self.kindButtons[kind] = DirectButton(parent=page, relief=None, image=kindArt,
                                                   text=label, text_scale=0.045,
                                                   text_pos=(0, -0.013), text_fg=PURPLE,
-                                                  pos=(-0.33 + n * 0.33, 0, 0.53), pressEffect=False,
+                                                  pos=((n - 1) * 0.3, 0, 0.55), pressEffect=False,
                                                   command=self.__showWearKind, extraArgs=[kind])
+        gap = 0.265
         for i in range(TILES_PER_PAGE):
             row, column = divmod(i, TILE_COLUMNS)
-            tile = DirectButton(parent=page, relief=None, image=self.dialogGeom, image_scale=(0.24, 1, 0.24),
+            tile = DirectButton(parent=page, relief=None, image=self.dialogGeom, image_scale=(0.235, 1, 0.235),
                                 image_color=TEAL, text='', text_scale=0.04, text_fg=PURPLE,
-                                pos=(-0.405 + column * 0.27, 0, 0.3 - row * 0.27), pressEffect=False,
-                                command=self.__pickTile, extraArgs=[i])
+                                pos=((column - (TILE_COLUMNS - 1) / 2.0) * gap, 0, 0.3 - row * gap),
+                                pressEffect=False, command=self.__pickTile, extraArgs=[i])
             tile.thumb = tile.attachNewNode('thumb')
             self.tiles.append(tile)
         arrowArt = (self.matArt.find('**/tt_t_gui_mat_shuffleArrowUp'),
                     self.matArt.find('**/tt_t_gui_mat_shuffleArrowDown'),
                     self.matArt.find('**/tt_t_gui_mat_shuffleArrowUp'),
                     self.matArt.find('**/tt_t_gui_mat_shuffleArrowDisabled'))
-        self.pageLeft = DirectButton(parent=page, relief=None, image=arrowArt, image_scale=(0.6, 1, 0.6),
-                                     pos=(-0.25, 0, -0.52), pressEffect=False, command=self.__turnWearPage,
+        self.pageLeft = DirectButton(parent=page, relief=None, image=arrowArt, image_scale=(0.55, 1, 0.55),
+                                     pos=(-0.2, 0, -0.48), pressEffect=False, command=self.__turnWearPage,
                                      extraArgs=[-1])
-        self.pageRight = DirectButton(parent=page, relief=None, image=arrowArt, image_scale=(-0.6, 1, 0.6),
-                                      pos=(0.25, 0, -0.52), pressEffect=False, command=self.__turnWearPage,
+        self.pageRight = DirectButton(parent=page, relief=None, image=arrowArt, image_scale=(-0.55, 1, 0.55),
+                                      pos=(0.2, 0, -0.48), pressEffect=False, command=self.__turnWearPage,
                                       extraArgs=[1])
         self.pageLabel = DirectLabel(parent=page, relief=None, text='', text_scale=0.05, text_fg=PURPLE,
-                                     pos=(0, 0, -0.535))
-        DirectLabel(parent=page, relief=None, text=TTLocalizer.PetCreatorWearHelp, text_scale=0.04,
-                    text_fg=DARK, pos=(0, 0, -0.66))
+                                     pos=(0, 0, -0.495))
+        DirectLabel(parent=page, relief=None, text=TTLocalizer.PetCreatorWearHelp, text_scale=0.042,
+                    text_fg=DARK, pos=(0, 0, -0.6))
 
     # The doodle.
 
@@ -307,7 +360,7 @@ class PetCreatorGUI(DirectFrame):
         # Fitted by its body alone, so the doodle stays the same size
         # whatever it wears; it stands on the board's floor.
         lo, hi = self.petModel.getGeomNode().getTightBounds()
-        scale = 0.6 / max(hi[2] - lo[2], 0.001)
+        scale = 0.46 / max(hi[2] - lo[2], 0.001)
         self.petModel.setScale(scale)
         self.petModel.setPos(-(lo[0] + hi[0]) / 2.0 * scale, -(lo[1] + hi[1]) / 2.0 * scale, -lo[2] * scale)
         self.petModel.reparentTo(self.petTurn)
@@ -515,22 +568,42 @@ class PetCreatorGUI(DirectFrame):
     def __setPrice(self, label, extra):
         if extra is None:
             label['text'] = TTLocalizer.PetCreatorFree
-        elif extra > 0:
-            label['text'] = TTLocalizer.PetCreatorPlus % extra
         else:
-            label['text'] = ''
+            label['text'] = TTLocalizer.PetCreatorPlus % max(0, extra)
 
     def __refresh(self):
         name = PetCreator.cleanName(self.name)
         self.nameLabel['text'] = name
         cost = self.getCost()
         money = base.localAvatar.getTotalMoney()
-        self.moneyLabel['text'] = str(money)
         if self.restyle:
-            self.costLabel['text'] = TTLocalizer.PetCreatorRestyleCost
+            for left, right in self.sumLines:
+                left['text'] = right['text'] = ''
+            self.sumRule.hide()
+            self.sumNote['text'] = TTLocalizer.PetCreatorRestyleCost
         else:
-            self.costLabel['text'] = TTLocalizer.PetCreatorCost % cost
             body = self.dna[PetDNA.Fields['body']]
+            # The body on its own is what it costs with the plainest traits
+            # this playground sells; the traits add the rest.
+            plainest = [min(PetCreator.getTraitLevels(i, self.zoneId).keys())
+                        for i in range(PetTraits.PetTraits.NumTraits)]
+            bodyCost = PetCreator.getCost(body, plainest, self.zoneId)
+            lines = ((TTLocalizer.PetCreatorSumBody % TTLocalizer.PetCreatorBodyNames[PetDNA.BodyTypes[body]],
+                      self.__beans(bodyCost)),
+                     (TTLocalizer.PetCreatorSumTraits, '+' + self.__beans(max(0, cost - bodyCost))),
+                     (TTLocalizer.PetCreatorSumTotal, self.__beans(cost)),
+                     (TTLocalizer.PetCreatorSumBeans, self.__beans(money)))
+            for (left, right), (label, value) in zip(self.sumLines, lines):
+                left['text'] = label
+                right['text'] = value
+            # Short of jellybeans, the last line says so, in red.
+            poor = cost > money
+            if poor:
+                self.sumLines[3][0]['text'] = TTLocalizer.PetCreatorTooPoor
+            for label in self.sumLines[3]:
+                label['text_fg'] = Vec4(0.8, 0, 0, 1) if poor else PRICE_GREEN
+            self.sumRule.show()
+            self.sumNote['text'] = ''
             for field in ('body', 'color', 'colorScale', 'eyes', 'gender', 'head', 'ears', 'nose', 'tail'):
                 row, value, price, left, right = self.rows[field]
                 value['text'] = self.__lookName(field, self.dna[PetDNA.Fields[field]])
@@ -560,6 +633,9 @@ class PetCreatorGUI(DirectFrame):
             self.okButton['state'] = DGG.NORMAL
         else:
             self.okButton['state'] = DGG.DISABLED
+
+    def __beans(self, amount):
+        return '{:,}'.format(int(amount))
 
     def __moneyChange(self, money):
         self.__refresh()
