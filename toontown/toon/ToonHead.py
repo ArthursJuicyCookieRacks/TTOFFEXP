@@ -707,7 +707,23 @@ class ToonHead(Actor.Actor):
                 if animalType != 'dog':
                     self.__lpupil.flattenStrong()
                     self.__rpupil.flattenStrong()
+                self.__sharePupilsWithFarLODs(leye, reye)
         return
+
+    def __sharePupilsWithFarLODs(self, leye, reye):
+        # The farther-away head models (LOD 500 and 250) have eyes of their
+        # own, with pupils frozen in the model's pose and drawn in other
+        # places and sizes, so a toon a little way off looked as if its
+        # pupils had moved or changed size, and they didn't follow where the
+        # toon looked.  Every LOD now shows the near model's eyes and pupils,
+        # which keep moving with where the toon looks.
+        for lodEyes in (self.__lod500Eyes, self.__lod250Eyes):
+            if not lodEyes or lodEyes.isEmpty():
+                continue
+            lodEyes.stash()
+            shown = lodEyes.getParent().attachNewNode('nearEyes')
+            shown.setMat(self.__eyes.getMat())
+            self.__eyes.instanceTo(shown)
 
     def __setPupilDirection(self, x, y):
         if y < 0.0:

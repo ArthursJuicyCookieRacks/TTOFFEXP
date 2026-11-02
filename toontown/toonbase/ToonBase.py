@@ -55,6 +55,9 @@ class ToonBase(OTPBase.OTPBase):
         camera.setPosHpr(0, 0, 0, 0, 0, 0)
         self.camLens.setMinFov(ToontownGlobals.DefaultCameraFov/(4./3.))
         self.camLens.setNearFar(ToontownGlobals.DefaultCameraNear, ToontownGlobals.DefaultCameraFar)
+        if self.win:
+            # Fewer than 24 bits makes eyes and far-off buildings flicker.
+            print('ToonBase: %d-bit depth buffer' % self.win.getFbProperties().getDepthBits())
         self.cam2d.node().setCameraMask(BitMask32.bit(1))
         self.musicManager.setVolume(0.65)
         self.setBackgroundColor(ToontownGlobals.DefaultBackgroundColor)

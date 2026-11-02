@@ -1,0 +1,16 @@
+diff --git a/panda/src/glstuff/glGraphicsStateGuardian_src.cxx b/panda/src/glstuff/glGraphicsStateGuardian_src.cxx
+index 0c59c4f..fa23f60 100644
+--- a/panda/src/glstuff/glGraphicsStateGuardian_src.cxx
++++ b/panda/src/glstuff/glGraphicsStateGuardian_src.cxx
+@@ -201,7 +201,10 @@ static const string default_vshader =
+   "uniform mat4 p3d_ModelViewProjectionMatrix;\n"
+ #else
+   "#version 100\n"
+-  "precision mediump float;\n"
++  // Positions at medium precision (16-bit floats on many phone GPUs) put
++  // touching surfaces (eyes and pupils, signs and walls) out of step, so
++  // they cut through each other.  Every GLES vertex shader has highp.
++  "precision highp float;\n"
+   "attribute vec4 p3d_Vertex;\n"
+   "attribute vec4 p3d_Color;\n"
+   "attribute vec4 p3d_MultiTexCoord0;\n"
