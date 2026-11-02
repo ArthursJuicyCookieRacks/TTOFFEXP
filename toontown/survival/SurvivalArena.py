@@ -320,8 +320,9 @@ class SurvivalArena:
             from toontown.survival import HoodMaps
             getattr(HoodMaps, setup)(self)
         self.geom.flattenMedium()
-        if self.map.get('blockTunnels'):
-            self.blockTunnels()
+        # Every playground's tunnels are walled off (Arthur: Donald's Dock,
+        # the Brrrgh, Melodyland and Toontown Central all let toons in).
+        self.blockTunnels()
         gsg = base.win.getGsg()
         if gsg:
             self.geom.prepareScene(gsg)
@@ -411,16 +412,27 @@ class SurvivalArena:
             self.bodyChecks[wide] = (trav, queue, segments)
 
     def blockTunnels(self):
-        """The beta's tunnels are long open passages a toon could walk
-        down (and cogs land in). An invisible wall across each mouth, just
-        inside it, keeps everyone in the playground."""
-        half, height, back = 16.0, 30.0, -1.0
+        """Nobody goes into a tunnel: they lead nowhere here. An invisible
+        wall stands across each mouth, a little out in front of it, on
+        every playground map. It used to be a flat two-sided polygon a
+        foot inside the mouth, on some maps only: a toon walked in, and
+        on a slow frame its centre passed the polygon, the back face
+        pushed it on and the front face pushed it back, a jitter in the
+        tunnel (Arthur). Thick capsules stacked up, like HoodMaps.wall,
+        hold from either side whatever the frame rate.
+        The tunnel_origin's +y faces out into the playground."""
+        half, height, out, radius = 15.0, 24.0, 1.5, 1.2
+        mickeys = [prop.find('**/tunnel_origin') for prop in self.geom.findAllMatches('**/%s*' % self.map['mickeyTunnel'])] \
+            if self.map.get('mickeyTunnel') else []
         for origin in self.geom.findAllMatches('**/tunnel_origin'):
+            # Where Mickey stands in a tunnel's mouth, the wall goes just
+            # behind him.
+            y = -1.0 if origin in mickeys else out
             node = CollisionNode('survivalTunnelBlock')
-            corners = [Point3(-half, back, -2), Point3(half, back, -2), Point3(half, back, height), Point3(-half, back, height)]
-            # Both faces, so it stops a toon from either side.
-            node.addSolid(CollisionPolygon(*corners))
-            node.addSolid(CollisionPolygon(*reversed(corners)))
+            z = -1.0
+            while z < height:
+                node.addSolid(CollisionTube(-half, y, z, half, y, z, radius))
+                z += 1.6
             node.setIntoCollideMask(ToontownGlobals.WallBitmask | ToontownGlobals.CameraBitmask)
             node.setFromCollideMask(BitMask32.allOff())
             origin.attachNewNode(node)
@@ -959,7 +971,7 @@ class SurvivalArena:
             return spot
         return None
 
-    def landingNear(self, goal, eye, forward, near=14.0, far=30.0, tries=12):
+    def landingNear(self, goal, eye, forward, near=14.0, far=30.0, tries=24):
         """An open spot near a goal, out of the player's view, with a clear
         walk to the goal; None if there is none this time."""
         spots = self.landingSpots()
@@ -975,6 +987,9 @@ class SurvivalArena:
                 x, y = goal[0] + dist * math.cos(angle), goal[1] + dist * math.sin(angle)
             z = self.spawnZ(x, y)
             if z is None:
+                continue
+            # On the goal's own level (not the harbour bed under its dock).
+            if len(goal) > 2 and abs(z - goal[2]) > 3.5:
                 continue
             spot = Point3(x, y, z)
             if self.inView(spot, eye, forward):

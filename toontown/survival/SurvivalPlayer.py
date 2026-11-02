@@ -144,7 +144,22 @@ class SurvivalPlayer(DirectObject):
         self.walker = GravityWalker.GravityWalker(legacyLifter=False)
         self.walker.setWallBitMask(ToontownGlobals.WallBitmask)
         self.walker.setFloorBitMask(ToontownGlobals.FloorBitmask)
-        self.walker.initializeCollisions(base.cTrav, self.body, avatarRadius=1.4, floorOffset=0.025, reach=4.0)
+        # The fluid pusher: it sweeps the toon's wall sphere along the whole
+        # step of a frame, not only where the step ends. With the plain
+        # pusher a slow frame (a phone, a busy round) moved the toon most
+        # of a foot past the edge of a thin wall or a ring of posts, and
+        # it came out on the far side: the toon walked through props and
+        # into the tunnels with a jitter (Arthur).
+        from panda3d.core import ConfigVariableBool
+        fluid = ConfigVariableBool('want-fluid-pusher', False)
+        wasFluid = fluid.getValue()
+        fluid.setValue(True)
+        try:
+            self.walker.initializeCollisions(base.cTrav, self.body, avatarRadius=1.4, floorOffset=0.025, reach=4.0)
+        finally:
+            fluid.setValue(wasFluid)
+        self.respectedPrev = base.cTrav.getRespectPrevTransform()
+        base.cTrav.setRespectPrevTransform(True)
         self.walker.setWalkSpeed(G.WALK_SPEED, G.JUMP_FORCE, G.WALK_SPEED * G.REVERSE_SCALE, 0)
         self.walker.placeOnFloor()
         self.mouseCentered = False
@@ -233,6 +248,8 @@ class SurvivalPlayer(DirectObject):
         self.disable()
         self.walker.setCollisionsActive(0)
         self.walker.deleteCollisions()
+        if base.cTrav:
+            base.cTrav.setRespectPrevTransform(self.respectedPrev)
         self.body.removeNode()
 
     def grabMouse(self, grab):

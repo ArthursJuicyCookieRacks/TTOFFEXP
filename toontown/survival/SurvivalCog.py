@@ -30,6 +30,9 @@ FLEE_DISTANCE = 45.0
 STUCK_TIME = 20.0
 STILL_TIME = 4.0
 STILL_DISTANCE = 3.0
+# How long a cog stays under (or over) a toon it can't reach before it
+# flies back in on the toon's level.
+OFF_LEVEL_TIME = 5.0
 # How often a cog looks again for its way to the toon.
 ROUTE_EVERY = 0.35
 # How far ahead along its route a cog looks for a corner it can cut.
@@ -72,6 +75,7 @@ class SurvivalCog:
         self.game = game
         self.snatcher = snatcher
         self.arena = game.arena
+        self.offLevelSince = None
         self.suit = Suit.Suit()
         dna = SuitDNA.SuitDNA()
         dna.newSuit(name)
@@ -286,7 +290,8 @@ class SurvivalCog:
         to = Point3(goal[0], goal[1], 0) - Point3(self.pos[0], self.pos[1], 0)
         dist = to.length()
         reach = G.COG_REACH + (self.radius if self.lure is None else 0.5)
-        if dist <= reach and self.lure is None:
+        level = self.lure is not None or self.__sameLevel(goal)
+        if dist <= reach and self.lure is None and level:
             self.stillSince = now
             self.__face(goal)
             if now >= self.nextSwing:
@@ -294,7 +299,7 @@ class SurvivalCog:
             else:
                 self.__loop('neutral')
             return
-        if dist <= 1.0:
+        if dist <= 1.0 and level:
             self.stillSince = now
             self.__loop('neutral')
             return
@@ -310,6 +315,16 @@ class SurvivalCog:
             self.stillSince = now
         # (Getting no closer is not enough: a cog chasing a toon who runs
         # off gets further away while walking fine.)
+        # Nor is milling about below or above the toon, unable to reach it
+        # (under a dock): after a while it flies in somewhere it can.
+        if level or self.lure is not None:
+            self.offLevelSince = None
+        elif self.offLevelSince is None:
+            self.offLevelSince = now
+        if self.lure is None and self.offLevelSince is not None and dist < 14.0 and now - self.offLevelSince > OFF_LEVEL_TIME:
+            self.offLevelSince = None
+            self.__reland(goal)
+            return
         if self.lure is None and dist > 10.0 and now - self.stillSince > STILL_TIME:
             self.__reland(goal)
             return
@@ -342,7 +357,10 @@ class SurvivalCog:
         self.nextRoute = now + ROUTE_EVERY * random.uniform(0.85, 1.15)
         self.route = None
         self.routed = True
-        if self.__clearWide(self.pos, goal):
+        # Straight at the goal only on its level: from the harbour bed
+        # under a dock nothing stood between the cog and the toon overhead,
+        # so it walked under the toon and stayed there.
+        if abs(goal[2] - self.pos[2]) <= G.COG_REACH_RISE and self.__clearWide(self.pos, goal):
             return goal
         flow, goalCell = self.arena.flowTo(goal)
         cell = self.arena.nearestCell(self.pos)
@@ -515,9 +533,20 @@ class SurvivalCog:
         # a melee still knocked the toon down).
         if self.dead or self.target is None or not self.target.alive():
             return
-        flat = Point3(self.target.getPos()[0], self.target.getPos()[1], 0) - Point3(self.pos[0], self.pos[1], 0)
-        if flat.length() <= G.COG_REACH + self.radius + 1.0:
+        target = self.target.getPos()
+        flat = Point3(target[0], target[1], 0) - Point3(self.pos[0], self.pos[1], 0)
+        if flat.length() <= G.COG_REACH + self.radius + 1.0 and self.__sameLevel(target):
             self.target.hurt(G.COG_HIT, self)
+
+    def __sameLevel(self, target):
+        """Whether the cog can really reach a toon at target: about the
+        same height, with no wall or floor edge between them. The reach
+        was measured flat, so a cog on the dry harbour bed under Donald's
+        Dock's docks, or down in Melodyland's bowl, hit the toon standing
+        above it (Arthur: hurt and knocked down out of nowhere)."""
+        if abs(target[2] - self.pos[2]) > G.COG_REACH_RISE:
+            return False
+        return self.arena.bodyClear(Point3(self.pos), Point3(target))
 
     # --- Being hit ---
 

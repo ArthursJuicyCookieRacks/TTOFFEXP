@@ -16,6 +16,9 @@ TONIC_HP = 250
 # A cog's hit, its reach and the time between its swings.
 COG_HIT = 50
 COG_REACH = 4.6
+# How far above or below a cog a toon can be and still be hit (a step or
+# a ramp, not a floor overhead or a bowl's rim).
+COG_REACH_RISE = 3.5
 COG_SWING_TIME = 1.1
 # Health comes back after a moment out of the cogs' reach.
 REGEN_DELAY = 3.0

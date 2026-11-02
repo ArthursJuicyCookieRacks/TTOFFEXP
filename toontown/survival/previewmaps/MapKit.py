@@ -77,6 +77,8 @@ class MapKit:
         self.models = {}
         self.meshes = {}
         self.extra = []
+        # The outlines footprint() made solid (for tests).
+        self.hulls = []
 
     # --- Textures and models ---
 
@@ -126,7 +128,18 @@ class MapKit:
         if not keepCollisions:
             for c in np.findAllMatches('**/+CollisionNode'):
                 c.removeNode()
+        self.liftShadows(np)
         return np
+
+    def liftShadows(self, np):
+        """A model's drop shadow card lying at exactly its feet fights the
+        ground it stands on (the ToonFest booths' square shadows flickered
+        black): lift each a little and draw it over the ground."""
+        for shadow in np.findAllMatches('**/*shadow*'):
+            if not shadow.node().isGeomNode():
+                continue
+            shadow.setZ(render, shadow.getZ(render) + 0.06)
+            shadow.setDepthOffset(2)
 
     def part(self, path, nodeName, pos=(0, 0, 0), h=0, scale=1.0, color=None, parent=None):
         """One named piece of a model (one tree out of trees.bam), placed."""
@@ -145,6 +158,7 @@ class MapKit:
             np.setColorScale(*color)
         for c in np.findAllMatches('**/+CollisionNode'):
             c.removeNode()
+        self.liftShadows(np)
         return np
 
     def fit(self, np, size, axis=None, ground=True):
@@ -199,9 +213,32 @@ class MapKit:
         node.addSolid(CollisionPolygon(*[Point3(*p) for p in pts]))
         return self.solid.attachNewNode(node)
 
+    # Upright posts make every solid here: a post always pushes a toon
+    # (or a cog's body check) straight out sideways. A CollisionBox pushed
+    # toons up, down or the wrong way, so they walked through crates and
+    # booths from some sides, and two walls back to back cancel each
+    # other out (Arthur, Farewell Fair).
+    POST_RADIUS = 0.45
+    POST_STEP = 0.8
+
+    def __posts(self, node, pts, z0, z1, closed=True):
+        r = self.POST_RADIUS
+        top = max(z0 + 0.6, z1 - r)
+        pairs = list(zip(pts, pts[1:] + pts[:1])) if closed else list(zip(pts[:-1], pts[1:]))
+        for (ax, ay), (bx, by) in pairs:
+            length = math.hypot(bx - ax, by - ay)
+            count = max(1, int(length / self.POST_STEP + 0.999))
+            for j in range(count + (0 if closed else 1)):
+                t = float(j) / count
+                x, y = ax + (bx - ax) * t, ay + (by - ay) * t
+                node.addSolid(CollisionTube(x, y, z0 + r, x, y, top, r))
+
     def wallBox(self, lo, hi, name='wallBox'):
+        """Solid all round the box lo..hi (seen from above)."""
         node = self.__colNode(name, WALL | CAMERA)
-        node.addSolid(CollisionBox(Point3(*lo), Point3(*hi)))
+        x0, y0, z0 = lo
+        x1, y1, z1 = hi
+        self.__posts(node, [(x0, y0), (x1, y0), (x1, y1), (x0, y1)], z0, z1)
         return self.solid.attachNewNode(node)
 
     def wallTube(self, pos, radius, height=8.0, name='wallTube'):
@@ -211,20 +248,64 @@ class MapKit:
         return self.solid.attachNewNode(node)
 
     def wallSegment(self, a, b, z0, z1, name='wall', thick=0.6):
-        """A thin solid wall from a to b (seen from above), z0 to z1: walls
-        both ways, for fences and railings."""
+        """A thin solid wall from a to b (seen from above), z0 to z1, solid
+        from both sides: capsules lying along it, stacked a foot or so
+        apart."""
         a, b = Vec3(a[0], a[1], 0), Vec3(b[0], b[1], 0)
-        d = b - a
-        length = d.length()
-        if length < 0.01:
+        if (b - a).length() < 0.01:
             return None
         node = self.__colNode(name, WALL | CAMERA)
-        node.addSolid(CollisionBox(Point3(-length / 2.0, -thick / 2.0, z0), Point3(length / 2.0, thick / 2.0, z1)))
-        np = self.solid.attachNewNode(node)
-        mid = (a + b) / 2.0
-        np.setPos(mid[0], mid[1], 0)
-        np.setH(math.degrees(math.atan2(d[1], d[0])))
-        return np
+        radius = max(0.3, thick * 0.5)
+        z = max(z0, 0) + 0.6
+        while True:
+            node.addSolid(CollisionTube(Point3(a[0], a[1], z), Point3(b[0], b[1], z), radius))
+            if z >= z1 - 0.3:
+                break
+            z = min(z1 - 0.3, z + 1.1)
+        return self.solid.attachNewNode(node)
+
+    def footprint(self, np, below=6.0, grow=0.0, height=None, skip=('shadow',), name='solid'):
+        """Make a placed model solid where it really is: posts round the
+        outline (seen from above) of its own geometry up to `below` feet
+        over its base, so no invisible wall stands where the model
+        doesn't, and nothing is left to walk through. Overhangs (canopies,
+        roofs) above `below` don't count. Returns the outline's points."""
+        from panda3d.core import GeomVertexReader
+        pts = []
+        base = None
+        top = None
+        for gnp in np.findAllMatches('**/+GeomNode'):
+            if any(word in gnp.getName().lower() for word in skip) or gnp.isStashed():
+                continue
+            mat = gnp.getMat(self.root)
+            node = gnp.node()
+            for i in range(node.getNumGeoms()):
+                vdata = node.getGeom(i).getVertexData()
+                reader = GeomVertexReader(vdata, 'vertex')
+                while not reader.isAtEnd():
+                    p = mat.xformPoint(reader.getData3())
+                    pts.append(p)
+        if not pts:
+            return None
+        base = min(p[2] for p in pts)
+        top = max(p[2] for p in pts)
+        flat = [(p[0], p[1]) for p in pts if p[2] <= base + below]
+        hull = convexHull(flat)
+        if len(hull) < 3:
+            return None
+        if grow:
+            cx = sum(p[0] for p in hull) / len(hull)
+            cy = sum(p[1] for p in hull) / len(hull)
+            out = []
+            for x, y in hull:
+                d = math.hypot(x - cx, y - cy) or 1.0
+                out.append((x + (x - cx) / d * grow, y + (y - cy) / d * grow))
+            hull = out
+        node = self.__colNode(name, WALL | CAMERA)
+        self.__posts(node, hull, base, base + (height or max(4.0, min(top - base, 14.0))))
+        self.solid.attachNewNode(node)
+        self.hulls.append(hull)
+        return hull
 
     # --- Visual pieces ---
 
@@ -490,6 +571,26 @@ class MapKit:
         for m in self.models.values():
             m.removeNode()
         self.models = {}
+
+
+def convexHull(points):
+    """The convex outline round 2D points, anticlockwise."""
+    pts = sorted(set((round(x, 2), round(y, 2)) for x, y in points))
+    if len(pts) < 3:
+        return pts
+
+    def cross(o, a, b):
+        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+    lower, upper = [], []
+    for p in pts:
+        while len(lower) >= 2 and cross(lower[-2], lower[-1], p) <= 0:
+            lower.pop()
+        lower.append(p)
+    for p in reversed(pts):
+        while len(upper) >= 2 and cross(upper[-2], upper[-1], p) <= 0:
+            upper.pop()
+        upper.append(p)
+    return lower[:-1] + upper[:-1]
 
 
 def rng(seed):

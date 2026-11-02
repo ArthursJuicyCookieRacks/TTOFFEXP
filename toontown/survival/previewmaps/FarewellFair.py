@@ -33,6 +33,15 @@ HALF = 150.0
 FADED = (0.72, 0.66, 0.62, 1)
 DEAD = (0.46, 0.42, 0.42, 1)
 
+# The dead trees outside the fence: the tree files and the trees in them
+# (the ones without a planter box).
+TREES = (('phase_3.5/models/props/tt_m_ara_TT_trees_halloween',
+          ('prop_tree_small_no_box_ul', 'prop_tree_small_nobox_ur', 'prop_tree_large_no_box_ul', 'prop_tree_large_no_box_ur',
+           'prop_tree_fat_no_box_ul', 'prop_tree_fat_no_box_ur')),
+         ('phase_8/models/props/tt_m_ara_BR_pinetrees_halloween',
+          ('prop_snow_tree_large_nobox_ul', 'prop_snow_tree_large_nobox_ur', 'prop_snow_tree_small_nobox_ul',
+           'prop_snow_tree_small_nobox_ur')))
+
 TOWER = Point3(0, 30, 0)
 WHEEL = Point3(-88, 86, 0)
 CAROUSEL = Point3(88, 84, 0)
@@ -115,9 +124,15 @@ class FarewellFair(PreviewMap):
         for i in range(46):
             a = 2 * math.pi * i / 46 + self.r.uniform(-0.05, 0.05)
             d = self.r.uniform(HALF + 18, HALF + 70)
-            m = k.model(self.r.choice(['phase_3.5/models/props/tt_m_ara_TT_trees_halloween', 'phase_8/models/props/tt_m_ara_BR_pinetrees_halloween']),
-                        pos=(d * math.cos(a), d * math.sin(a), 0), h=self.r.uniform(0, 360), color=(0.42, 0.4, 0.38, 1))
-            m.setScale(self.r.uniform(1.0, 1.6))
+            # One tree from the tree file. Each file holds every kind of
+            # tree (small, large, fat, with and without a planter), all at
+            # the file's origin: the whole file put down at one spot was
+            # twenty trees in one place, their flat leaf cards fighting each
+            # other, so the trees flickered as you walked and blinked out
+            # (Arthur).
+            path, parts = self.r.choice(TREES)
+            k.part(path, self.r.choice(parts), pos=(d * math.cos(a), d * math.sin(a), 0), h=self.r.uniform(0, 360),
+                   scale=self.r.uniform(1.0, 1.6), color=(0.42, 0.4, 0.38, 1))
 
     # --- Helpers ---
 
@@ -130,7 +145,7 @@ class FarewellFair(PreviewMap):
             p2 = (c[0] + radius * math.cos(a1), c[1] + radius * math.sin(a1), z)
             self.kit.quad([p0, p1, p2], tex, [(c[0] / 10, c[1] / 10), (p1[0] / 10, p1[1] / 10), (p2[0] / 10, p2[1] / 10)], color, 'decal')
 
-    def __text(self, text, pos, h, scale, color, parent=None, font='sign', roll=0):
+    def __text(self, text, pos, h, scale, color, parent=None, font='sign', roll=0, maxWidth=None):
         from toontown.toonbase import ToontownGlobals
         tn = TextNode('fairSign')
         tn.setFont(ToontownGlobals.getSignFont() if font == 'sign' else ToontownGlobals.getInterfaceFont())
@@ -140,6 +155,10 @@ class FarewellFair(PreviewMap):
         np = (parent or self.root).attachNewNode(tn)
         np.setPos(pos)
         np.setHpr(h, 0, roll)
+        if maxWidth and tn.getWidth() * scale > maxWidth:
+            # Shrunk to fit its board (the entrance arch's name ran into
+            # the posts and lost its first and last letters: Arthur).
+            scale = maxWidth / tn.getWidth()
         np.setScale(scale)
         np.setTwoSided(True)
         return np
@@ -149,26 +168,39 @@ class FarewellFair(PreviewMap):
     def __fence(self):
         k = self.kit
         r = self.r
-        # A leaning, broken wooden fence all round; solid all the same.
+        # An old wooden fence all round, solid. The panels used to be put
+        # down leaning sideways (rolled) at different heights, with one in
+        # twelve knocked flat: gaps and holes all along it (Arthur). Now
+        # every panel stands at one height, a little wider than the gap it
+        # fills so the neighbours overlap, and leans only in or out (so
+        # its sides stay against its neighbours'). The fallen panels lie
+        # in the weeds inside, in front of a whole fence.
         corners = [(-HALF, -HALF), (HALF, -HALF), (HALF, HALF), (-HALF, HALF), (-HALF, -HALF)]
         for (ax, ay), (bx, by) in zip(corners[:-1], corners[1:]):
             k.wallSegment((ax, ay), (bx, by), -1, 14, name='fairFence', thick=2.0)
             length = math.hypot(bx - ax, by - ay)
             h = math.degrees(math.atan2(by - ay, bx - ax))
+            along = Vec3(bx - ax, by - ay, 0) / length
+            inward = Vec3(-along[1], along[0], 0)
             n = int(length / 10)
+            step = length / n
             for i in range(n):
                 t = (i + 0.5) / n
                 x, y = ax + (bx - ax) * t, ay + (by - ay) * t
                 # Leave the entrance arch's gap in the south fence.
                 if ay == -HALF and by == -HALF and abs(x) < 12:
                     continue
+                start = Vec3(x, y, 0) - along * (step * 0.5 + 0.3)
+                # Alternate panels sit a hair in and out, so the overlaps
+                # never draw on top of each other.
+                start += inward * (0.06 if i % 2 else -0.06)
+                k.model('phase_3.5/models/modules/wood_fence', pos=start, h=h, p=r.uniform(-3, 3), color=DEAD,
+                        scale=((step + 0.6) / 10.0, 1, 1.8))
                 if r.random() < 0.08:
-                    # A fallen panel, lying in the weeds.
-                    m = k.model('phase_3.5/models/modules/wood_fence', pos=(x - 5 * math.cos(math.radians(h)), y - 5 * math.sin(math.radians(h)) + (2 if ay < 0 else -2), 0.2),
-                                h=h + r.uniform(-15, 15), p=0, r=r.choice((-88, 88)), color=DEAD)
-                    continue
-                m = k.model('phase_3.5/models/modules/wood_fence', pos=(x - 5 * math.cos(math.radians(h)), y - 5 * math.sin(math.radians(h)), 0),
-                            h=h, r=r.uniform(-9, 9), color=DEAD, scale=(1, 1, r.uniform(1.6, 2.0)))
+                    # A fallen panel, lying in the weeds inside.
+                    spot = Vec3(x, y, 0) + inward * r.uniform(5, 8) - along * 5
+                    k.model('phase_3.5/models/modules/wood_fence', pos=(spot[0], spot[1], 0.15), h=h + r.uniform(-20, 20), p=-90,
+                            color=DEAD)
 
     def __entrance(self):
         k = self.kit
@@ -180,7 +212,7 @@ class FarewellFair(PreviewMap):
         # The arch board, sagging to one side.
         k.beam((-15, y, 24.5), (15, y, 22.0), 1.6, BOARD_TEX, color=FADED, depth=7.0)
         for side, hh, rl in ((-1.3, 0, 4.5), (1.3, 180, -4.5)):
-            self.__text('FAREWELL FAIR', Point3(0, y + side, 21.6), hh, 3.4, (0.85, 0.3, 0.3, 1), roll=rl)
+            self.__text('FAREWELL FAIR', Point3(0, y + side, 22.2), hh, 3.4, (0.85, 0.3, 0.3, 1), roll=rl, maxWidth=20.5)
         self.__text('CLOSED', Point3(0, y + 1.2, 9), 180, 2.2, (0.9, 0.85, 0.75, 1), font='int')
         # The gates, chained shut.
         for sx in (-1, 1):
@@ -190,7 +222,7 @@ class FarewellFair(PreviewMap):
         k.beam((-11, y + 0.6, 8.5), (11, y + 0.6, 6), 0.4, 'phase_9/maps/hq_chain.jpg', color=FADED, tile=2)
         # Ticket booth just inside.
         b = k.model('phase_6/models/events/ttr_m_tf_booth', pos=(26, -132, 0), h=-90, color=FADED, scale=0.6)
-        k.wallBox((20, -139, 0), (32, -125, 12))
+        k.footprint(b, below=4.0)
 
     def __midway(self):
         k = self.kit
@@ -205,10 +237,14 @@ class FarewellFair(PreviewMap):
                 if side < 0 and i == 0:
                     # The duck tank (the fisherman fishes for ducks here).
                     m = k.model('phase_6/models/events/ttr_m_tf_ducktank', pos=(x - 6, y + 14, 0), h=h, color=FADED, scale=0.85)
-                    k.wallBox((x - 16, y - 2, 0), (x + 4, y + 26, 18))
+                    # Its square drop shadow lies at exactly the ground's
+                    # height, so the two fought: a flickering black box
+                    # under the tank (Arthur).
+                    m.find('**/square_drop_shadow').removeNode()
+                    k.footprint(m, below=4.0)
                     continue
                 m = k.model(booths[(i + (side > 0)) % 3], pos=(x, y, 0), h=h + r.uniform(-6, 6), r=r.uniform(-3, 3), color=FADED, scale=0.85)
-                k.wallBox((x - 9, y - 9.5, 0), (x + 9, y + 9.5, 18))
+                k.footprint(m, below=4.0)
         # String lights over the midway, most bulbs dead.
         for y in (-118, -82, -44, -8):
             self.__stringLights((-26, y, 16), (26, y + 6, 15), 14)
@@ -312,29 +348,57 @@ class FarewellFair(PreviewMap):
     def __stage(self):
         k = self.kit
         c = STAGE
-        # The quiz stage, facing west over the midway (Mickey stands in front).
-        m = k.model('phase_6/models/events/ttr_m_tf_quizStage', pos=(c[0] + 6, c[1] - 6, 0), h=90, color=FADED, scale=1.3)
-        k.wallBox((c[0] - 6, c[1] - 20, 0), (c[0] + 46, c[1] + 18, 6))
-        k.box((c[0] + 2.4, c[1] - 13, 9.2), (c[0] + 3.2, c[1] + 9, 17.2), side=BOARD_TEX, top=WOOD_TEX, tile=4, color=(0.45, 0.3, 0.45, 1),
+        # The quiz stage, facing west over the midway (Mickey stands in
+        # front). Stage, sign and poles all share one centre line, y = c.
+        m = k.model('phase_6/models/events/ttr_m_tf_quizStage', pos=(c[0] + 6, c[1], 0), h=90, color=FADED, scale=1.3)
+        k.footprint(m, below=4.5)
+        # The sign hangs between two poles, the same distance either side,
+        # on ropes from each pole's top (the string lights' wire) to its
+        # top corners (it floated in the air before: Arthur).
+        half, poleY, poleTop = 11.0, 17.0, 21.0
+        x = c[0] + 2.8
+        k.box((x - 0.4, c[1] - half, 10.2), (x + 0.4, c[1] + half, 17.6), side=BOARD_TEX, top=WOOD_TEX, tile=4, color=(0.45, 0.3, 0.45, 1),
               collide=False)
-        self.__text('TONIGHT ONLY!', Point3(c[0] + 2, c[1] - 2, 14), -90, 2.6, (0.95, 0.85, 0.5, 1))
-        self.__text('THE GRAND FINALE', Point3(c[0] + 2, c[1] - 2, 11), -90, 1.8, (0.9, 0.6, 0.5, 1), roll=-3)
+        self.__text('TONIGHT ONLY!', Point3(x - 0.5, c[1], 14.6), -90, 2.6, (0.95, 0.85, 0.5, 1), maxWidth=2 * half - 2)
+        self.__text('THE GRAND FINALE', Point3(x - 0.5, c[1], 11.6), -90, 1.8, (0.9, 0.6, 0.5, 1), roll=-3, maxWidth=2 * half - 2)
         for sy in (-1, 1):
-            k.box((c[0] + 1, c[1] + sy * 18 - 0.6, 0), (c[0] + 2.2, c[1] + sy * 18 + 0.6, 18), side=WOOD_TEX, top=WOOD_TEX, tile=4,
-                  color=FADED, collide='wall')
+            y = c[1] + sy * poleY
+            k.box((x - 0.6, y - 0.6, 0), (x + 0.6, y + 0.6, poleTop), side=WOOD_TEX, top=WOOD_TEX, tile=4, color=FADED, collide='wall')
+            # A crossbar at the top, the rope tied round it.
+            k.beam((x - 1.0, y, poleTop - 0.5), (x + 1.0, y, poleTop - 0.5), 0.35, WOOD_TEX, color=DEAD, tile=1)
+            corner = Vec3(x, c[1] + sy * (half - 0.4), 17.6)
+            top = Vec3(x, y - sy * 0.6, poleTop - 0.5)
+            self.__rope(top, corner, sag=0.5)
+            # And a second rope from lower down the pole to the sign's
+            # bottom corner, so it hangs steady.
+            self.__rope(Vec3(x, y - sy * 0.6, 12.0), Vec3(x, c[1] + sy * (half - 0.4), 10.4), sag=0.35)
+        # A couple of dead bulbs on the top ropes, like the midway's.
+        self.__stringLights((x, c[1] - poleY + 0.6, poleTop - 0.5), (x, c[1] - half + 0.4, 17.6), 4)
+        self.__stringLights((x, c[1] + half - 0.4, 17.6), (x, c[1] + poleY - 0.6, poleTop - 0.5), 4)
+
+    def __rope(self, a, b, sag=0.5, pieces=6):
+        a, b = Vec3(*a), Vec3(*b)
+        prev = a
+        for i in range(1, pieces + 1):
+            t = i / float(pieces)
+            p = a + (b - a) * t
+            p[2] -= math.sin(t * math.pi) * sag
+            self.kit.beam(prev, p, 0.12, WOOD_TEX, color=(0.2, 0.2, 0.2, 1), tile=1, group='decal')
+            prev = p
 
     def __balloon(self):
         k = self.kit
         c = BALLOON
         # The ToonFest balloon, come down hard and tipped over in the dirt.
         m = k.model('phase_6/models/events/tf_balloon', pos=(c[0], c[1], -2), h=60, p=0, r=-62, color=(0.62, 0.56, 0.58, 1))
-        k.wallTube((c[0], c[1], 0), 9, 10)
-        k.wallTube((c[0] + 16, c[1] + 8, 0), 11, 14)
+        # Solid where it lies (two guessed tubes stood off to one side of
+        # it: an invisible wall by the popcorn cart, Arthur's video).
+        k.footprint(m, below=60.0, height=12.0)
         # Its ropes, trailing.
         for dx, dy in ((10, -8), (14, 4), (-6, 12)):
             k.beam((c[0], c[1], 1), (c[0] + dx, c[1] + dy, 0.2), 0.25, WOOD_TEX, color=DEAD, tile=1)
         cart = k.model('phase_5.5/models/estate/popcornCart', pos=(c[0] + 26, c[1] - 14, 0), h=40, r=7, color=FADED, scale=1.4)
-        k.wallTube((c[0] + 26, c[1] - 14, 0), 3, 5)
+        k.footprint(cart)
 
     def __trolley(self):
         k = self.kit
@@ -363,23 +427,131 @@ class FarewellFair(PreviewMap):
     def __litter(self):
         k = self.kit
         r = self.r
+        self.trashSpots = []
+        self.tippedCans = []
         for i in range(36):
             x, y = r.uniform(-HALF + 15, HALF - 15), r.uniform(-HALF + 15, HALF - 15)
             if (Point3(x, y, 0) - TOWER).length() < 40 or abs(x) < 16 and y < -10:
                 continue
             kind = r.random()
             if kind < 0.35:
-                m = k.model('phase_5/models/props/trashcan_TT', pos=(x, y, 0), h=r.uniform(0, 360), r=r.choice((0, 0, 90)), color=DEAD)
-                k.wallTube((x, y, 0), 2.2, 4)
+                tipped = r.random() < 0.33
+                # A knocked-over can lies on its side, on the ground (not
+                # half sunk into it).
+                m = k.model('phase_5/models/props/trashcan_TT', pos=(x, y, 1.35 if tipped else 0), h=r.uniform(0, 360), r=90 if tipped else 0,
+                            color=DEAD)
+                self.trashSpots.append((x, y, tipped))
+                self.__trash(m, x, y, tipped)
+                k.footprint(m)
             elif kind < 0.65:
                 m = k.model('phase_9/models/cogHQ/woodCrateB', pos=(x, y, 0), h=r.uniform(0, 360), color=DEAD, scale=r.uniform(0.9, 1.3))
-                k.wallBox((x - 3.4, y - 3.4, 0), (x + 3.4, y + 3.4, 6))
+                k.footprint(m)
             elif kind < 0.8:
-                k.model('phase_5.5/models/estate/sack', pos=(x, y, 0), h=r.uniform(0, 360), color=DEAD, scale=1.5)
+                # Sacks and pumpkins are solid too: nobody walks through
+                # them (Arthur).
+                m = k.model('phase_5.5/models/estate/sack', pos=(x, y, 0), h=r.uniform(0, 360), color=DEAD, scale=1.5)
+                k.footprint(m)
             else:
-                k.model('phase_4/models/estate/pumpkin_short', pos=(x, y, 0), h=r.uniform(0, 360), color=(0.6, 0.5, 0.45, 1), scale=1.4)
+                m = k.model('phase_4/models/estate/pumpkin_short', pos=(x, y, 0), h=r.uniform(0, 360), color=(0.6, 0.5, 0.45, 1), scale=1.4)
+                k.footprint(m)
             if r.random() < 0.4:
                 k.decal((x + 3, y + 2), 6, 6, OIL_TEX, color=(0.4, 0.38, 0.36, 1), rot=r.uniform(0, 360))
+
+    def __trash(self, can, x, y, tipped):
+        """Litter round a trash can. The can's model has no bottom, so a
+        can knocked over showed an empty, see-through ring (Arthur): its
+        open end gets a dark inside, and the trash spills out of it, tilted
+        every which way, the way a real spill lies."""
+        k = self.kit
+        r = self.r
+        if not tipped:
+            for i in range(r.randint(3, 5)):
+                a = r.uniform(0, 2 * math.pi)
+                d = r.uniform(2.2, 4.0)
+                self.__junk(x + d * math.cos(a), y + d * math.sin(a), r.choice(('paper', 'paper', 'peel', 'can', 'bottle')))
+            return
+        # Its shadow card stands on edge once the can lies down.
+        for shadow in can.findAllMatches('**/o11'):
+            shadow.removeNode()
+        self.__canInside(can)
+        up = render.getRelativeVector(can, Vec3(0, 0, 1))
+        up[2] = 0
+        up.normalize()
+        side = Vec3(-up[1], up[0], 0)
+        mouth = Vec3(x, y, 0)
+        self.tippedCans.append((mouth, up))
+        # A wooden crate stands right against the open bottom and covers
+        # it (Arthur), the can's base resting on it.
+        # Small crates stacked against the open bottom cover it (Arthur):
+        # two side by side on the ground, one on top, nudged about the way
+        # junk gets piled.
+        h = math.degrees(math.atan2(-up[0], up[1]))
+        for across, height, scale in ((-0.75, 0.0, 0.25), (0.78, 0.0, 0.24), (r.uniform(-0.25, 0.25), 1.36, 0.22)):
+            spot = mouth - up * (0.78 + r.uniform(-0.05, 0.12)) + side * across
+            box = k.model('phase_9/models/cogHQ/woodCrateB', pos=(spot[0], spot[1], height), h=h + r.uniform(-14, 14),
+                          r=r.uniform(-3, 3) if height else 0, color=DEAD, scale=scale)
+            if not height:
+                k.footprint(box)
+        # Trash spilled round the boxes and on past them.
+        for i in range(10):
+            t = r.uniform(0.0, 1.0) ** 1.3
+            d = 1.0 + t * 4.0
+            w = r.choice((-1, 1)) * (1.8 + t * 1.6) + r.uniform(-0.5, 0.5)
+            p = mouth - up * d + side * w
+            kind = r.choice(('paper', 'paper', 'paper', 'shred', 'peel', 'can', 'can', 'bottle'))
+            self.__junk(p[0], p[1], kind, pile=max(0.0, 0.9 - t * 1.5))
+        k.decal((mouth[0] - up[0] * 3, mouth[1] - up[1] * 3), 7, 5, OIL_TEX, color=(0.32, 0.3, 0.28, 1),
+                rot=math.degrees(math.atan2(up[1], up[0])))
+
+    def __canInside(self, can):
+        """A dark disc just inside the can's open bottom: the inside of the
+        can, not a hole you see the ground through."""
+        from panda3d.core import GeomVertexReader
+        from toontown.survival.previewmaps.MapKit import Mesh, convexHull
+        ring = []
+        for gnp in can.findAllMatches('**/metal_3d'):
+            mat = gnp.getMat(can)
+            for i in range(gnp.node().getNumGeoms()):
+                reader = GeomVertexReader(gnp.node().getGeom(i).getVertexData(), 'vertex')
+                while not reader.isAtEnd():
+                    v = mat.xformPoint(reader.getData3())
+                    if v[2] < 0.3:
+                        ring.append((v[0], v[1]))
+        hull = convexHull(ring)
+        if len(hull) < 3:
+            return
+        cx = sum(p[0] for p in hull) / len(hull)
+        cy = sum(p[1] for p in hull) / len(hull)
+        mesh = Mesh()
+        for (ax, ay), (bx, by) in zip(hull, hull[1:] + hull[:1]):
+            mesh.quad([Point3(cx, cy, 0.25), Point3(bx * 0.97, by * 0.97, 0.25), Point3(ax * 0.97, ay * 0.97, 0.25)],
+                      [(0.5, 0.5), (0, 0), (1, 0)], Vec4(0.08, 0.07, 0.08, 1))
+        disc = can.attachNewNode(mesh.node('canInside'))
+        disc.setTwoSided(True)
+        disc.setTextureOff(1)
+
+    def __junk(self, x, y, kind, pile=0.0):
+        """One piece of litter at (x, y), tilted as it fell; pile lifts it
+        onto the heap at a can's mouth."""
+        k = self.kit
+        r = self.r
+        tint = r.choice(((0.7, 0.68, 0.62, 1), (0.6, 0.58, 0.55, 1), (0.66, 0.6, 0.5, 1)))
+        h = r.uniform(0, 360)
+        if kind == 'paper':
+            k.model('phase_5/models/props/newspaper', pos=(x, y, 0.04 + pile * r.uniform(0.15, 0.5)), h=h, p=r.uniform(-14, 14) if pile else 0,
+                    r=r.uniform(-14, 14) if pile else r.uniform(-3, 3), color=(tint[0] * 0.8, tint[1] * 0.8, tint[2] * 0.75, 1),
+                    scale=r.uniform(1.6, 2.4))
+        elif kind == 'shred':
+            k.model('phase_3.5/models/props/shredder-paper-mod', pos=(x, y, -0.85 + pile * 0.5), h=h, p=r.uniform(-15, 15), color=tint,
+                    scale=r.uniform(0.6, 0.9))
+        elif kind == 'peel':
+            k.model('phase_5/models/props/banana-peel-mod', pos=(x, y, 0), h=h, r=r.uniform(-10, 10), color=(0.7, 0.62, 0.45, 1),
+                    scale=r.uniform(0.35, 0.5))
+        elif kind == 'can':
+            # A soda can on its side.
+            k.model('phase_5/models/props/can', pos=(x, y, 0.3 + pile * 0.4), h=h, p=r.choice((90, -90, 80)), color=tint, scale=r.uniform(3.5, 4.5))
+        else:
+            k.model('phase_3.5/models/props/bottle', pos=(x, y, 0.05), h=h, r=r.choice((88, -88)), color=(0.5, 0.6, 0.5, 1), scale=r.uniform(0.35, 0.5))
 
     def __lamps(self):
         k = self.kit
