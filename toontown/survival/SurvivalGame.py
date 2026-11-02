@@ -301,6 +301,7 @@ class SurvivalGame(DirectObject):
                 station.win['station'] = station
         self.openZones([z.name for z in m.zones if z.startOpen])
         m.startGame(self)
+        m.layerDepths()
 
     def openZones(self, names):
         for name in names:

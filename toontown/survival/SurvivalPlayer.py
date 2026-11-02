@@ -14,7 +14,7 @@ from direct.controls import GravityWalker
 from direct.directnotify import DirectNotifyGlobal
 from direct.showbase.DirectObject import DirectObject
 from direct.showbase.InputStateGlobal import inputState
-from panda3d.core import NodePath, Point3, Vec3, WindowProperties
+from panda3d.core import BitMask32, NodePath, Point3, Vec3, WindowProperties
 
 from toontown.survival import SurvivalGlobals as G
 from toontown.toonbase import ToontownGlobals, TouchControls
@@ -95,6 +95,11 @@ GAMEPAD_WALK_DEAD_ZONE = 0.3
 # X tapped reloads; X held this long uses.
 GAMEPAD_HOLD_TIME = 0.35
 SLIDE_TOKENS = ('slideLeft', 'slideRight')
+# Big maps: a move shorter than this in one frame is checked for having
+# gone through a wall.
+GUARD_REACH = 10.0
+# The toon's wall sphere (GravityWalker's: radius 1.4, resting on the floor).
+PUSH_RADIUS = 1.4
 ACTIONS = {
     'fire': ('mouse1',),
     'reload': ('r',),
@@ -155,13 +160,24 @@ class SurvivalPlayer(DirectObject):
         from panda3d.core import ConfigVariableBool
         fluid = ConfigVariableBool('want-fluid-pusher', False)
         wasFluid = fluid.getValue()
-        fluid.setValue(True)
+        # Not on the big maps (Toon Theater, Cog Nation): there every wall
+        # is a CollisionBox, and the fluid pusher froze a toon that came to
+        # rest touching one (Arthur: stuck all over the lobby). They get
+        # the plain pusher and the walk-through check in __guard instead.
+        self.big = bool(getattr(game.arena, 'big', False))
+        fluid.setValue(not self.big)
         try:
             self.walker.initializeCollisions(base.cTrav, self.body, avatarRadius=1.4, floorOffset=0.025, reach=4.0)
         finally:
             fluid.setValue(wasFluid)
+        if self.big:
+            # The walls push the toon out in __pushOut instead.
+            self.walker.cWallSphereNodePath.node().setFromCollideMask(BitMask32.allOff())
         self.respectedPrev = base.cTrav.getRespectPrevTransform()
-        base.cTrav.setRespectPrevTransform(True)
+        # Only the fluid pusher needs where the toon was last frame; with
+        # the plain one (big maps) it made a box wall miss a toon walking
+        # into it every other frame, so the toon shook against it.
+        base.cTrav.setRespectPrevTransform(not self.big)
         self.walker.setWalkSpeed(G.WALK_SPEED, G.JUMP_FORCE, G.WALK_SPEED * G.REVERSE_SCALE, 0)
         self.walker.placeOnFloor()
         self.mouseCentered = False
@@ -200,6 +216,10 @@ class SurvivalPlayer(DirectObject):
         if gamepad is not None:
             gamepad.setGame(self)
         taskMgr.add(self.__tick, 'survivalPlayer', priority=24)
+        if self.big:
+            self.safePos = self.body.getPos()
+            # After the walls have pushed (collisionLoop is sort 30).
+            taskMgr.add(self.__guard, 'survivalPlayerGuard', sort=35)
 
     def acceptKeys(self):
         """Listen for the keys, as the player has bound them (Settings >
@@ -245,11 +265,18 @@ class SurvivalPlayer(DirectObject):
         self.grabMouse(False)
         self.__footsteps(off=True)
         taskMgr.remove('survivalPlayer')
+        taskMgr.remove('survivalPlayerGuard')
 
     def destroy(self):
         self.disable()
         self.walker.setCollisionsActive(0)
         self.walker.deleteCollisions()
+        if hasattr(self, 'guardNode'):
+            self.guardNode.removeNode()
+        if hasattr(self, 'probeNode'):
+            self.probeNode.removeNode()
+        if hasattr(self, 'pushNode'):
+            self.pushNode.removeNode()
         if base.cTrav:
             base.cTrav.setRespectPrevTransform(self.respectedPrev)
         self.body.removeNode()
@@ -442,6 +469,198 @@ class SurvivalPlayer(DirectObject):
             self.mouseLast = (cx, cy) if win.movePointer(0, cx, cy) else (x, y)
 
     # --- Each frame ---
+
+    def __guard(self, task):
+        """Big maps: the walls push the toon out here (see __pushOut), and
+        a line from last frame's middle of the toon to this frame's that
+        crosses a wall means it went through one (a long step on a slow
+        frame): put it back."""
+        pos = self.body.getPos()
+        last = self.safePos
+        if any(c != c for c in pos):
+            self.body.setPos(last)
+            return task.cont
+        pos = self.__pushOut(pos)
+        self.body.setPos(pos)
+        moved = pos - last
+        # Not the game's own long moves (a teleporter, a trip back from a
+        # room): those go where they like. A wall's push can be a long
+        # one (it threw a toon in a corner 3 feet out through the wall),
+        # so anything shorter is checked.
+        if 0.04 < moved.lengthSquared() < GUARD_REACH * GUARD_REACH:
+            if self.__crossesWall(last, pos):
+                self.guardReverts = getattr(self, 'guardReverts', 0) + 1
+                self.body.setPos(last)
+                self.__unwedge(Vec3(0))
+                return task.cont
+        self.safePos = Point3(pos)
+        self.__unwedge(moved)
+        return task.cont
+
+    def __pushOut(self, pos):
+        """Out of every wall the toon's sphere sinks into, along each
+        wall's own level push: Panda's pushers summed the pushes of the
+        stacked bars of one wall (the toon shook against it) or let it
+        sink into a corner and held it there. A few rounds settle a toon
+        in a corner between two or three walls."""
+        from panda3d.core import (CollisionHandlerQueue, CollisionNode, CollisionSphere,
+                                  CollisionTraverser)
+        if not hasattr(self, 'pushTrav'):
+            node = CollisionNode('survivalPush')
+            node.addSolid(CollisionSphere(0, 0, PUSH_RADIUS, PUSH_RADIUS))
+            node.setFromCollideMask(ToontownGlobals.WallBitmask)
+            node.setIntoCollideMask(BitMask32.allOff())
+            self.pushNode = render.attachNewNode(node)
+            self.pushQueue = CollisionHandlerQueue()
+            self.pushTrav = CollisionTraverser('survivalPush')
+            self.pushTrav.addCollider(self.pushNode, self.pushQueue)
+        root = self.game.arena.root
+        pos = Point3(pos)
+        for i in range(4):
+            self.pushNode.setPos(pos)
+            self.pushQueue.clearEntries()
+            self.pushTrav.traverse(root)
+            pushes = []
+            for k in range(self.pushQueue.getNumEntries()):
+                entry = self.pushQueue.getEntry(k)
+                n = entry.getSurfaceNormal(render)
+                n = Vec3(n[0], n[1], 0)
+                if n.length() < 0.3:
+                    # On top of (or under) a low bar: a railing, a low wall
+                    # with nothing to stand on. Off it to the nearer side.
+                    n, depth = self.__offTheTop(entry, pos)
+                    if n is None:
+                        continue
+                else:
+                    n.normalize()
+                    depth = (entry.getSurfacePoint(render) - entry.getInteriorPoint(render)).dot(n)
+                if depth <= 0.002:
+                    continue
+                for j, (m, d) in enumerate(pushes):
+                    if m.dot(n) > 0.94:
+                        if depth > d:
+                            pushes[j] = (m, depth)
+                        break
+                else:
+                    pushes.append((n, depth))
+            if not pushes:
+                break
+            total = Vec3(0)
+            for n, d in pushes:
+                total += n * (d + 0.005)
+            if total.length() > 2.0:
+                total.normalize()
+                total *= 2.0
+            pos += total
+        return pos
+
+    def __offTheTop(self, entry, pos):
+        from panda3d.core import CollisionCapsule
+        solid = entry.getInto()
+        if not isinstance(solid, CollisionCapsule):
+            return None, 0
+        mat = entry.getIntoNodePath().getMat(render)
+        a, b = mat.xformPoint(solid.getPointA()), mat.xformPoint(solid.getPointB())
+        r = solid.getRadius() * mat.getRow3(0).length()
+        axis = Vec3(b[0] - a[0], b[1] - a[1], 0)
+        length = axis.length()
+        c = Point3(pos[0], pos[1], 0)
+        if length < 1e-3:
+            near = Point3(a[0], a[1], 0)
+        else:
+            axis /= length
+            t = max(0.0, min(length, (c - Point3(a[0], a[1], 0)).dot(axis)))
+            near = Point3(a[0], a[1], 0) + axis * t
+        out = c - near
+        if out.length() < 0.05:
+            if length < 1e-3:
+                return None, 0
+            # Right on its line: toward where the toon came from.
+            out = Vec3(-axis[1], axis[0], 0)
+            back = Vec3(self.safePos[0] - pos[0], self.safePos[1] - pos[1], 0)
+            if back.dot(out) < 0:
+                out = -out
+        depth = r + PUSH_RADIUS - out.length()
+        if depth <= 0:
+            return None, 0
+        out.normalize()
+        return out, depth
+
+    def __unwedge(self, moved):
+        """Big maps: a toon trying to walk that hasn't moved for a few
+        frames and is sunk into something solid (between two posts, on a
+        rail's line, in a gap narrower than itself) is wedged: no push gets
+        it out, so put it on the nearest spot that's clear."""
+        trying = not self.game.inMenu() and any(inputState.isSet(t) for t in ('forward', 'reverse') + SLIDE_TOKENS)
+        if not trying or moved[0] * moved[0] + moved[1] * moved[1] > 0.0004:
+            self.stillFrames = 0
+            return
+        self.stillFrames = getattr(self, 'stillFrames', 0) + 1
+        if self.stillFrames < 4:
+            return
+        self.stillFrames = 0
+        here = self.body.getPos()
+        if not self.__overlaps(here):
+            return
+        for ring in (0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0):
+            for k in range(16):
+                a = k * math.pi / 8
+                spot = Point3(here[0] + math.cos(a) * ring, here[1] + math.sin(a) * ring, here[2])
+                # Out of the solid it's sunk in, not through a wall beyond.
+                if not self.__overlaps(spot) and not self.__crossesWall(spot, here, near=here, within=1.5):
+                    self.body.setPos(spot)
+                    self.safePos = Point3(spot)
+                    self.notify.info('unwedged the toon from %s to %s' % (here, spot))
+                    return
+
+    def __overlaps(self, pos):
+        from panda3d.core import (CollisionHandlerQueue, CollisionNode, CollisionSphere,
+                                  CollisionTraverser)
+        if not hasattr(self, 'probeTrav'):
+            node = CollisionNode('survivalProbe')
+            # A little smaller than the toon: a toon only touching a wall
+            # (walking into it) isn't wedged.
+            node.addSolid(CollisionSphere(0, 0, 1.4, 1.25))
+            node.setFromCollideMask(ToontownGlobals.WallBitmask)
+            node.setIntoCollideMask(BitMask32.allOff())
+            self.probeNode = render.attachNewNode(node)
+            self.probeQueue = CollisionHandlerQueue()
+            self.probeTrav = CollisionTraverser('survivalProbe')
+            self.probeTrav.addCollider(self.probeNode, self.probeQueue)
+        self.probeNode.setPos(pos)
+        self.probeQueue.clearEntries()
+        self.probeTrav.traverse(self.game.arena.root)
+        return self.probeQueue.getNumEntries() > 0
+
+    def __crossesWall(self, a, b, near=None, within=0.0):
+        from panda3d.core import (CollisionHandlerQueue, CollisionNode, CollisionSegment,
+                                  CollisionTraverser)
+        if not hasattr(self, 'guardTrav'):
+            self.guardSeg = CollisionSegment()
+            node = CollisionNode('survivalGuard')
+            node.addSolid(self.guardSeg)
+            node.setFromCollideMask(ToontownGlobals.WallBitmask)
+            node.setIntoCollideMask(BitMask32.allOff())
+            self.guardNode = render.attachNewNode(node)
+            self.guardQueue = CollisionHandlerQueue()
+            self.guardTrav = CollisionTraverser('survivalGuard')
+            self.guardTrav.addCollider(self.guardNode, self.guardQueue)
+        # At the middle of the wall sphere (radius 1.4, sitting on the floor).
+        self.guardSeg.setPointA(a[0], a[1], a[2] + 1.4)
+        self.guardSeg.setPointB(b[0], b[1], b[2] + 1.4)
+        self.guardQueue.clearEntries()
+        self.guardTrav.traverse(self.game.arena.root)
+        start = Point3(a[0], a[1], a[2] + 1.4)
+        for i in range(self.guardQueue.getNumEntries()):
+            entry = self.guardQueue.getEntry(i)
+            hit = entry.getSurfacePoint(render)
+            # A hit right where the step began is a toon that was already
+            # in a solid (a squeeze, a landing): let the walls push it out.
+            if (hit - start).length() > 0.1:
+                if near is not None and (Vec3(hit[0] - near[0], hit[1] - near[1], 0)).length() <= within:
+                    continue
+                return True
+        return False
 
     def __tick(self, task):
         dt = globalClock.getDt()

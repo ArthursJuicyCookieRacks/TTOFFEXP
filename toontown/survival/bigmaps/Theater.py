@@ -962,7 +962,7 @@ class Theater(Building):
         self.scatterGrime(53, 31, 91, 55, 12, g, 10, 272, color=dustC)
         self.papers(56, 32, 90, 54, 12, g, 8, 273, color=(0.8, 0.75, 0.65, 1))
         self.dust((73, 43, 24), 12)
-        self.sign((60, 55.5, 20), 180, 'PROPERTY OF KINO DER TOONEN', g, plate=(0.85, 0.82, 0.75, 1), scale=0.55)
+        self.sign((60, 55.5, 20), 180, 'PROPERTY OF TOON THEATER', g, plate=(0.85, 0.82, 0.75, 1), scale=0.55)
         self.damp((92, 34, 14), 90, 6, 8, g)
         # The stage: tape marks, scripts, a ghost light.
         g = 'stage'
@@ -1309,9 +1309,11 @@ class Theater(Building):
         velvet = (0.36, 0.12, 0.11, 1)
         for bank in ((-37, -11), (11, 37)):
             x0, x1 = bank
+            kept = []
             for y in rows:
                 if r.random() < 0.08:
                     continue
+                kept.append(y)
                 n = int((x1 - x0) / 2.6)
                 for i in range(n + 1):
                     # The iron standard between two seats.
@@ -1333,7 +1335,17 @@ class Theater(Building):
                         continue
                     self.kit.box((x - 1.1, y - 1.0, 1.4), (x + 1.1, y - 0.55, 4.2), side=CURTAIN, top=WOOD, tile=2,
                                  color=velvet, collide=False, group=g)
-                self.kit.wallBox((x0, y - 1.2, 0), (x1, y + 0.9, 3.6))
+            # One solid for each run of rows: the 3 feet between two rows
+            # is narrower than a toon, and a toon squeezed in there was
+            # wedged between them (Arthur: stuck in the theater). A row
+            # torn out leaves a gap wide enough to walk through.
+            run = []
+            for y in kept + [None]:
+                if run and (y is None or y - run[-1] > 5):
+                    self.kit.wallBox((x0, run[0] - 1.2, 0), (x1, run[-1] + 0.9, 3.6))
+                    run = []
+                if y is not None:
+                    run.append(y)
         # Fallen beams through the broken ceiling.
         for x, y, hh in ((-27, -21, 30), (27, 9, -55)):
             self.kit.beam((x - 6 * math.cos(math.radians(hh)), y - 6 * math.sin(math.radians(hh)), 0.5),

@@ -234,6 +234,8 @@ class Building(BigMap):
 
         def arrive():
             game.player.body.setPos(game.arena.root, pos)
+            # Not a walk through the walls: the guard starts from here.
+            game.player.safePos = game.player.body.getPos()
             game.player.setLook(h, 0)
             base.transitions.fadeIn(0.35)
             base.playSfx(base.loader.loadSfx('phase_5/audio/sfx/teleport_reappear.ogg'), volume=0.7)

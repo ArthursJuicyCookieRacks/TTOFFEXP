@@ -16,12 +16,33 @@ SurvivalArena finds its way over the floors with bigmaps/LayeredNav.py.
 
 import math
 
-from panda3d.core import (BitMask32, CollisionBox, CollisionNode, NodePath, Point3, PointLight, TextNode, TransparencyAttrib,
+from panda3d.core import (BitMask32, CollisionBox, CollisionCapsule, CollisionNode, CollisionSphere, NodePath, Point3, PointLight, TextNode, TransparencyAttrib,
                           Vec3, Vec4)
 
 from toontown.survival.previewmaps.MapKit import FLOOR, WALL, CAMERA, Mesh, heading, rng
 from toontown.survival.previewmaps.PreviewMap import PreviewMap
 from toontown.toonbase import ToontownGlobals
+
+
+def capsuleWall(node, length, thick, z0, z1):
+    """The solid of a straight wall along x (centred on 0), thick through,
+    from z0 to z1: rounded bars lying along it, stacked so they overlap.
+    Not a CollisionBox: a box let a toon sink into it at a corner or a
+    slant and held it there, or threw it out through the far side
+    (Arthur: stuck all over the theater)."""
+    r = max(0.3, thick / 2.0)
+    half = length / 2.0 - r
+    if z1 - z0 < 2 * r:
+        z0, z1 = (z0 + z1) / 2.0 - r, (z0 + z1) / 2.0 + r
+    z = z0 + r
+    while True:
+        if half > 0.01:
+            node.addSolid(CollisionCapsule(Point3(-half, 0, z), Point3(half, 0, z), r))
+        else:
+            node.addSolid(CollisionSphere(0, 0, z, max(r, length / 2.0)))
+        if z >= z1 - r - 1e-4:
+            break
+        z = min(z1 - r, z + r * 1.6)
 
 
 class Zone:
@@ -123,7 +144,7 @@ class BigMap(PreviewMap):
         a3, b3 = Vec3(a[0], a[1], 0), Vec3(b[0], b[1], 0)
         d = b3 - a3
         length = d.length()
-        node.addSolid(CollisionBox(Point3(-length / 2.0, -0.6, z0), Point3(length / 2.0, 0.6, z1)))
+        capsuleWall(node, length, 1.2, z0, z1)
         solid = self.kit.solid.attachNewNode(node)
         mid = (a3 + b3) / 2.0
         solid.setPos(mid[0], mid[1], 0)
@@ -150,7 +171,7 @@ class BigMap(PreviewMap):
         node = CollisionNode('window')
         node.setIntoCollideMask(WALL | CAMERA)
         node.setFromCollideMask(BitMask32.allOff())
-        node.addSolid(CollisionBox(Point3(-width / 2.0, -0.7, -sill - 0.5), Point3(width / 2.0, 0.7, height + 0.5)))
+        capsuleWall(node, width, 1.4, -sill - 0.5, height + 0.5)
         np = self.kit.solid.attachNewNode(node)
         np.setPos(p[0], p[1], p[2] + sill)
         np.setH(h)
@@ -412,7 +433,7 @@ class BigMap(PreviewMap):
         length = d.length()
         if length < 0.05 or z1 - z0 < 0.05:
             return
-        node.addSolid(CollisionBox(Point3(-length / 2.0, -max(thick, 0.6) / 2.0, z0), Point3(length / 2.0, max(thick, 0.6) / 2.0, z1)))
+        capsuleWall(node, length, max(thick, 0.6), z0, z1)
         np = self.kit.solid.attachNewNode(node)
         mid = (pa + pb) / 2.0
         np.setPos(mid[0], mid[1], 0)
@@ -511,6 +532,72 @@ class BigMap(PreviewMap):
 
     def afterBuild(self):
         pass
+
+    # Surfaces that lie flat on another one (a rug on the floor, a molding
+    # strip over the wallpaper, a light pool, a prop's shadow, a box flush
+    # with a bigger box) used to fight for the same depth and flicker
+    # (Arthur). Each is given a depth offset that puts it in front: decals
+    # over trim over small things over big things over the room itself.
+    # Kept small: on a phone's coarser depth a big offset would show a
+    # thing through a wall in front of it.
+    DECAL_WORDS = (('particleglow', 18), ('paper_stacks', 16), ('shadow', 14), ('grime', 14), ('crack', 14),
+                   ('poster', 14), ('decal', 14))
+    TRIM_WORDS = (('molding', 7), ('woodpanel', 6), ('wood_panel', 6), ('carpet', 6), ('rug', 6),
+                  ('boards', 6), ('planks', 6), ('wood1', 6), ('smoothwall', 6))
+
+    def layerDepths(self):
+        from panda3d.core import DepthOffsetAttrib, TextureAttrib
+        root = self.root
+        for i, gnp in enumerate(root.findAllMatches('**/+GeomNode')):
+            path = str(gnp).lower()
+            if '__actor_modelroot' in path:
+                continue
+            name = gnp.getName().lower()
+            if name == 'collision' and not gnp.isHidden():
+                # A model's stand-in for its solid, never meant to be seen.
+                gnp.hide()
+                continue
+            texName = ''
+            ta = gnp.getNetState().getAttrib(TextureAttrib)
+            if ta is not None and ta.getNumOnStages():
+                tex = ta.getOnTexture(ta.getOnStage(0))
+                texName = (tex.getFilename().getBasename() or tex.getName()).lower()
+            look = name + ' ' + texName
+            rank = None
+            for word, r in self.DECAL_WORDS:
+                if word in look:
+                    rank = r
+                    break
+            if rank is not None and '/kitstatic/' not in path and '/kitdecals/' not in path:
+                # The same decal laid again by a room of its own; two
+                # shadows overlapping told apart by their order.
+                rank += 1
+            if rank is not None and '/kitdecals/' not in path and not name.startswith('kit-'):
+                rank += i % 3
+            if rank is None and name.startswith('kit-'):
+                # Two rooms' walls or floors meeting flush: one always wins
+                # (which one doesn't matter, so long as it never changes).
+                import zlib
+                rank = zlib.crc32(path.encode()) % 6
+                for word, r in self.TRIM_WORDS:
+                    if word in look:
+                        # Trim over the walls; a room's own over the building's.
+                        rank = r + (0 if '/kitstatic/' in path else 1)
+                        break
+            if rank is None:
+                # A loose box or a prop's part: the smaller in front, and
+                # two the same size (a chandelier's crossed arms) told
+                # apart by their order.
+                bounds = gnp.getTightBounds(root)
+                if bounds is None:
+                    continue
+                size = (bounds[1] - bounds[0]).length()
+                step = 2 if size < 3.0 else 1 if size < 10.0 else 0
+                rank = 9 + step + (i % 3)
+            old = gnp.getNetState().getAttrib(DepthOffsetAttrib)
+            have = old.getOffset() if old is not None else 0
+            if rank > have:
+                gnp.setDepthOffset(rank)
 
     def __flicker(self, task):
         import random
