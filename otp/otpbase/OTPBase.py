@@ -10,11 +10,27 @@ import glob
 from panda3d.core import VirtualFileSystem
 import os
 
+class _SilentOnScreenDebug:
+    # Takes every on-screen debug call and does nothing with it.
+    enabled = False
+
+    def __getattr__(self, name):
+        return lambda *args, **kwargs: None
+
+
 class OTPBase(ShowBase):
 
     def __init__(self, windowType = None):
         self.wantEnviroDR = False
         ShowBase.__init__(self, windowType=windowType)
+        # ShowBase only makes the on-screen debug readout when Python runs
+        # with __debug__ on. The Windows and Android builds run optimized,
+        # so it is missing there, and the game code that still writes to
+        # it (doodle moods, kart racing, the target trolley game) crashed.
+        # Give those builds a stand-in that shows nothing.
+        import builtins
+        if not hasattr(builtins, 'onScreenDebug'):
+            builtins.onScreenDebug = _SilentOnScreenDebug()
         if config.ConfigVariableBool('want-phase-checker', 0).getValue():
             from direct.showbase import Loader
             Loader.phaseChecker = self.loaderPhaseChecker
