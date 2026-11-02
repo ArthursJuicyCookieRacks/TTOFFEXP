@@ -188,13 +188,18 @@ class Char(Avatar.Avatar):
         for lod in LODModelDict[self.style.name]:
             self.lodStrings.append(str(lod))
 
+        # self.name is the node's name, and loading the first model renames
+        # the node, so look at it once before the loop. (Goofy's later LODs
+        # were looked for under the wrong file name, and Goofy Speedway
+        # crashed on arrival.)
+        isGoofy = self.name == 'goofy'
         if self.lodStrings:
             for lodStr in self.lodStrings:
                 if len(self.lodStrings) > 1:
                     lodName = lodStr
                 else:
                     lodName = 'lodRoot'
-                if self.name == 'goofy':
+                if isGoofy:
                     self.loadModel(filePrefix + '-' + lodStr, lodName=lodName)
                 else:
                     self.loadModel(filePrefix + lodStr, lodName=lodName)
