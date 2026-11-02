@@ -4309,6 +4309,8 @@ def scenarioDoubleXp():
     book.doneStatus = {'mode': 'close'}
     messenger.send(book.doneEvent)
     yield until(walking, 60, 'walking after the book')
+    if os.environ.get('AUTOPLAY_UI_ONLY'):
+        return
 
     # Log every gain the server hands out.
     me = localAvatar.doId

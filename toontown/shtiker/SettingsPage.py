@@ -84,10 +84,10 @@ class SettingsPage(ShtikerPage.ShtikerPage):
              GameSettings.setMusicVolume),
             ('sfx', TTLocalizer.SettingsPageSfx, 0, 100, 5, GameSettings.getSfxVolume, GameSettings.setSfxVolume),
         )
-        z = 0.45
+        z = 0.42
         for row in rows:
             self.__addSlider(frame, z, *row)
-            z -= 0.22
+            z -= 0.26
         DirectButton(parent=frame, relief=None, image=self.btnImage, image_scale=(0.9, 1, 1), text=TTLocalizer.SettingsPageReset,
                      text_scale=0.05, text_pos=(0, -0.02), pos=(-0.3, 0, -0.5), command=self.__resetGeneral)
         DirectButton(parent=frame, relief=None, image=self.btnImage, image_scale=(0.9, 1, 1),
@@ -95,13 +95,13 @@ class SettingsPage(ShtikerPage.ShtikerPage):
                      text_pos=(0, -0.02), pos=(0.3, 0, -0.5), command=self.__openDoubleXp)
 
     def __addSlider(self, frame, z, name, label, low, high, step, getter, setter):
-        # The name on its own line, the slider and its value under it.
-        DirectLabel(parent=frame, relief=None, text=label, text_align=TextNode.ACenter, text_scale=0.055,
-                    text_fg=TEXT_COLOR, pos=(-0.06, 0, z))
+        # The name and its value on one line ("Music Volume: 80"), the
+        # slider under it, all centred on the page.
         value = DirectLabel(parent=frame, relief=None, text='', text_align=TextNode.ACenter, text_scale=0.055,
-                            text_fg=TEXT_COLOR, pos=(0.62, 0, z - 0.085))
+                            text_fg=TEXT_COLOR, pos=(0, 0, z))
+        value.labelText = label
         slider = DirectSlider(parent=frame, range=(low, high), value=getter(), pageSize=step, scrollSize=step,
-                              pos=(-0.06, 0, z - 0.07), scale=(0.6, 1, 0.4), frameColor=(0.55, 0.45, 0.3, 1),
+                              pos=(0, 0, z - 0.07), scale=(0.6, 1, 0.4), frameColor=(0.55, 0.45, 0.3, 1),
                               thumb_relief=DGG.FLAT, thumb_frameColor=(1, 0.85, 0.2, 1),
                               thumb_frameSize=(-0.05, 0.05, -0.1, 0.1))
         slider['command'] = self.__sliderMoved
@@ -112,7 +112,7 @@ class SettingsPage(ShtikerPage.ShtikerPage):
         slider, valueLabel, low, high, step, getter, setter = self.sliders[name]
         value = int(round(slider['value'] / float(step))) * step
         value = max(low, min(high, value))
-        valueLabel['text'] = str(value)
+        valueLabel['text'] = '%s: %d' % (valueLabel.labelText, value)
         if value != getter():
             setter(value)
 
@@ -121,7 +121,7 @@ class SettingsPage(ShtikerPage.ShtikerPage):
             if name == 'cursor':
                 continue
             slider['value'] = getter()
-            valueLabel['text'] = str(getter())
+            valueLabel['text'] = '%s: %d' % (valueLabel.labelText, getter())
 
     def __resetGeneral(self):
         GameSettings.setFov(GameSettings.FOV_DEFAULT)
@@ -279,15 +279,15 @@ class SettingsPage(ShtikerPage.ShtikerPage):
                                   command=self.__openPadList, extraArgs=[button])
             self.padButtons[button] = widget
         # How fast the right stick moves the on-screen pointer.
-        self.__addSlider(frame, -0.33, 'cursor', TTLocalizer.SettingsPageCursor, 1, 10, 1,
+        self.__addSlider(frame, -0.36, 'cursor', TTLocalizer.SettingsPageCursor, 1, 10, 1,
                          KeyBindings.getCursorSpeed, KeyBindings.setCursorSpeed)
         DirectButton(parent=frame, relief=None, image=self.btnImage, image_scale=(0.9, 1, 1), text=TTLocalizer.SettingsPageReset,
-                     text_scale=0.05, text_pos=(0, -0.02), pos=(0, 0, -0.54), command=self.__resetPad)
+                     text_scale=0.05, text_pos=(0, -0.02), pos=(0, 0, -0.56), command=self.__resetPad)
 
     def __refreshPad(self):
         slider, valueLabel = self.sliders['cursor'][:2]
         slider['value'] = KeyBindings.getCursorSpeed()
-        valueLabel['text'] = str(KeyBindings.getCursorSpeed())
+        valueLabel['text'] = '%s: %d' % (valueLabel.labelText, KeyBindings.getCursorSpeed())
         for button, widget in self.padButtons.items():
             widget['text'] = KeyBindings.PAD_LABELS.get(KeyBindings.getPad(button), '-')
             fitText(widget, 0.036, 0.36)
