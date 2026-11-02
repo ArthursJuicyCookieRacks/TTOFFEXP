@@ -26,6 +26,10 @@ class DirectRegion(NodePath):
         pass
 
     def load(self):
+        # The photo is drawn into an offscreen texture and shown on a card in
+        # the 2D GUI, so it sits in the GUI like any other picture: popups
+        # and dialogs above it cover it. (It used to be its own display
+        # region of the window, drawn on top of every bit of the GUI.)
         if not hasattr(self, 'cRender'):
             self.cRender = NodePath('fishSwimRender')
             self.fishSwimCamera = self.cRender.attachNewNode('fishSwimCamera')
@@ -40,26 +44,50 @@ class DirectRegion(NodePath):
             cm = CardMaker('displayRegionCard')
             cm.setFrame(*self.bounds)
             self.card = card = self.attachNewNode(cm.generate())
-            card.setColor(*self.color)
             newBounds = card.getTightBounds()
             ll = render2d.getRelativePoint(card, newBounds[0])
             ur = render2d.getRelativePoint(card, newBounds[1])
-            newBounds = [ll.getX(),
-             ur.getX(),
-             ll.getZ(),
-             ur.getZ()]
-            newBounds = [max(0.0, min(1.0, (x + 1.0) / 2.0)) for x in newBounds]
-            self.cDr = base.win.makeDisplayRegion(*newBounds)
-            self.cDr.setSort(10)
-            self.cDr.setClearColor(card.getColor())
-            self.cDr.setClearDepthActive(1)
-            self.cDr.setClearColorActive(1)
+            # The texture gets at least as many pixels as the card covers on
+            # screen, rounded up to a power of two so that the picture fills
+            # the whole texture (a padded texture shows a strip of the
+            # background colour along two edges).
+            width = max(16, int(round((ur.getX() - ll.getX()) / 2.0 * base.win.getXSize())))
+            height = max(16, int(round((ur.getZ() - ll.getZ()) / 2.0 * base.win.getYSize())))
+            width = 1 << (width - 1).bit_length()
+            height = 1 << (height - 1).bit_length()
+            self.cTexture = Texture('photoTexture')
+            self.cBuffer = base.win.makeTextureBuffer('photoBuffer', width, height, self.cTexture)
+            if self.cBuffer is None:
+                # No offscreen buffers on this device: the old way.
+                self.cTexture = None
+                card.setColor(*self.color)
+                newBounds = [max(0.0, min(1.0, (x + 1.0) / 2.0)) for x in (ll.getX(), ur.getX(), ll.getZ(), ur.getZ())]
+                self.cDr = base.win.makeDisplayRegion(*newBounds)
+                self.cDr.setSort(10)
+                self.cDr.setClearColor(VBase4(*self.color))
+                self.cDr.setClearDepthActive(1)
+                self.cDr.setClearColorActive(1)
+            else:
+                self.cBuffer.setClearColor(VBase4(*self.color))
+                self.cBuffer.setClearColorActive(1)
+                self.cBuffer.setClearDepthActive(1)
+                self.cDr = self.cBuffer.makeDisplayRegion()
+                card.setTexture(self.cTexture, 1)
+                card.setColor(1, 1, 1, 1)
             self.cDr.setCamera(self.fishSwimCam)
         return self.cRender
 
     def unload(self):
         if hasattr(self, 'cRender'):
-            base.win.removeDisplayRegion(self.cDr)
+            if getattr(self, 'cBuffer', None) is not None:
+                base.graphicsEngine.removeWindow(self.cBuffer)
+            else:
+                base.win.removeDisplayRegion(self.cDr)
+            self.cBuffer = None
+            self.cTexture = None
+            if getattr(self, 'card', None) is not None:
+                self.card.removeNode()
+                self.card = None
             del self.cRender
             del self.fishSwimCamera
             del self.cCamNode

@@ -1,4 +1,5 @@
 from direct.directnotify import DirectNotifyGlobal
+from toontown.fishing import FishPhoto
 from panda3d.core import *
 from direct.interval.IntervalGlobal import *
 from toontown.fishing import FishGlobals
@@ -6,7 +7,8 @@ from . import GardenGlobals
 from direct.actor import Actor
 import random
 
-class DirectRegion(NodePath):
+class DirectRegion(FishPhoto.DirectRegion):
+    # Draws like the fish photo's region; only hide() differs.
     notify = DirectNotifyGlobal.directNotify.newCategory('DirectRegion')
 
     def __init__(self, parent = aspect2d):
@@ -29,48 +31,6 @@ class DirectRegion(NodePath):
 
     def hide(self):
         NodePath.hide(self)
-
-    def load(self):
-        if not hasattr(self, 'cRender'):
-            self.cRender = NodePath('fishSwimRender')
-            self.fishSwimCamera = self.cRender.attachNewNode('fishSwimCamera')
-            self.cCamNode = Camera('fishSwimCam')
-            self.cLens = PerspectiveLens()
-            self.cLens.setFov(40, 40)
-            self.cLens.setNear(0.1)
-            self.cLens.setFar(100.0)
-            self.cCamNode.setLens(self.cLens)
-            self.cCamNode.setScene(self.cRender)
-            self.fishSwimCam = self.fishSwimCamera.attachNewNode(self.cCamNode)
-            cm = CardMaker('displayRegionCard')
-            cm.setFrame(*self.bounds)
-            self.card = card = self.attachNewNode(cm.generate())
-            card.setColor(*self.color)
-            newBounds = card.getTightBounds()
-            ll = render2d.getRelativePoint(card, newBounds[0])
-            ur = render2d.getRelativePoint(card, newBounds[1])
-            newBounds = [ll.getX(),
-             ur.getX(),
-             ll.getZ(),
-             ur.getZ()]
-            newBounds = [max(0.0, min(1.0, (x + 1.0) / 2.0)) for x in newBounds]
-            self.cDr = base.win.makeDisplayRegion(*newBounds)
-            self.cDr.setSort(10)
-            self.cDr.setClearColor(card.getColor())
-            self.cDr.setClearDepthActive(1)
-            self.cDr.setClearColorActive(1)
-            self.cDr.setCamera(self.fishSwimCam)
-        return self.cRender
-
-    def unload(self):
-        if hasattr(self, 'cRender'):
-            base.win.removeDisplayRegion(self.cDr)
-            del self.cRender
-            del self.fishSwimCamera
-            del self.cCamNode
-            del self.cLens
-            del self.fishSwimCam
-            del self.cDr
 
 
 class SpecialsPhoto(NodePath):
@@ -188,6 +148,8 @@ class SpecialsPhoto(NodePath):
             self.hide()
         self.actor = self.loadModel(self.type)
         self.specialsFrame = self.makeSpecialsFrame(self.actor)
+        # hide() hides this node, and the picture is now a card under it.
+        NodePath.show(self)
         if showBackground:
             if not hasattr(self, 'background'):
                 background = loader.loadModel('phase_3.5/models/gui/stickerbook_gui')
