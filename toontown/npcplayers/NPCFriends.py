@@ -11,6 +11,7 @@ process offline (see NPCPreload).
 """
 
 import builtins
+import math
 
 from otp.local import LocalServer
 
@@ -59,11 +60,65 @@ def isNPCFriend(doId):
     return doId in npcFriends()
 
 
-def whispered(doId):
-    """The player whispered to doId; an NPC toon comes to help."""
+def whispered(doId, text=None):
+    """The player whispered text to doId: an NPC toon answers, and comes to
+    help unless it was something mean or a goodbye (see NPCChatReplies)."""
     if doId not in npcFriends():
         return False
-    return bool(_call('summon', doId))
+    if text is None:
+        return bool(_call('summon', doId))
+    return bool(_call('chatReply', doId, text, True))
+
+
+# Saying something aloud reaches the NPC toon the player is looking at:
+# within this distance, and this many degrees of where the toon or the
+# camera faces.
+TALK_RANGE = 22.0
+TALK_HALF_ANGLE = 35.0
+
+
+def lookedAt():
+    """The doId of the NPC toon the player is looking at, or None."""
+    avatar = getattr(builtins, 'localAvatar', None)
+    if avatar is None or avatar.isEmpty():
+        return None
+    render = builtins.base.render
+    pos = avatar.getPos(render)
+    facings = [avatar.getQuat(render).getForward()]
+    camera = getattr(builtins.base, 'camera', None)
+    if camera is not None and not camera.isEmpty():
+        facings.append(camera.getQuat(render).getForward())
+    best = None
+    for doId in npcFriends():
+        toon = builtins.base.cr.doId2do.get(doId)
+        if toon is None or toon.isEmpty() or toon.isHidden():
+            continue
+        offset = toon.getPos(render) - pos
+        offset.setZ(0)
+        distance = offset.length()
+        if distance > TALK_RANGE or distance < 0.01:
+            continue
+        offset /= distance
+        angle = TALK_HALF_ANGLE + 1
+        for facing in facings:
+            facing.setZ(0)
+            if facing.normalize():
+                angle = min(angle, math.degrees(math.acos(max(-1.0, min(1.0, offset.dot(facing))))))
+        if angle > TALK_HALF_ANGLE:
+            continue
+        # Nearer and straighter ahead wins.
+        score = distance / TALK_RANGE + angle / TALK_HALF_ANGLE
+        if best is None or score < best[0]:
+            best = (score, doId)
+    return best[1] if best else None
+
+
+def saidAloud(text):
+    """The player said text aloud: the NPC toon they look at answers it."""
+    doId = lookedAt()
+    if doId is None:
+        return False
+    return bool(_call('chatReply', doId, text, False))
 
 
 def needHelpAvailable():

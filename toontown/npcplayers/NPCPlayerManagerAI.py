@@ -20,7 +20,7 @@ from toontown.battle.DistributedBattleBaseAI import DistributedBattleBaseAI
 from toontown.classicchars import CCharPaths
 from toontown.dna import DNAStoreSuitPoint
 from toontown.hood import ZoneUtil
-from toontown.npcplayers import NPCProfiles
+from toontown.npcplayers import NPCChatReplies, NPCProfiles
 from toontown.npcplayers.NPCSettings import preloadNPCs, keepAreas, npcsPerArea, helpMode, wantsHelp, setHelpAnswer, HELP_SOLO, \
     forceHelp, helpForced, canAskHelp
 from toontown.npcplayers.NPCBattleCrew import NPCBattleCrew, isNPC
@@ -152,6 +152,10 @@ MAX_NPC_BATTLES = 2
 NPC_BATTLE_SIZE = 3
 # The SpeedChat "OK" a toon whispers back when asked for help.
 SC_OK = 3
+# How long a toon takes to answer the player's chat, as if reading it, and
+# the least time between two answers from one toon.
+REPLY_DELAY = (0.8, 1.8)
+REPLY_GAP = 1.5
 
 
 def getAreaId(zoneId):
@@ -1158,13 +1162,55 @@ class NPCPlayerManagerAI:
         npcs += self.party.partyOf(player)
         return [npc.doId for npc in npcs if not npc.isDeleted()]
 
-    def summon(self, player, doId):
+    def chatReply(self, player, doId, text, whisper):
+        """The player said text to this NPC toon, whispered or aloud while
+        looking at it: it answers with a SpeedChat phrase that fits (see
+        NPCChatReplies). A whisper asking for anything friendly still calls
+        the toon over to help, as before; a mean one or a goodbye does not."""
+        npc = self.air.doId2do.get(doId)
+        if not isNPC(npc) or npc.isDeleted():
+            return False
+        phrase, emote, summons = NPCChatReplies.answer(text)
+        self.stats['replies'] = self.stats.get('replies', 0) + 1
+        withPlayer = npc in self.party.partyOf(player) and npc.zoneId == player.zoneId and \
+            (npc.getPos() - self.getPlayerPos(player)).length() < 25
+        if whisper and summons and not withPlayer and self.summon(player, doId, phrase):
+            return True
+        now = globalClock.getFrameTime()
+        if now - getattr(npc, 'lastReply', -REPLY_GAP) < REPLY_GAP:
+            return False
+        npc.lastReply = now
+        if not whisper and npc.crew is None and not npc.busy and npc.walk is not None and npc.walk[3] is None:
+            # Out for a stroll: stop to answer, as a player would.
+            npc.walk = None
+            npc.walkingTo = None
+            npc.stopMoving()
+        free = npc.crew is None and not npc.busy and npc.walk is None
+        if not whisper and free:
+            # Turn to the player and stand still a moment to talk.
+            self.faceToward(npc, self.getPlayerPos(player))
+            npc.idleUntil = now + random.uniform(4, 7)
+
+        def say(task):
+            if npc.isDeleted() or player.isDeleted():
+                return Task.done
+            if whisper:
+                player.sendUpdateToAvatarId(player.doId, 'setWhisperSCFrom', [npc.doId, phrase])
+            else:
+                npc.d_setSC(phrase)
+            if emote is not None and npc.crew is None and not npc.busy and npc.walk is None:
+                npc.b_setEmoteState(emote, 1.0)
+            return Task.done
+        taskMgr.doMethodLater(random.uniform(*REPLY_DELAY), say, 'npcChatReply-%d' % npc.doId)
+        return True
+
+    def summon(self, player, doId, phrase=SC_OK):
         """Whispered for help: the toon says OK and teleports to the player,
         into the player's battle if there is one, and stays with them."""
         npc = self.air.doId2do.get(doId)
         if not isNPC(npc) or npc.isDeleted() or npc.crew is not None:
             return False
-        player.sendUpdateToAvatarId(player.doId, 'setWhisperSCFrom', [npc.doId, SC_OK])
+        player.sendUpdateToAvatarId(player.doId, 'setWhisperSCFrom', [npc.doId, phrase])
         self.party.take(npc, player)
         npc.helper = True
         npc.walk = None

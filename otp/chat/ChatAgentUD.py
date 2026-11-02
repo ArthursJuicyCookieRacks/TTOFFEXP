@@ -64,7 +64,12 @@ class ChatAgentUD(DistributedObjectGlobalUD):
                                          issue='Account sent chat without an avatar', message=message)
             return
 
-        cleanMessage, modifications = self.cleanWhitelist(message)
+        if self.wantWhitelist:
+            cleanMessage, modifications = self.cleanWhitelist(message)
+        else:
+            # No whitelist loaded (offline builds turn it off): a typed
+            # whisper used to crash here.
+            cleanMessage, modifications = message, []
         # Maybe a better "cleaner" way of doing this, but it works
         self.air.writeServerEvent('whisper-said', avId=sender, reciever=receiverAvId, msg=message, cleanMsg=cleanMessage)
         DistributedAvatar = self.air.dclassesByName['DistributedAvatarUD']

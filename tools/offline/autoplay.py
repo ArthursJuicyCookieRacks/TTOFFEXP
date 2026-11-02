@@ -4158,6 +4158,95 @@ def scenarioNPCFriends():
         raise StepFailed('the invited NPC did not join the boarding group')
 
 
+def scenarioNPCChat():
+    # NPC toons answer the player: what the player says aloud while looking
+    # at one, and whispers. Something mean gets "You stink!"; a mean whisper
+    # does not call the toon over, a friendly one still does.
+    from toontown.npcplayers import NPCFriends
+    shots = os.environ.get('AUTOPLAY_SHOTS', '/tmp')
+    yield from teleport(ToontownGlobals.ToontownCentral)
+    yield until(lambda: len(NPCFriends.npcFriends()) >= 4, 60, 'NPC toons around')
+    yield sleep(3)
+
+    def replies():
+        return onDistrict(lambda air: air.npcPlayerManager.stats.get('replies', 0))
+
+    def lastChat(doId):
+        toon = base.cr.doId2do.get(doId)
+        return toon.nametag.getChat() if toon is not None and hasattr(toon, 'nametag') else None
+
+    def talkTo(text, name):
+        # Walk up to the nearest NPC toon, face it, and say text aloud.
+        for attempt in range(8):
+            me = localAvatar.getPos(render)
+            doId = min(NPCFriends.npcFriends(), key=lambda d: (base.cr.doId2do[d].getPos(render) - me).length())
+            npc = base.cr.doId2do[doId]
+            there = npc.getPos(render)
+            away = me - there
+            away.setZ(0)
+            if away.length() < 0.1:
+                away = Vec3(0, -1, 0)
+            away.normalize()
+            localAvatar.setPos(render, there + away * 6)
+            localAvatar.headsUp(npc)
+            localAvatar.setP(0)
+            localAvatar.setR(0)
+            yield sleep(0.2)
+            if NPCFriends.lookedAt() == doId:
+                break
+        else:
+            raise StepFailed('could not face an NPC toon')
+        before = replies()
+        base.talkAssistant.sendOpenTalk(text)
+        localAvatar.setChatAbsolute(text, 1 | 4)
+        yield sleep(2.4)
+        # Look from the side so both chat balloons show.
+        localAvatar.stopUpdateSmartCamera()
+        base.camera.reparentTo(render)
+        mid = (localAvatar.getPos(render) + npc.getPos(render)) * 0.5
+        side = Vec3(-away[1], away[0], 0)
+        base.camera.setPos(mid + side * 11 + Vec3(0, 0, 3))
+        base.camera.lookAt(mid + Vec3(0, 0, 2.5))
+        yield sleep(0.4)
+        log('said %r to NPC %d (%s): it answered %r' % (text, doId, npc.getName(), lastChat(doId)))
+        base.screenshot(os.path.join(shots, name), defaultFilename=0)
+        base.camera.reparentTo(localAvatar)
+        localAvatar.startUpdateSmartCamera()
+        if replies() <= before:
+            raise StepFailed('the NPC did not answer %r' % text)
+        return doId
+
+    localAvatar.b_setAnimState('neutral', 1.0)
+    yield from talkTo('You stink!', 'npcchat-1-mean.png')
+    yield sleep(3)
+    yield from talkTo('Hi!', 'npcchat-2-hi.png')
+    yield sleep(3)
+    yield from talkTo('I like your hat.', 'npcchat-3-compliment.png')
+    yield sleep(3)
+    yield from talkTo('Thanks!', 'npcchat-4-thanks.png')
+
+    # A mean whisper: answered by whisper, the toon stays where it is.
+    me = localAvatar.getPos(render)
+    friends = sorted(NPCFriends.npcFriends(), key=lambda d: (base.cr.doId2do[d].getPos(render) - me).length())
+    far = friends[-1]
+    start = (base.cr.doId2do[far].getPos(render) - me).length()
+    base.talkAssistant.sendWhisperTalk('you are so dumb', far)
+    yield sleep(3)
+    distance = (base.cr.doId2do[far].getPos(render) - localAvatar.getPos(render)).length()
+    log('mean whisper: NPC %d was %.0f away, now %.0f' % (far, start, distance))
+    base.screenshot(os.path.join(shots, 'npcchat-5-mean-whisper.png'), defaultFilename=0)
+    if distance < 10:
+        raise StepFailed('a mean whisper called the NPC over')
+    # A friendly whisper still brings it over.
+    base.talkAssistant.sendWhisperTalk('hey can you help me?', far)
+    yield sleep(4)
+    distance = (base.cr.doId2do[far].getPos(render) - localAvatar.getPos(render)).length()
+    log('help whisper: NPC now %.0f away' % distance)
+    base.screenshot(os.path.join(shots, 'npcchat-6-help-whisper.png'), defaultFilename=0)
+    if distance > 10:
+        raise StepFailed('the whispered NPC did not come')
+
+
 SCENARIOS = [
     ('login', scenarioLogin),
     ('exittoontown', scenarioExitToontown),
@@ -4169,6 +4258,7 @@ SCENARIOS = [
     ('needhelp', scenarioNeedHelp),
     ('npcstreets', scenarioNPCStreets),
     ('npcfriends', scenarioNPCFriends),
+    ('npcchat', scenarioNPCChat),
     ('npcbuilding', withNPCs(scenarioBuilding, ['DistributedBattleBldgAI'])),
     ('npcfactory', withNPCs(scenarioFactory, ['DistributedBattleFactoryAI'])),
     ('npcmint', withNPCs(scenarioMint, ['DistributedMintBattleAI'])),

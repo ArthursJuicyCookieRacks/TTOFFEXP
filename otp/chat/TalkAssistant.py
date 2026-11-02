@@ -621,10 +621,11 @@ class TalkAssistant(DirectObject.DirectObject):
                 chatFlags = CFThought
             base.cr.chatAgent.sendChatMessage(message)
             messenger.send('chatUpdate', [message, chatFlags])
+            self.saidToNPC(message)
         return error
 
     def sendWhisperTalk(self, message, receiverAvId):
-        self.whisperedNPC(receiverAvId)
+        self.whisperedNPC(receiverAvId, message)
         # Check if we are a true friend
         if (receiverAvId, True) in base.localAvatar.friendsList:
             base.cr.chatAgent.sendSFWhisperMessage(receiverAvId, message)
@@ -633,13 +634,24 @@ class TalkAssistant(DirectObject.DirectObject):
         base.cr.chatAgent.sendWhisperMessage(receiverAvId, message)
         return None
 
-    def whisperedNPC(self, receiverAvId):
-        # Offline, a whisper to an NPC toon asks it for help (see NPCFriends).
+    def whisperedNPC(self, receiverAvId, message=None):
+        # Offline, an NPC toon whispered to answers, and comes to help (see
+        # NPCFriends).
         try:
             from toontown.npcplayers import NPCFriends
         except ImportError:
             return
-        NPCFriends.whispered(receiverAvId)
+        NPCFriends.whispered(receiverAvId, message)
+
+    def saidToNPC(self, message):
+        # Offline, the NPC toon the player looks at answers what they say.
+        if not message:
+            return
+        try:
+            from toontown.npcplayers import NPCFriends
+        except ImportError:
+            return
+        NPCFriends.saidAloud(message)
 
     def sendAccountTalk(self, message, receiverAccount):
         base.cr.playerFriendsManager.sendUpdate('setTalkAccount', [receiverAccount, 0, '', message, [], 0])
@@ -654,8 +666,23 @@ class TalkAssistant(DirectObject.DirectObject):
             error = ERROR_NO_GUILD_CHAT
         return error
 
+    def decodeSCForNPC(self, type, messageIndex):
+        # The words of a SpeedChat phrase, for an NPC toon to answer.
+        try:
+            if type in (SPEEDCHAT_NORMAL, SPEEDCHAT_THOUGHT):
+                return self.SCDecoder.decodeSCStaticTextMsg(messageIndex) or ''
+            if type == SPEEDCHAT_CUSTOM:
+                return self.SCDecoder.decodeSCCustomMsg(messageIndex) or ''
+            if type == SPEEDCHAT_EMOTE:
+                return self.SCDecoder.decodeSCEmoteWhisperMsg(messageIndex, localAvatar.getName()) or ''
+        except Exception:
+            pass
+        return ''
+
     def sendOpenSpeedChat(self, type, messageIndex):
         error = None
+        if type in (SPEEDCHAT_NORMAL, SPEEDCHAT_CUSTOM):
+            self.saidToNPC(self.decodeSCForNPC(type, messageIndex))
         if type == SPEEDCHAT_NORMAL:
             messenger.send(SCChatEvent)
             messenger.send('chatUpdateSC', [messageIndex])
@@ -675,7 +702,7 @@ class TalkAssistant(DirectObject.DirectObject):
 
     def sendAvatarWhisperSpeedChat(self, type, messageIndex, receiverId):
         error = None
-        self.whisperedNPC(receiverId)
+        self.whisperedNPC(receiverId, self.decodeSCForNPC(type, messageIndex))
         if type == SPEEDCHAT_NORMAL:
             base.localAvatar.whisperSCTo(messageIndex, receiverId, 0)
             message = self.SCDecoder.decodeSCStaticTextMsg(messageIndex)
