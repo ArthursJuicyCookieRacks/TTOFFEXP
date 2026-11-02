@@ -47,8 +47,9 @@ COG_SPACING = 0.85
 # Only the nearest few cogs are heard stepping.
 STEP_COGS = 8
 # The pause card's lines and buttons sit this much higher, so the space
-# above them (under the title) and below the Quit button is the same (Arthur).
-PAUSE_LIFT = 0.017
+# above them (under the title) and below the Quit button is the same; then
+# higher still (Arthur).
+PAUSE_LIFT = 0.06
 # The least time between two cogs calling out from behind the player.
 BEHIND_WARN_GAP = 2.0
 TOUCH_SETTING = ('survival', 'best-round')
