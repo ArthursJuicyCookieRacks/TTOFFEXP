@@ -127,9 +127,13 @@ class SpecialsPhoto(NodePath):
         rotate = pitch.attachNewNode('rotate')
         scale = rotate.attachNewNode('scale')
         actor.reparentTo(scale)
-        bMin, bMax = actor.getTightBounds()
-        center = (bMin + bMax) / 2.0
-        actor.setPos(-center[0], -center[1], -center[2])
+        # The blank picture (no special picked, or an empty list) has no
+        # geometry, so it has no bounds to centre on.
+        bounds = actor.getTightBounds()
+        if bounds:
+            bMin, bMax = bounds
+            center = (bMin + bMax) / 2.0
+            actor.setPos(-center[0], -center[1], -center[2])
         pitch.setY(2.5)
         return frame
 

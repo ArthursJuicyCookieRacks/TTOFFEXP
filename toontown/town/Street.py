@@ -21,6 +21,9 @@ from toontown.toonbase import TTLocalizer
 
 # How often (seconds) the street checks which part of it the toon is on.
 ZoneCheckInterval = 0.5
+# The street states in which the toon stands on the street itself.
+ZoneCheckStates = ('walk', 'sit', 'push', 'stickerBook', 'WaitForBattle', 'battle',
+                   'quest', 'stopped', 'fishing', 'purchase')
 from direct.interval.IntervalGlobal import *
 from otp.nametag import NametagGlobals
 visualizeZones = config.ConfigVariableBool('visualize-zones', 0).getValue()
@@ -390,6 +393,13 @@ class Street(BattlePlace.BattlePlace):
         # swing) the ray can find nothing, the zone stays the old one and the
         # parts around the player are never drawn: an empty void. So now and
         # then the ground under the toon is looked up among all the parts.
+        # Only while the toon really stands on the street: coming out of a
+        # door (or a tunnel, a teleport or an elevator) it is still where it
+        # was inside, and the ground below that spot can be another part of
+        # the street. Moving there dropped the door the toon was coming out
+        # of, so its walk-out never played and the screen stayed black.
+        if self.fsm.getCurrentState().getName() not in ZoneCheckStates:
+            return task.again
         try:
             zoneId = self.__zoneUnderToon()
         except Exception:
