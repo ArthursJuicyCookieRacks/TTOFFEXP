@@ -58,6 +58,46 @@ def getChoices(kind):
     return _choices[kind]
 
 
+_prices = {}
+
+
+def getPrice(kind, pair):
+    # What a doodle pays to wear it, in jellybeans: what the catalog sells
+    # the same toon accessory for. Looks the catalog doesn't sell cost what
+    # the catalog asks for others of that model, or a middling price.
+    if not pair or pair[0] == 0:
+        return 0
+    if not _prices:
+        from toontown.catalog import CatalogAccessoryItemGlobals as Cat
+        kinds = {Cat.AHat: HAT, Cat.ABoysHat: HAT, Cat.AGirlsHat: HAT,
+                 Cat.AGlasses: GLASSES, Cat.ABoysGlasses: GLASSES, Cat.AGirlsGlasses: GLASSES,
+                 Cat.ABackpack: BACKPACK, Cat.ABoysBackpack: BACKPACK, Cat.AGirlsBackpack: BACKPACK}
+        for article, code, price in [entry[:3] for entry in Cat.AccessoryTypes.values()]:
+            k = kinds.get(article)
+            style = styleDict(k).get(code) if k is not None else None
+            if not style or price < 100:
+                continue
+            for key in ((k, style[0], style[1]), (k, style[0], None)):
+                _prices[key] = min(_prices.get(key, price), price)
+    model, texture = pair
+    return _prices.get((kind, model, texture), _prices.get((kind, model, None), DEFAULT_PRICE))
+
+
+DEFAULT_PRICE = 800
+
+
+def getCost(accessories, wearing=None):
+    # Jellybeans for these accessories. A doodle keeps what it already
+    # wears (wearing) for free, and taking something off costs nothing.
+    wearing = wearing or NoAccessories
+    cost = 0
+    for kind in KINDS:
+        pair = getPair(accessories, kind)
+        if pair != getPair(wearing, kind):
+            cost += getPrice(kind, pair)
+    return cost
+
+
 def isValid(accessories):
     if len(accessories) != 6:
         return False

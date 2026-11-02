@@ -3,7 +3,7 @@ from .DistributedNPCToonBaseAI import *
 from toontown.toonbase import TTLocalizer
 from direct.task import Task
 from toontown.fishing import FishGlobals
-from toontown.pets import PetUtil, PetDNA, PetConstants, PetCreator
+from toontown.pets import PetUtil, PetDNA, PetConstants, PetCreator, PetAccessories
 
 class DistributedNPCPetclerkAI(DistributedNPCToonBaseAI):
 
@@ -151,6 +151,7 @@ class DistributedNPCPetclerkAI(DistributedNPCToonBaseAI):
             self.__reject(av, 'petBuilt', 'bad accessories: %s' % accessories)
             return
         cost = PetCreator.getCost(dna[PetDNA.Fields['body']], traitLevels, zoneId)
+        cost += PetAccessories.getCost(accessories)
         if cost > av.getTotalMoney():
             self.__reject(av, 'petBuilt', "doesn't have enough money")
             return
@@ -158,13 +159,17 @@ class DistributedNPCPetclerkAI(DistributedNPCToonBaseAI):
             simbase.air.petMgr.deleteToonsPet(av.doId)
         simbase.air.petMgr.createBuiltPet(av.doId, dna, traitLevels, name, accessories, zoneId)
         self.transactionType = 'adopt'
+        self.__charge(av, cost)
+
+    def __charge(self, av, cost):
         bankPrice = min(av.getBankMoney(), cost)
         walletPrice = cost - bankPrice
         av.b_setBankMoney(av.getBankMoney() - bankPrice)
         av.b_setMoney(av.getMoney() - walletPrice)
 
     def petRestyled(self, name, accessories):
-        # A new name and accessories for the toon's doodle; both are free.
+        # A new name and accessories for the toon's doodle. The name is
+        # free; each accessory it doesn't already wear costs its price.
         av = self.__checkSender('petRestyled')
         if not av:
             return
@@ -179,8 +184,33 @@ class DistributedNPCPetclerkAI(DistributedNPCToonBaseAI):
         if not PetCreator.isValidAccessories(accessories):
             self.__reject(av, 'petRestyled', 'bad accessories: %s' % accessories)
             return
-        simbase.air.petMgr.restylePet(av.doId, name, accessories)
         self.transactionType = 'restyle'
+        petId = av.getPetId()
+        pet = self.air.doId2do.get(petId)
+        if pet is not None and hasattr(pet, 'getAccessories'):
+            self.__restyle(av.doId, name, accessories, list(pet.getAccessories()))
+            return
+
+        def gotPet(dclass, fields):
+            wearing = None
+            if fields and fields.get('setAccessories'):
+                wearing = list(fields['setAccessories'][0])
+            self.__restyle(av.doId, name, accessories, wearing)
+
+        self.air.dbInterface.queryObject(self.air.dbId, petId, gotPet)
+
+    def __restyle(self, avId, name, accessories, wearing):
+        av = self.air.doId2do.get(avId)
+        if av is None:
+            return
+        if not wearing or not PetCreator.isValidAccessories(wearing):
+            wearing = None
+        cost = PetAccessories.getCost(accessories, wearing)
+        if cost > av.getTotalMoney():
+            self.__reject(av, 'petRestyled', "doesn't have enough money")
+            return
+        simbase.air.petMgr.restylePet(avId, name, accessories)
+        self.__charge(av, cost)
 
     def petReturned(self):
         avId = self.air.getAvatarIdFromSender()

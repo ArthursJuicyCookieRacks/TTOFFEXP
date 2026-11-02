@@ -2106,6 +2106,18 @@ def scenarioPetBuild():
     yield sleep(0.5)
     shot('04-traits-best')
     screen._PetCreatorGUI__showTab(PetCreatorGUI.TAB_NAME)
+    yield sleep(0.5)
+    shot('05a-name-lists')
+    screen._PetCreatorGUI__randomName()
+    yield sleep(0.3)
+    shot('05b-name-random')
+    screen._PetCreatorGUI__pickLetter('W')
+    picked = screen.listNames[0]
+    screen._PetCreatorGUI__pickName(picked)
+    if screen.name != picked or screen.nameEntry.get(plain=True) != picked:
+        raise StepFailed('picking %r from the list did not name the doodle' % picked)
+    yield sleep(0.3)
+    shot('05c-name-picked')
     screen.nameEntry.enterText('Sir Wiggles')
     screen._PetCreatorGUI__nameTyped()
     yield sleep(0.5)
@@ -2122,6 +2134,10 @@ def scenarioPetBuild():
     screen._PetCreatorGUI__pickTile(6)
     yield sleep(0.5)
     shot('07-wear-all')
+    wearCost = PetAccessories.getCost(screen.accessories)
+    if not wearCost or screen.getCost() != screen.getPetCost() + wearCost:
+        raise StepFailed('the accessories are not in the price: %d' % screen.getCost())
+    log('accessories cost %d jellybeans' % wearCost)
     for turn in range(4):
         screen._PetCreatorGUI__turnPet(90)
         yield sleep(0.6)
@@ -2181,7 +2197,17 @@ def scenarioPetBuild():
     yield sleep(0.5)
     shot('12-restyle-changed')
     restyled = list(screen.accessories)
+    restyleCost = screen.getCost()
+    if restyleCost != PetAccessories.getCost(restyled, built[2]) or not restyleCost:
+        raise StepFailed('the restyle price is wrong: %d' % restyleCost)
+    money = localAvatar.getTotalMoney()
+    screen.okButton.commandFunc(None)
+    yield sleep(0.5)
+    shot('13-restyle-confirm')
     screen._PetCreatorGUI__confirmed(1)
+    yield until(lambda: localAvatar.getTotalMoney() == money - restyleCost, 10,
+                'paying %d jellybeans for the new accessories' % restyleCost)
+    log('restyled for %d jellybeans' % restyleCost)
     yield sleep(2)
     yield from readPetRecord()
     fields = dict(record)
