@@ -156,6 +156,11 @@ SC_OK = 3
 # the least time between two answers from one toon.
 REPLY_DELAY = (0.8, 1.8)
 REPLY_GAP = 1.5
+# How long after a toon stops moving or turning before an emote, so its
+# client has it standing first (see emoteWhenStill), and how long a toon
+# stays put for an emote.
+STAND_SETTLE = 0.4
+EMOTE_TIME = 4.0
 
 
 def getAreaId(zoneId):
@@ -862,11 +867,34 @@ class NPCPlayerManagerAI:
             npc.d_setSC(random.choice(CHEER_PHRASES))
         return True
 
+    def emoteWhenStill(self, npc, emote):
+        """Plays an emote once the toon has stopped turning and moving.
+
+        A client draws another toon's walk, run or stand animation from how
+        fast it moves and turns, every frame (Toon.setSpeed). An emote
+        started while the toon still turns is cut off when the turn ends:
+        the toon goes from "walk" to "stand" and that stops the emote. So
+        the emote waits for the turn, and a moment more for the client to
+        see the toon stand."""
+        if npc.isDeleted() or npc.crew is not None or npc.busy or npc.walk is not None:
+            return
+        if getattr(npc, 'faceH', None) is not None:
+            npc.afterTurn = lambda: self.emoteWhenStill(npc, emote)
+            return
+        now = globalClock.getFrameTime()
+        if now - getattr(npc, 'stoppedAt', -STAND_SETTLE) < STAND_SETTLE:
+            taskMgr.doMethodLater(STAND_SETTLE, lambda task: self.emoteWhenStill(npc, emote),
+                                  'npcEmote-%d' % npc.doId)
+            return
+        npc.b_setEmoteState(emote, 1.0)
+        # Stay put until it is over.
+        npc.idleUntil = max(npc.idleUntil, now + EMOTE_TIME)
+
     def greet(self, npc, other):
         if npc.isDeleted() or npc.walk is not None:
             return
         npc.lastGreet = globalClock.getFrameTime()
-        npc.b_setEmoteState(random.choice(GREET_EMOTES), 1.0)
+        self.emoteWhenStill(npc, random.choice(GREET_EMOTES))
         if random.random() < 0.6:
             npc.d_setSC(random.choice(GREET_PHRASES))
         npc.idleUntil = globalClock.getFrameTime() + random.uniform(3, 6)
@@ -1198,8 +1226,8 @@ class NPCPlayerManagerAI:
                 player.sendUpdateToAvatarId(player.doId, 'setWhisperSCFrom', [npc.doId, phrase])
             else:
                 npc.d_setSC(phrase)
-            if emote is not None and npc.crew is None and not npc.busy and npc.walk is None:
-                npc.b_setEmoteState(emote, 1.0)
+            if emote is not None:
+                self.emoteWhenStill(npc, emote)
             return Task.done
         taskMgr.doMethodLater(random.uniform(*REPLY_DELAY), say, 'npcChatReply-%d' % npc.doId)
         return True

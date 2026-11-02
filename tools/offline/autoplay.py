@@ -4452,6 +4452,68 @@ def scenarioBattleWith(during):
     yield until(walking, 120, 'walking after the battle')
 
 
+def scenarioNPCEmote():
+    # An NPC toon that has to turn round to answer still plays its whole
+    # emote (it used to be cut off when the turn ended).
+    from toontown.npcplayers import NPCFriends, NPCChatReplies
+    NPCChatReplies.EMOTE_CHANCE = 1.0
+    shots = os.environ.get('AUTOPLAY_SHOTS', '/tmp')
+    yield from teleport(ToontownGlobals.ToontownCentral)
+    yield until(lambda: len(NPCFriends.npcFriends()) >= 4, 60, 'NPC toons around')
+    yield sleep(3)
+    results = []
+    for attempt in range(4):
+        for tries in range(10):
+            me = localAvatar.getPos(render)
+            doId = min(NPCFriends.npcFriends(), key=lambda d: (base.cr.doId2do[d].getPos(render) - me).length())
+            npc = base.cr.doId2do[doId]
+            # Stand behind it, so it has to turn right round.
+            spot = npc.getPos(render) - npc.getQuat(render).getForward() * 5
+            localAvatar.setPos(render, spot)
+            localAvatar.headsUp(npc)
+            localAvatar.setP(0)
+            localAvatar.setR(0)
+            yield sleep(0.2)
+            if NPCFriends.lookedAt() == doId:
+                break
+        base.talkAssistant.sendOpenTalk('Hi!')
+        anims = []
+        start = time.time()
+        shot = False
+        while time.time() - start < 9:
+            anims.append((round(time.time() - start, 1), npc.getCurrentAnim()))
+            if not shot and npc.getCurrentAnim() == 'wave' and time.time() - start > 0:
+                waveStart = time.time()
+                shot = True
+            if shot and shot is not 'taken' and time.time() - waveStart > 1.0:
+                localAvatar.stopUpdateSmartCamera()
+                base.camera.reparentTo(render)
+                mid = (localAvatar.getPos(render) + npc.getPos(render)) * 0.5
+                side = localAvatar.getQuat(render).getRight()
+                base.camera.setPos(mid + side * 11 + Vec3(0, 0, 3))
+                base.camera.lookAt(mid + Vec3(0, 0, 2.5))
+                yield sleep(0.05)
+                base.screenshot(os.path.join(shots, 'npcemote-%d.png' % attempt), defaultFilename=0)
+                base.camera.reparentTo(localAvatar)
+                localAvatar.startUpdateSmartCamera()
+                shot = 'taken'
+            yield sleep(0.1)
+        # Collapse the samples into runs of one animation.
+        runs = []
+        for t, anim in anims:
+            if runs and runs[-1][0] == anim:
+                runs[-1][2] = t
+            else:
+                runs.append([anim, t, t])
+        log('NPC %d animations: %s' % (doId, ', '.join('%s %.1f-%.1f' % tuple(r) for r in runs)))
+        wave = [r[2] - r[1] for r in runs if r[0] == 'wave']
+        results.append(max(wave) if wave else 0)
+        yield sleep(4)
+    log('wave lengths: %s' % results)
+    if min(results) < 2.0:
+        raise StepFailed('an NPC wave was cut short: %s' % results)
+
+
 SCENARIOS = [
     ('login', scenarioLogin),
     ('exittoontown', scenarioExitToontown),
@@ -4465,6 +4527,7 @@ SCENARIOS = [
     ('npcstreets', scenarioNPCStreets),
     ('npcfriends', scenarioNPCFriends),
     ('npcchat', scenarioNPCChat),
+    ('npcemote', scenarioNPCEmote),
     ('npcbuilding', withNPCs(scenarioBuilding, ['DistributedBattleBldgAI'])),
     ('npcfactory', withNPCs(scenarioFactory, ['DistributedBattleFactoryAI'])),
     ('npcmint', withNPCs(scenarioMint, ['DistributedMintBattleAI'])),

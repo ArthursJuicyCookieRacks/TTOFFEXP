@@ -1463,6 +1463,15 @@ class Toon(Avatar.Avatar, ToonHead):
             self.jar = None
         return
 
+    def emotePlaying(self):
+        if self.isLocal():
+            return False
+        emote = getattr(self, 'emote', None)
+        try:
+            return emote is not None and emote.isPlaying()
+        except Exception:
+            return False
+
     def setSpeed(self, forwardSpeed, rotateSpeed):
         self.forwardSpeed = forwardSpeed
         self.rotateSpeed = rotateSpeed
@@ -1481,7 +1490,14 @@ class Toon(Avatar.Avatar, ToonHead):
             anim, rate = self.standWalkRunReverse[action]
             self.motion.enter()
             self.motion.setState(anim, rate)
-            if anim != self.playingAnim:
+            if anim != self.playingAnim and action == OTPGlobals.STAND_INDEX and self.emotePlaying():
+                # Another toon that just stopped turning or walking while it
+                # does an emote: let the emote finish (it goes back to this
+                # stand animation when it is done). Stopping it here cut
+                # the NPC toons' emotes short.
+                self.playingAnim = anim
+                self.playingRate = rate
+            elif anim != self.playingAnim:
                 self.playingAnim = anim
                 self.playingRate = rate
                 self.stop()

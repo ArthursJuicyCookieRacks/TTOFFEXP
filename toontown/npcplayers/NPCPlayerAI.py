@@ -179,6 +179,8 @@ class NPCPlayerAI(DistributedToonAI):
         self.sendUpdate('setSmPosHpr', [x, y, z, h, 0, 0, globalClockDelta.getRealNetworkTime(bits=16)])
 
     def stopMoving(self):
+        # (When, so an emote can wait for the clients to draw it standing.)
+        self.stoppedAt = globalClock.getFrameTime()
         self.sendUpdate('setSmStop', [globalClockDelta.getRealNetworkTime(bits=16)])
 
     # --- Acting like a player ---
