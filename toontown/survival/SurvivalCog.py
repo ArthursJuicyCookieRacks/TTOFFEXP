@@ -35,6 +35,7 @@ STUCK_NEAR = 2.0
 # How long a cog stays under (or over) a toon it can't reach before it
 # flies back in on the toon's level.
 OFF_LEVEL_TIME = 5.0
+OFF_LEVEL_NEAR = 14.0
 # How often a cog looks again for its way to the toon.
 ROUTE_EVERY = 0.35
 # How far ahead along its route a cog looks for a corner it can cut.
@@ -61,6 +62,15 @@ VOICE_VOLUME = 0.7
 BODY_LEAD = 1.2
 # How long a heading chosen to get round a wall is kept.
 DETOUR_TIME = 0.8
+# How far round (in cells) a cog in a pocket looks for an open cell it can
+# walk to, and how soon one with none flies back in.
+WAY_OUT_RING = 3
+BOXED_TIME = 1.5
+WAY_OUT_MIN = 1.5
+# A cog whose way to a toon standing about (within STEPS_GOAL_MOVE of
+# where it was) gets no shorter for this long is getting nowhere.
+NO_HEADWAY_TIME = 6.0
+STEPS_GOAL_MOVE = 10.0
 GROUND_EVERY = 0.1
 HEAD_FRACTION = 0.72
 # The neck counts as the head, a little below where the head joint is.
@@ -121,6 +131,11 @@ class SurvivalCog:
         self.nextRoute = 0.0
         self.stillFrom = None
         self.stillSince = 0.0
+        self.boxedSince = None
+        self.noWayOut = False
+        self.stepsGoal = None
+        self.bestSteps = None
+        self.stepsSince = None
         self.stepPhase = random.random()
         self.stepSound = None
         self.nextVoice = globalClock.getFrameTime() + random.uniform(*VOICE_EVERY)
@@ -319,17 +334,30 @@ class SurvivalCog:
         # off gets further away while walking fine.)
         # Nor is milling about below or above the toon, unable to reach it
         # (under a dock): after a while it flies in somewhere it can.
-        if level or self.lure is not None:
+        # (Only counted near it: from across the playground nearly every
+        # walk has something between, and a cog that came round the
+        # buildings flew off just as it got there.)
+        if level or self.lure is not None or dist >= OFF_LEVEL_NEAR:
             self.offLevelSince = None
         elif self.offLevelSince is None:
             self.offLevelSince = now
-        if self.lure is None and self.offLevelSince is not None and dist < 14.0 and now - self.offLevelSince > OFF_LEVEL_TIME:
+        if self.lure is None and self.offLevelSince is not None and now - self.offLevelSince > OFF_LEVEL_TIME:
             self.offLevelSince = None
             self.__reland(goal)
             return
         # (Near the toon too: a cog wedged in a corner a few feet off,
         # out of reach, used to stand there for good.)
-        if self.lure is None and dist > reach + STUCK_NEAR and now - self.stillSince > STILL_TIME:
+        # Boxed in with no clear walk to any open cell (fallen into a nook):
+        # no use pacing there for the full while. Nor feeling its way out
+        # for long, nor walking about for long with its way to the toon
+        # getting no shorter (pacing to and fro in Brrrgh).
+        boxed = False
+        if self.boxedSince is not None:
+            boxed = now - self.boxedSince > STILL_TIME or (
+                self.noWayOut and now - self.boxedSince > BOXED_TIME and now - self.stillSince > BOXED_TIME)
+        if self.stepsSince is not None and now - self.stepsSince > NO_HEADWAY_TIME:
+            boxed = True
+        if self.lure is None and dist > reach + STUCK_NEAR and (boxed or now - self.stillSince > STILL_TIME):
             self.__reland(goal)
             return
         # A Presentation pulls hard: every cog hurries to it, so the ones
@@ -365,28 +393,95 @@ class SurvivalCog:
         # under a dock nothing stood between the cog and the toon overhead,
         # so it walked under the toon and stayed there.
         if abs(goal[2] - self.pos[2]) <= G.COG_REACH_RISE and self.__clearWide(self.pos, goal):
+            self.boxedSince = None
+            self.stepsSince = None
             return goal
         flow, goalCell = self.arena.flowTo(goal)
         cell = self.arena.nearestCell(self.pos)
         if not flow or cell is None or cell not in flow:
             # Off the map: feel along the walls the old way.
             self.routed = False
+            self.boxedSince = None
+            self.stepsSince = None
             return goal
         chain = []
         c = flow.get(cell)
         while c is not None and len(chain) < ROUTE_LOOKAHEAD:
             chain.append(c)
             c = flow.get(c)
+        self.__noteSteps(flow, cell, goal, now)
         if not chain:
             # In the toon's own cell: straight at it.
+            self.boxedSince = None
+            self.stepsSince = None
             return goal
-        pick = chain[0]
-        for c in reversed(chain[1:]):
+        pick = None
+        for c in reversed(chain):
             if self.__clearWide(self.pos, self.arena.cellPoint(c)):
                 pick = c
                 break
+        if pick is None:
+            # Not even the next cell is a clear walk: the cog is in a pocket
+            # the cells don't cover (between a snow wall and a lamp in
+            # Brrrgh, down among Minnie's piano keys in Melodyland), and
+            # walking at that cell only pushed it into the wall until it
+            # flew off. Out the way it can walk, to the open cell nearest
+            # the goal that it reaches straight on its own level.
+            pick = self.__wayOut(flow, cell)
+            if self.boxedSince is None:
+                self.boxedSince = now
+            self.noWayOut = pick is None
+            if pick is None:
+                pick = chain[0]
+        else:
+            self.boxedSince = None
         self.route = Point3(self.arena.cellPoint(pick))
         return self.route
+
+    def __noteSteps(self, flow, cell, goal, now):
+        """Keeps count of how many cells the cog still has to go to the
+        toon, and when that last came down. A big cog can pace to and fro
+        for good where the cells are narrower than its body (Brrrgh), each
+        step a fresh walk, so it never stands still long enough to count
+        as stuck."""
+        steps, n = 0, cell
+        while n is not None and steps < 2000:
+            n = flow.get(n)
+            steps += 1
+        if self.stepsSince is None or self.stepsGoal is None or (Point3(goal) - self.stepsGoal).length() > STEPS_GOAL_MOVE:
+            # The toon went somewhere else: count afresh.
+            self.stepsGoal = Point3(goal)
+            self.bestSteps = steps
+            self.stepsSince = now
+        elif steps < self.bestSteps - 1:
+            self.bestSteps = steps
+            self.stepsSince = now
+
+    def __wayOut(self, flow, cell):
+        best, bestSteps = None, None
+        for r in range(0, WAY_OUT_RING + 1):
+            for di in range(-r, r + 1):
+                for dj in range(-r, r + 1):
+                    if max(abs(di), abs(dj)) != r:
+                        continue
+                    c = (cell[0] + di, cell[1] + dj)
+                    if c not in flow:
+                        continue
+                    point = self.arena.cellPoint(c)
+                    if point is None or abs(point[2] - self.pos[2]) > G.COG_REACH_RISE:
+                        continue
+                    if (Point3(point[0], point[1], 0) - Point3(self.pos[0], self.pos[1], 0)).length() < WAY_OUT_MIN:
+                        # Where it already stands is no way out.
+                        continue
+                    if not self.__clearWide(self.pos, point):
+                        continue
+                    steps, n = 0, c
+                    while n is not None and steps < 400:
+                        n = flow.get(n)
+                        steps += 1
+                    if bestSteps is None or steps < bestSteps:
+                        best, bestSteps = c, steps
+        return best
 
     def __reland(self, goal):
         player = self.game.player
@@ -404,6 +499,9 @@ class SurvivalCog:
         self.route = None
         self.nextRoute = 0.0
         self.detour = None
+        self.boxedSince = None
+        self.stepsGoal = None
+        self.stepsSince = None
         self.pos = landing
         self.state = 'landing'
         self.anim = None

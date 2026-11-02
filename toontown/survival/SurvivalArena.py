@@ -162,6 +162,10 @@ BODY_HEIGHTS = (0.9, 1.9, 3.2)
 # How far either side of a walk between two cells there must be room, so
 # no cell joins a neighbour past a tree trunk or a fence post.
 CELL_SIDE = 0.6
+# The most the ground may rise or fall at once between two joined cells
+# (off the stairs), checked this many times between them.
+REACH_JUMP = 2.0
+REACH_SAMPLES = 6
 
 # A landing cell needs this many rings of open cells round it, so a cog
 # (a big one is 3 feet across) never lands against a wall, fence or tree.
@@ -801,7 +805,7 @@ class SurvivalArena:
                 if z is None or abs(z - here[2]) > rise:
                     continue
                 there = Point3(x, y, z)
-                if not self.clearLine(here, there) or not self.__roomBetween(here, there):
+                if not self.__joins(cell, nxt, here, there):
                     continue
                 self.reach[nxt] = there
                 frontier.append(nxt)
@@ -817,6 +821,17 @@ class SurvivalArena:
             if any((Point3(point[0], point[1], 0) - Point3(spot[0], spot[1], 0)).length() < radius for spot, radius in self.noLanding):
                 continue
             self.landingList.append(point)
+        # Which side-by-side cells join. The flood only tried a cell from
+        # the first side it reached it by; two cells both reached from
+        # elsewhere were taken as joined, through Old School Toontown's
+        # stone wall, so the cogs' routes led them into it.
+        self.links = set()
+        for cell, point in self.reach.items():
+            for di, dj in ((1, 0), (0, 1)):
+                c = (cell[0] + di, cell[1] + dj)
+                there = self.reach.get(c)
+                if there is not None and self.__joins(cell, c, point, there):
+                    self.links.add((cell, c))
         self.flows = {}
         # Corner-to-corner steps the cogs' routes may take, worked out now
         # rather than in the middle of a round.
@@ -828,10 +843,49 @@ class SurvivalArena:
                     self.diagonalOpen(cell, c)
         self.notify.info('reach: %d cells, %d open for landing' % (len(self.reachList), len(self.landingList)))
 
+    def __joins(self, cell, nxt, here, there):
+        """Whether a cog walks between two side-by-side cells."""
+        rise = 3.6 if (nxt in self.stairs or cell in self.stairs) else 3.0
+        rise = max(rise, self.map.get('reachRise', 0.0))
+        if abs(there[2] - here[2]) > rise:
+            return False
+        if not self.clearLine(here, there) or not self.__roomBetween(here, there):
+            return False
+        return nxt in self.stairs or cell in self.stairs or self.__gentle(here, there)
+
+    def linked(self, a, b):
+        """Whether side-by-side cells a and b join (see buildReach)."""
+        links = getattr(self, 'links', None)
+        if links is None:
+            return True
+        return ((a, b) if a < b else (b, a)) in links
+
+    def __gentle(self, a, b):
+        """Whether the ground from a to b climbs no more than a step at a
+        time. Two cells either side of a low wall (Brrrgh's snow ledges)
+        looked joined, both being on the ground, so cogs walked into the
+        wall for the toon standing behind it until they flew off."""
+        if abs(b[2] - a[2]) <= REACH_JUMP:
+            return True
+        last = a[2]
+        for i in range(1, REACH_SAMPLES + 1):
+            t = i / float(REACH_SAMPLES + 1)
+            z = self.groundZ(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, max(a[2], b[2]) + 2.0)
+            if z is None:
+                # A crack between floor pieces: nothing to say there.
+                continue
+            if abs(z - last) > REACH_JUMP:
+                return False
+            last = z
+        return abs(b[2] - last) <= REACH_JUMP
+
     def __roomBetween(self, a, b):
         """A cog's body fits from a to b: the middle line and one a little
-        to either side."""
-        return self.bodyClear(a, b, CELL_SIDE)
+        to either side. Both ways: a wall is solid from its front only, so
+        Old School Toontown's stone wall let the flood out through its back
+        to a strip of cells outside, and cogs landed there pushed into its
+        front for good."""
+        return self.bodyClear(a, b, CELL_SIDE) and self.bodyClear(b, a, CELL_SIDE)
 
     def diagonalOpen(self, a, b):
         """Whether the cells a and b, corner to corner, join (cached)."""
@@ -879,6 +933,8 @@ class SurvivalArena:
                 for di, dj in ((1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1)):
                     c = (cell[0] + di, cell[1] + dj)
                     if c in came or c not in reach:
+                        continue
+                    if not (di and dj) and not self.linked(cell, c):
                         continue
                     if di and dj and ((cell[0] + di, cell[1]) not in reach or (cell[0], cell[1] + dj) not in reach
                                       or not self.diagonalOpen(cell, c)):
@@ -942,6 +998,8 @@ class SurvivalArena:
                 for di, dj in ((1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1)):
                     c = (here[0] + di, here[1] + dj)
                     if c in came or c not in reach:
+                        continue
+                    if not (di and dj) and not self.linked(here, c):
                         continue
                     if di and dj and ((here[0] + di, here[1]) not in reach or (here[0], here[1] + dj) not in reach
                                       or not self.diagonalOpen(here, c)):
