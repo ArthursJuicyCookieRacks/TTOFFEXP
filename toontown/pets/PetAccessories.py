@@ -205,7 +205,8 @@ OVERRIDES = {HAT: {}, GLASSES: {
     20: ((0.09, 0.36, 0.17), (180.0, 0.0, 0.0), 0.21),   # eye patch, over one whole eye
     22: ((0.0, 0.33, 0.26), (0.0, 0.0, 0.0), (0.55, 0.55, 0.92))}, BACKPACK: {   # snow goggles
     26: ((0.0, 0.2, -0.3), (180.0, 24.0, 0.0), (1.65, 1.65, 1.3)),   # scarf, round the neck under the mouth, its lower edge flared (SCARF_FLARE), its ends hanging (SCARF_DRAPE)
-    27: ((0.0, 0.68, -0.17), (0.0, 0.0, 0.0), 0.24)}}    # bow tie, under the mouth, its knot on the chest
+    27: ((0.0, 0.68, -0.17), (0.0, 0.0, 0.0), 0.24),     # bow tie, under the mouth, its knot on the chest
+    32: ((0.0, -0.5278, 0.021), (0.0, -95.0, 0.0), 0.6)}}  # trash lid, lying flat on the hump, handle up
 for _model, (_top, _back, _s) in {23: (-0.22, 0.42, 0.5), 24: (-0.33, 0.43, 0.42),
                                   25: (-0.21, 0.47, 0.5)}.items():
     OVERRIDES[GLASSES][_model] = ((0.0, 0.57 - _back * _s, 0.12 - _top * _s), (0.0, 0.0, 0.0), _s)
@@ -245,15 +246,14 @@ BACK_FITS = {
     18: ('pack', 1.0, -0.132, -0.1, -25.0, {'roll': 80.0, 'wide': 0.95}),  # woodenSword, slung across the small of the back
     19: ('cape', 0.7, 0.08, 0.27, -42.0),  # supertoonCape
     20: ('cape', 0.7, 0.08, 0.27, -42.0),  # vampireCape
-    22: ('pack', 0.8, -0.031, -0.07, -13.0, {'wide': 0.95, 'hug': 0.02, 'ease': 0.4, 'lift': 0.02, 'smooth': 200}),  # band, bent to lie flush on the back
+    22: ('pack', 1.0, -0.031, -0.07, -13.0, {'wide': 1.1, 'hug': 0.024, 'ease': 0.4, 'lift': 0.02, 'smooth': 200, 'deep': 0.8}),  # band, bent to lie flush on the back
     23: ('pack', 0.8, -0.017, -0.05, -13.0, {'wide': 0.95, 'hug': 0.024, 'ease': 0.4, 'lift': 0.02, 'smooth': 200}),  # gags, bent to lie flush on the back
-    24: ('pack', 0.8, 0.0, -0.07, -13.0, {'wide': 0.95, 'hug': 0.013, 'ease': 3.0, 'lift': 0.02, 'smooth': 40}),  # flunky, bent to lie flush on the back
+    24: ('pack', 0.8, 0.0, -0.07, -4.0, {'wide': 0.95, 'hug': 0.013, 'ease': 1.0, 'lift': 0.02, 'smooth': 200}),  # flunky, bent to lie flush on the back
     25: ('pack', 0.8, -0.013, -0.07, -13.0, {'wide': 0.95, 'hug': 0.007, 'ease': 0.4, 'lift': 0.02, 'turn': 180.0, 'smooth': 200}),  # santa, bent to lie flush on the back
     28: ('pack', 0.8, -0.041, -0.07, -13.0, {'wide': 0.95, 'hug': 0.007, 'ease': 0.4, 'lift': 0.02, 'x': 0.06, 'smooth': 200}),  # creamPack, bent to lie flush on the back
-    29: ('pack', 0.8, 0.0, -0.07, -13.0, {'wide': 0.95, 'hug': 0.008, 'ease': 3.0, 'lift': 0.02, 'deep': 0.7, 'smooth': 40}),  # jellybeanJar, bent to lie flush on the back
+    29: ('pack', 0.8, 0.0, -0.07, -4.0, {'wide': 0.95, 'hug': 0.011, 'ease': 1.0, 'lift': 0.02, 'deep': 0.7, 'smooth': 200}),  # jellybeanJar, bent to lie flush on the back
     30: ('pack', 0.8, 0.0, -0.07, -18.0, {'wide': 0.95, 'hug': 0.008, 'ease': 0.4, 'lift': 0.02, 'smooth': 200}),  # lipstickPack, bent to lie flush on the back
-    31: ('pack', 0.8, 0.0, -0.07, -9.0, {'wide': 0.95, 'hug': 0.015, 'ease': 3.0, 'lift': 0.02, 'deep': 0.7, 'smooth': 40}),  # oilJar, bent to lie flush on the back
-    32: ('pack', 0.8, -0.008, -0.06, -8.0, {'wide': 0.95, 'hug': 0.002, 'ease': 0.4, 'lift': 0.02, 'turn': 180.0, 'extend': True}),  # trashLid, bent to lie flush on the back
+    31: ('pack', 0.8, 0.0, -0.07, -4.0, {'wide': 0.95, 'hug': 0.015, 'ease': 1.0, 'lift': 0.02, 'deep': 0.7, 'smooth': 200}),  # oilJar, bent to lie flush on the back
 }
 
 
