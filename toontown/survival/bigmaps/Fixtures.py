@@ -611,6 +611,9 @@ class TrapStation(Fixture):
         self.entry = entry
         Fixture.__init__(self, game, entry['switch'], entry['h'], 'trap-' + entry['name'])
         self.button = loader.loadModel(BUTTON)
+        # The button's own floor is turned on its side here: a floor ray
+        # meeting it edge on gives a point of NaN (a crash on Android).
+        self.button.findAllMatches('**/+CollisionNode').detach()
         self.button.reparentTo(self.node)
         self.button.setScale(0.5)
         self.button.setPos(0, 0.3, 3.2)
@@ -749,6 +752,9 @@ class TurretStation(Fixture):
         if self.barrel.isEmpty():
             self.barrel = self.cannon
         self.button = loader.loadModel(BUTTON)
+        # The button's own floor is turned on its side here: a floor ray
+        # meeting it edge on gives a point of NaN (a crash on Android).
+        self.button.findAllMatches('**/+CollisionNode').detach()
         self.button.reparentTo(self.node)
         self.button.setScale(0.45)
         self.button.setPos(0, 0.3, 3.0)
