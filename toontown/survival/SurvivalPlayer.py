@@ -8,6 +8,7 @@ game's walking controls.
 """
 
 import math
+import random
 
 from direct.controls import GravityWalker
 from direct.directnotify import DirectNotifyGlobal
@@ -50,6 +51,8 @@ def saveSensitivity(level):
 TOUCH_SENSITIVITY = 160.0
 PITCH_LIMIT = 80.0
 # The toon's own footsteps, the loops the playground uses.
+# The toon-hit sound from the Cogdominium games, on every hit a cog lands.
+HIT_SOUND = 'phase_5/audio/sfx/tt_s_ara_cfg_toonHit.ogg'
 WALK_STEPS = 'phase_3.5/audio/sfx/AV_footstep_walkloop.ogg'
 RUN_STEPS = 'phase_3.5/audio/sfx/AV_footstep_runloop.ogg'
 STEP_VOLUME = 0.6
@@ -152,6 +155,7 @@ class SurvivalPlayer(DirectObject):
         self.slideForcedOff = {}
         self.moveState = 'idle'
         self.setSensitivity(loadSensitivity())
+        self.hitSound = None
         self.stepSounds = {}
         self.stepPlaying = None
         for key, path in (('walk', WALK_STEPS), ('run', RUN_STEPS)):
@@ -541,6 +545,13 @@ class SurvivalPlayer(DirectObject):
             self.goDown()
         self.game.hud.setLaff(self.hp, self.maxHp)
         self.game.hud.flashHurt()
+        # A thump on every hit, as a toon gets when a cog lands one (Arthur).
+        if self.hitSound is None:
+            self.hitSound = base.loader.loadSfx(HIT_SOUND) or False
+        if self.hitSound:
+            self.hitSound.setVolume(1.0)
+            self.hitSound.setPlayRate(random.uniform(0.95, 1.05))
+            self.hitSound.play()
 
     def goDown(self):
         self.down = True

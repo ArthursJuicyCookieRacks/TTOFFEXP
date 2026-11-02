@@ -41,6 +41,9 @@ STEP_HEAR = 40.0
 STEP_VOLUME = 0.45
 
 
+# How far ahead of an NPC's middle its body is checked for walls.
+BODY_LEAD = 1.0
+
 class SurvivalNPC:
 
     def __init__(self, game, index, start):
@@ -374,11 +377,16 @@ class SurvivalNPC:
         d.normalize()
         step = min(dist, speed * dt)
         nxt = Point3(self.pos[0] + d[0] * step, self.pos[1] + d[1] * step, self.pos[2])
-        if not self.arena.clearLine(Point3(self.pos[0], self.pos[1], self.pos[2] + 1.5), Point3(nxt[0], nxt[1], nxt[2] + 1.5)):
+        # The body, knees to chest, not only a line at chest height: the NPCs
+        # went through Old School Toontown's low gazebo railing too.
+        lead = Vec3(d[0], d[1], 0) * BODY_LEAD
+        if not self.arena.bodyClear(self.pos, nxt + lead):
             # Slide along the wall, and look for a new way soon.
             side = Vec3(-d[1], d[0], 0) * (1 if random.random() < 0.5 else -1)
             nxt = Point3(self.pos[0] + side[0] * step, self.pos[1] + side[1] * step, self.pos[2])
             self.nextPath = 0.0
+            if not self.arena.bodyClear(self.pos, nxt + side * BODY_LEAD):
+                return
         z = self.arena.groundZ(nxt[0], nxt[1])
         if z is None or z < self.pos[2] - 4 or z > self.pos[2] + 4:
             self.nextPath = 0.0

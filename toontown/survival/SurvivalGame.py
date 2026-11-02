@@ -46,6 +46,11 @@ PLAYER_RADIUS = 1.3
 COG_SPACING = 0.85
 # Only the nearest few cogs are heard stepping.
 STEP_COGS = 8
+# The pause card's lines and buttons sit this much higher, so the space
+# above them (under the title) and below the Quit button is the same (Arthur).
+PAUSE_LIFT = 0.017
+# The least time between two cogs calling out from behind the player.
+BEHIND_WARN_GAP = 2.0
 TOUCH_SETTING = ('survival', 'best-round')
 # Model, piece and scale of the picture over each drop.
 POWER_ICONS = {'maxgags': ('phase_3.5/models/gui/inventory_icons', '**/inventory_cake', 1.2),
@@ -162,6 +167,9 @@ class SurvivalGame(DirectObject):
         self.lastPop = None
         self.beans = G.START_BEANS
         self.tonics = []
+        # Tonic slots bought from Freddy past the first four (kept when the
+        # tonics are lost).
+        self.extraSlots = 0
         self.secondWindBuys = 0
         # While a Second Wind runs: when the player gets back up.
         self.secondWindAt = None
@@ -188,6 +196,7 @@ class SurvivalGame(DirectObject):
         self.music = None
         self.stepCogs = set()
         self.nextStepPick = 0.0
+        self.nextBehindWarn = 0.0
         self.nextPrompt = 0.0
         self.card = None
         self.build()
@@ -486,6 +495,13 @@ class SurvivalGame(DirectObject):
     def wantCogSteps(self, cog):
         return cog in self.stepCogs
 
+    def mayWarnBehind(self, now):
+        """Only one cog at a time calls out from behind the player."""
+        if now < self.nextBehindWarn:
+            return False
+        self.nextBehindWarn = now + BEHIND_WARN_GAP
+        return True
+
     def nearestToon(self, pos):
         best, bestDist = None, 1e9
         for toon in [self.player] + self.npcs:
@@ -569,6 +585,9 @@ class SurvivalGame(DirectObject):
         self.hud.setBeans(self.beans)
         base.playSfx(base.loader.loadSfx(BEAN_SOUND), volume=0.5)
         return True
+
+    def tonicLimit(self):
+        return G.TONIC_LIMIT + self.extraSlots
 
     def giveTonic(self, key):
         if key == 'wind':
@@ -787,7 +806,8 @@ class SurvivalGame(DirectObject):
 
     def showPauseCard(self):
         self.hud.showCard('Paused', ['Round %d' % self.roundNum, '%d cogs popped' % self.stats.get('cogs popped', 0)],
-                          [('Resume', self.resume), ('Restart Level', self.restart), ('Settings', self.showSettings), ('Quit', self.quit)])
+                          [('Resume', self.resume), ('Restart Level', self.restart), ('Settings', self.showSettings), ('Quit', self.quit)],
+                          lift=PAUSE_LIFT)
 
     def restart(self):
         """Start the same map over from round 1 (Arthur): the launcher tears

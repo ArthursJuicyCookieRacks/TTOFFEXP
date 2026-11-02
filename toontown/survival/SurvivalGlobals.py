@@ -177,6 +177,11 @@ TONICS = (
 ORGANIC_RATE = 0.7
 ORGANIC_DAMAGE = 2
 TONIC_LIMIT = 4
+# From round 15 Freddy also sells extra tonic slots, 5000 jellybeans each
+# (Arthur), up to one for every tonic he has.
+EXTRA_SLOT_ROUND = 15
+EXTRA_SLOT_COST = 5000
+EXTRA_SLOTS_MAX = len(TONICS) - TONIC_LIMIT
 SECOND_WIND_BUYS = 3
 
 # --- Power-ups (BO1: ~3 % a kill, 4 a round, 26 s on the ground) ---

@@ -446,21 +446,21 @@ class SurvivalHUD:
             elif widget is not self.bigRound:
                 widget.show()
 
-    def showCard(self, title, lines, buttons, sort=100, color=None):
+    def showCard(self, title, lines, buttons, sort=100, color=None, lift=0.0):
         """A dark card in the middle: a title, some lines and buttons
-        [(label, command)]."""
+        [(label, command)]. lift moves the lines and buttons up."""
         self.closeCard()
         sign = ToontownGlobals.getSignFont()
         face = ToontownGlobals.getInterfaceFont()
         card = DirectFrame(parent=aspect2d, relief=DGG.FLAT, frameColor=(0.05, 0.05, 0.08, 0.9),
                            frameSize=(-0.75, 0.75, -0.55, 0.55), pos=(0, 0, 0), sortOrder=sort, state=DGG.NORMAL)
         OnscreenText(parent=card, text=title, font=sign, fg=color or RED, shadow=(0, 0, 0, 1), scale=0.14, pos=(0, 0.36))
-        OnscreenText(parent=card, text='\n'.join(lines), font=face, fg=(1, 1, 1, 1), shadow=(0, 0, 0, 1), scale=0.055, pos=(0, 0.2), wordwrap=24)
+        OnscreenText(parent=card, text='\n'.join(lines), font=face, fg=(1, 1, 1, 1), shadow=(0, 0, 0, 1), scale=0.055, pos=(0, 0.2 + lift), wordwrap=24)
         gui = loader.loadModel('phase_3/models/gui/quit_button')
         up, down, over = gui.find('**/QuitBtn_UP'), gui.find('**/QuitBtn_DN'), gui.find('**/QuitBtn_RLVR')
         # The buttons one under the other, top to bottom (Arthur).
         gap = 0.15
-        y0 = -0.42 + gap * (len(buttons) - 1)
+        y0 = -0.42 + gap * (len(buttons) - 1) + lift
         for i, (label, command) in enumerate(buttons):
             DirectButton(parent=card, relief=None, image=(up, down, over), image_scale=(1.1, 1, 1.1), text=label, text_font=sign,
                          text_fg=(1, 0.95, 0.4, 1), text_scale=0.07 if len(label) <= 9 else 0.055, text_pos=(0, -0.02), pos=(0, 0, y0 - gap * i), command=command)

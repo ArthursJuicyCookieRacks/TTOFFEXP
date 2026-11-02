@@ -149,6 +149,13 @@ def mapName():
     return name if name in MAPS else 'ttc'
 
 
+# Heights over the feet a cog's body is checked at (bodyClear): above the
+# gazebo's half-foot curb, under its two-foot railing's top.
+BODY_HEIGHTS = (0.9, 1.9, 3.2)
+# How far either side of a walk between two cells there must be room, so
+# no cell joins a neighbour past a tree trunk or a fence post.
+CELL_SIDE = 0.6
+
 # A landing cell needs this many rings of open cells round it, so a cog
 # (a big one is 3 feet across) never lands against a wall, fence or tree.
 LANDING_CLEARANCE = 1
@@ -385,6 +392,23 @@ class SurvivalArena:
         segNode.setIntoCollideMask(BitMask32.allOff())
         self.aimSegmentPath = self.root.attachNewNode(segNode)
         self.aimTrav.addCollider(self.aimSegmentPath, self.aimQueue)
+        # Segments at a cog's knees, waist and chest, for whether its body
+        # fits along a walk (bodyClear). The one line at chest height the
+        # cogs used before passed over Old School Toontown's two-foot gazebo
+        # railing, its trees and its stone wall (Arthur).
+        self.bodyChecks = {}
+        for wide in (False, True):
+            trav = CollisionTraverser('survivalBody')
+            queue = CollisionHandlerQueue()
+            segments = [CollisionSegment() for h in BODY_HEIGHTS for side in ((0,) if not wide else (0, 1, -1))]
+            node = CollisionNode('survivalBodySegments')
+            for segment in segments:
+                node.addSolid(segment)
+            node.setFromCollideMask(ToontownGlobals.WallBitmask)
+            node.setIntoCollideMask(BitMask32.allOff())
+            path = self.root.attachNewNode(node)
+            trav.addCollider(path, queue)
+            self.bodyChecks[wide] = (trav, queue, segments)
 
     def blockTunnels(self):
         """The beta's tunnels are long open passages a toon could walk
@@ -535,6 +559,37 @@ class SurvivalArena:
 
     def clearLine(self, a, b):
         return self.nav.clearLine(a, b)
+
+    def bodyClear(self, a, b, side=0.0):
+        """Whether a cog's body gets from a to b (both on the ground):
+        nothing solid at its knees, waist or chest anywhere along the way,
+        and with side, nothing that far to either side of the way either.
+        Each line rises and falls with the ground, so steps and slopes are
+        no wall."""
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        flat = math.hypot(dx, dy)
+        if flat < 1e-3:
+            return True
+        trav, queue, segments = self.bodyChecks[bool(side)]
+        offsets = (0,) if not side else (0, side, -side)
+        sx, sy = -dy / flat, dx / flat
+        i = 0
+        for h in BODY_HEIGHTS:
+            for off in offsets:
+                segments[i].setPointA(a[0] + sx * off, a[1] + sy * off, a[2] + h)
+                segments[i].setPointB(b[0] + sx * off, b[1] + sy * off, b[2] + h)
+                i += 1
+        queue.clearEntries()
+        trav.traverse(self.root)
+        for i in range(queue.getNumEntries()):
+            entry = queue.getEntry(i)
+            if not entry.getInto().isTangible():
+                continue
+            into = entry.getIntoNodePath()
+            # Toons and cogs walk about; only the scenery counts.
+            if into.findNetTag('avatarDoId').isEmpty() and into.findNetPythonTag('avatar').isEmpty():
+                return False
+        return True
 
     def walkable(self, a, b):
         return self.nav.walkable(a, b)
@@ -694,19 +749,25 @@ class SurvivalArena:
             here = self.reach[cell]
             for di, dj in ((1, 0), (-1, 0), (0, 1), (0, -1)):
                 nxt = (cell[0] + di, cell[1] + dj)
-                if nxt in self.reach or nxt in self.reachZ or not (lo[0] <= nxt[0] <= hi[0] and lo[1] <= nxt[1] <= hi[1]):
+                if nxt in self.reach or not (lo[0] <= nxt[0] <= hi[0] and lo[1] <= nxt[1] <= hi[1]):
                     continue
                 x, y = nxt[0] * step, nxt[1] * step
-                # Steps and stairs join the walk (a cog follows the player
-                # up into the gazebo) but are never landed on.
-                z = self.groundZ(x, y)
-                # Below this is water or off the map (Melodyland's bowl
-                # floor is lower than that).
-                if z is not None and z < self.map.get('lowest', -8):
-                    z = None
-                if z is not None and self.nav.onStairs(x, y, z):
-                    self.stairs.add(nxt)
-                self.reachZ[nxt] = z
+                if nxt in self.reachZ:
+                    # Tried before from another side (and blocked there, a
+                    # crate or a railing between): it may still join from
+                    # this one. Before, a cell was only ever tried once.
+                    z = self.reachZ[nxt]
+                else:
+                    # Steps and stairs join the walk (a cog follows the player
+                    # up into the gazebo) but are never landed on.
+                    z = self.groundZ(x, y)
+                    # Below this is water or off the map (Melodyland's bowl
+                    # floor is lower than that).
+                    if z is not None and z < self.map.get('lowest', -8):
+                        z = None
+                    if z is not None and self.nav.onStairs(x, y, z):
+                        self.stairs.add(nxt)
+                    self.reachZ[nxt] = z
                 # A step up onto the gazebo is a bit more than three feet
                 # from cell to cell; anywhere else three is the most.
                 rise = 3.6 if (nxt in self.stairs or cell in self.stairs) else 3.0
@@ -715,7 +776,7 @@ class SurvivalArena:
                 if z is None or abs(z - here[2]) > rise:
                     continue
                 there = Point3(x, y, z)
-                if not self.clearLine(here, there):
+                if not self.clearLine(here, there) or not self.__roomBetween(here, there):
                     continue
                 self.reach[nxt] = there
                 frontier.append(nxt)
@@ -732,7 +793,29 @@ class SurvivalArena:
                 continue
             self.landingList.append(point)
         self.flows = {}
+        # Corner-to-corner steps the cogs' routes may take, worked out now
+        # rather than in the middle of a round.
+        self.diagonals = {}
+        for cell in self.reach:
+            for di, dj in ((1, 1), (1, -1)):
+                c = (cell[0] + di, cell[1] + dj)
+                if c in self.reach:
+                    self.diagonalOpen(cell, c)
         self.notify.info('reach: %d cells, %d open for landing' % (len(self.reachList), len(self.landingList)))
+
+    def __roomBetween(self, a, b):
+        """A cog's body fits from a to b: the middle line and one a little
+        to either side."""
+        return self.bodyClear(a, b, CELL_SIDE)
+
+    def diagonalOpen(self, a, b):
+        """Whether the cells a and b, corner to corner, join (cached)."""
+        key = (a, b) if a < b else (b, a)
+        open_ = self.diagonals.get(key)
+        if open_ is None:
+            open_ = self.__roomBetween(self.reach[a], self.reach[b])
+            self.diagonals[key] = open_
+        return open_
 
     def nearestCell(self, p):
         step = self.REACH_STEP
@@ -772,7 +855,8 @@ class SurvivalArena:
                     c = (cell[0] + di, cell[1] + dj)
                     if c in came or c not in reach:
                         continue
-                    if di and dj and ((cell[0] + di, cell[1]) not in reach or (cell[0], cell[1] + dj) not in reach):
+                    if di and dj and ((cell[0] + di, cell[1]) not in reach or (cell[0], cell[1] + dj) not in reach
+                                      or not self.diagonalOpen(cell, c)):
                         continue
                     came[c] = cell
                     nxt.append(c)
@@ -834,7 +918,8 @@ class SurvivalArena:
                     c = (here[0] + di, here[1] + dj)
                     if c in came or c not in reach:
                         continue
-                    if di and dj and ((here[0] + di, here[1]) not in reach or (here[0], here[1] + dj) not in reach):
+                    if di and dj and ((here[0] + di, here[1]) not in reach or (here[0], here[1] + dj) not in reach
+                                      or not self.diagonalOpen(here, c)):
                         continue
                     came[c] = here
                     nxt.append(c)

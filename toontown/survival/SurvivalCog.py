@@ -39,12 +39,21 @@ STEP_SOUND = 'phase_5/audio/sfx/ENC_cogside_step.ogg'
 # Arthur: cogs behind the toon couldn't be heard. Louder, heard further,
 # and fading slowly so the ones just behind are clear.
 STEP_HEAR = 70.0
-STEP_VOLUME = 0.8
+STEP_VOLUME = 1.0
+# Arthur (again): still hard to tell when a cog is behind you. One that
+# is behind the toon (out of sight) and close steps at full loudness, and
+# when it first gets this close it calls out, as BO1's zombies growl.
+BEHIND_RANGE = 30.0
+BEHIND_ANGLE = 75.0
+BEHIND_WARN = 15.0
+BEHIND_WARN_EVERY = 5.0
 # Now and then a cog talks the way it does on the streets (its murmurs,
 # statements and questions), loudest close by.
 VOICE_EVERY = (4.0, 11.0)
 VOICE_HEAR = 55.0
 VOICE_VOLUME = 0.7
+# How far past its middle a cog's front is checked: its radius, up to this.
+BODY_LEAD = 1.2
 # How long a heading chosen to get round a wall is kept.
 DETOUR_TIME = 0.8
 GROUND_EVERY = 0.1
@@ -109,6 +118,7 @@ class SurvivalCog:
         self.stepPhase = random.random()
         self.stepSound = None
         self.nextVoice = globalClock.getFrameTime() + random.uniform(*VOICE_EVERY)
+        self.nextWarn = 0.0
         self.suit.setPos(landing)
         self.suit.setH(random.uniform(0, 360))
         self.__flyIn(landing)
@@ -182,10 +192,51 @@ class SurvivalCog:
         if self.stepSound:
             dist = (camera.getPos(render) - self.suit.getPos(render)).length()
             volume = STEP_VOLUME * max(0.0, 1.0 - dist / STEP_HEAR) ** 0.6
+            behind = self.behind()
+            if behind is not None:
+                # Close behind is as loud as a step can be, and a bit
+                # heavier, so it stands out from the ones in front.
+                volume = max(volume, STEP_VOLUME * max(0.0, 1.0 - behind / BEHIND_RANGE) ** 0.25)
             if volume > 0.01:
-                self.stepSound.setVolume(volume)
-                self.stepSound.setPlayRate(random.uniform(0.9, 1.1))
+                self.stepSound.setVolume(min(1.0, volume))
+                self.stepSound.setPlayRate(random.uniform(0.8, 0.9) if behind is not None else random.uniform(0.9, 1.1))
                 self.stepSound.play()
+
+    def behind(self):
+        """How far away this cog is, if it is behind the player (out of
+        their view) and within BEHIND_RANGE; otherwise None."""
+        player = self.game.player
+        if player is None:
+            return None
+        eye = player.getPos()
+        to = Vec3(self.pos[0] - eye[0], self.pos[1] - eye[1], 0)
+        dist = to.length()
+        if dist > BEHIND_RANGE or dist < 0.01:
+            return None
+        forward = player.getFlatForward()
+        forward.setZ(0)
+        if forward.lengthSquared() < 1e-6:
+            return None
+        forward.normalize()
+        if to.dot(forward) / dist > math.cos(math.radians(BEHIND_ANGLE)):
+            return None
+        return dist
+
+    def __warnBehind(self, now):
+        """A cog that has just come up close behind the player calls out
+        at full loudness (only one at a time, every few seconds)."""
+        behind = self.behind()
+        if behind is None or behind > BEHIND_WARN or now < self.nextWarn:
+            return
+        self.nextWarn = now + BEHIND_WARN_EVERY
+        if not self.game.mayWarnBehind(now):
+            return
+        try:
+            sounds = [snd for snd in self.suit.getDialogueArray() if snd]
+        except Exception:
+            sounds = []
+        if sounds:
+            base.playSfx(random.choice(sounds[:4]), volume=1.0)
 
     def __talk(self, now):
         if now < self.nextVoice:
@@ -275,23 +326,12 @@ class SurvivalCog:
         self.__moveAnim(speed)
         self.__footstep(speed, dt)
         self.__talk(now)
+        self.__warnBehind(now)
 
     def __clearWide(self, a, b):
         """A walk from a to b with room for the cog's body: the middle line
-        and one either side of it."""
-        arena = self.arena
-        lift = 2.0
-        pa = Point3(a[0], a[1], a[2] + lift)
-        pb = Point3(b[0], b[1], a[2] + lift)
-        if not arena.clearLine(pa, pb):
-            return False
-        d = Vec3(pb - pa)
-        d.setZ(0)
-        if d.lengthSquared() < 0.01:
-            return True
-        d.normalize()
-        side = Vec3(-d[1], d[0], 0) * max(0.8, self.radius * 0.7)
-        return arena.clearLine(pa + side, pb + side) and arena.clearLine(pa - side, pb - side)
+        and one either side of it, at its knees, waist and chest."""
+        return self.arena.bodyClear(a, b, max(0.8, self.radius * 0.7))
 
     def __waypoint(self, goal, now):
         """Where to walk next: straight at the goal when there is room,
@@ -320,7 +360,7 @@ class SurvivalCog:
             return goal
         pick = chain[0]
         for c in reversed(chain[1:]):
-            if self.arena.clearLine(Point3(self.pos[0], self.pos[1], self.pos[2] + 2), Point3(self.arena.cellPoint(c)) + Vec3(0, 0, 2)):
+            if self.__clearWide(self.pos, self.arena.cellPoint(c)):
                 pick = c
                 break
         self.route = Point3(self.arena.cellPoint(pick))
@@ -362,21 +402,16 @@ class SurvivalCog:
     def __step(self, direction, length, now, routed=False):
         pos = self.pos
         if routed:
-            # The way was checked (a clear walk, or the playground's cells):
-            # no feeling for walls, which mistook Toon Hall's steps for one.
+            # The way was checked (a clear walk, or the playground's cells).
             self.detour = None
         elif self.detour is not None and now < self.detourUntil:
             direction = self.detour
-        ahead = Point3(pos + direction * max(length, 2.5))
-        if not routed and not self.arena.clearLine(Point3(pos[0], pos[1], pos[2] + 2), Point3(ahead[0], ahead[1], pos[2] + 2)):
+        if not routed and not self.__fits(direction, max(length, 2.5)):
             # A wall: try the ways round it and keep the first that is clear.
             found = None
             for angle in (45, -45, 90, -90, 135, -135):
-                a = math.radians(angle)
-                turned = Vec3(direction[0] * math.cos(a) - direction[1] * math.sin(a),
-                              direction[0] * math.sin(a) + direction[1] * math.cos(a), 0)
-                probe = Point3(pos + turned * 4.0)
-                if self.arena.clearLine(Point3(pos[0], pos[1], pos[2] + 2), Point3(probe[0], probe[1], pos[2] + 2)):
+                turned = self.__turn(direction, angle)
+                if self.__fits(turned, 4.0):
                     found = turned
                     break
             if found is None:
@@ -399,6 +434,19 @@ class SurvivalCog:
                 direction = (direction + side * 0.8)
                 direction.normalize()
                 break
+        # Whatever the way says, the body itself never goes through
+        # anything solid: the step is checked at the cog's knees, waist and
+        # chest (Arthur: cogs walked through Old School Toontown's gazebo,
+        # trees and stone wall). Blocked, it slides along the wall instead.
+        if not self.__fits(direction, length):
+            for angle in (30, -30, 60, -60, 90, -90):
+                turned = self.__turn(direction, angle)
+                if self.__fits(turned, length):
+                    direction = turned
+                    break
+            else:
+                self.__loop('neutral')
+                return
         new = Point3(pos + direction * length)
         if now >= self.nextGround:
             self.nextGround = now + GROUND_EVERY
@@ -416,6 +464,20 @@ class SurvivalCog:
         self.suit.setPos(new)
         self.__face(new + direction)
 
+    @staticmethod
+    def __turn(direction, angle):
+        a = math.radians(angle)
+        return Vec3(direction[0] * math.cos(a) - direction[1] * math.sin(a),
+                    direction[0] * math.sin(a) + direction[1] * math.cos(a), 0)
+
+    def __fits(self, direction, length):
+        """Whether the cog's body can go length along direction: the walk
+        and its front edge (the cog's own radius further on)."""
+        pos = self.pos
+        reach = length + min(self.radius, BODY_LEAD)
+        return self.arena.bodyClear(pos, Point3(pos[0] + direction[0] * reach, pos[1] + direction[1] * reach, pos[2]),
+                                    min(self.radius * 0.6, BODY_LEAD))
+
     def nudge(self, dx, dy):
         """Pushed aside by a cog it walked into (SurvivalGame keeps them
         from standing in each other)."""
@@ -423,9 +485,11 @@ class SurvivalCog:
             # Too small to move, and a line check from a point to itself
             # fails an assertion in Panda.
             return
-        a = Point3(self.pos[0], self.pos[1], self.pos[2] + 2)
-        b = Point3(self.pos[0] + dx, self.pos[1] + dy, self.pos[2] + 2)
-        if not self.arena.clearLine(a, b):
+        a = Point3(self.pos)
+        b = Point3(self.pos[0] + dx, self.pos[1] + dy, self.pos[2])
+        d = Vec3(dx, dy, 0)
+        d.normalize()
+        if not self.arena.bodyClear(a, b + d * min(self.radius, BODY_LEAD)):
             return
         self.pos = Point3(self.pos[0] + dx, self.pos[1] + dy, self.pos[2])
         self.suit.setPos(self.pos)

@@ -389,6 +389,10 @@ class TrunkStation(Station):
         Station.destroy(self)
 
 
+# Freddy's menu row for an extra tonic slot.
+SLOT_KEY = 'slot'
+
+
 class TonicMenu:
     """Fisherman Freddy's menu: the Toon Tonics, each with its price
     and what it does, and a Buy button. The game waits while it is open."""
@@ -399,21 +403,24 @@ class TonicMenu:
         sign = ToontownGlobals.getSignFont()
         face = ToontownGlobals.getInterfaceFont()
         self.frame = DirectFrame(parent=aspect2d, relief=DGG.FLAT, frameColor=(0.05, 0.05, 0.08, 0.92),
-                                 frameSize=(-0.95, 0.95, -0.62, 0.62), pos=(0, 0, 0), sortOrder=100, state=DGG.NORMAL)
+                                 frameSize=(-0.95, 0.95, -0.7, 0.7), pos=(0, 0, 0), sortOrder=100, state=DGG.NORMAL)
         OnscreenText(parent=self.frame, text="Fisherman Freddy's Toon Tonics", font=sign, fg=(1, 0.3, 0.3, 1),
-                     shadow=(0, 0, 0, 1), scale=0.1, pos=(0, 0.47))
+                     shadow=(0, 0, 0, 1), scale=0.1, pos=(0, 0.56))
         self.beansText = OnscreenText(parent=self.frame, text='', font=face, fg=(1, 0.95, 0.4, 1), shadow=(0, 0, 0, 1),
-                                      scale=0.05, pos=(0, 0.39))
+                                      scale=0.05, pos=(0, 0.48))
         self.rows = []
         gui = loader.loadModel('phase_3/models/gui/quit_button')
         up, down, over = gui.find('**/QuitBtn_UP'), gui.find('**/QuitBtn_DN'), gui.find('**/QuitBtn_RLVR')
         colors = {'toonup': (0.3, 0.75, 0.35, 1), 'seltzer': (0.35, 0.6, 1, 1), 'wind': (1, 0.6, 0.25, 1), 'sprint': (0.85, 0.4, 0.9, 1),
-                  'tracks': (0.95, 0.85, 0.3, 1), 'organic': (0.5, 0.9, 0.3, 1)}
-        for i, (key, name, cost, blurb) in enumerate(G.TONICS):
-            # Six tonics fit between the title and the Close button.
-            z = 0.28 - i * 0.135
-            row = DirectFrame(parent=self.frame, relief=DGG.FLAT, frameColor=(1, 1, 1, 0.08), frameSize=(-0.88, 0.88, -0.062, 0.062), pos=(0, 0, z))
-            bottle = DirectFrame(parent=row, relief=DGG.FLAT, frameColor=colors.get(key, (1, 1, 1, 1)), frameSize=(-0.035, 0.035, -0.055, 0.055), pos=(-0.8, 0, 0))
+                  'tracks': (0.95, 0.85, 0.3, 1), 'organic': (0.5, 0.9, 0.3, 1), SLOT_KEY: (1, 1, 1, 1)}
+        slot = (SLOT_KEY, 'Extra Tonic Slot', G.EXTRA_SLOT_COST,
+                'Hold one more tonic. From round %d, up to %d more.' % (G.EXTRA_SLOT_ROUND, G.EXTRA_SLOTS_MAX))
+        for i, (key, name, cost, blurb) in enumerate(G.TONICS + (slot,)):
+            # Six tonics and the extra slot fit between the title and the
+            # Close button.
+            z = 0.37 - i * 0.13
+            row = DirectFrame(parent=self.frame, relief=DGG.FLAT, frameColor=(1, 1, 1, 0.08), frameSize=(-0.88, 0.88, -0.06, 0.06), pos=(0, 0, z))
+            bottle = DirectFrame(parent=row, relief=DGG.FLAT, frameColor=colors.get(key, (1, 1, 1, 1)), frameSize=(-0.035, 0.035, -0.053, 0.053), pos=(-0.8, 0, 0))
             OnscreenText(parent=row, text=name, font=sign, fg=(1, 1, 1, 1), shadow=(0, 0, 0, 1), scale=0.06, pos=(-0.72, 0.015), align=TextNode.ALeft)
             OnscreenText(parent=row, text=blurb, font=face, fg=(0.85, 0.85, 0.85, 1), scale=0.03, pos=(-0.72, -0.028), align=TextNode.ALeft, wordwrap=38)
             price = OnscreenText(parent=row, text='%d' % cost, font=sign, fg=(1, 0.95, 0.4, 1), shadow=(0, 0, 0, 1), scale=0.06, pos=(0.5, -0.02), align=TextNode.ARight)
@@ -422,17 +429,26 @@ class TonicMenu:
                                   pos=(0.72, 0, 0), command=self.buy, extraArgs=[key])
             self.rows.append((key, cost, button, price))
         DirectButton(parent=self.frame, relief=None, image=(up, down, over), image_scale=(1.0, 1, 1.1), text='Close', text_font=sign,
-                     text_fg=(1, 0.95, 0.4, 1), text_scale=0.065, text_pos=(0, -0.02), pos=(0, 0, -0.53), command=self.close)
+                     text_fg=(1, 0.95, 0.4, 1), text_scale=0.065, text_pos=(0, -0.02), pos=(0, 0, -0.6), command=self.close)
         gui.removeNode()
         self.refresh()
 
     def refresh(self):
         game = self.game
-        self.beansText.setText('You have %d jellybeans. %d of %d tonics.' % (game.beans, len(game.tonics), G.TONIC_LIMIT))
+        self.beansText.setText('You have %d jellybeans. %d of %d tonics.' % (game.beans, len(game.tonics), game.tonicLimit()))
         for key, cost, button, price in self.rows:
+            if key == SLOT_KEY:
+                early = game.roundNum < G.EXTRA_SLOT_ROUND
+                maxed = game.extraSlots >= G.EXTRA_SLOTS_MAX
+                can = not early and not maxed and game.beans >= cost
+                button['state'] = DGG.NORMAL if can else DGG.DISABLED
+                button['text'] = 'Round %d' % G.EXTRA_SLOT_ROUND if early else ('Maxed' if maxed else 'Buy')
+                button['text_scale'] = 0.035 if early else 0.045
+                price.setFg((1, 0.95, 0.4, 1) if game.beans >= cost or maxed else (1, 0.45, 0.45, 1))
+                continue
             owned = key in game.tonics
             soldOut = key == 'wind' and game.secondWindBuys >= G.SECOND_WIND_BUYS
-            full = len(game.tonics) >= G.TONIC_LIMIT
+            full = len(game.tonics) >= game.tonicLimit()
             can = not owned and not soldOut and not full and game.beans >= cost
             button['state'] = DGG.NORMAL if can else DGG.DISABLED
             button['text'] = 'Got it' if owned else ('Sold out' if soldOut else 'Buy')
@@ -471,11 +487,17 @@ class FishermanStation(Station):
             choices = [t for t in choices if t[0] != 'wind']
         return choices
 
+    def canBuySlot(self):
+        game = self.game
+        return game.roundNum >= G.EXTRA_SLOT_ROUND and game.extraSlots < G.EXTRA_SLOTS_MAX
+
     def prompt(self):
         if not self.forSale():
             return 'Freddy: you have every tonic I sell!'
-        if len(self.game.tonics) >= G.TONIC_LIMIT:
-            return 'Freddy: four tonics is all a toon can hold.'
+        if len(self.game.tonics) >= self.game.tonicLimit() and not self.canBuySlot():
+            if self.game.roundNum < G.EXTRA_SLOT_ROUND:
+                return 'Freddy: %d tonics is all a toon can hold until round %d.' % (self.game.tonicLimit(), G.EXTRA_SLOT_ROUND)
+            return 'Freddy: %d tonics is all a toon can hold.' % self.game.tonicLimit()
         return "Use: see Fisherman Freddy's Toon Tonics"
 
     def nextChoice(self):
@@ -489,10 +511,17 @@ class FishermanStation(Station):
         return True
 
     def buy(self, key):
+        if key == SLOT_KEY:
+            if not self.canBuySlot() or not self.game.spend(G.EXTRA_SLOT_COST):
+                return False
+            self.game.extraSlots += 1
+            self.floatText('Extra Tonic Slot!')
+            self.game.count('tonic slots')
+            return True
         for tonicKey, name, cost, blurb in self.forSale():
             if tonicKey != key:
                 continue
-            if len(self.game.tonics) >= G.TONIC_LIMIT:
+            if len(self.game.tonics) >= self.game.tonicLimit():
                 return False
             if not self.game.spend(cost):
                 return False
