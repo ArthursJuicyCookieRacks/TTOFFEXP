@@ -225,33 +225,33 @@ for _model, (_top, _back, _s) in {23: (-0.22, 0.42, 0.5), 24: (-0.33, 0.43, 0.42
 # far in toward each other (see _squeeze). turn spins it round first (for
 # the few made facing the other way), and roll leans it to one side.
 BACK_FITS = {
-    1: ('pack', 0.8, -0.013, -0.07, -13.0, {'wide': 0.95, 'hug': 0.008, 'ease': 0.4, 'lift': 0.02}),  # backpack, bent to lie flush on the back
+    1: ('pack', 0.8, -0.013, -0.07, -13.0, {'wide': 0.95, 'hug': 0.008, 'ease': 0.4, 'lift': 0.02, 'smooth': 200}),  # backpack, bent to lie flush on the back
     2: ('wing', 1.09, 0.03, -0.05, -6.0, {'squeeze': 0.1, 'hug': 0.008, 'ease': 0.6, 'lift': 0.02}),  # batWings
     3: ('wing', 0.98, -0.026, 0.0, -36.0, {'squeeze': 0.03, 'spread': 10.0, 'hug': 0.008, 'ease': 0.6, 'lift': 0.03}),  # beeWings
     4: ('wing', 1.09, 0.06, 0.17, -24.0, {'squeeze': 0.1, 'hug': 0.004, 'ease': 0.6, 'lift': 0.02}),  # dragonFlyWings
-    5: ('pack', 0.8, -0.085, -0.07, -18.0, {'wide': 0.95, 'hug': 0.008, 'ease': 0.4, 'lift': 0.02}),  # scubaTank, bent to lie flush on the back
+    5: ('pack', 0.8, -0.085, -0.07, -18.0, {'wide': 0.95, 'hug': 0.008, 'ease': 0.4, 'lift': 0.02, 'smooth': 200}),  # scubaTank, bent to lie flush on the back
     6: ('wing', 0.42, -0.2, 0.17, -8.0, {'hug': 0.003, 'lift': 0.02}),  # sharkFin, its base bent to lie on the back, its tip laid along the hips
     7: ('wing', 0.92, -0.022, 0.0, -36.0, {'squeeze': 0.03, 'hug': 0.004, 'ease': 0.6, 'lift': 0.02}),  # angelWings
-    8: ('pack', 0.8, -0.026, -0.07, -13.0, {'wide': 0.95, 'hug': 0.02, 'ease': 0.4, 'lift': 0.02}),  # backpackWithToys, bent to lie flush on the back
+    8: ('pack', 0.8, -0.026, -0.07, -13.0, {'wide': 0.95, 'hug': 0.02, 'ease': 0.4, 'lift': 0.02, 'smooth': 200}),  # backpackWithToys, bent to lie flush on the back
     9: ('wing', 0.92, 0.049, 0.2, -24.0, {'squeeze': 0.06, 'spread': 22.0, 'hug': 0.006, 'ease': 0.6, 'lift': 0.02}),  # butterflyWings, opened into a V
     10: ('wing', 0.98, -0.012, 0.12, -36.0, {'squeeze': 0.1, 'open': 45.0, 'spread': 10.0, 'hug': 0.004, 'ease': 0.6, 'lift': 0.02}),  # dragonWing, swung open
-    11: ('pack', 0.8, -0.003, -0.07, -18.0, {'wide': 0.95, 'hug': 0.006, 'ease': 0.4, 'lift': 0.02}),  # jetPack, bent to lie flush on the back
+    11: ('pack', 0.8, -0.003, -0.07, -18.0, {'wide': 0.95, 'hug': 0.006, 'ease': 0.4, 'lift': 0.02, 'smooth': 200}),  # jetPack, bent to lie flush on the back
     12: ('wing', 0.8, 0.04, 0.3, 0.0, 0.1),  # spiderLegs
-    13: ('pack', 0.8, -0.026, -0.07, -13.0, {'wide': 0.95, 'hug': 0.006, 'ease': 0.4, 'lift': 0.02}),  # stuffedAnimalBackpackA, bent to lie flush on the back
+    13: ('pack', 0.8, -0.026, -0.07, -13.0, {'wide': 0.95, 'hug': 0.006, 'ease': 0.4, 'lift': 0.02, 'smooth': 200}),  # stuffedAnimalBackpackA, bent to lie flush on the back
     14: ('wing', 1.09, 0.009, 0.0, -12.0, {'squeeze': 0.1, 'hug': 0.004, 'ease': 0.6, 'lift': 0.02}),  # birdWings
-    15: ('pack', 0.8, -0.025, -0.07, -13.0, {'wide': 0.95, 'hug': 0.008, 'ease': 0.4, 'lift': 0.02}),  # stuffedAnimalBackpackCat, bent to lie flush on the back
-    16: ('pack', 0.8, -0.017, -0.07, -13.0, {'wide': 0.95, 'hug': 0.007, 'ease': 0.4, 'lift': 0.02}),  # stuffedAnimalBackpackDog, bent to lie flush on the back
+    15: ('pack', 0.8, -0.025, -0.07, -13.0, {'wide': 0.95, 'hug': 0.008, 'ease': 0.4, 'lift': 0.02, 'smooth': 200}),  # stuffedAnimalBackpackCat, bent to lie flush on the back
+    16: ('pack', 0.8, -0.017, -0.07, -13.0, {'wide': 0.95, 'hug': 0.007, 'ease': 0.4, 'lift': 0.02, 'smooth': 200}),  # stuffedAnimalBackpackDog, bent to lie flush on the back
     17: ('wing', 1.27, -0.04, 0.14, -24.0),  # airplane, its body resting on the back
     18: ('pack', 1.0, -0.132, -0.1, -25.0, {'roll': 80.0, 'wide': 0.95}),  # woodenSword, slung across the small of the back
     19: ('cape', 0.7, 0.08, 0.27, -42.0),  # supertoonCape
     20: ('cape', 0.7, 0.08, 0.27, -42.0),  # vampireCape
-    22: ('pack', 0.8, -0.031, -0.07, -13.0, {'wide': 0.95, 'hug': 0.02, 'ease': 0.4, 'lift': 0.02}),  # band, bent to lie flush on the back
-    23: ('pack', 0.8, -0.017, -0.05, -13.0, {'wide': 0.95, 'hug': 0.034, 'ease': 0.4, 'lift': 0.02}),  # gags, bent to lie flush on the back
+    22: ('pack', 0.8, -0.031, -0.07, -13.0, {'wide': 0.95, 'hug': 0.02, 'ease': 0.4, 'lift': 0.02, 'smooth': 200}),  # band, bent to lie flush on the back
+    23: ('pack', 0.8, -0.017, -0.05, -13.0, {'wide': 0.95, 'hug': 0.024, 'ease': 0.4, 'lift': 0.02, 'smooth': 200}),  # gags, bent to lie flush on the back
     24: ('pack', 0.8, 0.0, -0.07, -13.0, {'wide': 0.95, 'hug': 0.013, 'ease': 3.0, 'lift': 0.02, 'smooth': 40}),  # flunky, bent to lie flush on the back
-    25: ('pack', 0.8, -0.013, -0.07, -13.0, {'wide': 0.95, 'hug': 0.007, 'ease': 0.4, 'lift': 0.02, 'turn': 180.0}),  # santa, bent to lie flush on the back
-    28: ('pack', 0.8, -0.041, -0.07, -13.0, {'wide': 0.95, 'hug': 0.007, 'ease': 0.4, 'lift': 0.02, 'x': 0.06}),  # creamPack, bent to lie flush on the back
+    25: ('pack', 0.8, -0.013, -0.07, -13.0, {'wide': 0.95, 'hug': 0.007, 'ease': 0.4, 'lift': 0.02, 'turn': 180.0, 'smooth': 200}),  # santa, bent to lie flush on the back
+    28: ('pack', 0.8, -0.041, -0.07, -13.0, {'wide': 0.95, 'hug': 0.007, 'ease': 0.4, 'lift': 0.02, 'x': 0.06, 'smooth': 200}),  # creamPack, bent to lie flush on the back
     29: ('pack', 0.8, 0.0, -0.07, -13.0, {'wide': 0.95, 'hug': 0.008, 'ease': 3.0, 'lift': 0.02, 'deep': 0.7, 'smooth': 40}),  # jellybeanJar, bent to lie flush on the back
-    30: ('pack', 0.8, 0.0, -0.07, -18.0, {'wide': 0.95, 'hug': 0.006, 'ease': 0.4, 'lift': 0.02}),  # lipstickPack, bent to lie flush on the back
+    30: ('pack', 0.8, 0.0, -0.07, -18.0, {'wide': 0.95, 'hug': 0.008, 'ease': 0.4, 'lift': 0.02, 'smooth': 200}),  # lipstickPack, bent to lie flush on the back
     31: ('pack', 0.8, 0.0, -0.07, -9.0, {'wide': 0.95, 'hug': 0.015, 'ease': 3.0, 'lift': 0.02, 'deep': 0.7, 'smooth': 40}),  # oilJar, bent to lie flush on the back
     32: ('pack', 0.8, -0.008, -0.06, -8.0, {'wide': 0.95, 'hug': 0.002, 'ease': 0.4, 'lift': 0.02, 'turn': 180.0, 'extend': True}),  # trashLid, bent to lie flush on the back
 }
