@@ -34,6 +34,8 @@ LOW_HP = 30
 # Soda) doubles the sprint time and adds 7% to every speed. The toon walk
 # keeps Arthur's 18 (2026-10-30) and everything else follows BO1's ratios.
 WALK_SPEED = 18.0
+# Downed, a toon crawls (BO1's last stand: a slow crawl, still shooting).
+DOWN_CRAWL_SPEED = WALK_SPEED * 0.16
 REVERSE_SCALE = 0.7
 SPRINT_SCALE = 1.5
 SPRINT_SPEED = WALK_SPEED * SPRINT_SCALE

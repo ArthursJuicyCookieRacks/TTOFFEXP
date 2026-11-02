@@ -298,7 +298,8 @@ class SurvivalPlayer(DirectObject):
             taskMgr.doMethodLater(0.1, lambda t: inputState.set('jump', False, inputSource=SOURCE), 'survivalJumpUp')
             return
         if token != 'jump':
-            inputState.set(token, down and not self.down, inputSource=SOURCE)
+            # Downed, the toon still crawls (the tick slows it to a crawl).
+            inputState.set(token, down, inputSource=SOURCE)
 
     def setSensitivity(self, level):
         self.sensitivity = max(1, min(10, int(level)))
@@ -358,10 +359,10 @@ class SurvivalPlayer(DirectObject):
     def touchMove(self, x, y):
         """The Android stick (or a controller's): x, y in -1..1."""
         dead = GAMEPAD_WALK_DEAD_ZONE
-        inputState.set('forward', y > dead and not self.down, inputSource=SOURCE)
-        inputState.set('reverse', y < -dead and not self.down, inputSource=SOURCE)
-        inputState.set('slideLeft', x < -dead and not self.down, inputSource=SOURCE)
-        inputState.set('slideRight', x > dead and not self.down, inputSource=SOURCE)
+        inputState.set('forward', y > dead, inputSource=SOURCE)
+        inputState.set('reverse', y < -dead, inputSource=SOURCE)
+        inputState.set('slideLeft', x < -dead, inputSource=SOURCE)
+        inputState.set('slideRight', x > dead, inputSource=SOURCE)
         if self.sprintLatched and y <= dead:
             # L3's sprint lasts while the stick is pushed forward (BO1).
             self.sprintLatched = False
@@ -485,10 +486,14 @@ class SurvivalPlayer(DirectObject):
             speed = G.WALK_SPEED * speedScale
         self.stamina = min(self.stamina, sprintTime)
         reverse = G.WALK_SPEED * speedScale * G.REVERSE_SCALE
-        if self.down or inMenu:
+        if self.down:
+            # Downed: a slow crawl any way, no sprint, no jump (BO1's last
+            # stand; before, a downed toon couldn't move at all).
+            speed = reverse = G.DOWN_CRAWL_SPEED
+        if inMenu:
             speed = 0.0
             reverse = 0.0
-        self.walker.setWalkSpeed(speed, 0 if inMenu else G.JUMP_FORCE, reverse, 0)
+        self.walker.setWalkSpeed(speed, 0 if inMenu or self.down else G.JUMP_FORCE, reverse, 0)
         if self.down or not moving or speed <= 0:
             self.moveState = 'idle'
         elif self.sprintActive:

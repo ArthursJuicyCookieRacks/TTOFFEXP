@@ -917,7 +917,8 @@ class GagHandler:
     def fire(self, held=False):
         gag = self.gag
         now = globalClock.getFrameTime()
-        if gag is None or self.reloading or now < self.nextShot or self.player.down or self.throwingTnt:
+        # Downed, the toon still shoots (BO1's last stand), for no beans.
+        if gag is None or self.reloading or now < self.nextShot or self.throwingTnt:
             return False
         if self.arms is not None and (self.arms.lowered or self.pendingSwitch is not None):
             # The arms are down (a switch under way): no firing from the hip.

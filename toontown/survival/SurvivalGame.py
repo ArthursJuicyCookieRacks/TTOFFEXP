@@ -526,7 +526,11 @@ class SurvivalGame(DirectObject):
         bonus = G.BEANS_BONK_KILL if bonk else (G.BEANS_HEAD_KILL if head else G.BEANS_KILL)
         if getattr(cog, 'lastHitByNPC', False):
             bonus = bonus // 2
-        self.earn(bonus)
+        # Shooting while downed earns nothing (Arthur).
+        if self.player.down and not getattr(cog, 'lastHitByNPC', False):
+            bonus = 0
+        if bonus:
+            self.earn(bonus)
         self.hud.hitMarker(killed=True)
         self.__maybeDrop(cog.pos)
 
@@ -541,7 +545,7 @@ class SurvivalGame(DirectObject):
             return 0
         cog.lastHitByNPC = byNPC
         result = cog.hurt(damage, head, bonk)
-        if result and not byNPC:
+        if result and not byNPC and not self.player.down:
             self.earn(G.BEANS_HIT)
             if result == 1:
                 self.hud.hitMarker(killed=False)
@@ -690,7 +694,12 @@ class SurvivalGame(DirectObject):
             # in the hand for good.
             self.gags.letGoTnt()
             return
-        if self.paused or self.inMenu() or self.player.down:
+        if self.paused or self.inMenu():
+            return
+        if self.player.down:
+            # Downed: shoot and reload, nothing else (no switching gags).
+            if action == 'reload':
+                self.gags.reload()
             return
         if action == 'reload':
             self.gags.reload()
