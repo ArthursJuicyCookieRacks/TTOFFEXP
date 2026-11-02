@@ -104,6 +104,10 @@ class Factory(Building):
         self.rear()
         self.office()
         self.yards()
+        self.dressForecourt()
+        self.dressTestingWing()
+        self.dressGarageWing()
+        self.dressCourtAndRear()
 
     def lamp(self, pos, color=(1.0, 0.78, 0.45), reach=40.0, groups=(), flicker=False):
         # The factory's lamps throw a little further than the theater's.
@@ -424,7 +428,7 @@ class Factory(Building):
         self.shell(36, -30, 80, 10, 0, 18, CORRUGATED, color=(0.62, 0.6, 0.58, 1), ops={
             'n': [(66, 8, 0, 9)],
             's': [(48, 6, 2, 8)],
-        }, sides='nse', group=g, lower=(PANELS, 4.0, GRIME), outside={'n': (BLOCKS, (0.6, 0.52, 0.48, 1)), 's': (BLOCKS, FAC_C),
+        }, sides='nse', group=g, lower=(PANELS, 4.0, GRIME), outside={'s': (BLOCKS, FAC_C),
                                                                      'e': (BLOCKS, FAC_C)}, tile=8)
         self.threshold(34, -10, 38, -2, 0, CONCRETE, GRIME, g)
         d = self.door('eastdoor', 750, (36, -10), (36, -2), 0, 9, ['garage'], title='the garage door')
@@ -461,7 +465,8 @@ class Factory(Building):
         }, sides='wen', group=g, lower=(PANELS, 4.0, (0.5, 0.42, 0.38, 1)), outside={'w': (BLOCKS, FAC_C), 'e': (BLOCKS, FAC_C)})
         # The garage's north wall is this hall's south wall (x 56..80);
         # the rest of the south side.
-        self.wall((96, 10), (80, 10), 0, 16, BLOCKS, faces='left', tile=10, color=(0.6, 0.52, 0.48, 1), group=g)
+        self.wall((56, 10), (96, 10), 0, 16, BLOCKS, openings=[(10, 8, 0, 9)], faces='left', tile=10, color=(0.6, 0.52, 0.48, 1), group=g,
+                  lower=(PANELS, 4.0, (0.5, 0.42, 0.38, 1)))
         self.threshold(62, 8, 70, 12, 0, CONCRETE, GRIME, g)
         d = self.door('furnacedoor', 1000, (62, 10), (70, 10), 0, 9, ['furnace'], title='the furnace hall door')
         self.leaves(d, tex=PLATE, color=STEEL)
@@ -500,7 +505,7 @@ class Factory(Building):
             's': [(80, 8, 0, 9)],
             'w': [(64, 8, 0, 9)],
             'n': [(80, 6, 2, 8)],
-        }, group=g, lower=(PANELS, 4.0, GRIME), outside={'s': (BLOCKS, (0.6, 0.52, 0.48, 1)), 'w': (STONE, FAC_C), 'e': (BLOCKS, FAC_C),
+        }, group=g, lower=(PANELS, 4.0, GRIME), outside={'w': (STONE, FAC_C), 'e': (BLOCKS, FAC_C),
                                                          'n': (BLOCKS, FAC_C)}, tile=4)
         self.threshold(76, 42, 84, 46, 0, CONCRETE, GRIME, g)
         d = self.door('teleBdoor', 1000, (76, 44), (84, 44), 0, 9, ['teleB'], title="teleporter B's door")
@@ -645,8 +650,14 @@ class Factory(Building):
         self.kit.beam((10, 121.2, 0), (10, 121.2, 8.6), 0.3, METAL, color=DARK_STEEL, tile=2)
         # The machines: the stamping press and the mixer over it, the
         # lattice towers.
-        self.kit.model('phase_9/models/cogHQ/PaintMixer', pos=(30, 112, 26), scale=0.6, color=GRIME)
-        self.kit.beam((30, 112, 26), (30, 112, 30), 1.2, METAL, color=DARK_STEEL, tile=2)
+        # The press: it stamps down on its bed and back up, all game.
+        press = self.root.attachNewNode('press')
+        press.setPos(30, 112, 26)
+        self.kit.model('phase_9/models/cogHQ/PaintMixer', parent=press, scale=0.6, color=GRIME)
+        self.boxNode(press, (-0.6, -0.6, 0), (0.6, 0.6, 6), METAL, color=DARK_STEEL, tile=2)
+        self.keepLooping(Sequence(Wait(1.2), LerpPosInterval(press, 0.35, Point3(30, 112, 19.2), blendType='easeIn'),
+                                  Func(self.pressThump), Wait(0.5),
+                                  LerpPosInterval(press, 2.2, Point3(30, 112, 26), blendType='easeInOut')))
         self.kit.box((25, 107, 0), (35, 117, 3), side=PLATE, top=METAL, tile=4, color=STEEL, collide='wall')
         for x, y in ((-12, 104), (-12, 124), (40, 102)):
             self.kit.model('phase_10/models/cashbotHQ/pipes_A1', pos=(x, y, 0), scale=(0.3, 0.3, 0.99), color=GRIME)
@@ -685,6 +696,284 @@ class Factory(Building):
         self.poster((56.6, 124, 4.5), -90)
         self.lamp((70, 116, 10), AMBER, 26.0, groups=(g,), flicker=True)
         self.powerLamp((70, 116, 10), (1.0, 0.85, 0.6), 26.0, (g,))
+
+    # --- Detail: flat on floors and walls, or overhead ---
+
+    def dressForecourt(self):
+        g = 'forecourt'
+        self.scatterGrime(-34, -34, 34, 22, 0, g, 22, 41)
+        # Oil under the mainframe, puddles in the gravel.
+        for c, sz in (((0, 3), 9.0), ((-4, 12), 5.0), ((6, 13), 4.0)):
+            self.grime(c, sz, g, color=(0.05, 0.05, 0.05, 0.6))
+        for c, sz in (((-20, -18), 6.0), ((18, 2), 5.0), ((-8, -30), 4.5)):
+            self.grime(c, sz, g, color=(0.18, 0.22, 0.3, 0.55), lift=0.05)
+        # Warning paint round the mainframe's apron and the pad.
+        for a, b in (((-14, -10), (14, -10)), ((-14, 16), (14, 16)), ((-14, -10), (-14, 16)), ((14, -10), (14, 16))):
+            self.hazard(a, b, 1.0, g)
+        # Cables from the mainframe to the walls (flat on the ground).
+        self.floorCable([(5, 6), (12, 9), (22, 12), (35.4, 12)], 0, g)
+        self.floorCable([(-5, 7), (-15, 2), (-26, -4), (-35.4, -5)], 0, g)
+        self.floorCable([(0, 5.4), (0, 3.2)], 0, g, thick=0.2)
+        self.drain((-18, 6), 2.5, g)
+        self.drain((20, -24), 2.5, g)
+        self.papers(-30, -30, 30, 18, 0, g, 10, 5, color=(0.7, 0.68, 0.62, 1))
+        # Signs, plates, vents and conduits on the walls.
+        self.sign((0, 23.5, 13.5), 180, 'NO TOONS\nPAST THIS POINT', g, plate=(0.8, 0.14, 0.1, 1), ink=(1, 0.95, 0.85, 1))
+        self.sign((-22, -35.5, 10.5), 0, 'LOADING\nGATE', g)
+        self.sign((22, -35.5, 10.5), 0, 'LOADING\nGATE', g)
+        self.sign((-35.5, -21, 8), -90, 'TESTING WING', g, plate=(0.25, 0.3, 0.35, 1), ink=(0.95, 0.95, 0.9, 1))
+        self.sign((35.5, 4, 8), 90, 'GARAGE', g, plate=(0.25, 0.3, 0.35, 1), ink=(0.95, 0.95, 0.9, 1))
+        self.sign((5.6, 8, 11.6), -90, 'DANGER\nHIGH VOLTAGE', g, scale=0.42)
+        for x in (-30, -16, 30):
+            self.panel((x, 23.5, 3.5), 180, 4.5, 3.6, RIVET_PLATE, g, color=(0.8, 0.78, 0.75, 1))
+        self.vent((-35.5, 4, 17), -90, 4, 3, g)
+        self.vent((35.5, -24, 17), 90, 4, 3, g)
+        self.vent((28, -35.5, 18), 0, 4, 3, g)
+        self.conduit((-35.5, -28), -90, 0, 24, g)
+        self.conduit((35.5, 20), 90, 0, 24, g)
+        self.conduit((-12, -35.5), 0, 0, 24, g)
+        # Alive: the big gears on the wall turn, the mainframe blinks and
+        # its stacks puff steam.
+        self.spinningGear((-21, 23.5, 20.5), 180, 6.0, 14.0)
+        self.spinningGear((-15.6, 23.5, 21.6), 180, 3.6, 8.4, backwards=True)
+        self.spinningGear((31, -35.5, 21), 0, 4.0, 10.0)
+        for i, c in enumerate(((1, 0.3, 0.2), (0.4, 1, 0.4), (1, 0.8, 0.2), (0.4, 0.7, 1))):
+            self.blinker((-3.6 + i * 2.4, 5.4, 1.9), 180, c, on=0.4 + 0.15 * i, off=0.5 + 0.1 * i, phase=0.2 * i)
+        for x in (-7.5, 7.5):
+            self.steam((x, 8.3, 15.3), every=1.8 + abs(x) * 0.02, size=2.6, rise=7.0, color=(0.8, 0.8, 0.82, 0.45))
+
+    def dressTestingWing(self):
+        # The testing hall.
+        g = 'hallA'
+        self.scatterGrime(-71, -15, -37, 3, 0, g, 10, 51)
+        self.papers(-70, -14, -38, 2, 0, g, 6, 52)
+        self.drain((-60, -10), 2.2, g)
+        self.hazard((-38, -10), (-38, -2), 0.9, g)
+        self.sign((-50, -15.5, 9.4), 0, 'ANIMAL\nTESTING', g, plate=(0.25, 0.3, 0.35, 1), ink=(0.95, 0.95, 0.9, 1))
+        self.sign((-71.5, -12, 6.5), -90, 'LAB  -->', g, scale=0.6, plate=(0.85, 0.82, 0.75, 1))
+        self.panel((-43, 3.5, 3.0), 180, 5.0, 4.0, RIVET_PLATE, g, color=(0.8, 0.78, 0.75, 1))
+        self.vent((-64, 3.5, 7.4), 180, 3.2, 2.2, g)
+        self.conduit((-71.5, 0), -90, 0, 12, g)
+        self.swingingLamp((-46, -6, 12), 2.4, g, color=(1.0, 0.82, 0.55), angle=3.0, seconds=3.4, reach=18.0)
+        # The lab.
+        g = 'lab'
+        self.scatterGrime(-111, -27, -73, 7, 0, g, 12, 61, color=(0.16, 0.2, 0.12, 0.4))
+        self.papers(-110, -20, -76, 6, 0, g, 12, 62)
+        self.drain((-92, -16), 2.4, g)
+        self.drain((-80, 2), 2.0, g)
+        self.hazard((-100, 4), (-92, 4), 0.9, g)
+        for x in (-108, -100, -84, -76):
+            self.grime((x, -23.5), 3.4, g, color=(0.05, 0.05, 0.04, 0.55))
+        self.sign((-92, -27.5, 10.4), 0, 'SPECIMENS - DO NOT FEED', g, plate=(0.85, 0.82, 0.75, 1))
+        self.sign((-72.5, -20, 10.4), 90, 'BIOHAZARD', g, plate=(0.85, 0.7, 0.18, 1))
+        # A machine on the east wall, its lights blinking.
+        self.panel((-72, -22, 3.2), 90, 6.0, 6.0, MACHINE_PANEL, g, frame=(0.45, 0.45, 0.47, 1))
+        for i, c in enumerate(((1, 0.3, 0.2), (0.4, 1, 0.4), (1, 0.8, 0.2))):
+            self.blinker((-72, -24.2 + i * 1.6, 10.0), 90, c, on=0.35 + 0.2 * i, off=0.6, phase=0.3 * i)
+        self.vent((-111.9, 2, 9.2), -90, 3.2, 2.2, g)
+        self.conduit((-111.9, -27), -90, 0, 14, g)
+        self.conduit((-72.5, 6), 90, 0, 14, g, box=False)
+        for x, y in ((-100, -8), (-84, -8)):
+            self.steam((x - 2.5, y, 4.9), every=2.6, size=1.4, rise=3.5, color=(0.6, 1.0, 0.5, 0.35))
+        # Teleporter A's room.
+        g = 'teleA'
+        self.scatterGrime(-111, 9, -73, 55, 0, g, 14, 71)
+        self.papers(-110, 10, -74, 42, 0, g, 6, 72)
+        p = PADS['A']
+        for a, b in (((-6.5, -6.5), (6.5, -6.5)), ((-6.5, 6.5), (6.5, 6.5)), ((-6.5, -6.5), (-6.5, 6.5)), ((6.5, -6.5), (6.5, 6.5))):
+            self.hazard((p[0] + a[0], p[1] + a[1]), (p[0] + b[0], p[1] + b[1]), 0.9, g)
+        self.floorCable([(p[0] + 4.5, p[1] + 1), (-84, 31), (-72.4, 33)], 0, g)
+        self.floorCable([(p[0] - 4.5, p[1] - 1), (-106, 26), (-111.6, 26)], 0, g)
+        self.panel((-72, 33, 3.2), 90, 6.0, 6.0, MACHINE_PANEL, g, frame=(0.45, 0.45, 0.47, 1))
+        for i, c in enumerate(((0.4, 0.8, 1.0), (1, 0.8, 0.2), (0.4, 1, 0.4), (1, 0.3, 0.2))):
+            self.blinker((-72, 30.6 + i * 1.6, 10.0), 90, c, on=0.3 + 0.1 * i, off=0.5 + 0.15 * i, phase=0.25 * i)
+        self.sign((-72.5, 22, 12.5), 90, 'KEEP CLEAR OF PAD', g, scale=0.6)
+        self.chainHang((-84, 36, 24), 9, g)
+        self.chainHang((-104, 40, 24), 6, g)
+        self.chainHang((-88, 14, 24), 7, g)
+        self.spinningGear((-100, 55.5, 19), 180, 6.0, 15.0)
+        self.spinningGear((-94.6, 55.5, 20.6), 180, 3.4, 8.5, backwards=True)
+        self.vent((-111.9, 48, 18), -90, 4, 3, g)
+        self.steam((-80, 16, 10.2), every=2.0, size=2.4, rise=8.0)
+        # The walkway.
+        g = 'walkway'
+        self.scatterGrime(-71, 47, -29, 55, 14, g, 8, 81)
+        for a, b in (((-72, 46.6), (-28, 46.6)),):
+            self.hazard(a, b, 0.7, g, z=14)
+        self.sign((-54, 56, 20.5), 180, 'CAUTION\nWATCH YOUR STEP', g)
+        self.conduit((-70, 56), 180, 14, 34, g)
+        self.conduit((-38, 56), 180, 14, 34, g)
+        self.vent((-62, 56, 24), 180, 4, 3, g)
+        self.spinningGear((-46, 56, 28), 180, 7.0, 16.0)
+        self.spinningGear((-39.8, 56, 30.2), 180, 4.0, 9.0, backwards=True)
+
+    def dressGarageWing(self):
+        # The garage: oil under the cart, tyre tracks, the bay painted out.
+        g = 'garage'
+        self.scatterGrime(37, -29, 79, 9, 0, g, 12, 91)
+        for c, sz in (((66, -14), 10.0), ((70, -11), 4.0), ((42, -25), 5.0)):
+            self.grime(c, sz, g, color=(0.04, 0.04, 0.04, 0.6))
+        for y in (-17.5, -10.5):
+            self.floorPic((60, y), 36, 1.6, SOFT_SPOT, g, color=(0.05, 0.05, 0.05, 0.35), lift=0.042)
+        self.hazard((78.6, -22), (78.6, -6), 1.4, g)
+        for a, b in (((48, -22), (48, -6)), ((76, -24), (52, -24)), ((76, -4), (52, -4))):
+            self.floorPic(((a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0), abs(b[0] - a[0]) + 0.4, abs(b[1] - a[1]) + 0.4, CEMENT, g,
+                          color=(0.85, 0.75, 0.25, 1), lift=0.045)
+        self.drain((50, -14), 2.4, g)
+        self.papers(38, -28, 78, 8, 0, g, 6, 92)
+        self.sign((58, -29.5, 10.5), 0, 'LOADING BAY', g)
+        self.sign((79.5, -14, 15), 90, 'NO PARKING', g, plate=(0.8, 0.14, 0.1, 1), ink=(1, 0.95, 0.85, 1), scale=0.7)
+        self.panel((48, 9.5, 3.0), 180, 4.4, 4.0, RIVET_PLATE, g, color=(0.8, 0.78, 0.75, 1))
+        self.vent((44, -29.5, 12), 0, 4, 3, g)
+        self.vent((79.5, 4, 12), 90, 3.2, 2.2, g)
+        self.conduit((79.5, -28), 90, 0, 18, g)
+        self.conduit((36.5, 4), -90, 0, 18, g, box=False)
+        self.chainHang((58, -20, 18), 6, g)
+        self.chainHang((62, -20, 18), 6, g)
+        self.swingingLamp((50, 0, 18), 3.0, g, color=(1.0, 0.85, 0.6), angle=3.5, seconds=3.8, reach=20.0)
+        # The furnace hall: soot, the furnaces smoking, the walls scorched.
+        g = 'furnace'
+        self.scatterGrime(57, 11, 95, 43, 0, g, 14, 101, color=(0.08, 0.07, 0.06, 0.5))
+        for x in (62, 72):
+            self.grime((x, 33.4), 6.0, g, color=(0.03, 0.03, 0.03, 0.6))
+            self.wallPic((x, 44, 7.5), 180, 8.0, 8.5, SOFT_SPOT, g, color=(0.02, 0.02, 0.02, 0.45), off=0.05)
+            self.steam((x, 39, 10.6), every=1.6, size=3.2, rise=6.0, color=(0.22, 0.2, 0.19, 0.6))
+        self.hazard((57, 34.4), (78, 34.4), 1.0, g)
+        self.drain((86, 20), 2.4, g)
+        self.papers(78, 12, 94, 30, 0, g, 3, 102, color=(0.7, 0.66, 0.6, 1))
+        self.sign((56.5, 34, 10), -90, 'FURNACE ROOM', g)
+        self.sign((88, 43.5, 10.8), 180, 'HOT!  KEEP BACK', g, plate=(0.8, 0.14, 0.1, 1), ink=(1, 0.95, 0.85, 1), scale=0.65)
+        self.panel((95.5, 30, 10.5), 90, 5.0, 3.6, RIVET_PLATE, g, color=(0.7, 0.62, 0.58, 1))
+        self.spinningGear((95.5, 22.5, 12.6), 90, 4.0, 10.0)
+        self.vent((56.5, 14, 10), -90, 3.2, 2.2, g)
+        self.conduit((56.5, 42), -90, 0, 16, g)
+        self.swingingLamp((84, 28, 16), 2.6, g, color=(1.0, 0.7, 0.45), angle=3.0, seconds=4.0, reach=18.0)
+        # Teleporter B's lab: green gunk, the pad, the machines.
+        g = 'teleB'
+        self.scatterGrime(57, 45, 87, 83, 0, g, 12, 111, color=(0.14, 0.2, 0.1, 0.45))
+        for x, y in ((62, 50), (70, 50), (62, 78)):
+            self.grime((x, y), 9.0, g, color=(0.25, 0.55, 0.15, 0.4))
+            self.steam((x, y, 6.4), every=2.4, size=2.0, rise=5.0, color=(0.55, 1.0, 0.45, 0.35))
+        self.grime((66, 56), 4.0, g, color=(0.3, 0.65, 0.18, 0.45))
+        p = PADS['B']
+        for a, b in (((-6.5, -6.5), (6.5, -6.5)), ((-6.5, 6.5), (6.5, 6.5)), ((-6.5, -6.5), (-6.5, 6.5)), ((6.5, -6.5), (6.5, 6.5))):
+            self.hazard((p[0] + a[0], p[1] + a[1]), (p[0] + b[0], p[1] + b[1]), 0.9, g)
+        self.floorCable([(p[0] - 4.4, p[1] - 1), (66, 58), (64, 52.8)], 0, g)
+        self.floorCable([(p[0] - 4.4, p[1] + 1), (64, 72), (62, 75.2)], 0, g)
+        self.floorCable([(p[0] + 4.4, p[1]), (80, 66), (80.8, 66)], 0, g)
+        self.drain((76, 54), 2.4, g)
+        self.papers(58, 56, 80, 82, 0, g, 6, 112)
+        self.panel((56.5, 74, 3.2), -90, 6.0, 6.0, MACHINE_PANEL, g, frame=(0.45, 0.45, 0.47, 1))
+        for i, c in enumerate(((0.4, 1, 0.4), (1, 0.3, 0.2), (0.4, 0.8, 1.0), (1, 0.8, 0.2))):
+            self.blinker((56.5, 71.6 + i * 1.6, 10.0), -90, c, on=0.3 + 0.12 * i, off=0.55, phase=0.2 * i)
+        self.sign((56.5, 52, 11), -90, 'BIOHAZARD', g)
+        self.sign((99.5, 64, 21.5), 90, 'OBSERVATION', g, plate=(0.25, 0.3, 0.35, 1), ink=(0.95, 0.95, 0.9, 1))
+        self.hazard((88.6, 48), (88.6, 64), 0.7, g, z=14)
+        self.hazard((88.6, 66), (88.6, 80), 0.7, g, z=14)
+        self.spinningGear((64, 83.5, 18), 180, 6.0, 14.0)
+        self.spinningGear((69.4, 83.5, 19.8), 180, 3.6, 8.0, backwards=True)
+        self.chainHang((76, 74, 26), 8, g)
+        self.vent((99.5, 76, 20), 90, 3.2, 2.2, g)
+        self.conduit((99.5, 46), 90, 0, 26, g)
+
+    def pressThump(self):
+        game = getattr(self, 'game', None)
+        if game is None or not hasattr(self, 'pressSfx'):
+            return
+        player = getattr(game, 'player', None)
+        if player is None:
+            return
+        far = (player.getPos() - Point3(30, 112, 0)).length()
+        if far < 70:
+            base.playSfx(self.pressSfx, volume=max(0.0, 0.5 - far / 140.0))
+
+    def dressCourtAndRear(self):
+        # The courtyard: puddles, oil, the generator's cables, signs.
+        g = 'court'
+        self.scatterGrime(-35, 45, 55, 95, 0, g, 24, 121)
+        for c, sz in (((0, 64), 7.0), ((26, 80), 6.0), ((-24, 88), 5.0), ((44, 56), 6.0)):
+            self.grime(c, sz, g, color=(0.18, 0.22, 0.3, 0.55), lift=0.05)
+        self.grime((40, 84), 12.0, g, color=(0.04, 0.04, 0.04, 0.6))
+        self.grime((-22, 76), 8.0, g, color=(0.04, 0.04, 0.04, 0.55))
+        self.floorCable([(33, 86), (31, 90), (30, 94.6)], 0, g)
+        self.floorCable([(40, 80.6), (34, 72), (26, 52), (26, 44.8)], 0, g)
+        self.floorCable([(47, 86), (55.4, 86)], 0, g)
+        for a, b in (((22, 44.6), (30, 44.6)), ((6, 95.2), (14, 95.2))):
+            self.hazard(a, b, 0.9, g)
+        self.drain((10, 70), 2.6, g)
+        self.drain((-14, 52), 2.4, g)
+        self.papers(-30, 50, 50, 92, 0, g, 12, 122, color=(0.7, 0.68, 0.62, 1))
+        self.sign((48, 95.2, 9), 180, 'DANGER\nHIGH VOLTAGE', g)
+        self.sign((10, 95.2, 11.5), 180, 'ASSEMBLY HALL', g, plate=(0.25, 0.3, 0.35, 1), ink=(0.95, 0.95, 0.9, 1))
+        self.sign((26, 44.6, 11.5), 0, 'TO FORECOURT', g, plate=(0.25, 0.3, 0.35, 1), ink=(0.95, 0.95, 0.9, 1), scale=0.6)
+        self.sign((55.5, 64, 10.5), 90, 'LAB', g, plate=(0.25, 0.3, 0.35, 1), ink=(0.95, 0.95, 0.9, 1))
+        for x in (-20, 0, 40):
+            self.panel((x, 44.6, 3.0), 0, 4.6, 4.0, RIVET_PLATE, g, color=(0.8, 0.78, 0.75, 1))
+        self.vent((-35.5, 66, 16), -90, 4, 3, g)
+        self.vent((55.5, 50, 16), 90, 4, 3, g)
+        self.conduit((-35.5, 90), -90, 0, 24, g)
+        self.conduit((55.5, 92), 90, 0, 26, g)
+        self.spinningGear((-35.5, 60, 19), -90, 6.0, 13.0)
+        self.spinningGear((-35.5, 54.6, 20.8), -90, 3.6, 7.8, backwards=True)
+        self.steam((36.4, 86, 13.4), every=1.5, size=3.0, rise=8.0, color=(0.75, 0.75, 0.78, 0.5))
+        self.steam((44, 86.6, 16.8), every=2.0, size=2.4, rise=8.0, color=(0.75, 0.75, 0.78, 0.45))
+        for i, c in enumerate(((1, 0.3, 0.2), (1, 0.8, 0.2))):
+            self.blinker((28.6 + i * 2.8, 95.2, 6.8), 180, c, on=0.5, off=0.5, phase=0.5 * i)
+        # The rear factory: the press bed painted, oil, the pad.
+        g = 'rear'
+        self.pressSfx = base.loader.loadSfx('phase_9/audio/sfx/CHQ_FACT_stomper_med.ogg')
+        self.scatterGrime(-35, 97, 55, 127, 0, g, 22, 131)
+        for a, b in (((23.5, 105.5), (36.5, 105.5)), ((23.5, 118.5), (36.5, 118.5)), ((23.5, 105.5), (23.5, 118.5)),
+                     ((36.5, 105.5), (36.5, 118.5))):
+            self.hazard(a, b, 1.0, g)
+        p = PADS['C']
+        for a, b in (((-6.5, -6.5), (6.5, -6.5)), ((-6.5, 6.5), (6.5, 6.5)), ((-6.5, -6.5), (-6.5, 6.5)), ((6.5, -6.5), (6.5, 6.5))):
+            self.hazard((p[0] + a[0], p[1] + a[1]), (p[0] + b[0], p[1] + b[1]), 0.9, g)
+        self.floorCable([(p[0] + 4.4, p[1]), (20, 110), (24.4, 110)], 0, g)
+        self.floorCable([(p[0] - 4.4, p[1]), (-4, 116), (-27.6, 120)], 0, g)
+        self.grime((30, 112), 10.0, g, color=(0.04, 0.04, 0.04, 0.55))
+        for c in ((40, 124), (-6, 102), (46, 100)):
+            self.grime(c, 6.0, g, color=(0.04, 0.04, 0.04, 0.5))
+        self.drain((-2, 124), 2.6, g)
+        self.drain((44, 118), 2.4, g)
+        self.papers(-26, 98, 46, 126, 0, g, 10, 132)
+        self.hazard((-28.6, 96), (-28.6, 128), 0.7, g, z=14)
+        self.hazard((-28, 128.6), (48, 128.6), 0.7, g, z=14)
+        self.sign((30, 135.4, 21), 180, 'PRODUCTION LINE', g)
+        self.sign((55.5, 108, 11), 90, 'FOREMAN', g, plate=(0.25, 0.3, 0.35, 1), ink=(0.95, 0.95, 0.9, 1), scale=0.7)
+        self.sign((30, 96.6, 9.5), 0, 'KEEP CLEAR OF PRESS', g, plate=(0.8, 0.14, 0.1, 1), ink=(1, 0.95, 0.85, 1), scale=0.65)
+        for x in (-12, 20, 44):
+            self.panel((x, 135.4, 3.2), 180, 5.0, 4.4, RIVET_PLATE, g, color=(0.8, 0.78, 0.75, 1))
+        self.panel((-35.5, 104, 3.2), -90, 6.0, 6.0, MACHINE_PANEL, g, frame=(0.45, 0.45, 0.47, 1))
+        for i, c in enumerate(((0.4, 1, 0.4), (1, 0.3, 0.2), (1, 0.8, 0.2))):
+            self.blinker((-35.5, 101.6 + i * 2.4, 10.0), -90, c, on=0.4, off=0.45 + 0.1 * i, phase=0.3 * i)
+        self.spinningGear((4, 135.4, 23.5), 180, 7.0, 16.0)
+        self.spinningGear((10.2, 135.4, 25.8), 180, 4.2, 9.6, backwards=True)
+        self.spinningGear((55.5, 100.6, 22), 90, 5.0, 12.0)
+        self.chainHang((0, 104, 30), 10, g)
+        self.chainHang((22, 124, 30), 8, g)
+        self.chainHang((-18, 122, 30), 12, g)
+        self.vent((-35.5, 124, 20), -90, 4, 3, g)
+        self.conduit((-35.5, 132), -90, 0, 30, g)
+        self.conduit((55.5, 132), 90, 0, 30, g)
+        for x, y in ((-12, 104), (-12, 124), (40, 102)):
+            self.steam((x, y, 30.3), every=2.4, size=2.6, rise=4.0, color=(0.7, 0.7, 0.72, 0.4))
+        self.swingingLamp((10, 104, 30), 6.0, g, color=(1.0, 0.85, 0.6), angle=2.5, seconds=4.6, reach=24.0)
+        # The office: papers everywhere, filing cabinets, a rug.
+        g = 'office'
+        self.floorPic((70, 112), 14, 10, CARPET, g, color=(0.42, 0.2, 0.18, 1), lift=0.03, uv=[(0, 0), (2, 0), (2, 1.4), (0, 1.4)])
+        self.scatterGrime(57, 101, 83, 131, 0, g, 8, 141, color=(0.1, 0.08, 0.06, 0.35))
+        self.papers(57, 101, 83, 131, 0, g, 26, 142)
+        for x in (63.4, 66.4):
+            self.kit.model('phase_11/models/lawbotHQ/LB_filing_cabA', pos=(x, 101.4, 0), h=180, scale=1.1, color=(0.85, 0.82, 0.78, 1))
+        self.kit.wallBox((62, 100, 0), (67.8, 102.9, 4.6))
+        self.kit.model('phase_11/models/lawbotHQ/LB_CardBoardBox', pos=(58.4, 101.8, 0), h=12, scale=0.3, color=(0.85, 0.82, 0.78, 1))
+        self.kit.wallBox((57, 100.4, 0), (59.8, 103.2, 2.8))
+        self.sign((70, 100.6, 9), 0, 'QUOTA:  MORE GAGS', g, plate=(0.85, 0.82, 0.75, 1), scale=0.6)
+        self.panel((83.5, 110, 4.5), 90, 4.0, 3.0, 'phase_9/maps/mickeyposter.jpg', g, color=(0.8, 0.75, 0.7, 1), frame=(0.35, 0.25, 0.2, 1))
+        self.wallPic((76, 131.5, 3.2), 180, 4.0, 5.0, SOFT_SPOT, g, color=(0.1, 0.08, 0.06, 0.35), off=0.04)
+        self.vent((64, 131.5, 9), 180, 2.6, 1.8, g)
+        self.swingingLamp((70, 120, 12), 2.2, g, color=(1.0, 0.85, 0.6), angle=2.0, seconds=4.0, reach=16.0)
 
     def yards(self):
         """The ground between the buildings nobody can reach, seen from the

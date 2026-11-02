@@ -81,6 +81,8 @@ class Theater(Building):
         self.booth()
         self.returnRooms()
         self.outside()
+        self.dressIndoor()
+        self.dressBack()
 
     # --- The lobby ---
 
@@ -154,14 +156,37 @@ class Theater(Building):
         self.chandelier((0, -84, 29.5))
 
     def chandelier(self, top, scale=1.0):
-        top = Point3(top)
-        self.kit.beam(top, top + Vec3(0, 0, -4 * scale), 0.15, METAL, color=(0.5, 0.45, 0.35, 1), tile=2)
-        ring = top + Vec3(0, 0, -4.5 * scale)
-        self.kit.cylinder(ring, 2.6 * scale, 0.5, MOLDING, sides=16, color=(0.85, 0.7, 0.35, 1), tile=3, collide=False)
+        """A brass ring of lamps on a rod, swaying a little in the draught
+        from the broken roof."""
+        pivot = self.root.attachNewNode('chandelier')
+        pivot.setPos(Point3(top))
+        brass = (0.85, 0.7, 0.35, 1)
+        self.boxNode(pivot, (-0.08, -0.08, -4 * scale), (0.08, 0.08, 0), METAL, color=(0.5, 0.45, 0.35, 1), tile=2)
+        rz = -4.5 * scale
+        rad = 2.6 * scale
+        for i in range(12):
+            a = 360.0 * i / 12
+            seg = pivot.attachNewNode('ring')
+            seg.setPos(0, 0, rz)
+            seg.setH(a)
+            half = rad * math.tan(math.pi / 12) + 0.05
+            self.boxNode(seg, (rad - 0.18, -half, 0), (rad + 0.18, half, 0.5), MOLDING, color=brass, tile=2)
+        for i in range(4):
+            arm = pivot.attachNewNode('arm')
+            arm.setPos(0, 0, rz + 0.2)
+            arm.setH(45 * i)
+            self.boxNode(arm, (-rad, -0.06, 0), (rad, 0.06, 0.12), METAL, color=brass, tile=2)
         for i in range(8):
             a = 2 * math.pi * i / 8
-            p = ring + Vec3(math.cos(a) * 2.6 * scale, math.sin(a) * 2.6 * scale, 0.5)
-            self.kit.model('phase_11/models/lawbotHQ/LB_torch_lampA', pos=p, scale=0.45, color=(1, 0.9, 0.75, 1))
+            self.kit.model('phase_11/models/lawbotHQ/LB_torch_lampA', parent=pivot,
+                           pos=(math.cos(a) * rad, math.sin(a) * rad, rz + 0.5), scale=0.45, color=(1, 0.9, 0.75, 1))
+        r = rng(int(top[0] * 7 + top[1] * 3))
+        swing = 1.2 + r.random() * 0.8
+        secs = 4.5 + r.random() * 1.5
+        self.keepLooping(Sequence(LerpHprInterval(pivot, secs / 2, Vec3(0, swing, swing * 0.6), startHpr=Vec3(0, -swing, -swing * 0.6),
+                                                  blendType='easeInOut'),
+                                  LerpHprInterval(pivot, secs / 2, Vec3(0, -swing, -swing * 0.6), startHpr=Vec3(0, swing, swing * 0.6),
+                                                  blendType='easeInOut')))
 
     # --- Indoor route: upper hall, portrait room, foyer, dressing room ---
 
@@ -334,6 +359,230 @@ class Theater(Building):
         self.threshold(-52, 42, -50, 48, z)
         d = self.door('dressing', 1250, (-51, 42), (-51, 48), z, z + 9, ['stage'], title='the stage door')
         self.leaves(d)
+
+    # --- Detail: dust, stains, papers, pictures; nothing in the way ---
+
+    def painting(self, path, pos, hf, size=2.6, tilt=0.0, color=(0.8, 0.74, 0.68, 1)):
+        """One of the game's framed pictures on a wall, facing hf."""
+        f = heading(hf)
+        self.kit.model('phase_5.5/models/estate/' + path, pos=Point3(*pos) + f * 0.1, h=hf - 180, r=tilt, scale=size,
+                       color=color)
+
+    def damp(self, pos, hf, w, hgt, group, color=(0.2, 0.15, 0.1, 0.35)):
+        """A damp patch spreading on the wallpaper."""
+        self.wallPic(pos, hf, w, hgt, SOFT_SPOT, group, color=color, off=0.04)
+
+    def dust(self, top, floorZ, every=2.2, color=(0.8, 0.74, 0.66, 0.55)):
+        """Plaster dust sifting down from a hole in the ceiling."""
+        self.steam((top[0], top[1], top[2] - 0.5), every=every, size=3.2, rise=-(top[2] - 0.5 - floorZ - 1.0), color=color)
+
+    def dressIndoor(self):
+        dustC = (0.2, 0.16, 0.12, 0.4)
+        # The lobby.
+        g = 'lobby'
+        self.scatterGrime(-39, -99, 39, -61, 0, g, 18, 201, color=dustC)
+        self.papers(-36, -98, 36, -64, 0, g, 16, 202, color=(0.85, 0.8, 0.7, 1))
+        self.kit.model('phase_5.5/models/estate/popcornCart', pos=(24, -64, 0), h=200, scale=1.0, color=(0.75, 0.68, 0.62, 1))
+        self.kit.wallTube((24, -64, 0), 2.5, 5)
+        r = rng(203)
+        for i in range(30):
+            a, d = r.uniform(0, 2 * math.pi), r.uniform(1.5, 5.0)
+            self.floorPic((24 + math.cos(a) * d, -66 + math.sin(a) * d * 0.7), 0.45, 0.45, SOFT_GLOW, g,
+                          color=(1.0, 0.95, 0.75, 1), z=0, lift=0.06 + 0.001 * (i % 5))
+        self.kit.model('phase_3.5/models/modules/umbrella_stand', pos=(6.2, -98.6, 0), scale=1.0, color=(0.75, 0.7, 0.62, 1))
+        self.kit.wallTube((6.2, -98.6, 0), 1.0, 3)
+        self.kit.model('phase_3.5/models/modules/paper_trashcan', pos=(-17, -98.6, 0), r=0, scale=1.0, color=(0.75, 0.7, 0.62, 1))
+        self.kit.wallTube((-17, -98.6, 0), 1.0, 2)
+        self.painting('modernistMickey', (-5, -60, 18.2), 180, 2.8, tilt=-4)
+        self.painting('degasHorseStar', (7, -60, 18.2), 180, 2.6, tilt=6)
+        self.painting('cezanne_toon', (-39.9, -66, 18.5), -90, 2.6, tilt=3)
+        for p, hf, w, hgt in (((-30, -99.9, 14), 0, 9, 12), ((30, -60, 20), 180, 8, 8), ((39.9, -88, 16), 90, 10, 10),
+                              ((-39.9, -70, 4), -90, 6, 9)):
+            self.damp(p, hf, w, hgt, g)
+        self.dust((-33, -68, 30), 0)
+        self.grime((0, -84), 6, g, color=(0.08, 0.06, 0.05, 0.5))
+        # The upper hall.
+        g = 'upper'
+        z = 14
+        self.scatterGrime(-71, -91, -43, -69, z, g, 8, 211, color=dustC)
+        self.papers(-70, -90, -44, -70, z, g, 6, 212, color=(0.85, 0.8, 0.7, 1))
+        self.painting('cezanne_toon', (-72, -86, z + 4.6), -90, 2.4, tilt=-5)
+        self.painting('degasHorseStar', (-72, -74, z + 4.6), -90, 2.2, tilt=8)
+        self.kit.model('phase_3.5/models/modules/lamp_tall', pos=(-44, -90, z), scale=1.0, color=(0.6, 0.55, 0.5, 1))
+        self.kit.wallTube((-44, -90, z), 1.0, 6)
+        self.kit.model('phase_3.5/models/modules/umbrella_stand', pos=(-70.5, -70, z), scale=1.0, color=(0.7, 0.65, 0.6, 1))
+        self.kit.wallTube((-70.5, -70, z), 1.0, 3)
+        self.damp((-50, -92, z + 6), 0, 8, 6, g)
+        self.damp((-42, -80, z + 3), 90, 6, 9, g)
+        # The portrait room.
+        g = 'portrait'
+        self.scatterGrime(-85, -65, -57, -37, z, g, 8, 221, color=dustC)
+        self.papers(-84, -64, -58, -38, z, g, 14, 222, color=(0.8, 0.75, 0.65, 1))
+        self.dust((-77, -49, z + 13), z)
+        for p, hf, w, hgt in (((-70, -36, z + 6), 180, 10, 7), ((-56, -60, z + 2), 90, 7, 10)):
+            self.damp(p, hf, w, hgt, g, color=(0.18, 0.13, 0.1, 0.45))
+        self.kit.model('phase_3.5/models/modules/trophy_frame', pos=(-64, -42, z + 0.12), p=-90, h=30, scale=1.3, color=(0.7, 0.62, 0.5, 1))
+        # The foyer: the gallery up top, the lounge below.
+        g = 'foyer'
+        self.scatterGrime(-95, -33, -57, -19, 14, g, 7, 231, color=dustC)
+        self.scatterGrime(-95, -17, -57, 9, 0, g, 12, 232, color=(0.14, 0.11, 0.08, 0.4))
+        self.papers(-94, -32, -58, -20, 14, g, 6, 233, color=(0.85, 0.8, 0.7, 1))
+        self.papers(-92, -16, -58, 8, 0, g, 8, 234, color=(0.85, 0.8, 0.7, 1))
+        self.kit.model('phase_3.5/models/modules/rug', pos=(-70, -2, 0.03), h=90, scale=1.1, color=(0.62, 0.45, 0.42, 1))
+        self.painting('modernistMickey', (-90, -34, 18.6), 0, 2.6, tilt=4)
+        self.painting('cezanne_toon', (-82, -34, 18.6), 0, 2.6, tilt=-3)
+        self.painting('degasHorseStar', (-58, -34, 18.6), 0, 2.4, tilt=10)
+        self.kit.model('phase_5.5/models/estate/RADIO_A', pos=(-90, -15, 3.3), h=180, scale=1.4, color=(0.6, 0.65, 0.55, 1))
+        self.dust((-71, -27, 27), 14)
+        self.damp((-96, -10, 8), -90, 9, 10, g)
+        self.damp((-56, 4, 6), 90, 8, 8, g)
+        # The dressing room.
+        g = 'dressing'
+        z = 4
+        self.scatterGrime(-89, 13, -53, 47, z, g, 10, 241, color=dustC)
+        self.papers(-88, 16, -56, 44, z, g, 8, 242, color=(0.85, 0.8, 0.7, 1))
+        self.dust((-68, 30, z + 11), z)
+        for i, (x, y, rot, c) in enumerate(((-76, 30, 20, (0.6, 0.2, 0.2, 1)), (-66, 18, 70, (0.3, 0.3, 0.55, 1)),
+                                            (-60, 36, 130, (0.55, 0.5, 0.25, 1)))):
+            # Costume cloth dropped on the floor.
+            self.floorPic((x, y), 2.4, 1.6, CURTAIN, g, color=c, rot=rot, z=z, lift=0.06 + 0.01 * i,
+                          uv=[(0, 0), (1.2, 0), (1.2, 0.8), (0, 0.8)])
+        self.painting('degasHorseStar', (-52, 30, z + 4.4), 90, 2.2, tilt=-6)
+        self.damp((-80, 48, z + 5), 180, 8, 6, g)
+
+    def projectorLight(self):
+        """The projector's beam from the booth's middle window over the
+        seats to the curtain: two crossed soft cards, shown with the power."""
+        from panda3d.core import ColorBlendAttrib
+        from toontown.survival.previewmaps.MapKit import Mesh
+        node = self.root.attachNewNode('projectorBeam')
+        a, b = Point3(0, -47.2, 25.5), Point3(0, 40.5, 15)
+        m = Mesh()
+        for w0, w1, d in ((0.5, 22.0, 'h'), (0.5, 14.0, 'v')):
+            if d == 'h':
+                pts = [a + Vec3(-w0, 0, 0), a + Vec3(w0, 0, 0), b + Vec3(w1, 0, 0), b + Vec3(-w1, 0, 0)]
+            else:
+                pts = [a + Vec3(0, 0, -w0), a + Vec3(0, 0, w0), b + Vec3(0, 0, w1), b + Vec3(0, 0, -w1)]
+            uvs = [(0.45, 0.0), (0.55, 0.0), (1.0, 1.0), (0.0, 1.0)]
+            m.quad(pts, uvs, Vec4(1, 1, 1, 1))
+            m.quad([pts[1], pts[0], pts[3], pts[2]], uvs, Vec4(1, 1, 1, 1))
+        np = node.attachNewNode(m.node('beam'))
+        np.setTexture(self.kit.tex(SOFT_GLOW), 1)
+        node.setLightOff(1)
+        node.setDepthWrite(False)
+        node.setTwoSided(True)
+        node.setBin('fixed', 6)
+        node.setAttrib(ColorBlendAttrib.make(ColorBlendAttrib.MAdd, ColorBlendAttrib.OIncomingAlpha, ColorBlendAttrib.OOne))
+        node.setColorScale(1, 0.95, 0.85, 0.18)
+        node.stash()
+        self.projectorBeam = node
+
+    def dressBack(self):
+        dustC = (0.2, 0.16, 0.12, 0.4)
+        wet = (0.18, 0.22, 0.3, 0.55)
+        # The lower hall: puddles, a leaking pipe, the fuse box blinking.
+        g = 'lowerhall'
+        self.scatterGrime(43, -91, 69, -73, 0, g, 8, 251, color=dustC)
+        self.grime((62, -86), 5, g, color=wet, lift=0.05)
+        self.papers(56, -90, 68, -74, 0, g, 4, 252, color=(0.8, 0.75, 0.65, 1))
+        self.steam((62, -90.2, 10.1), every=1.4, size=1.0, rise=-8.5, color=(0.7, 0.8, 0.9, 0.5))
+        self.blinker((44.05, -88.5, 7.0), -90, (1, 0.3, 0.2), on=0.3, off=1.2, size=0.3)
+        self.sign((69.5, -76, 7.5), 90, 'STAFF ONLY', g, plate=(0.85, 0.82, 0.75, 1), scale=0.6)
+        self.damp((70, -88, 1), 90, 6, 7, g)
+        self.drain((60, -80), 1.8, g)
+        # The alley: puddles, rubbish, steam from the street grate, a
+        # washing line across overhead.
+        g = 'alley'
+        self.scatterGrime(57, -69, 91, 9, 0, g, 18, 261, color=(0.1, 0.1, 0.1, 0.4))
+        for c, sz in (((66, -50), 6), ((80, -30), 7), ((70, -6), 5), ((84, -62), 4)):
+            self.grime(c, sz, g, color=wet, lift=0.05)
+        self.papers(58, -68, 90, 8, 0, g, 14, 262, color=(0.75, 0.72, 0.66, 1))
+        self.drain((74, -40), 2.6, g)
+        self.steam((74, -40, 0.2), every=1.8, size=3.4, rise=9.0, color=(0.8, 0.8, 0.82, 0.45))
+        self.drain((64, -10), 2.2, g)
+        for x, y in ((57.4, -2), (90.8, -44)):
+            self.kit.model('phase_5/models/props/trashcan_TT', pos=(x, y, 0), scale=0.8, color=(0.55, 0.55, 0.52, 1))
+            self.kit.wallTube((x, y, 0), 1.3, 4)
+        self.sign((56.0, -30, 9), -90, 'NO LOITERING', g, plate=(0.8, 0.14, 0.1, 1), ink=(1, 0.95, 0.85, 1), scale=0.6)
+        self.conduit((56.0, -60), -90, 0, 22, g)
+        self.conduit((92.0, -14), 90, 0, 20, g)
+        self.vent((92.0, -36, 10), 90, 3.2, 2.2, g)
+        self.damp((56.0, -12, 2), -90, 10, 9, g, color=(0.1, 0.1, 0.1, 0.35))
+        self.kit.beam((56, -20, 16), (92, -26, 15), 0.06, METAL, color=(0.2, 0.2, 0.2, 1), tile=1, group=g)
+        r = rng(263)
+        for i, (t, c) in enumerate(((0.2, (0.85, 0.82, 0.78, 1)), (0.35, (0.55, 0.25, 0.22, 1)), (0.55, (0.4, 0.45, 0.6, 1)),
+                                    (0.75, (0.8, 0.75, 0.55, 1)))):
+            x, y, zz = 56 + 36 * t, -20 - 6 * t, 16 - 1 * t
+            cloth = self.root.attachNewNode('washing')
+            cloth.setPos(x, y, zz)
+            cloth.setH(-9.5)
+            self.boxNode(cloth, (-0.9, -0.03, -2.4), (0.9, 0.03, 0), CURTAIN, color=c, tile=3)
+            sway = 6 + r.random() * 6
+            secs = 2.6 + r.random()
+            self.keepLooping(Sequence(LerpHprInterval(cloth, secs / 2, Vec3(-9.5, sway, 0), startHpr=Vec3(-9.5, -sway * 0.4, 0),
+                                                      blendType='easeInOut'),
+                                      LerpHprInterval(cloth, secs / 2, Vec3(-9.5, -sway * 0.4, 0), startHpr=Vec3(-9.5, sway, 0),
+                                                      blendType='easeInOut')))
+        # The fenced stairs and the storage room.
+        g = 'storage'
+        self.scatterGrime(64, 11, 80, 29, 0, g, 6, 271, color=(0.1, 0.1, 0.1, 0.35))
+        self.scatterGrime(53, 31, 91, 55, 12, g, 10, 272, color=dustC)
+        self.papers(56, 32, 90, 54, 12, g, 8, 273, color=(0.8, 0.75, 0.65, 1))
+        self.dust((73, 43, 24), 12)
+        self.sign((60, 55.5, 20), 180, 'PROPERTY OF KINO DER TOONEN', g, plate=(0.85, 0.82, 0.75, 1), scale=0.55)
+        self.damp((92, 34, 14), 90, 6, 8, g)
+        # The stage: tape marks, scripts, a ghost light.
+        g = 'stage'
+        z = 4
+        self.scatterGrime(-49, 42, 49, 79, z, g, 14, 281, color=dustC)
+        self.papers(-46, 44, 46, 78, z, g, 14, 282, color=(0.88, 0.85, 0.78, 1))
+        for x, y in ((-16, 48), (16, 48), (-6, 56), (8, 58), (-28, 52), (28, 54)):
+            for rot in (45, -45):
+                self.floorPic((x, y), 1.4, 0.18, SOFT_GLOW, g, color=(0.9, 0.85, 0.3, 1), rot=rot, z=z, lift=0.06)
+        self.dust((-21, 69, 36), z)
+        self.dust((23, 59, 36), z)
+        # The ghost light: a bare bulb on a stand, left burning.
+        self.kit.cylinder((-44, 46, z), 0.8, 0.3, METAL, sides=10, color=(0.25, 0.25, 0.27, 1), collide=False)
+        self.kit.cylinder((-44, 46, z + 0.3), 0.08, 5.2, METAL, sides=6, color=(0.3, 0.3, 0.32, 1), collide=False)
+        self.kit.wallTube((-44, 46, z), 0.8, 6)
+        bulb = self.root.attachNewNode('ghostLight')
+        bulb.setPos(-44, 46, z + 5.8)
+        self.boxNode(bulb, (-0.25, -0.25, -0.3), (0.25, 0.25, 0.3), CEMENT, color=(1, 1, 1, 1), tile=1)
+        bulb.setLightOff(1)
+        lit, dim = Vec4(3, 2.8, 2.2, 1), Vec4(1.2, 1.1, 0.9, 1)
+        bulb.setColorScale(lit)
+        self.keepLooping(Sequence(Wait(2.3), Func(bulb.setColorScale, dim), Wait(0.08), Func(bulb.setColorScale, lit), Wait(0.15),
+                                  Func(bulb.setColorScale, dim), Wait(0.05), Func(bulb.setColorScale, lit), Wait(4.0)))
+        self.lamp((-44, 47, z + 6), (1.0, 0.9, 0.7), 18.0, groups=(g,))
+        # The auditorium: popcorn and tickets in the aisles, dust down from
+        # the holes, damp on the walls, the projector's beam.
+        g = 'aud'
+        self.scatterGrime(-43, -55, 43, 38, 0, g, 20, 291, color=(0.12, 0.05, 0.04, 0.45))
+        self.papers(-42, -54, 42, 30, 0, g, 22, 292, color=(0.85, 0.8, 0.7, 1))
+        r = rng(293)
+        for i in range(70):
+            x = r.choice((r.uniform(-10, 10), r.uniform(-43, -38), r.uniform(38, 43), r.uniform(-30, 30)))
+            y = r.uniform(-54, 32)
+            self.floorPic((x, y), 0.4, 0.4, SOFT_GLOW, g, color=(1.0, 0.95, 0.75, 1), z=0, lift=0.06 + 0.001 * (i % 5))
+        for c in ((-27, -21), (27, 9), (0, 22)):
+            self.dust((c[0], c[1], 31), 0)
+        for p, hf in (((-43.9, -35, 6), -90), ((-43.9, 18, 14), -90), ((43.9, -17, 8), 90), ((43.9, 30, 18), 90),
+                      ((-20, -55.9, 6), 0), ((24, -55.9, 10), 0)):
+            self.damp(p, hf, 8, 9, g)
+        self.projectorLight()
+        # The booth: film run off the reels across the floor.
+        g = 'booth'
+        z = 22
+        self.scatterGrime(-15, -55, 15, -48, z, g, 5, 301, color=dustC)
+        for i, (x, y, rot) in enumerate(((4, -52, 20), (8, -53.4, -35), (-4, -54, 80))):
+            self.floorPic((x, y), 3.6, 0.5, 'phase_10/maps/Tracks.jpg', g, color=(0.25, 0.22, 0.2, 1), rot=rot, z=z,
+                          lift=0.05 + 0.01 * i, uv=[(0, 0), (4, 0), (4, 1), (0, 1)])
+        # The four rooms.
+        for key, c in ROOMS:
+            g = 'room-' + key
+            self.scatterGrime(c[0] - 11, c[1] - 9, c[0] + 11, c[1] + 9, c[2], g, 6, int(c[0]) + 311, color=dustC)
+            self.papers(c[0] - 10, c[1] - 8, c[0] + 10, c[1] + 4, c[2], g, 4 if key != 'meeting' else 10, int(c[0]) + 312,
+                        color=(0.88, 0.85, 0.78, 1))
 
     def mannequins(self, spots, z):
         """Dress forms: a pillar on a stand with a torso of cloth on it."""
@@ -698,7 +947,7 @@ class Theater(Building):
         # The projector at the middle window, film cans, the clock.
         # The projector: a pedestal, the lamp house, the lens barrel
         # through the middle window, and two film reels on arms on top.
-        proj = self.kit.visual.attachNewNode('projector')
+        proj = self.root.attachNewNode('projector')
         proj.setPos(0, -50.2, z)
         steel = (0.55, 0.55, 0.58, 1)
         self.boxNode(proj, (-0.9, -0.9, 0), (0.9, 0.9, 2.6), METAL, color=(0.35, 0.35, 0.37, 1), tile=2)
@@ -712,6 +961,7 @@ class Theater(Building):
             for a in range(4):
                 spoke = self.boxNode(reel, (-0.12, -1.05, -0.44), (0.12, 1.05, 0.44), METAL, color=(0.28, 0.28, 0.3, 1), tile=1)
                 spoke.setP(a * 45)
+            self.keepLooping(LerpHprInterval(reel, 3.0, Vec3(0, -360, 0), startHpr=Vec3(0, 0, 0)))
         self.kit.wallBox((-1.2, -51.9, z), (1.2, -47.3, z + 4.4))
         # Shaded by hand: the booth lamp's glow, from above.
         proj.setLightOff(1)
@@ -814,6 +1064,14 @@ class Theater(Building):
         for bulb in self.powerBulbs:
             bulb.setColorScale(6.0, 5.4, 4.0, 1)
             bulb.setLightOff(1)
+        # The projector throws its dusty beam over the seats again.
+        beam = getattr(self, 'projectorBeam', None)
+        if beam is not None:
+            beam.unstash()
+            self.keepLooping(Sequence(LerpColorScaleInterval(beam, 0.09, Vec4(1, 0.95, 0.85, 0.16)),
+                                      LerpColorScaleInterval(beam, 0.07, Vec4(1, 0.95, 0.85, 0.22)),
+                                      LerpColorScaleInterval(beam, 0.12, Vec4(1, 0.95, 0.85, 0.18)),
+                                      Wait(0.05)))
 
     def teleporterPrompt(self, game, pad):
         role = pad.entry.get('role')
