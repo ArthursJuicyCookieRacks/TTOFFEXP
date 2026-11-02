@@ -91,7 +91,7 @@ class SettingsPage(ShtikerPage.ShtikerPage):
         DirectButton(parent=frame, relief=None, image=self.btnImage, image_scale=(0.9, 1, 1), text=TTLocalizer.SettingsPageReset,
                      text_scale=0.05, text_pos=(0, -0.02), pos=(-0.3, 0, -0.5), command=self.__resetGeneral)
         DirectButton(parent=frame, relief=None, image=self.btnImage, image_scale=(0.9, 1, 1),
-                     image_color=(1, 0.85, 0.3, 1), text=TTLocalizer.SettingsPageDoubleXp, text_scale=0.05,
+                     text=TTLocalizer.SettingsPageDoubleXp, text_scale=0.05,
                      text_pos=(0, -0.02), pos=(0.3, 0, -0.5), command=self.__openDoubleXp)
 
     def __addSlider(self, frame, z, name, label, low, high, step, getter, setter):
