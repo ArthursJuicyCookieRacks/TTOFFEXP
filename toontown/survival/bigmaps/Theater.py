@@ -60,7 +60,7 @@ CRACKS = {
 
 class Theater(Building):
     KEY = 'theater'
-    TITLE = 'Kino der Toonen'
+    TITLE = 'Toon Theater'
     DESCRIPTION = 'An old picture theater the cogs turned into a laboratory.'
     PLAYER_START = (Point3(0, -94, 0), 0)
     MICKEY_SPOT = (Point3(10, -52, 22), 90)
@@ -164,10 +164,10 @@ class Theater(Building):
         self.kit.model('phase_3.5/models/modules/lamp_short', pos=(-34, -63, 3.2), scale=0.8, color=(0.9, 0.8, 0.7, 1))
         self.kit.model('phase_11/models/lawbotHQ/LB_CardBoardBox', pos=(-37.5, -97.5, 0), h=20, scale=0.35)
         # The marquee sign over the doors, inside; broken seats and dust.
-        self.text('KINO DER TOONEN', (0, -99.4, 12.4), 180, 1.5, (0.95, 0.75, 0.4, 1), parent=self.root)
+        self.text('TOON THEATER', (0, -99.4, 12.4), 180, 1.5, (0.95, 0.75, 0.4, 1), parent=self.root)
         # Outside, over the street: the marquee with the name on it.
         self.kit.model('phase_5/models/props/marquee', pos=(0, -100.9, 3.8), h=0, scale=1.0, color=(0.75, 0.62, 0.52, 1))
-        self.text('KINO DER TOONEN', (0, -106.0, 13.2), 0, 1.4, (1.0, 0.85, 0.5, 1), parent=self.root)
+        self.text('TOON THEATER', (0, -106.0, 13.2), 0, 1.4, (1.0, 0.85, 0.5, 1), parent=self.root)
         self.text('NOW SHOWING: NOTHING', (0, -106.0, 11.7), 0, 0.8, (0.9, 0.3, 0.25, 1), parent=self.root)
         self.poster((-20, -99.4, 4.5), 0)
         self.poster((21, -99.4, 4.5), 0)

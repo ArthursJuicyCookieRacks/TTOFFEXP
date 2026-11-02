@@ -4276,6 +4276,7 @@ SurvivalDescription = 'Cogs fall from the sky in rounds, and every round brings 
 SurvivalFriends = 'NPC toons with you:'
 SurvivalBestRound = 'Best round: %d'
 SurvivalBack = 'Back'
+SurvivalNextPage = 'Next'
 SurvivalDefaultName = 'Toon'
 DateOfBirthEntryMonths = ['Jan',
  'Feb',

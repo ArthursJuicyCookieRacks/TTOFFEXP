@@ -472,7 +472,8 @@ class SurvivalCog:
             self.offLevelSince = None
         elif self.offLevelSince is None:
             self.offLevelSince = now
-        if self.lure is None and self.offLevelSince is not None and dist < 14.0 and now - self.offLevelSince > OFF_LEVEL_TIME:
+        if self.lure is None and self.offLevelSince is not None and dist < 14.0 and now - self.offLevelSince > OFF_LEVEL_TIME \
+                and not self.arena.big:
             self.offLevelSince = None
             self.__reland(goal)
             return
@@ -505,7 +506,27 @@ class SurvivalCog:
     def __clearWide(self, a, b):
         """A walk from a to b with room for the cog's body: the middle line
         and one either side of it, at its knees, waist and chest."""
+        if self.arena.big:
+            return self.__clearWideBig(a, b)
         return self.arena.bodyClear(a, b, max(0.8, self.radius * 0.7))
+
+    def __clearWideBig(self, a, b):
+        """A big map's check (its doors, railings and window sills were
+        laid out for it): the middle line and one either side of it, at
+        the waist."""
+        arena = self.arena
+        lift = 2.0
+        pa = Point3(a[0], a[1], a[2] + lift)
+        pb = Point3(b[0], b[1], a[2] + lift)
+        if not arena.clearLine(pa, pb):
+            return False
+        d = Vec3(pb - pa)
+        d.setZ(0)
+        if d.lengthSquared() < 0.01:
+            return True
+        d.normalize()
+        side = Vec3(-d[1], d[0], 0) * max(0.8, self.radius * 0.7)
+        return arena.clearLine(pa + side, pb + side) and arena.clearLine(pa - side, pb - side)
 
     def __waypoint(self, goal, now):
         """Where to walk next: straight at the goal when there is room,
@@ -516,12 +537,13 @@ class SurvivalCog:
         self.nextRoute = now + ROUTE_EVERY * random.uniform(0.85, 1.15)
         self.route = None
         self.routed = True
+        big = self.arena.big
         # Straight at the goal only on its level: from the harbour bed
         # under a dock nothing stood between the cog and the toon overhead,
         # so it walked under the toon and stayed there. On a big map, only
         # on the very same floor.
         if abs(goal[2] - self.pos[2]) <= G.COG_REACH_RISE \
-                and self.__clearWide(self.pos, goal) and (not self.arena.big or abs(goal[2] - self.pos[2]) < 1.5):
+                and self.__clearWide(self.pos, goal) and (not big or abs(goal[2] - self.pos[2]) < 1.5):
             return goal
         flow, goalCell = self.arena.flowTo(goal)
         cell = self.arena.nearestCell(self.pos)
@@ -684,7 +706,7 @@ class SurvivalCog:
         # anything solid: the step is checked at the cog's knees, waist and
         # chest (Arthur: cogs walked through Old School Toontown's gazebo,
         # trees and stone wall). Blocked, it slides along the wall instead.
-        if not self.__fits(direction, length):
+        if not self.arena.big and not self.__fits(direction, length):
             for angle in (30, -30, 60, -60, 90, -90):
                 turned = self.__turn(direction, angle)
                 if self.__fits(turned, length):
@@ -700,7 +722,7 @@ class SurvivalCog:
             if z is None:
                 # Off a ledge deeper than a step: down to the floor below
                 # (before, the cog kept its height and walked on air).
-                low = self.arena.groundZ(new[0], new[1], pos[2] + 1.0)
+                low = self.arena.floorUnder(new[0], new[1], pos[2], 1.0)
                 if low is not None and low < pos[2]:
                     z = low
             new.setZ(z if z is not None else pos[2])
@@ -720,6 +742,9 @@ class SurvivalCog:
         """Whether the cog's body can go length along direction: the walk
         and its front edge (the cog's own radius further on)."""
         pos = self.pos
+        if self.arena.big:
+            ahead = Point3(pos + direction * length)
+            return self.arena.clearLine(Point3(pos[0], pos[1], pos[2] + 2), Point3(ahead[0], ahead[1], pos[2] + 2))
         reach = length + min(self.radius, BODY_LEAD)
         return self.arena.bodyClear(pos, Point3(pos[0] + direction[0] * reach, pos[1] + direction[1] * reach, pos[2]),
                                     min(self.radius * 0.6, BODY_LEAD))
@@ -772,6 +797,10 @@ class SurvivalCog:
         was measured flat, so a cog on the dry harbour bed under Donald's
         Dock's docks, or down in Melodyland's bowl, hit the toon standing
         above it (Arthur: hurt and knocked down out of nowhere)."""
+        if self.arena.big:
+            # A big map's floors: a toon on the balcony or the stairs
+            # overhead is out of reach; railings don't stop a swing.
+            return abs(target[2] - self.pos[2]) < 4.0
         if abs(target[2] - self.pos[2]) > G.COG_REACH_RISE:
             return False
         return self.arena.bodyClear(Point3(self.pos), Point3(target))

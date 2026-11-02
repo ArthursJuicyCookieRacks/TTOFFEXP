@@ -131,19 +131,19 @@ MAPS['farewell_fair'] = {
     'picture': 'phase_4/maps/survival_map_farewell_fair.jpg',
     'preview': 'farewell_fair',
 }
-# The big maps (bigmaps/), test-only until Arthur adds them to Map Select.
+# The big maps (bigmaps/), built room by room with doors to buy.
 MAPS['theater'] = {
-    'title': 'Kino der Toonen',
+    'title': 'Toon Theater',
     'description': 'An old picture theater the cogs turned into a laboratory. Buy your way through the rooms, '
                    'turn on the power on the stage and teleport up to the projection booth, where Mickey waits.',
-    'picture': 'phase_4/maps/survival_map_farewell_fair.jpg',
+    'picture': 'phase_4/maps/survival_map_theater.jpg',
     'preview': 'theater',
 }
 MAPS['factory'] = {
-    'title': 'Der Toonen Riese',
-    'description': 'A cog gag factory deep in the snow. Get the power on in the courtyard, link the three teleporters '
+    'title': 'Cog Nation',
+    'description': 'A grimy cog gag factory that never stops running. Get the power on in the courtyard, link the three teleporters '
                    'at the mainframe and the shutter on Mickey\'s gag upgrade rolls up.',
-    'picture': 'phase_4/maps/survival_map_farewell_fair.jpg',
+    'picture': 'phase_4/maps/survival_map_factory.jpg',
     'preview': 'factory',
 }
 # The other playgrounds, straight from their DNA like Toontown Central,
@@ -155,7 +155,8 @@ MAPS.update(HOOD_MAPS)
 MAP_STATION_CLEAR = 10.0
 
 # The order the Map Select menu lists them in.
-MAP_ORDER = ('ttc', 'beta_ttc', 'downsizer', 'farewell_fair', 'brrrgh', 'melodyland', 'dock', 'sellbot_hq', 'bossbot_hq')
+MAP_ORDER = ('ttc', 'beta_ttc', 'downsizer', 'farewell_fair', 'brrrgh', 'melodyland', 'dock', 'sellbot_hq', 'bossbot_hq',
+             'theater', 'factory')
 
 
 def mapName():
@@ -574,6 +575,12 @@ class SurvivalArena:
             if best is None or hitZ > best:
                 best = hitZ
         return best
+
+    def floorUnder(self, x, y, z, above):
+        """The floor under something at height z: on a big map, the one
+        just below it (not the floor upstairs over its head); on the other
+        maps the highest one, as always."""
+        return self.groundZ(x, y, z + above) if self.big else self.groundZ(x, y)
 
     def rayHit(self, origin, direction, maxDist):
         """The first wall or floor along the line: (distance, point) or None."""

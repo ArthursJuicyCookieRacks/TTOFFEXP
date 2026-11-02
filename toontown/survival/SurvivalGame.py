@@ -405,7 +405,7 @@ class SurvivalGame(DirectObject):
             pos = self.lastPop
             if pos is None or now - self.toonadoAt < 1.0:
                 pos = self.player.getPos() + self.player.getFlatForward() * 5.0
-                ground = self.arena.groundZ(pos[0], pos[1], pos[2] + 3.0)
+                ground = self.arena.floorUnder(pos[0], pos[1], pos[2], 3.0)
                 if ground is not None and abs(ground - pos[2]) < 4.0:
                     pos.setZ(ground)
                 else:

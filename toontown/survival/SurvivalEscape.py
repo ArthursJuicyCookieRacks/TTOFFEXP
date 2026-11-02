@@ -70,7 +70,7 @@ class TrolleyRide:
         toon.setPickable(0)
         toon.reparentTo(game.arena.root)
         pos = game.player.getPos()
-        toon.setPos(pos[0], pos[1], game.arena.groundZ(pos[0], pos[1], pos[2] + 2.0) or pos[2])
+        toon.setPos(pos[0], pos[1], game.arena.floorUnder(pos[0], pos[1], pos[2], 2.0) or pos[2])
         toon.setH(game.player.getH())
         toon.nametag3d.stash()
         toon.startBlink()

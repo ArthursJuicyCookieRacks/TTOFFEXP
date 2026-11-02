@@ -1097,7 +1097,7 @@ class GagHandler:
         if cog is not None:
             point = Point3(cog.pos)
         else:
-            z = self.game.arena.groundZ(point[0], point[1], point[2] + 3.0)
+            z = self.game.arena.floorUnder(point[0], point[1], point[2], 3.0)
             if z is not None:
                 point = Point3(point[0], point[1], z)
         prop = BattleProps.globalPropPool.getProp(gag.prop)
@@ -1140,7 +1140,7 @@ class GagHandler:
             point = Point3(cog.pos)
             height = cog.height
         else:
-            z = self.game.arena.groundZ(point[0], point[1], point[2] + 3.0)
+            z = self.game.arena.floorUnder(point[0], point[1], point[2], 3.0)
             if z is not None:
                 point = Point3(point[0], point[1], z)
             height = 6.0
@@ -1369,7 +1369,7 @@ class GagHandler:
                 if hit is not None and hit[0] < (new - old).length() + 0.3:
                     # A wall or the ground: bounce, losing most of the speed.
                     point = hit[1]
-                    ground = arena.groundZ(point[0], point[1], point[2] + 1.0)
+                    ground = arena.floorUnder(point[0], point[1], point[2], 1.0)
                     if ground is not None and abs(point[2] - ground) < 0.6:
                         vel.setZ(-vel[2] * 0.3)
                         vel.setX(vel[0] * 0.5)
@@ -1385,7 +1385,7 @@ class GagHandler:
                 if not item['rest']:
                     # A fast stick can pass the floor between two frames:
                     # never below the ground, where it can't be seen.
-                    floor = arena.groundZ(new[0], new[1], old[2] + 1.0)
+                    floor = arena.floorUnder(new[0], new[1], old[2], 1.0)
                     if floor is not None and new[2] < floor + 0.25 and old[2] >= floor - 0.5:
                         new.setZ(floor + 0.25)
                         vel.setZ(abs(vel[2]) * 0.3)
@@ -1458,7 +1458,7 @@ class GagHandler:
         eye = self.player.getEye()
         forward = self.player.getForward()
         point, dist, cog = self.aimPoint(eye, forward, 35.0)
-        z = self.game.arena.groundZ(point[0], point[1], point[2] + 3.0)
+        z = self.game.arena.floorUnder(point[0], point[1], point[2], 3.0)
         if z is not None:
             point = Point3(point[0], point[1], z)
         # The battle's own Presentation: the slide show flies out small,

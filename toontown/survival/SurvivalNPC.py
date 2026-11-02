@@ -389,7 +389,7 @@ class SurvivalNPC:
             self.nextPath = 0.0
             if not self.arena.bodyClear(self.pos, nxt + side * BODY_LEAD):
                 return
-        z = self.arena.groundZ(nxt[0], nxt[1], self.pos[2] + 4.0)
+        z = self.arena.floorUnder(nxt[0], nxt[1], self.pos[2], 4.0)
         if z is None or z < self.pos[2] - 4 or z > self.pos[2] + 4:
             self.nextPath = 0.0
             return

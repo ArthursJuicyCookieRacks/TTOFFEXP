@@ -65,7 +65,7 @@ TELEPORT_COOL = 60.0
 
 class Factory(Building):
     KEY = 'factory'
-    TITLE = 'Der Toonen Riese'
+    TITLE = 'Cog Nation'
     DESCRIPTION = 'A cog gag factory with three teleporters and a mainframe.'
     PLAYER_START = (Point3(0, -28, 0), 0)
     MICKEY_SPOT = (Point3(0, 33, 0), 180)

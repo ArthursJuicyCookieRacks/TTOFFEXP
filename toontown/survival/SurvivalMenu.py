@@ -68,6 +68,10 @@ ROW = (0.1, 0.01, 0.01, 0.85)
 ROW_LIT = (1, 1, 1, 1)
 
 
+# Map Select lists this many maps on a page.
+PER_PAGE = 7
+
+
 class SurvivalMapSelect(DirectObject):
     """Map Select: the maps listed on the left; the one under the pointer
     lights up and shows its name, a picture and a few words on the right.
@@ -91,19 +95,20 @@ class SurvivalMapSelect(DirectObject):
         DirectFrame(parent=self.frame, relief=DGG.FLAT, frameColor=HEADER, frameSize=(-1.3, 1.3, 0.6, 0.8))
         OnscreenText(parent=self.frame, text=TTLocalizer.SurvivalMapSelect, font=sign, fg=(1, 1, 1, 1), shadow=(0, 0, 0, 1),
                      scale=0.1, pos=(-1.22, 0.665), align=TextNode.ALeft)
+        # The maps go on pages of PER_PAGE; Next turns the page, and from
+        # the last page it goes round to the first again.
         self.rows = []
-        # The rows close up (and their text shrinks a little) so a longer
-        # list still fits between the header and the Back button.
-        step = min(0.14, 0.97 / max(1, len(self.maps) - 1))
-        squeeze = step / 0.14
-        for i, (key, info) in enumerate(self.maps):
-            row = DirectButton(parent=self.frame, relief=DGG.FLAT, frameColor=ROW,
-                               frameSize=(-0.05, 1.05, -0.045 * squeeze, 0.075 * squeeze - 0.008 * (squeeze < 1)),
-                               text=info['title'].upper(), text_font=face, text_fg=(1, 1, 1, 1), text_scale=0.065 * max(0.85, squeeze),
-                               text_align=TextNode.ALeft, pos=(-1.2, 0, 0.42 - step * i),
-                               command=self.__click, extraArgs=[i])
-            row.bind(DGG.ENTER, self.__hover, [i])
-            self.rows.append(row)
+        self.page = 0
+        self.pages = max(1, (len(self.maps) + PER_PAGE - 1) // PER_PAGE)
+        self.history = []
+        self.pageText = OnscreenText(parent=self.frame, text='', font=face, fg=(1, 1, 1, 0.8), shadow=(0, 0, 0, 1),
+                                     scale=0.05, pos=(1.22, -0.7), align=TextNode.ARight)
+        # The X at the top right closes Map Select.
+        buttons = loader.loadModel('phase_3/models/gui/dialog_box_buttons_gui')
+        self.closeButton = DirectButton(parent=self.frame, relief=None, image=(buttons.find('**/CloseBtn_UP'),
+                                        buttons.find('**/CloseBtn_DN'), buttons.find('**/CloseBtn_Rllvr')),
+                                        image_scale=1.25, pos=(1.2, 0, 0.7), command=self.__close)
+        buttons.removeNode()
         self.title = OnscreenText(parent=self.frame, text='', font=sign, fg=(1, 1, 1, 1), shadow=(0, 0, 0, 1),
                                   scale=0.1, pos=(0.62, 0.43))
         # The picture is 16:9, the screenshots' own shape.
@@ -112,18 +117,62 @@ class SurvivalMapSelect(DirectObject):
                                         scale=0.048, pos=(0.62, -0.4), wordwrap=23, align=TextNode.ACenter)
         gui = loader.loadModel('phase_3/models/gui/quit_button')
         up, down, over = gui.find('**/QuitBtn_UP'), gui.find('**/QuitBtn_DN'), gui.find('**/QuitBtn_RLVR')
-        self.backButton = DirectButton(parent=self.frame, relief=None, image=(up, down, over), image_scale=(1.1, 1, 1.2),
+        self.backButton = DirectButton(parent=self.frame, relief=None, image=(up, down, over, up), image_scale=(1.1, 1, 1.2),
                                        text=TTLocalizer.SurvivalBack, text_font=sign, text_fg=(1, 0.95, 0.4, 1), text_scale=0.07,
                                        text_pos=(0, -0.02), pos=(-1.0, 0, -0.68), command=self.__back)
+        self.nextButton = DirectButton(parent=self.frame, relief=None, image=(up, down, over), image_scale=(1.1, 1, 1.2),
+                                       text=TTLocalizer.SurvivalNextPage, text_font=sign, text_fg=(1, 0.95, 0.4, 1),
+                                       text_scale=0.07, text_pos=(0, -0.02), pos=(-0.52, 0, -0.68), command=self.__nextPage)
+        if self.pages < 2:
+            self.nextButton.hide()
         gui.removeNode()
-        self.__light(0)
+        self.__showPage(0)
+        self.__updateBack()
+
+    def __showPage(self, page):
+        """Lists one page of maps and lights its first."""
+        face = ToontownGlobals.getInterfaceFont()
+        self.page = page
+        for row in self.rows:
+            row.destroy()
+        self.rows = []
+        first = page * PER_PAGE
+        shown = self.maps[first:first + PER_PAGE]
+        step = 0.14
+        for n, (key, info) in enumerate(shown):
+            i = first + n
+            row = DirectButton(parent=self.frame, relief=DGG.FLAT, frameColor=ROW, frameSize=(-0.05, 1.05, -0.045, 0.075),
+                               text=info['title'].upper(), text_font=face, text_fg=(1, 1, 1, 1), text_scale=0.065,
+                               text_align=TextNode.ALeft, pos=(-1.2, 0, 0.42 - step * n),
+                               command=self.__click, extraArgs=[i])
+            row.bind(DGG.ENTER, self.__hover, [i])
+            self.rows.append(row)
+        self.pageText.setText('%d / %d' % (page + 1, self.pages) if self.pages > 1 else '')
+        self.lit = None
+        self.__light(first)
+
+    def __nextPage(self):
+        if self.timePopup:
+            return
+        self.history.append(self.page)
+        self.__showPage((self.page + 1) % self.pages)
+        self.__updateBack()
+
+    def __updateBack(self):
+        """Back goes to the page looked at before; with none, it is greyed."""
+        if self.history:
+            self.backButton['state'] = DGG.NORMAL
+            self.backButton.setColorScale(1, 1, 1, 1)
+        else:
+            self.backButton['state'] = DGG.DISABLED
+            self.backButton.setColorScale(0.55, 0.55, 0.55, 1)
 
     def __light(self, i):
         if i == self.lit:
             return
         self.lit = i
         for j, row in enumerate(self.rows):
-            on = j == i
+            on = self.page * PER_PAGE + j == i
             row['frameColor'] = ROW_LIT if on else ROW
             row['text_fg'] = (0, 0, 0, 1) if on else (1, 1, 1, 1)
         key, info = self.maps[i]
@@ -177,9 +226,18 @@ class SurvivalMapSelect(DirectObject):
         messenger.send(self.doneEvent, [{'mode': 'play', 'npcs': self.npcs, 'map': key, 'night': night}])
 
     def __back(self):
+        """Back: the page looked at before this one."""
         if self.timePopup:
             self.__closeTime()
             return
+        if self.history:
+            self.__showPage(self.history.pop())
+            self.__updateBack()
+
+    def __close(self):
+        """The X: out of Map Select."""
+        if self.timePopup:
+            self.__closeTime()
         messenger.send(self.doneEvent, [{'mode': 'back', 'npcs': self.npcs}])
 
     def destroy(self):
