@@ -106,9 +106,12 @@ class SurvivalHUD:
             track.pause()
             holder.removeNode()
         self.beanPops = []
-        for track in (self.noticeTrack, self.hurtTrack, self.reloadTrack):
+        for track in (self.noticeTrack, self.hurtTrack, self.reloadTrack, getattr(self, 'roundTrack', None)):
             if track:
                 track.finish()
+        for track in getattr(self, 'shortTracks', []):
+            track.pause()
+        self.shortTracks = []
         self.closeCard()
         self.laff.stop()
         self.laff.destroy()
@@ -126,8 +129,14 @@ class SurvivalHUD:
         self.bigRound.setText(str(roundNum))
         self.bigRound.show()
         self.bigRound.setColorScale(1, 1, 1, 1)
-        Sequence(LerpScaleInterval(self.bigRound, 0.3, 0.6, startScale=0.3, blendType='easeOut'), Wait(1.4),
-                 LerpColorScaleInterval(self.bigRound, 0.8, Vec4(1, 1, 1, 0)), Func(self.bigRound.hide)).start()
+        # Kept, so quitting while it plays stops it: left running, its hide
+        # hit the destroyed number and closed the game on Android (Arthur,
+        # switching maps with a controller).
+        if getattr(self, 'roundTrack', None):
+            self.roundTrack.pause()
+        self.roundTrack = Sequence(LerpScaleInterval(self.bigRound, 0.3, 0.6, startScale=0.3, blendType='easeOut'), Wait(1.4),
+                                   LerpColorScaleInterval(self.bigRound, 0.8, Vec4(1, 1, 1, 0)), Func(self.bigRound.hide))
+        self.roundTrack.start()
 
     def setLaff(self, hp, maxHp):
         self.laff.adjustFace(int(round(hp)), int(maxHp), quietly=1)
@@ -359,14 +368,20 @@ class SurvivalHUD:
         if self.game.player is None:
             return
         head = self.game.player.head
-        Sequence(LerpPosInterval(head, 0.05, Point3(0, 0, G.EYE_HEIGHT - 0.25)), LerpPosInterval(head, 0.1, Point3(0, 0, G.EYE_HEIGHT))).start()
+        self.__short(Sequence(LerpPosInterval(head, 0.05, Point3(0, 0, G.EYE_HEIGHT - 0.25)), LerpPosInterval(head, 0.1, Point3(0, 0, G.EYE_HEIGHT))))
 
     def bonk(self):
-        Sequence(LerpScaleInterval(self.crosshair, 0.08, 1.6), LerpScaleInterval(self.crosshair, 0.12, 1.0)).start()
+        self.__short(Sequence(LerpScaleInterval(self.crosshair, 0.08, 1.6), LerpScaleInterval(self.crosshair, 0.12, 1.0)))
 
     def hitMarker(self, killed=False):
         self.crosshair.setColorScale(1, 0.3, 0.3, 1) if killed else self.crosshair.setColorScale(1, 1, 0.5, 1)
-        Sequence(Wait(0.12), Func(self.crosshair.setColorScale, 1, 1, 1, 1)).start()
+        self.__short(Sequence(Wait(0.12), Func(self.crosshair.setColorScale, 1, 1, 1, 1)))
+
+    def __short(self, track):
+        """A quick flourish, stopped with the HUD if it is still playing."""
+        self.shortTracks = [t for t in getattr(self, 'shortTracks', []) if t.isPlaying()]
+        self.shortTracks.append(track)
+        track.start()
 
     # --- Cards ---
 

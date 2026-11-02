@@ -399,15 +399,23 @@ class SurvivalPlayer(DirectObject):
             return
         win = base.win
         md = win.getPointer(0)
+        x, y = md.getX(), md.getY()
         cx, cy = win.getXSize() // 2, win.getYSize() // 2
         if not self.mouseCentered:
-            win.movePointer(0, cx, cy)
+            # A phone or TV box can't warp its pointer back to the middle
+            # (the controller's pointer is only told where it is), so the
+            # look is measured from wherever the pointer was last seen.
+            # Measured from the middle, a pointer left low on Map Select
+            # (the Cog HQ rows) turned the view every frame: the toon spun
+            # round and round, looking at the floor (Arthur, on a controller).
+            self.mouseLast = (cx, cy) if win.movePointer(0, cx, cy) else (x, y)
             self.mouseCentered = True
             return
-        dx, dy = md.getX() - cx, md.getY() - cy
+        lx, ly = self.mouseLast
+        dx, dy = x - lx, y - ly
         if dx or dy:
             self.lookDelta += Vec3(-dx * MOUSE_SENSITIVITY, -dy * MOUSE_SENSITIVITY, 0) * self.lookScale
-            win.movePointer(0, cx, cy)
+            self.mouseLast = (cx, cy) if win.movePointer(0, cx, cy) else (x, y)
 
     # --- Each frame ---
 
