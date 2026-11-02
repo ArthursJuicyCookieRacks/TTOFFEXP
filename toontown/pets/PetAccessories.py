@@ -226,19 +226,19 @@ for _model, (_top, _back, _s) in {23: (-0.22, 0.42, 0.5), 24: (-0.33, 0.43, 0.42
 # the few made facing the other way), and roll leans it to one side.
 BACK_FITS = {
     1: ('pack', 0.66, -0.013, 0.038, -8.0),  # backpack
-    2: ('wing', 0.95, 0.03, -0.05, -6.0, {'squeeze': 0.1, 'hug': 0.008, 'ease': 0.6, 'lift': 0.02}),  # batWings
-    3: ('wing', 0.85, -0.026, 0.0, -36.0, {'squeeze': 0.03, 'spread': 10.0, 'hug': 0.004, 'ease': 0.6, 'lift': 0.02}),  # beeWings
-    4: ('wing', 0.95, 0.06, 0.17, -24.0, {'squeeze': 0.1, 'hug': 0.004, 'ease': 0.6}),  # dragonFlyWings
+    2: ('wing', 1.09, 0.03, -0.05, -6.0, {'squeeze': 0.1, 'hug': 0.008, 'ease': 0.6, 'lift': 0.02}),  # batWings
+    3: ('wing', 0.98, -0.026, 0.0, -36.0, {'squeeze': 0.03, 'spread': 10.0, 'hug': 0.008, 'ease': 0.6, 'lift': 0.03}),  # beeWings
+    4: ('wing', 1.09, 0.06, 0.17, -24.0, {'squeeze': 0.1, 'hug': 0.004, 'ease': 0.6, 'lift': 0.02}),  # dragonFlyWings
     5: ('pack', 0.66, -0.085, 0.037, -8.0),  # scubaTank
     6: ('wing', 0.42, -0.2, 0.17, -8.0, {'hug': 0.003, 'lift': 0.02}),  # sharkFin, its base bent to lie on the back, its tip laid along the hips
-    7: ('wing', 0.8, -0.022, 0.0, -36.0, {'squeeze': 0.03, 'hug': 0.004, 'ease': 0.6, 'lift': 0.02}),  # angelWings
+    7: ('wing', 0.92, -0.022, 0.0, -36.0, {'squeeze': 0.03, 'hug': 0.004, 'ease': 0.6, 'lift': 0.02}),  # angelWings
     8: ('pack', 0.7, -0.026, 0.007, -8.0),  # backpackWithToys
-    9: ('wing', 0.8, 0.049, 0.2, -24.0, {'squeeze': 0.06, 'spread': 22.0, 'hug': 0.006, 'ease': 0.6, 'lift': 0.02}),  # butterflyWings, opened into a V
-    10: ('wing', 0.85, -0.012, 0.12, -36.0, {'squeeze': 0.1, 'open': 45.0, 'spread': 10.0, 'hug': 0.004, 'ease': 0.6, 'lift': 0.02}),  # dragonWing, swung open
+    9: ('wing', 0.92, 0.049, 0.2, -24.0, {'squeeze': 0.06, 'spread': 22.0, 'hug': 0.006, 'ease': 0.6, 'lift': 0.02}),  # butterflyWings, opened into a V
+    10: ('wing', 0.98, -0.012, 0.12, -36.0, {'squeeze': 0.1, 'open': 45.0, 'spread': 10.0, 'hug': 0.004, 'ease': 0.6, 'lift': 0.02}),  # dragonWing, swung open
     11: ('pack', 0.7, -0.003, 0.02, -8.0),  # jetPack
     12: ('wing', 0.8, 0.04, 0.3, 0.0, 0.1),  # spiderLegs
     13: ('pack', 0.665, -0.026, 0.04, -8.0),  # stuffedAnimalBackpackA
-    14: ('wing', 0.95, 0.009, 0.0, -12.0, {'squeeze': 0.1, 'hug': 0.004, 'ease': 0.6, 'lift': 0.02}),  # birdWings
+    14: ('wing', 1.09, 0.009, 0.0, -12.0, {'squeeze': 0.1, 'hug': 0.004, 'ease': 0.6, 'lift': 0.02}),  # birdWings
     15: ('pack', 0.66, -0.025, 0.04, -8.0),  # stuffedAnimalBackpackCat
     16: ('pack', 0.665, -0.017, 0.04, -8.0),  # stuffedAnimalBackpackDog
     17: ('wing', 1.1, 0.06, 0.14, -24.0),  # airplane
