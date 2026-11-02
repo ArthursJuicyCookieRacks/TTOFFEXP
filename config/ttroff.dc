@@ -2547,6 +2547,8 @@ dclass DistributedNPCPetclerk : DistributedNPCToonBase {
   setMovie(uint8 mode, uint32 npcId, uint32 avId, uint32 extraArgs[], int16 timestamp) broadcast ram;
   setPetSeeds(uint32 petSeeds[]);
   petAdopted(uint8 petNum, uint32 nameIndex) airecv clsend;
+  petBuilt(int8 dna[], uint8 traitLevels[], string name, uint8 accessories[]) airecv clsend;
+  petRestyled(string name, uint8 accessories[]) airecv clsend;
   petReturned() airecv clsend;
   fishSold() airecv clsend;
   transactionDone() airecv clsend;
@@ -3101,6 +3103,7 @@ dclass DistributedPet : DistributedSmoothNode {
   teleportIn(int16) broadcast ownsend;
   teleportOut(int16) broadcast ownsend;
   setTrickAptitudes(uint16/10000(0-1) []) required broadcast db;
+  setAccessories(uint8[]) required broadcast db;
   doTrick(uint8, int16) broadcast ram;
   avatarInteract(uint32);
   setMovie(uint8, uint32, int16) broadcast ram;

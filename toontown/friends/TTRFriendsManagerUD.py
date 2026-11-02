@@ -28,8 +28,9 @@ class GetToonDataFSM(FSM):
         self.mgr.air.dbInterface.queryObject(self.mgr.air.dbId, self.avId, self.__queryResponse)
 
     def __queryResponse(self, dclass, fields):
-        petDclass = self.mgr.air.dclassesByName.get('DistributedPetUD') or self.mgr.air.dclassesByName.get('DistributedPet')
-        if dclass == petDclass:
+        # The uberdog has no DistributedPetUD, so the pet's dclass is filed
+        # under another suffix; go by the dclass's own name.
+        if dclass is not None and dclass.getName() == 'DistributedPet':
             # A toon's pet; the friends list shows it, too.
             self.fields = fields
             self.fields['ID'] = self.avId
@@ -52,7 +53,7 @@ class GetToonDataFSM(FSM):
 
     def enterFailure(self, reason):
         self.mgr.notify.warning(reason)
-        self.callback(success=False, requesterId=None, fields=None)
+        self.callback(success=False, requesterId=self.requesterId, fields=None)
 
 class UpdateToonFieldFSM(FSM):
     """
@@ -226,7 +227,7 @@ class TTRFriendsManagerUD(DistributedObjectGlobalUD):
         fsm = self.fsms.get(requesterId)
         if not fsm:
             # Just print debug incase we ever have issues.
-            self.notify.debug('%d tried to delete non-existent FSM!' % requesterId)
+            self.notify.debug('%s tried to delete non-existent FSM!' % requesterId)
             return
         if fsm.state != 'Off':
             fsm.demand('Off')

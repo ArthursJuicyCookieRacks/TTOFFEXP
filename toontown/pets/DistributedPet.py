@@ -207,7 +207,9 @@ class DistributedPet(DistributedSmoothNode.DistributedSmoothNode, Pet.Pet, PetBa
         DistributedSmoothNode.DistributedSmoothNode.announceGenerate(self)
         if hasattr(self, 'petName'):
             Pet.Pet.setName(self, self.petName)
-        self.traits = PetTraits.PetTraits(self.traitSeed, self.safeZone)
+        # A doodle built in the pet shop has traits of its own, so they come
+        # from its saved values rather than from its trait seed.
+        self.traits = PetTraits.PetTraits(self.traitSeed, self.safeZone, traitValueList=self.traitList)
         self.mood = PetMood.PetMood(self)
         for mood, value in list(self.requiredMoodComponents.items()):
             self.mood.setComponent(mood, value, announce=0)
@@ -223,6 +225,7 @@ class DistributedPet(DistributedSmoothNode.DistributedSmoothNode, Pet.Pet, PetBa
          self.colorScale,
          self.eyeColor,
          self.gender])
+        self.setAccessoriesLook(self.accessories)
         av = self.cr.doId2do.get(self.ownerId)
         if av:
             av.petDNA = self.style
@@ -491,3 +494,10 @@ class DistributedPet(DistributedSmoothNode.DistributedSmoothNode, Pet.Pet, PetBa
 
     def setTrickAptitudes(self, aptitudes):
         self.trickAptitudes = aptitudes
+
+    def setAccessories(self, accessories):
+        # The toon accessories this doodle wears; they go on its model once
+        # it is built (announceGenerate), or right away if it is already.
+        self.accessories = list(accessories)
+        if self.isGenerated() and self.style:
+            self.setAccessoriesLook(self.accessories)

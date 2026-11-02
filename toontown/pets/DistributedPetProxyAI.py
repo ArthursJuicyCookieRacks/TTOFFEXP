@@ -29,6 +29,7 @@ class DistributedPetProxyAI(DistributedObjectAI.DistributedObjectAI):
         self.eyeColor = 0
         self.gender = 0
         self.trickAptitudes = []
+        self.accessories = [0, 0, 0, 0, 0, 0]
         self.lastSeenTimestamp = self.getCurEpochTimestamp()
         self.requiredMoodComponents = {}
         self.__funcsToDelete = []
@@ -313,6 +314,19 @@ class DistributedPetProxyAI(DistributedObjectAI.DistributedObjectAI):
     def getTrickAptitudes(self):
         return self.trickAptitudes
 
+    def getAccessories(self):
+        return self.accessories
+
+    def b_setAccessories(self, accessories):
+        self.setAccessories(accessories)
+        self.d_setAccessories(accessories)
+
+    def d_setAccessories(self, accessories):
+        self.sendUpdate('setAccessories', [accessories])
+
+    def setAccessories(self, accessories):
+        self.accessories = list(accessories)
+
     def b_setTrickAptitudes(self, aptitudes):
         self.setTrickAptitudes(aptitudes, local=1)
         self.d_setTrickAptitudes(aptitudes)
@@ -369,6 +383,7 @@ class DistributedPetProxyAI(DistributedObjectAI.DistributedObjectAI):
                 setterName = self.getSetterName(traitName, 'b_set')
                 self.__dict__[setterName](traitValue)
 
+        self.traits = PetTraits.PetTraits(self.traitSeed, self.safeZone, traitValueList=self.traitList)
         self.mood = PetMood.PetMood(self)
         for mood, value in list(self.requiredMoodComponents.items()):
             self.mood.setComponent(mood, value, announce=0)

@@ -447,6 +447,11 @@ class ToontownClientRepository(OTPClientRepository.OTPClientRepository):
         for currentField in fields:
             getattr(pad.avatar, currentField[0])(currentField[1])
 
+        if dclassName == 'DistributedPet' and getattr(pad.avatar, 'bFake', False):
+            # A doodle's details holder builds its looks and mood when it is
+            # generated, as updateAllRequiredFields used to do.
+            pad.avatar.announceGenerate()
+
         gotData = 1
 
 

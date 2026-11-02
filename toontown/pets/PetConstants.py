@@ -40,7 +40,8 @@ HappyRotSpeed = RotSpeed * _HappyMult
 _SadMult = 0.3
 SadFwdSpeed = FwdSpeed * _SadMult
 SadRotSpeed = RotSpeed * _SadMult
-PETCLERK_TIMER = 180
+# Building a doodle of your own takes longer than picking one did.
+PETCLERK_TIMER = 600
 PET_MOVIE_CLEAR = 0
 PET_MOVIE_START = 1
 PET_MOVIE_COMPLETE = 2

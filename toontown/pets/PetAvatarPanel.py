@@ -279,6 +279,7 @@ class PetAvatarPanel(AvatarPanel.AvatarPanel):
         self.petModel = Pet.Pet(forGui=1)
         self.petModel.setDNA(avatar.getDNA())
         self.petModel.fitAndCenterHead(3.575, forGui=1)
+        self.petModel.setAccessoriesLook(getattr(avatar, 'accessories', []))
         self.petModel.reparentTo(self.petView)
         self.petModel.enterNeutralHappy()
         self.petModel.startBlink()

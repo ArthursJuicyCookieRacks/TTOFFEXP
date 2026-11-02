@@ -2035,6 +2035,164 @@ def restock(air, avId):
     av.b_setInventory(av.inventory.makeNetString())
 
 
+def scenarioPetBuild():
+    # Builds a doodle in the Donald's Dreamland pet shop with the Build a
+    # Doodle screen (its looks, traits, a typed name and accessories), meets
+    # it on the estate wearing them, then restyles it.
+    from toontown.building.PetshopBuildingAI import PetshopBuildingAI
+    from toontown.pets import PetAccessories, PetCreatorGUI, PetDNA
+    shots = os.environ.get('AUTOPLAY_SHOTS', '/tmp')
+
+    def shot(name):
+        base.graphicsEngine.renderFrame()
+        base.graphicsEngine.renderFrame()
+        base.screenshot(os.path.join(shots, 'petbuild-%s.png' % name), defaultFilename=0)
+
+    def petshopBlock(air, hood):
+        buildings = air.buildingManagers[hood]._DistributedBuildingMgrAI__buildings
+        return next(block for block, building in buildings.items() if isinstance(building, PetshopBuildingAI))
+
+    def giveBeans(air, avId):
+        av = air.doId2do[avId]
+        av.b_setMoney(av.getMaxMoney())
+        av.b_setBankMoney(av.getMaxBankMoney())
+
+    record = {}
+
+    def askPetRecord(air, avId):
+        record.clear()
+        air.dbInterface.queryObject(air.dbId, air.doId2do[avId].getPetId(),
+                                    lambda dclass, fields: record.update(fields or {'missing': True}))
+
+    def readPetRecord():
+        onDistrict(askPetRecord, localAvatar.doId)
+        yield until(lambda: record, 30, "the doodle's database record")
+
+    hood = int(os.environ.get('AUTOPLAY_PETSHOP', ToontownGlobals.DonaldsDreamland))
+    yield from teleport(hood)
+    onDistrict(giveBeans, localAvatar.doId)
+    block = onDistrict(petshopBlock, hood)
+    door = lambda doorType: findObject('DistributedDoor', lambda do: do.block == block and do.doorType == doorType)
+
+    def openShop():
+        yield until(lambda: door(DoorTypes.EXT_STANDARD), 60, 'the pet shop door')
+        yield sleep(2)
+        messenger.send(door(DoorTypes.EXT_STANDARD).getEnterTriggerEvent(), [None])
+        yield until(lambda: findObject('DistributedNPCPetclerk') and walking(), 120, 'walking in the pet shop')
+        clerk = findObject('DistributedNPCPetclerk')
+        clerk.handleCollisionSphereEnter(None)
+        yield until(lambda: getattr(clerk, 'petshopGui', None) is not None, 30, 'the pet shop')
+        yield sleep(1.5)
+
+    yield from openShop()
+    clerk = findObject('DistributedNPCPetclerk')
+    shot('01-menu')
+    gui = clerk.petshopGui
+    gui.dialog.adoptPetButton.commandFunc(None)
+    yield until(lambda: isinstance(gui.dialog, PetCreatorGUI.PetCreatorGUI), 10, 'the Build a Doodle screen')
+    screen = gui.dialog
+    yield sleep(1)
+    shot('02-looks')
+    change = screen._PetCreatorGUI__changeLook
+    for field, steps in (('body', 6), ('color', 3), ('ears', 2), ('nose', 1), ('tail', 2), ('eyes', 2)):
+        for i in range(steps):
+            change(field, 1)
+    yield sleep(0.5)
+    shot('03-looks-changed')
+    screen._PetCreatorGUI__showTab(PetCreatorGUI.TAB_TRAITS)
+    for i in range(13):
+        for step in range(3):
+            screen._PetCreatorGUI__changeTrait(i, 1)
+    yield sleep(0.5)
+    shot('04-traits-best')
+    screen._PetCreatorGUI__showTab(PetCreatorGUI.TAB_NAME)
+    screen.nameEntry.enterText('Sir Wiggles')
+    screen._PetCreatorGUI__nameTyped()
+    yield sleep(0.5)
+    shot('05-name')
+    screen._PetCreatorGUI__showTab(PetCreatorGUI.TAB_WEAR)
+    hats = PetAccessories.getChoices(PetAccessories.HAT)
+    screen._PetCreatorGUI__turnWearPage(1)
+    screen._PetCreatorGUI__pickTile(2)
+    yield sleep(0.5)
+    shot('06-wear-hat')
+    screen._PetCreatorGUI__showWearKind(PetAccessories.GLASSES)
+    screen._PetCreatorGUI__pickTile(3)
+    screen._PetCreatorGUI__showWearKind(PetAccessories.BACKPACK)
+    screen._PetCreatorGUI__pickTile(6)
+    yield sleep(0.5)
+    shot('07-wear-all')
+    for turn in range(4):
+        screen._PetCreatorGUI__turnPet(90)
+        yield sleep(0.6)
+        shot('08-turn-%d' % turn)
+    built = (list(screen.dna), list(screen.traitLevels), list(screen.accessories), screen.getCost())
+    log('building', built)
+    money = localAvatar.getTotalMoney()
+    screen.okButton.commandFunc(None)
+    yield sleep(0.5)
+    shot('09-confirm')
+    screen._PetCreatorGUI__confirmed(1)
+    yield until(localAvatar.hasPet, 30, 'owning the built doodle')
+    yield until(lambda: localAvatar.getTotalMoney() == money - built[3], 10, 'paying %d jellybeans' % built[3])
+    log('built doodle %d for %d jellybeans' % (localAvatar.getPetId(), built[3]))
+    yield from readPetRecord()
+    fields = dict(record)
+    log('saved doodle:', {k: fields.get(k) for k in ('setPetName', 'setAccessories', 'setBodyTexture', 'setForgetfulness')})
+    if list(fields.get('setPetName', [None]))[:1] != ['Sir Wiggles'] or list(fields.get('setAccessories', [[]])[0]) != built[2]:
+        raise StepFailed('the doodle was saved wrong: %s' % fields)
+    yield until(walking, 60, 'walking after adopting')
+    yield sleep(2)
+
+    log('going home to meet the doodle')
+    place().goHomeNow(localAvatar.zoneId)
+    yield until(lambda: placeName() == 'Estate' and placeState() in ('walk', 'petTutorial'), 180, 'arriving at the estate')
+    if placeState() == 'petTutorial':
+        yield sleep(2)
+        place().petTutorial._PetTutorial__handleQuit()
+    yield until(walking, 60, 'walking around the estate')
+    petId = localAvatar.getPetId()
+    yield until(lambda: petId in base.cr.doId2do, 60, 'the doodle on the estate')
+    pet = base.cr.doId2do[petId]
+    log('the doodle %s wears %s, traits %s' % (pet.getName(), pet.accessories, pet.traitList))
+    if list(pet.accessories) != built[2] or len(pet.accessoryNodes) != 3:
+        raise StepFailed('the doodle is not wearing its accessories')
+    yield sleep(3)
+    localAvatar.setPos(pet.getPos(render) + Vec3(0, -6, 0))
+    localAvatar.headsUp(pet)
+    yield sleep(1)
+    shotFrom('petbuild-10-estate.png', pet.getPos(render) + pet.getQuat(render).getForward() * 7 + Vec3(0, 0, 2.5),
+             pet.getPos(render) + Vec3(0, 0, 1.2))
+
+    log('back to the pet shop to restyle it')
+    yield from teleport(hood)
+    yield from openShop()
+    clerk = findObject('DistributedNPCPetclerk')
+    gui = clerk.petshopGui
+    gui.dialog.restylePetButton.commandFunc(None)
+    yield until(lambda: getattr(gui.dialog, 'screen', None) is not None, 30, 'the Restyle screen')
+    screen = gui.dialog.screen
+    yield sleep(1)
+    shot('11-restyle')
+    screen._PetCreatorGUI__showTab(PetCreatorGUI.TAB_WEAR)
+    screen._PetCreatorGUI__pickTile(9)
+    screen.nameEntry.enterText('Lady Wiggles')
+    screen._PetCreatorGUI__nameTyped()
+    yield sleep(0.5)
+    shot('12-restyle-changed')
+    restyled = list(screen.accessories)
+    screen._PetCreatorGUI__confirmed(1)
+    yield sleep(2)
+    yield from readPetRecord()
+    fields = dict(record)
+    if list(fields.get('setPetName', [None]))[:1] != ['Lady Wiggles']:
+        raise StepFailed('the restyled name was not saved: %s' % fields.get('setPetName'))
+    if list(fields['setAccessories'][0]) != restyled:
+        raise StepFailed('the restyle saved %s, not %s' % (fields['setAccessories'], restyled))
+    log('restyled doodle:', fields['setPetName'], fields['setAccessories'])
+    yield until(walking, 60, 'walking after restyling')
+
+
 def scenarioPets():
     # Adopts a doodle at the Toontown Central pet shop, then meets it on the
     # estate and plays with it.
@@ -4621,6 +4779,7 @@ SCENARIOS = [
     ('racing', scenarioRacing),
     ('golf', scenarioGolf),
     ('pets', scenarioPets),
+    ('petbuild', scenarioPetBuild),
     ('toonhall', scenarioToonHall),
     ('holidays', scenarioHolidays),
     ('toonfest', scenarioToonfest),

@@ -16,6 +16,7 @@ from toontown.pets import PetUtil
 from toontown.pets import PetDetail
 from toontown.pets import PetTraits
 from toontown.pets import PetNameGenerator
+from toontown.pets import PetCreatorGUI
 from toontown.hood import ZoneUtil
 import string
 import random
@@ -26,6 +27,8 @@ Dialog_ReturnPet = 3
 Dialog_SellFish = 4
 Dialog_NamePicker = 5
 Dialog_GoHome = 6
+Dialog_PetCreator = 7
+Dialog_PetRestyle = 8
 disabledImageColor = Vec4(0.6, 0.6, 0.6, 1)
 text0Color = Vec4(0.65, 0, 0.87, 1)
 text1Color = Vec4(0.65, 0, 0.87, 1)
@@ -203,8 +206,55 @@ class PetshopGUI(DirectObject):
             self.returnPetButton = DirectButton(parent=self, relief=None, image=returnImageList, geom=pawLogoReturnImageList, image3_color=disabledImageColor, scale=(modelScale, modelScale, modelScale), text=TTLocalizer.PetshopReturnPet, text_scale=textScale, text_pos=(-0.6, 9.2), text0_fg=text2Color, text1_fg=text2Color, text2_fg=text0Color, text3_fg=text3Color, pressEffect=False, command=lambda : messenger.send(doneEvent, [3]))
             if not base.localAvatar.hasPet():
                 self.returnPetButton['state'] = DGG.DISABLED
+            # Restyling: a new name and accessories for the toon's doodle.
+            nameGui = loader.loadModel('phase_4/models/gui/PetNamePanel')
+            restyleArt = []
+            for name in ('SubmitUpButton', 'SubmitDownButton', 'SubmitRolloverButton', 'SubmitUpButton'):
+                holder = NodePath(name)
+                inner = holder.attachNewNode('inner')
+                nameGui.find('**/' + name).copyTo(inner)
+                lo, hi = inner.getTightBounds()
+                inner.setPos(-(lo[0] + hi[0]) / 2.0, 0, -(lo[2] + hi[2]) / 2.0)
+                holder.setScale(0.36 / (hi[0] - lo[0]), 1, 0.1 / (hi[2] - lo[2]))
+                holder.flattenStrong()
+                restyleArt.append(holder)
+            nameGui.removeNode()
+            self.restylePetButton = DirectButton(parent=self, relief=None, image=tuple(restyleArt),
+                                                 image3_color=disabledImageColor, text=TTLocalizer.PetCreatorRestyle,
+                                                 text_scale=0.048, text_pos=(0, -0.016), text0_fg=text0Color,
+                                                 text1_fg=text1Color, text2_fg=text0Color, text3_fg=text3Color,
+                                                 pos=(0.08, 0, 0.175), pressEffect=False,
+                                                 command=lambda : messenger.send(doneEvent, [4]))
+            if not base.localAvatar.hasPet():
+                self.restylePetButton['state'] = DGG.DISABLED
             model.removeNode()
             return
+
+    class PetRestyleDlg(DirectFrame):
+        # Loads the toon's doodle, then shows the Restyle screen for it.
+        def __init__(self, doneEvent):
+            DirectFrame.__init__(self, relief=None)
+            self.initialiseoptions(PetshopGUI.PetRestyleDlg)
+            self.doneEvent = doneEvent
+            self.screen = None
+            self.petPanel = PetDetail.PetDetail(base.localAvatar.getPetId(), self.__gotPet)
+
+        def __gotPet(self, avatar):
+            if self.isEmpty():
+                return
+            self.screen = PetCreatorGUI.PetCreatorGUI(self.doneEvent, restyleAvatar=avatar)
+            self.screen.reparentTo(self)
+
+        def destroy(self):
+            if self.screen:
+                self.screen.destroy()
+                self.screen = None
+            if self.petPanel and getattr(self.petPanel, 'avatar', None):
+                self.petPanel.avatar.disable()
+                self.petPanel.avatar.delete()
+                self.petPanel.avatar = None
+            self.petPanel = None
+            DirectFrame.destroy(self)
 
     class AdoptPetDlg(DirectFrame):
         notify = DirectNotifyGlobal.directNotify.newCategory('PetshopGUI.AdoptPetDlg')
@@ -401,6 +451,7 @@ class PetshopGUI(DirectObject):
         self.fishGuiDoneEvent = 'MyFishGuiDone'
         self.namePickerDoneEvent = 'NamePickerGuiDone'
         self.goHomeDlgDoneEvent = 'GoHomeDlgDone'
+        self.petCreatorDoneEvent = 'PetCreatorGuiDone'
         self.dialog = None
         self.dialogStack = []
         self.petSeeds = petSeeds
@@ -425,6 +476,7 @@ class PetshopGUI(DirectObject):
         self.ignore(self.fishGuiDoneEvent)
         self.ignore(self.namePickerDoneEvent)
         self.ignore(self.goHomeDlgDoneEvent)
+        self.ignore(self.petCreatorDoneEvent)
 
     def destroyDialog(self):
         if self.dialog != None:
@@ -457,6 +509,12 @@ class PetshopGUI(DirectObject):
         elif nDialog == Dialog_NamePicker:
             self.acceptOnce(self.namePickerDoneEvent, self.__handleNamePickerDlg)
             self.dialog = self.NamePicker(self.namePickerDoneEvent, self.petSeeds[self.adoptPetNum], gender=self.adoptPetNum % 2)
+        elif nDialog == Dialog_PetCreator:
+            self.acceptOnce(self.petCreatorDoneEvent, self.__handlePetCreatorDlg)
+            self.dialog = PetCreatorGUI.PetCreatorGUI(self.petCreatorDoneEvent)
+        elif nDialog == Dialog_PetRestyle:
+            self.acceptOnce(self.petCreatorDoneEvent, self.__handlePetCreatorDlg)
+            self.dialog = self.PetRestyleDlg(self.petCreatorDoneEvent)
         elif nDialog == Dialog_GoHome:
             self.acceptOnce(self.goHomeDlgDoneEvent, self.__handleGoHomeDlg)
             self.dialog = self.GoHomeDlg(self.goHomeDlgDoneEvent)
@@ -467,9 +525,24 @@ class PetshopGUI(DirectObject):
         elif exitVal == 1:
             self.doDialog(Dialog_SellFish)
         elif exitVal == 2:
-            self.doDialog(Dialog_ChoosePet)
+            # Doodles are built in the shop now, rather than picked from
+            # the day's few (PetCreatorGUI).
+            self.doDialog(Dialog_PetCreator)
         elif exitVal == 3:
             self.doDialog(Dialog_ReturnPet)
+        elif exitVal == 4:
+            self.doDialog(Dialog_PetRestyle)
+
+    def __handlePetCreatorDlg(self, result):
+        if result is None:
+            self.popDialog()
+            return
+        self.destroyDialog()
+        if result[0] == 'build':
+            messenger.send(self.eventDict['petBuilt'], list(result[1:]))
+        else:
+            messenger.send(self.eventDict['petRestyled'], list(result[1:]))
+        messenger.send(self.eventDict['guiDone'])
 
     def __handleFishSellDlg(self, exitVal):
         if exitVal == 0:

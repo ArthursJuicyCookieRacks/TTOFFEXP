@@ -58,6 +58,7 @@ class DistributedPetAI(DistributedSmoothNodeAI.DistributedSmoothNodeAI, PetLooke
         self.movieMode = None
         self.lockMoverEnabled = 0
         self.trickAptitudes = []
+        self.accessories = [0, 0, 0, 0, 0, 0]
         self.inEstate = 0
         self.estateOwnerId = None
         self.estateZones = []
@@ -106,6 +107,7 @@ class DistributedPetAI(DistributedSmoothNodeAI.DistributedSmoothNodeAI, PetLooke
             self.setMoodComponent(component, 0.0)
 
         self.b_setTrickAptitudes([])
+        self.b_setAccessories([0, 0, 0, 0, 0, 0])
         return
 
     def setDNA(self, dna):
@@ -435,6 +437,19 @@ class DistributedPetAI(DistributedSmoothNodeAI.DistributedSmoothNodeAI, PetLooke
     def getTrickAptitudes(self):
         return self.trickAptitudes
 
+    def getAccessories(self):
+        return self.accessories
+
+    def b_setAccessories(self, accessories):
+        self.setAccessories(accessories)
+        self.d_setAccessories(accessories)
+
+    def d_setAccessories(self, accessories):
+        self.sendUpdate('setAccessories', [accessories])
+
+    def setAccessories(self, accessories):
+        self.accessories = list(accessories)
+
     def b_setTrickAptitudes(self, aptitudes):
         self.setTrickAptitudes(aptitudes, local=1)
         self.d_setTrickAptitudes(aptitudes)
@@ -502,6 +517,9 @@ class DistributedPetAI(DistributedSmoothNodeAI.DistributedSmoothNodeAI, PetLooke
                     setterName = self.getSetterName(traitName, 'b_set')
                     self.__dict__[setterName](traitValue)
 
+        # A doodle built in the pet shop has traits of its own, so its brain
+        # and moods use its saved trait values rather than its trait seed's.
+        self.traits = PetTraits.PetTraits(self.traitSeed, self.safeZone, traitValueList=self.traitList)
         self.mood = PetMood.PetMood(self)
         if not self.active:
             return

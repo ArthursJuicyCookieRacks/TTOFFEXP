@@ -132,8 +132,7 @@ class DistributedPetProxy(DistributedObject.DistributedObject):
 
     def announceGenerate(self):
         DistributedObject.DistributedObject.announceGenerate(self)
-        self.traits = PetTraits.PetTraits(self.traitSeed, self.safeZone)
-        print(self.traits.traits)
+        self.traits = PetTraits.PetTraits(self.traitSeed, self.safeZone, traitValueList=self.traitList)
         self.mood = PetMood.PetMood(self)
         self.lastKnownMood = self.mood.makeCopy()
         for mood, value in list(self.requiredMoodComponents.items()):
@@ -181,6 +180,12 @@ class DistributedPetProxy(DistributedObject.DistributedObject):
 
     def setTrickAptitudes(self, aptitudes):
         self.trickAptitudes = aptitudes
+
+    def setAccessories(self, accessories):
+        self.accessories = list(accessories)
+
+    def getAccessories(self):
+        return getattr(self, 'accessories', [])
 
     def isPet(self):
         return True

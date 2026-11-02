@@ -65,6 +65,7 @@ class Pet(Avatar.Avatar):
          State('walkSad', self.enterWalkSad, self.exitWalkSad)], 'off', 'off')
         self.animFSM.enterInitialState()
         self.forGui = forGui
+        self.accessories = []
         self.moodModel = None
         self.__blinkName = 'petblink-' + str(self.this)
         self.track = None
@@ -112,6 +113,16 @@ class Pet(Avatar.Avatar):
 
     def getDNA(self):
         return self.style
+
+    def getAccessories(self):
+        return self.accessories
+
+    def setAccessoriesLook(self, accessories):
+        # Puts the toon accessories this doodle wears on its model.
+        from toontown.pets import PetAccessories
+        self.accessories = list(accessories)
+        if self.style:
+            PetAccessories.dressPet(self, self.accessories)
 
     def setDNA(self, dna):
         if self.style:

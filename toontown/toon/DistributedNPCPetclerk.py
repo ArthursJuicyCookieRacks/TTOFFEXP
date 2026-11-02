@@ -44,6 +44,8 @@ class DistributedNPCPetclerk(DistributedNPCToonBase):
         self.eventDict = {}
         self.eventDict['guiDone'] = 'guiDone'
         self.eventDict['petAdopted'] = 'petAdopted'
+        self.eventDict['petBuilt'] = 'petBuilt'
+        self.eventDict['petRestyled'] = 'petRestyled'
         self.eventDict['petReturned'] = 'petReturned'
         self.eventDict['fishSold'] = 'fishSold'
 
@@ -145,6 +147,9 @@ class DistributedNPCPetclerk(DistributedNPCToonBase):
         elif mode == NPCToons.SELL_MOVIE_PETADOPTED:
             self.setChatAbsolute(TTLocalizer.STOREOWNER_PETADOPTED, CFSpeech | CFTimeout)
             self.resetPetshopClerk()
+        elif mode == NPCToons.SELL_MOVIE_PETRESTYLED:
+            self.setChatAbsolute(TTLocalizer.STOREOWNER_PETRESTYLED, CFSpeech | CFTimeout)
+            self.resetPetshopClerk()
         elif mode == NPCToons.SELL_MOVIE_PETCANCELED:
             self.setChatAbsolute(TTLocalizer.STOREOWNER_PETCANCELED, CFSpeech | CFTimeout)
             self.resetPetshopClerk()
@@ -172,6 +177,15 @@ class DistributedNPCPetclerk(DistributedNPCToonBase):
         self.ignore(self.eventDict['petAdopted'])
         self.sendUpdate('petAdopted', [whichPet, nameIndex])
 
+    def __handlePetBuilt(self, dna, traitLevels, name, accessories):
+        base.cr.removePetFromFriendsMap()
+        self.ignore(self.eventDict['petBuilt'])
+        self.sendUpdate('petBuilt', [dna, traitLevels, name, accessories])
+
+    def __handlePetRestyled(self, name, accessories):
+        self.ignore(self.eventDict['petRestyled'])
+        self.sendUpdate('petRestyled', [name, accessories])
+
     def __handlePetReturned(self):
         base.cr.removePetFromFriendsMap()
         self.ignore(self.eventDict['petReturned'])
@@ -196,6 +210,8 @@ class DistributedNPCPetclerk(DistributedNPCToonBase):
         self.setChatAbsolute('', CFSpeech)
         self.acceptOnce(self.eventDict['guiDone'], self.__handleGUIDone)
         self.acceptOnce(self.eventDict['petAdopted'], self.__handlePetAdopted)
+        self.acceptOnce(self.eventDict['petBuilt'], self.__handlePetBuilt)
+        self.acceptOnce(self.eventDict['petRestyled'], self.__handlePetRestyled)
         self.acceptOnce(self.eventDict['petReturned'], self.__handlePetReturned)
         self.acceptOnce(self.eventDict['fishSold'], self.__handleFishSold)
         self.petshopGui = PetshopGUI.PetshopGUI(self.eventDict, self.petSeeds)

@@ -7,6 +7,7 @@ class PetHandle:
         self.doId = avatar.doId
         self.name = avatar.name
         self.style = avatar.style
+        self.accessories = list(getattr(avatar, 'accessories', []))
         self.ownerId = avatar.ownerId
         self.bFake = False
         self.cr = avatar.cr
@@ -34,6 +35,9 @@ class PetHandle:
 
     def getDNA(self):
         return self.style
+
+    def getAccessories(self):
+        return self.accessories
 
     def getFont(self):
         return ToontownGlobals.getToonFont()

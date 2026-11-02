@@ -5718,6 +5718,72 @@ PetshopReturnConfirm = 'Return %s?'
 PetshopReturn = 'Return'
 PetshopChooserTitle = "TODAY'S DOODLES"
 PetshopGoHomeText = 'Would you like to go to your estate to play with your new Doodle?'
+PetCreatorTitle = 'BUILD A DOODLE'
+PetRestyleTitle = 'RESTYLE YOUR DOODLE'
+PetCreatorBuild = 'Build a Doodle'
+PetCreatorRestyle = 'Restyle Doodle'
+PetCreatorTabs = ('Looks', 'Traits', 'Name', 'Wear')
+PetCreatorBody = 'Body'
+PetCreatorColor = 'Color'
+PetCreatorShade = 'Shade'
+PetCreatorEyes = 'Eyes'
+PetCreatorGender = 'Gender'
+PetCreatorHead = 'Head'
+PetCreatorEars = 'Ears'
+PetCreatorNose = 'Nose'
+PetCreatorTail = 'Tail'
+PetCreatorNone = 'None'
+PetCreatorBodyNames = {'dots': 'Dots', 'threeStripe': 'Stripes', 'tigerStripe': 'Tiger', 'tummy': 'Tummy',
+                       'turtle': 'Turtle', 'giraffe': 'Giraffe', 'leopard': 'Leopard'}
+PetCreatorHeadNames = ('Feathers',)
+PetCreatorEarNames = ('Horns', 'Antennae', 'Dog Ears', 'Cat Ears', 'Bunny Ears')
+PetCreatorNoseNames = ('Clown', 'Dog', 'Oval', 'Pig')
+PetCreatorTailNames = ('Cat', 'Long', 'Bird', 'Bunny')
+PetCreatorEyeNames = ('Blue', 'Sky', 'Brown', 'Peach', 'Green', 'Lime')
+PetCreatorGenders = ('Girl', 'Boy')
+PetCreatorFree = 'free'
+PetCreatorPlus = '+%d'
+PetCreatorCost = 'Price: %d jellybeans'
+PetCreatorRestyleCost = 'Restyling is free!'
+PetCreatorTraitsHelp = 'Better traits cost more. This playground sells these levels:'
+PetCreatorNameHelp = 'Type a name for your Doodle:'
+PetCreatorNameBad = 'Names use letters, numbers and spaces (up to %d).'
+PetCreatorRandomName = 'Random'
+PetCreatorHat = 'Hat'
+PetCreatorGlasses = 'Glasses'
+PetCreatorBackpack = 'Back'
+PetCreatorWearHelp = 'Doodles wear these for free.'
+PetCreatorPage = '%d / %d'
+PetCreatorAdoptConfirm = 'Adopt %s for %d jellybeans?'
+PetCreatorRestyleConfirm = 'Save the new look for %s?'
+PetCreatorReplaceWarning = 'Your Doodle now will go back to the shop.'
+PetCreatorSave = 'Save'
+PetCreatorTraitAverage = {'forgetfulness': 'Average Memory',
+                          'boredomThreshold': 'Average Boredom',
+                          'restlessnessThreshold': 'Average Restlessness',
+                          'playfulnessThreshold': 'Average Playfulness',
+                          'lonelinessThreshold': 'Average Loneliness',
+                          'sadnessThreshold': 'Average Sadness',
+                          'fatigueThreshold': 'Average Energy',
+                          'hungerThreshold': 'Average Hunger',
+                          'confusionThreshold': 'Average Confusion',
+                          'excitementThreshold': 'Average Excitement',
+                          'angerThreshold': 'Average Temper',
+                          'surpriseThreshold': 'Average Surprise',
+                          'affectionThreshold': 'Average Affection'}
+PetCreatorTraitNames = {'forgetfulness': 'Memory',
+                        'boredomThreshold': 'Boredom',
+                        'restlessnessThreshold': 'Restlessness',
+                        'playfulnessThreshold': 'Playfulness',
+                        'lonelinessThreshold': 'Loneliness',
+                        'sadnessThreshold': 'Sadness',
+                        'fatigueThreshold': 'Energy',
+                        'hungerThreshold': 'Hunger',
+                        'confusionThreshold': 'Confusion',
+                        'excitementThreshold': 'Excitement',
+                        'angerThreshold': 'Temper',
+                        'surpriseThreshold': 'Surprise',
+                        'affectionThreshold': 'Affection'}
 NameShopNameMaster = 'NameMasterEnglish.txt'
 NameShopPay = 'Subscribe'
 NameShopPlay = 'Free Trial'
@@ -5831,7 +5897,8 @@ STOREOWNER_THANKSFISH = 'Thanks! The Pet Shop will love these. Bye!'
 STOREOWNER_THANKSFISH_PETSHOP = 'These are some fine specimens! Thanks.'
 STOREOWNER_PETRETURNED = "Don't worry.  We'll find a good home for your Doodle."
 STOREOWNER_PETADOPTED = 'Congratulations on purchasing a Doodle! You can play with your new friend at your estate.'
-STOREOWNER_PETCANCELED = 'Remember, if you see a Doodle you like, make sure to adopt him before someone else does!'
+STOREOWNER_PETCANCELED = 'Come back any time to build a Doodle all your own!'
+STOREOWNER_PETRESTYLED = 'Your Doodle looks Toontastic! Go show it off at your estate.'
 STOREOWNER_NOROOM = 'Hmm...you might want to make room in your closet before you buy new clothes.\n'
 STOREOWNER_CONFIRM_LOSS = 'Your closet is full.  You will lose the clothes you were wearing.'
 STOREOWNER_OK = lOK

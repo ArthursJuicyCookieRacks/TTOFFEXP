@@ -3,7 +3,7 @@ from .DistributedNPCToonBaseAI import *
 from toontown.toonbase import TTLocalizer
 from direct.task import Task
 from toontown.fishing import FishGlobals
-from toontown.pets import PetUtil, PetDNA, PetConstants
+from toontown.pets import PetUtil, PetDNA, PetConstants, PetCreator
 
 class DistributedNPCPetclerkAI(DistributedNPCToonBaseAI):
 
@@ -114,6 +114,74 @@ class DistributedNPCPetclerkAI(DistributedNPCToonBaseAI):
             av.b_setBankMoney(av.getBankMoney() - bankPrice)
             av.b_setMoney(av.getMoney() - walletPrice)
 
+    def __checkSender(self, method):
+        avId = self.air.getAvatarIdFromSender()
+        if self.busy != avId:
+            self.air.writeServerEvent('suspicious', avId=avId, issue='DistributedNPCPetclerkAI.%s busy with %s' % (method, self.busy))
+            self.notify.warning('somebody called %s that I was not busy with! avId: %s' % (method, avId))
+            return None
+        return simbase.air.doId2do.get(avId)
+
+    def __reject(self, av, method, issue):
+        self.air.writeServerEvent('suspicious', avId=av.doId, issue='DistributedNPCPetclerkAI.%s %s' % (method, issue))
+        self.notify.warning('%s: %s, avId: %s' % (method, issue, av.doId))
+
+    def petBuilt(self, dna, traitLevels, name, accessories):
+        # The toon built its own doodle in the pet shop (PetCreator); it
+        # costs what a daily doodle with that body and those traits costs.
+        av = self.__checkSender('petBuilt')
+        if not av:
+            return
+        from toontown.hood import ZoneUtil
+        zoneId = ZoneUtil.getCanonicalSafeZoneId(self.zoneId)
+        dna = list(dna)
+        traitLevels = list(traitLevels)
+        accessories = list(accessories)
+        name = PetCreator.cleanName(name)
+        if not PetCreator.isValidDNA(dna, zoneId):
+            self.__reject(av, 'petBuilt', 'doodle look not sold here: %s' % dna)
+            return
+        if not PetCreator.isValidTraitLevels(traitLevels, zoneId):
+            self.__reject(av, 'petBuilt', 'trait levels not sold here: %s' % traitLevels)
+            return
+        if not PetCreator.isValidName(name):
+            self.__reject(av, 'petBuilt', 'bad name: %r' % name)
+            return
+        if not PetCreator.isValidAccessories(accessories):
+            self.__reject(av, 'petBuilt', 'bad accessories: %s' % accessories)
+            return
+        cost = PetCreator.getCost(dna[PetDNA.Fields['body']], traitLevels, zoneId)
+        if cost > av.getTotalMoney():
+            self.__reject(av, 'petBuilt', "doesn't have enough money")
+            return
+        if av.petId != 0:
+            simbase.air.petMgr.deleteToonsPet(av.doId)
+        simbase.air.petMgr.createBuiltPet(av.doId, dna, traitLevels, name, accessories, zoneId)
+        self.transactionType = 'adopt'
+        bankPrice = min(av.getBankMoney(), cost)
+        walletPrice = cost - bankPrice
+        av.b_setBankMoney(av.getBankMoney() - bankPrice)
+        av.b_setMoney(av.getMoney() - walletPrice)
+
+    def petRestyled(self, name, accessories):
+        # A new name and accessories for the toon's doodle; both are free.
+        av = self.__checkSender('petRestyled')
+        if not av:
+            return
+        name = PetCreator.cleanName(name)
+        accessories = list(accessories)
+        if not av.getPetId():
+            self.__reject(av, 'petRestyled', 'has no doodle')
+            return
+        if not PetCreator.isValidName(name):
+            self.__reject(av, 'petRestyled', 'bad name: %r' % name)
+            return
+        if not PetCreator.isValidAccessories(accessories):
+            self.__reject(av, 'petRestyled', 'bad accessories: %s' % accessories)
+            return
+        simbase.air.petMgr.restylePet(av.doId, name, accessories)
+        self.transactionType = 'restyle'
+
     def petReturned(self):
         avId = self.air.getAvatarIdFromSender()
         if self.busy != avId:
@@ -137,6 +205,8 @@ class DistributedNPCPetclerkAI(DistributedNPCToonBaseAI):
                 self.d_setMovie(avId, NPCToons.SELL_MOVIE_PETADOPTED)
             elif self.transactionType == 'return':
                 self.d_setMovie(avId, NPCToons.SELL_MOVIE_PETRETURNED)
+            elif self.transactionType == 'restyle':
+                self.d_setMovie(avId, NPCToons.SELL_MOVIE_PETRESTYLED)
             elif self.transactionType == '':
                 self.d_setMovie(avId, NPCToons.SELL_MOVIE_PETCANCELED)
         self.sendClearMovie(None)
