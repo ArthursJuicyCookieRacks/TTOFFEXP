@@ -24,11 +24,11 @@ GLOVE_COLORS = list(range(len(ToonDNA.allColorsList)))
 # The accessory rows, then Gloves under them as a fifth row: a little closer
 # together than the four clothes rows so all five and Shuffle fit above the
 # arrows at the bottom.
-ACCESSORY_ROW_TOP = -0.073
-ACCESSORY_ROW_STEP = 0.19
-ACCESSORY_ROW_SCALE = 0.95
+ACCESSORY_ROW_TOP = -0.06
+ACCESSORY_ROW_STEP = 0.205
+ACCESSORY_ROW_SCALE = 0.88
 ACCESSORY_ROW_TILT = (3, -2, 3, -2, 3)
-ACCESSORY_SHUFFLE_Z = -1.06
+ACCESSORY_SHUFFLE_Z = -1.07
 
 class MakeClothesGUI(ClothesGUI.ClothesGUI):
     notify = directNotify.newCategory('MakeClothesGUI')
