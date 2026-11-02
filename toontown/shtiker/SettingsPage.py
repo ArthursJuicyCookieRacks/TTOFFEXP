@@ -279,10 +279,10 @@ class SettingsPage(ShtikerPage.ShtikerPage):
                                   command=self.__openPadList, extraArgs=[button])
             self.padButtons[button] = widget
         # How fast the right stick moves the on-screen pointer.
-        self.__addSlider(frame, -0.36, 'cursor', TTLocalizer.SettingsPageCursor, 1, 10, 1,
+        self.__addSlider(frame, -0.39, 'cursor', TTLocalizer.SettingsPageCursor, 1, 10, 1,
                          KeyBindings.getCursorSpeed, KeyBindings.setCursorSpeed)
         DirectButton(parent=frame, relief=None, image=self.btnImage, image_scale=(0.9, 1, 1), text=TTLocalizer.SettingsPageReset,
-                     text_scale=0.05, text_pos=(0, -0.02), pos=(0, 0, -0.56), command=self.__resetPad)
+                     text_scale=0.05, text_pos=(0, -0.02), pos=(0, 0, -0.6), command=self.__resetPad)
 
     def __refreshPad(self):
         slider, valueLabel = self.sliders['cursor'][:2]
