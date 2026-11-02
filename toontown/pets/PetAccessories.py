@@ -230,11 +230,11 @@ BACK_FITS = {
     3: ('wing', 0.6, -0.026, 0.12, -36.0, 0.1),  # beeWings
     4: ('wing', 0.8, 0.06, 0.17, -24.0, 0.1),  # dragonFlyWings
     5: ('pack', 0.66, -0.085, 0.037, -8.0),  # scubaTank
-    6: ('wing', 0.42, 0.0, 0.27, -8.0, {'hug': 0.003}),  # sharkFin, its base bent to lie on the back
+    6: ('wing', 0.42, -0.2, 0.25, -8.0, {'hug': 0.003}),  # sharkFin, its base bent to lie on the back, its tip in the corner above the hips
     7: ('wing', 0.6, -0.022, 0.12, -36.0, 0.1),  # angelWings
     8: ('pack', 0.7, -0.026, 0.007, -8.0),  # backpackWithToys
-    9: ('wing', 0.6, 0.049, 0.28, -24.0, 0.06),  # butterflyWings
-    10: ('wing', 0.66, -0.012, 0.16, -36.0, 0.1),  # dragonWing
+    9: ('wing', 0.6, 0.049, 0.28, -24.0, {'squeeze': 0.06, 'hug': 0.003}),  # butterflyWings, bent to lie on the back
+    10: ('wing', 0.66, -0.012, 0.16, -36.0, {'squeeze': 0.1, 'hug': 0.003, 'ease': 0.6}),  # dragonWing, bent to lie on the back
     11: ('pack', 0.7, -0.003, 0.02, -8.0),  # jetPack
     12: ('wing', 0.8, 0.04, 0.3, 0.0, 0.1),  # spiderLegs
     13: ('pack', 0.665, -0.026, 0.04, -8.0),  # stuffedAnimalBackpackA
@@ -400,7 +400,7 @@ def _fitToBack(geom, way, size, y, z, pitch, *extra):
     tilt.setP(pitch)
     tilt.setPos(opts.get('x', 0.0), y, z)
     if opts.get('hug') is not None:
-        return _hugBack(holder, pitch, y, z, opts['hug'])
+        return _hugBack(holder, pitch, y, z, opts['hug'], opts.get('ease', 3.0))
     return holder
 
 
@@ -445,6 +445,39 @@ def _along(corners, u):
         if u <= u2:
             return v1 + (v2 - v1) * (u - u1) / max(u2 - u1, 1e-9)
     return corners[-1][1]
+
+
+# The top of the doodle's hips (behind its back), on the back joint: how
+# high the body reaches at each spot, the highest of all its idle frames.
+# Rows go back from the back (y -0.05, -0.1 .. -0.65), columns out to the
+# side (x 0.0, 0.05 .. 0.2). Measured by dropping lines onto the body mesh.
+HIP_TOP = (
+    (0.117, 0.085, 0.039, 0.006, -0.015),
+    (0.034, 0.003, -0.019, -0.04, -0.06),
+    (-0.013, -0.033, -0.051, -0.065, -0.077),
+    (-0.025, -0.037, -0.049, -0.063, -0.083),
+    (0.007, -0.011, -0.032, -0.052, -0.081),
+    (0.029, 0.018, -0.002, -0.027, -0.069),
+    (0.05, 0.045, 0.021, -0.004, -0.048),
+    (0.056, 0.061, 0.037, 0.012, -0.034),
+    (0.06, 0.068, 0.053, 0.026, -0.023),
+    (0.065, 0.072, 0.067, 0.039, -0.012),
+    (0.052, 0.057, 0.05, 0.022, -0.016),
+    (0.025, 0.036, 0.029, 0.001, -0.036),
+    (-0.004, 0.009, -0.008, -0.034, -0.077))
+
+
+def hipTop(x, y):
+    if y > -0.05:
+        # In front of the first row it is the back itself.
+        return HIP_TOP[0][0] if abs(x) < 0.05 else HIP_TOP[0][min(int(abs(x) / 0.05), 4)]
+    fy = min((-0.05 - y) / 0.05, len(HIP_TOP) - 1.0)
+    fx = min(abs(x) / 0.05, len(HIP_TOP[0]) - 1.0)
+    iy, ix = min(int(fy), len(HIP_TOP) - 2), min(int(fx), len(HIP_TOP[0]) - 2)
+    ty, tx = fy - iy, fx - ix
+    row0 = HIP_TOP[iy][ix] * (1 - tx) + HIP_TOP[iy][ix + 1] * tx
+    row1 = HIP_TOP[iy + 1][ix] * (1 - tx) + HIP_TOP[iy + 1][ix + 1] * tx
+    return row0 * (1 - ty) + row1 * ty
 
 
 def _subdivide(holder, longest):
@@ -510,7 +543,7 @@ def _subdivide(holder, longest):
     return datas
 
 
-def _hugBack(holder, pitch, y0, z0, gap):
+def _hugBack(holder, pitch, y0, z0, gap, ease=3.0):
     # A shark fin is a shell open at the front, made to sit on a toon's
     # back. A doodle's back bends (sloping above the hips, upright higher
     # up), so the fin is bent a little to match: it is cut into thin
@@ -567,14 +600,24 @@ def _hugBack(holder, pitch, y0, z0, gap):
                 s = 0.0
                 for _ in range(8):
                     s = (backY(x, rz + s * nz) - gap - ry) / ny
+                # Nor so far that it runs into the top of the hips.
+                t = 0.0
+                while t < s:
+                    t = min(s, t + 0.005)
+                    if rz + t * nz < hipTop(x, ry + t * ny) + gap:
+                        s = t - 0.005
+                        break
                 if best is None or s < best:
                     best = s
         if best is not None:
             slides.append((lz, best))
     # Never more than the least of its neighbours, so nothing between two
-    # slices goes in either.
+    # slices goes in either, and never much more than any slice near it
+    # (where the hips hold one slice back, the ones beside it ease back
+    # too instead of tearing the model into strips).
     slides = [(u, min(v for w, v in slides[max(0, i - 1):i + 2]))
               for i, (u, _) in enumerate(slides)]
+    slides = [(u, min(v + ease * abs(u - w) for w, v in slides)) for u, _ in slides]
     # Its triangles are big and flat; cut them small so its edge can
     # follow the curve of the back instead of cutting straight across it.
     datas = _subdivide(holder, 0.02)
