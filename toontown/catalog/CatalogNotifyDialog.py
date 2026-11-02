@@ -12,9 +12,8 @@ class CatalogNotifyDialog:
         self.message = message
         self.messageIndex = 0
         framePosX = CatalogNotifyBaseXPos
-        from toontown.toon import LocalToon
-        if LocalToon.WantNewsPage:
-            framePosX += LocalToon.AdjustmentForNewsButton
+        # Clarabelle's button sits in the right-hand end of this box
+        # (LocalToon.clarabelleNewsPageCollision).
         self.frame = DirectFrame(relief=None, parent=base.a2dTopRight, sortOrder=DGG.BACKGROUND_SORT_INDEX - 2, image=DGG.getDefaultDialogGeom(), image_color=ToontownGlobals.GlobalDialogColor, image_scale=(1.2, 1.0, 0.4), text=message[0], text_wordwrap=16, text_scale=0.06, text_pos=(-0.1, 0.1), pos=(framePosX, 0, -0.22))
         buttons = loader.loadModel('phase_3/models/gui/dialog_box_buttons_gui')
         cancelImageList = (buttons.find('**/CloseBtn_UP'), buttons.find('**/CloseBtn_DN'), buttons.find('**/CloseBtn_Rllvr'))

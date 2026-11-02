@@ -1025,11 +1025,13 @@ class LocalToon(DistributedToon.DistributedToon, LocalAvatar.LocalAvatar):
     def clarabelleNewsPageCollision(self, show = True):
         if self.__clarabelleButton == None:
             return
-        claraXPos = ClaraBaseXPos
+        # Clarabelle always takes the left-hand spot, inside the right-hand
+        # end of her notice. The right-hand spot (meant for when the news
+        # button is away) put her on top of the friends button and outside
+        # her notice, and the notice moved separately from her depending on
+        # whether it or the news button check came first.
+        claraXPos = ClaraBaseXPos + AdjustmentForNewsButton
         notifyXPos = CatalogNotifyDialog.CatalogNotifyBaseXPos
-        if show:
-            claraXPos += AdjustmentForNewsButton
-            notifyXPos += AdjustmentForNewsButton
         newPos = (claraXPos - 0.1, 1.0, -0.63)
         self.__clarabelleButton.setPos(newPos)
         if self.__catalogNotifyDialog == None or self.__catalogNotifyDialog.frame == None:
@@ -1051,12 +1053,9 @@ class LocalToon(DistributedToon.DistributedToon, LocalAvatar.LocalAvatar):
         icon.setColor(white)
         claraXPos = ClaraBaseXPos
         newScale = oldScale = 0.5
-        newPos = (claraXPos, 1.0, -0.63)
-        if WantToonFest:
-            claraXPos += AdjustmentForNewsButton
-            oldPos = ((claraXPos, 1.0, -0.63))
-            #newScale = oldScale * ToontownGlobals.NewsPageScaleAdjust
-            newPos = (claraXPos - 0.1, 1.0, -0.63)
+        # The same spot clarabelleNewsPageCollision uses.
+        claraXPos += AdjustmentForNewsButton
+        newPos = (claraXPos - 0.1, 1.0, -0.63)
         self.__clarabelleButton = DirectButton(relief=None, image=circle, text='', text_fg=(1, 1, 1, 1), text_shadow=(0, 0, 0, 1), text_scale=0.1, text_pos=(-1.06, 1.06), text_font=ToontownGlobals.getInterfaceFont(), pos=newPos, scale=newScale, command=self.__handleClarabelleConfirm)
         self.__clarabelleButton.reparentTo(base.a2dTopRight, DGG.BACKGROUND_SORT_INDEX - 1)
         button = self.__clarabelleButton.stateNodePath[0]
