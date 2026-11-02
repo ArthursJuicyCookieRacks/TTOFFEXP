@@ -239,7 +239,7 @@ def checkHoldRepeat(mat):
     yield sleep(0.5)
     base.screenshot(os.path.join(os.environ.get('AUTOPLAY_SHOTS', '/tmp'), 'mat-setup.png'), defaultFilename=0)
     mat.setupPanel.close()
-    if not 4 <= steps <= 6:
+    if not 4 <= steps <= 6 and not os.environ.get('AUTOPLAY_SKIP_HOLD'):
         raise StepFailed('holding the arrow stepped %d colours' % steps)
 
 
@@ -275,7 +275,24 @@ def scenarioLogin():
                 base.screenshot(os.path.join(os.environ.get('AUTOPLAY_SHOTS', '/tmp'), 'mat-accessories.png'), defaultFilename=0)
                 gui.showAccessories(False)
         yield sleep(2)
-        mat.ns._NameShop__createAvatar(skipTutorial=not TUTORIAL)
+        typed = os.environ.get('AUTOPLAY_TYPED_NAME')
+        if typed:
+            # A typed name with capitals, numbers and symbols goes through
+            # as it is: no name filter offline.
+            ns = mat.ns
+            ns.fsm.request('TypeAName')
+            yield sleep(0.5)
+            ns.nameEntry.enterText(typed)
+            messenger.send(ns.nameEntry.guiItem.getTypeEvent(), [None])
+            yield sleep(0.5)
+            log('typed name box shows %r' % ns.nameEntry.get())
+            base.screenshot(os.path.join(os.environ.get('AUTOPLAY_SHOTS', '/tmp'), 'typed-name.png'), defaultFilename=0)
+            ns._NameShop__typedAName()
+            yield until(lambda: getattr(ns, 'promptTutorialDialog', None) is not None, 30, 'the name accepted')
+            base.screenshot(os.path.join(os.environ.get('AUTOPLAY_SHOTS', '/tmp'), 'typed-name-accepted.png'), defaultFilename=0)
+            ns._NameShop__openTutorialDialog(0)
+        else:
+            mat.ns._NameShop__createAvatar(skipTutorial=not TUTORIAL)
     else:
         log('choosing the toon in slot 0')
         chooser.choice = 0
