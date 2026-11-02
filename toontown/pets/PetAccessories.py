@@ -226,19 +226,19 @@ for _model, (_top, _back, _s) in {23: (-0.22, 0.42, 0.5), 24: (-0.33, 0.43, 0.42
 # the few made facing the other way), and roll leans it to one side.
 BACK_FITS = {
     1: ('pack', 0.66, -0.013, 0.038, -8.0),  # backpack
-    2: ('wing', 0.8, 0.03, 0.05, -6.0, 0.1),  # batWings
-    3: ('wing', 0.6, -0.026, 0.12, -36.0, 0.1),  # beeWings
-    4: ('wing', 0.8, 0.06, 0.17, -24.0, 0.1),  # dragonFlyWings
+    2: ('wing', 0.95, 0.03, -0.05, -6.0, {'squeeze': 0.1, 'hug': 0.008, 'ease': 0.6, 'lift': 0.02}),  # batWings
+    3: ('wing', 0.85, -0.026, 0.0, -36.0, {'squeeze': 0.03, 'spread': 10.0, 'hug': 0.004, 'ease': 0.6, 'lift': 0.02}),  # beeWings
+    4: ('wing', 0.95, 0.06, 0.17, -24.0, {'squeeze': 0.1, 'hug': 0.004, 'ease': 0.6}),  # dragonFlyWings
     5: ('pack', 0.66, -0.085, 0.037, -8.0),  # scubaTank
     6: ('wing', 0.42, -0.2, 0.17, -8.0, {'hug': 0.003, 'lift': 0.02}),  # sharkFin, its base bent to lie on the back, its tip laid along the hips
-    7: ('wing', 0.6, -0.022, 0.12, -36.0, 0.1),  # angelWings
+    7: ('wing', 0.8, -0.022, 0.0, -36.0, {'squeeze': 0.03, 'hug': 0.004, 'ease': 0.6, 'lift': 0.02}),  # angelWings
     8: ('pack', 0.7, -0.026, 0.007, -8.0),  # backpackWithToys
-    9: ('wing', 0.6, 0.049, 0.28, -24.0, {'squeeze': 0.06, 'hug': 0.003}),  # butterflyWings, bent to lie on the back
-    10: ('wing', 0.66, -0.012, 0.16, -36.0, {'squeeze': 0.1, 'hug': 0.004, 'ease': 0.6}),  # dragonWing, bent to lie on the back
+    9: ('wing', 0.8, 0.049, 0.2, -24.0, {'squeeze': 0.06, 'spread': 22.0, 'hug': 0.006, 'ease': 0.6, 'lift': 0.02}),  # butterflyWings, opened into a V
+    10: ('wing', 0.85, -0.012, 0.12, -36.0, {'squeeze': 0.1, 'open': 45.0, 'spread': 10.0, 'hug': 0.004, 'ease': 0.6, 'lift': 0.02}),  # dragonWing, swung open
     11: ('pack', 0.7, -0.003, 0.02, -8.0),  # jetPack
     12: ('wing', 0.8, 0.04, 0.3, 0.0, 0.1),  # spiderLegs
     13: ('pack', 0.665, -0.026, 0.04, -8.0),  # stuffedAnimalBackpackA
-    14: ('wing', 0.8, 0.009, 0.15, -12.0, 0.1),  # birdWings
+    14: ('wing', 0.95, 0.009, 0.0, -12.0, {'squeeze': 0.1, 'hug': 0.004, 'ease': 0.6, 'lift': 0.02}),  # birdWings
     15: ('pack', 0.66, -0.025, 0.04, -8.0),  # stuffedAnimalBackpackCat
     16: ('pack', 0.665, -0.017, 0.04, -8.0),  # stuffedAnimalBackpackDog
     17: ('wing', 1.1, 0.06, 0.14, -24.0),  # airplane
@@ -339,13 +339,20 @@ def _wrapArms(geom):
             rewriter.setData3(reach if x > 0 else -reach, y, z)
     return holder
 
-def _squeeze(geom, shift):
+def _squeeze(geom, shift, spread=0.0, open_=0.0):
     # Pairs of wings are made for a toon's wide back. A doodle's back is
     # narrow, so move each wing in toward the middle until their roots meet
-    # on its back instead of standing out at its sides.
+    # on its back instead of standing out at its sides. spread then opens
+    # the pair into a V (degrees each side, about their lowest point), so
+    # tall narrow wings reach out past the doodle's sides, and open_ swings
+    # each wing out sideways (degrees, about its front edge), for wings that
+    # are made folded back.
     holder = NodePath('squeeze')
     geom.reparentTo(holder)
     holder.flattenStrong()
+    bounds = holder.getTightBounds()
+    low = bounds[0][2] if bounds else 0.0
+    front = bounds[1][1] if bounds else 0.0
     done = []
     for np_ in holder.findAllMatches('**/+GeomNode'):
         node = np_.node()
@@ -358,9 +365,18 @@ def _squeeze(geom, shift):
             for row in range(vdata.getNumRows()):
                 rewriter.setRow(row)
                 x, y, z = rewriter.getData3()
-                x = max(0.0, abs(x) - shift) * (1 if x > 0 else -1)
+                side = 1 if x > 0 else -1
+                x = max(0.0, abs(x) - shift)
+                if spread:
+                    a = math.radians(spread)
+                    x, z = (x * math.cos(a) + (z - low) * math.sin(a),
+                            low - x * math.sin(a) + (z - low) * math.cos(a))
+                if open_:
+                    b = math.radians(open_)
+                    x, y = (x * math.cos(b) - (y - front) * math.sin(b),
+                            front + (y - front) * math.cos(b) + x * math.sin(b))
                 rewriter.setRow(row)
-                rewriter.setData3(x, y, z)
+                rewriter.setData3(x * side, y, z)
     return holder
 
 
@@ -385,8 +401,8 @@ def _fitToBack(geom, way, size, y, z, pitch, *extra):
         else:
             scale = size / max(hi[0] - lo[0], hi[2] - lo[2])
         geom.setScale(scale)
-        if squeeze:
-            geom = _squeeze(geom, squeeze)
+        if squeeze or opts.get('spread') or opts.get('open'):
+            geom = _squeeze(geom, squeeze, opts.get('spread', 0.0), opts.get('open', 0.0))
             geom.reparentTo(tilt)
         lo, hi = geom.getTightBounds(tilt)
         if way == 'pack':
