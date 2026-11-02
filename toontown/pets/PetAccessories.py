@@ -88,27 +88,40 @@ BASE = {HAT: ((0.0, 0.19, 0.41), (180.0, 8.0, 0.0), 0.2),
 FITS = {HAT: {3: (-0.17, -0.02, 1.0, 0.0),    # bow, on top of the head, not the forehead
               4: (-0.1, -0.02, (0.85, 0.55, 1.0), 0.0),  # heart headband, across the top
               6: (0.0, -0.04, 1.0, 0.0),      # anvil
-              7: (0.0, -0.08, 1.0, 0.0),      # flower pot
+              7: (-0.09, -0.065, 1.0, 0.0),   # flower pot, centred on the top of the head
               8: (0.0, -0.03, 1.0, 0.0),      # sandbag
-              9: (0.0, -0.04, 1.0, 0.0),      # weight
+              9: (-0.13, 0.01, 1.0, 0.0),     # weight, centred on the top of the head
               11: (0.0, -0.01, 1.0, 0.0),     # golf hat
-              14: (0.0, -0.07, 1.0, 10.0),    # crown, level
+              14: (-0.05, -0.055, 1.0, 10.0),  # crown, level, on the top of the head
               19: (0.0, 0.04, 0.85, 0.0),     # sombrero, eyes show under the brim
-              21: (-0.02, 0.06, 0.72, -15.0),   # sun hat, tipped back so the eyes show
+              21: (-0.02, -0.015, 0.72, -15.0),   # sun hat, tipped back so the eyes show
               23: (0.0, -0.14, (0.8, 0.85, 0.9), 0.0),  # beehive hairdo, narrowed to the head, curls at the brow
               30: (0.0, -0.118, (0.9, 1.25, 1.0), 0.0),  # feather headband, round the forehead (the head is deeper than wide)
               31: (-0.02, -0.22, 0.6, 12.0),  # pompadour
-              33: (0.0, -0.03, 1.0, 0.0),     # robin hood hat
+              33: (0.0, -0.09, 1.0, 0.0),     # robin hood hat
               36: (-0.12, 0.0, 1.0, 0.0),     # tiara, on top of the head
               38: (0.0, 0.02, 0.85, 0.0),     # witch hat
               39: (0.0, 0.02, 0.85, 0.0),     # wizard hat
               42: (0.0, 0.03, 0.85, 0.0),     # foil pyramid
               47: (-0.05, -0.1, (0.7, 0.8, 0.95), 0.0),  # rainbow afro, narrowed so it sits down on the head
               54: (0.0, 0.16, 1.0, 0.0),      # dinosaur
+              16: (0.0, -0.075, 1.0, 0.0),     # pirate hat, down on the head
+              22: (0.0, -0.035, 1.0, 0.0),     # antenna headband
+              28: (0.0, -0.08, 1.0, 0.0),      # fedora, down on the head
+              34: (0.0, -0.055, 1.0, 0.0),     # roman helmet
+              35: (0.0, -0.035, 1.0, 0.0),     # spider antenna headband
+              40: (0.0, -0.025, 1.0, 0.0),     # conquistador helmet
+              41: (0.0, -0.025, 1.0, 0.0),     # firefighter helmet
+              50: (0.0, -0.06, 1.0, 0.0),      # bobby hat
+              10: (-0.09, 0.0, 1.0, 0.0),      # fez, on the top of the head
+              12: (-0.06, -0.015, 1.0, 0.0),    # party hat, on the top of the head
+              56: (-0.09, 0.02, 1.0, 0.0),      # bird nest, on the top of the head
+              61: (-0.09, 0.02, 1.0, 0.0),      # bird nest B
+              62: (-0.09, 0.0, 1.0, 0.0),       # fez B
               # The extra models were made about 3.6 times smaller.
               57: (-0.04, -0.04, 4.0, 0.0),     # ball hat, round the whole head top
               58: (0.0, -0.03, 3.6, 0.0),     # elf hat
-              59: (-0.02, 0.06, 0.72, -15.0),   # sun hat B, tipped back
+              59: (-0.02, -0.015, 0.72, -15.0),   # sun hat B, tipped back
               60: (0.0, 0.01, 3.6, 0.0)},     # winter hat
         # Glasses: each frame is sized to the doodle's eyes (outline and all)
         # and centred on them, stretched taller where it has to be, then set
@@ -141,11 +154,11 @@ FITS = {HAT: {3: (-0.17, -0.02, 1.0, 0.0),    # bow, on top of the head, not the
 # Models placed on their own instead: (x, y, z), (h, p, r), scale.
 # The moustaches face forward from the middle of the head, so they hang
 # under the eyes, over the doodle's mouth.
-# Glasses whose back parts are not plain arms (masks, straps, the alien
-# glasses' jointed arms) or that have none (moustaches): left unbent.
-UNBENT_GLASSES = (10, 11, 15, 16, 21, 23, 24, 25)
+# Glasses whose back parts are not plain arms (the masks and the scuba
+# mask's snorkel) or that have none (moustaches): left unbent.
+UNBENT_GLASSES = (10, 15, 16, 23, 24, 25)
 OVERRIDES = {HAT: {}, GLASSES: {
-    17: ((-0.095, 0.52, 0.03), (180.0, 0.0, 0.0), 0.215),  # monocle, on one eye
+    17: ((-0.095, 0.56, 0.03), (180.0, 0.0, 0.0), 0.215),  # monocle, on one eye
     20: ((0.09, 0.36, 0.17), (180.0, 0.0, 0.0), 0.21),   # eye patch, over one whole eye
     22: ((0.0, 0.33, 0.26), (0.0, 0.0, 0.0), (0.55, 0.55, 0.92))}, BACKPACK: {   # snow goggles
     26: ((0.0, 0.18, -0.32), (180.0, 0.0, 0.0), 1.6),   # scarf, round the neck
@@ -158,41 +171,42 @@ for _model, (_top, _back, _s) in {23: (-0.22, 0.42, 0.5), 24: (-0.33, 0.43, 0.42
 # from the top of its hips (a ledge at z 0.03, behind it the hips stick out)
 # up to its head. Packs stand on that ledge against the back, wings and
 # fins come out of the middle of the back, capes hang from the top of it.
-# model: (way, size, y, z, pitch) in the back joint's space: size is how
+# model: (way, size, y, z, pitch[, squeeze]) in the back joint's space: size is how
 # tall it is (packs) or its longest side (the rest); (y, z) is where its
 # contact point goes: a pack's bottom back edge, a wing's root, a cape's
 # top edge. The y and z were measured by moving each one onto the body
-# until it touched without going in.
+# until it touched without going in. squeeze moves a pair of wings that
+# far in toward each other (see _squeeze).
 BACK_FITS = {
-    1: ('pack', 0.55, -0.02, -0.17, -18.0),  # backpack
-    2: ('wing', 0.8, 0.05, 0.2, 0.0),  # batWings
-    3: ('wing', 0.8, 0.01, 0.2, 0.0),  # beeWings
-    4: ('wing', 0.8, 0.0, 0.2, 0.0),  # dragonFlyWings
-    5: ('pack', 0.55, -0.13, -0.08, -30.0),  # scubaTank
+    1: ('pack', 0.7, -0.02, -0.17, -18.0),  # backpack
+    2: ('wing', 0.8, 0.04, 0.2, 0.0, 0.1),  # batWings
+    3: ('wing', 0.8, 0.04, 0.3, 0.0, 0.1),  # beeWings
+    4: ('wing', 0.8, 0.04, 0.3, 0.0, 0.1),  # dragonFlyWings
+    5: ('pack', 0.7, -0.13, -0.08, -30.0),  # scubaTank
     6: ('wing', 0.6, 0.04, 0.12, 0.0),  # sharkFin
-    7: ('wing', 0.8, -0.03, 0.2, 0.0),  # angelWings
-    8: ('pack', 0.55, 0.02, -0.01, -18.0),  # backpackWithToys
-    9: ('wing', 0.8, 0.04, 0.3, 0.0),  # butterflyWings
-    10: ('wing', 0.8, 0.03, 0.3, 0.0),  # dragonWing
-    11: ('pack', 0.55, -0.01, -0.1, -18.0),  # jetPack
-    12: ('wing', 0.8, -0.03, 0.2, 0.0),  # spiderLegs
-    13: ('pack', 0.55, -0.09, -0.08, -30.0),  # stuffedAnimalBackpackA
-    14: ('wing', 0.8, -0.02, 0.2, 0.0),  # birdWings
-    15: ('pack', 0.55, -0.09, -0.08, -30.0),  # stuffedAnimalBackpackCat
-    16: ('pack', 0.55, -0.08, -0.08, -30.0),  # stuffedAnimalBackpackDog
+    7: ('wing', 0.8, -0.03, 0.2, 0.0, 0.1),  # angelWings
+    8: ('pack', 0.7, 0.02, -0.01, -18.0),  # backpackWithToys
+    9: ('wing', 0.8, 0.06, 0.4, 0.0, 0.06),  # butterflyWings
+    10: ('wing', 0.8, 0.04, 0.35, 0.0, 0.1),  # dragonWing
+    11: ('pack', 0.7, -0.01, -0.1, -18.0),  # jetPack
+    12: ('wing', 0.8, 0.04, 0.3, 0.0, 0.1),  # spiderLegs
+    13: ('pack', 0.7, -0.09, -0.08, -30.0),  # stuffedAnimalBackpackA
+    14: ('wing', 0.8, -0.04, 0.2, 0.0, 0.1),  # birdWings
+    15: ('pack', 0.7, -0.09, -0.08, -30.0),  # stuffedAnimalBackpackCat
+    16: ('pack', 0.7, -0.08, -0.08, -30.0),  # stuffedAnimalBackpackDog
     17: ('wing', 1.1, 0.02, 0.14, 0.0),  # airplane
-    18: ('pack', 0.6, -0.13, 0.0, -25.0),  # woodenSword
-    19: ('cape', 0.75, 0.07, 0.55, 0.0),  # supertoonCape
-    20: ('cape', 0.75, 0.07, 0.55, 0.0),  # vampireCape
-    22: ('pack', 0.55, -0.1, -0.08, -30.0),  # band
-    23: ('pack', 0.55, -0.06, -0.08, -30.0),  # gags
-    24: ('pack', 0.55, -0.02, -0.08, -30.0),  # flunky
-    25: ('pack', 0.55, -0.04, -0.08, -30.0),  # santa
-    28: ('pack', 0.55, -0.08, -0.08, -30.0),  # creamPack
-    29: ('pack', 0.55, -0.02, -0.08, -30.0),  # jellybeanJar
-    30: ('pack', 0.55, 0.01, -0.04, -18.0),  # lipstickPack
-    31: ('pack', 0.55, -0.08, -0.08, -30.0),  # oilJar
-    32: ('pack', 0.55, 0.01, -0.08, -30.0),  # trashLid
+    18: ('pack', 0.6, -0.2, -0.18, -35.0),  # woodenSword
+    19: ('cape', 0.7, 0.08, 0.4, -30.0),  # supertoonCape
+    20: ('cape', 0.7, 0.08, 0.4, -30.0),  # vampireCape
+    22: ('pack', 0.7, -0.1, -0.08, -30.0),  # band
+    23: ('pack', 0.7, -0.06, -0.08, -30.0),  # gags
+    24: ('pack', 0.7, -0.02, -0.08, -30.0),  # flunky
+    25: ('pack', 0.7, -0.04, -0.08, -30.0),  # santa
+    28: ('pack', 0.7, -0.08, -0.08, -30.0),  # creamPack
+    29: ('pack', 0.7, 0.07, -0.08, -30.0),  # jellybeanJar
+    30: ('pack', 0.7, 0.01, -0.04, -18.0),  # lipstickPack
+    31: ('pack', 0.7, 0.13, -0.08, -30.0),  # oilJar
+    32: ('pack', 0.7, 0.01, -0.08, -30.0),  # trashLid
 }
 
 
@@ -268,7 +282,8 @@ def _wrapArms(geom):
             x0, y0 = corner[x > 0]
             if y >= frameBack or y0 - y < 0.02 or headHalfWidth(y, z) <= 0.02:
                 continue
-            reach = 0.0
+            # Only ever move an arm outward.
+            reach = abs(x)
             for step in range(1, 21):
                 t = step / 20.0
                 need = headHalfWidth(y0 + (y - y0) * t, z) + 0.012
@@ -277,7 +292,32 @@ def _wrapArms(geom):
             rewriter.setData3(reach if x > 0 else -reach, y, z)
     return holder
 
-def _fitToBack(geom, way, size, y, z, pitch):
+def _squeeze(geom, shift):
+    # Pairs of wings are made for a toon's wide back. A doodle's back is
+    # narrow, so move each wing in toward the middle until their roots meet
+    # on its back instead of standing out at its sides.
+    holder = NodePath('squeeze')
+    geom.reparentTo(holder)
+    holder.flattenStrong()
+    done = []
+    for np_ in holder.findAllMatches('**/+GeomNode'):
+        node = np_.node()
+        for i in range(node.getNumGeoms()):
+            vdata = node.modifyGeom(i).modifyVertexData()
+            if any(vdata == other for other in done):
+                continue
+            done.append(vdata)
+            rewriter = GeomVertexRewriter(vdata, 'vertex')
+            for row in range(vdata.getNumRows()):
+                rewriter.setRow(row)
+                x, y, z = rewriter.getData3()
+                x = max(0.0, abs(x) - shift) * (1 if x > 0 else -1)
+                rewriter.setRow(row)
+                rewriter.setData3(x, y, z)
+    return holder
+
+
+def _fitToBack(geom, way, size, y, z, pitch, squeeze=0.0):
     holder = NodePath('fit')
     tilt = holder.attachNewNode('tilt')
     geom.reparentTo(tilt)
@@ -288,10 +328,13 @@ def _fitToBack(geom, way, size, y, z, pitch):
         if way == 'pack':
             # No taller, wider or deeper than a doodle's back can carry.
             scale = min(size / (hi[2] - lo[2]), 0.75 / (hi[0] - lo[0]),
-                        0.36 / (hi[1] - lo[1]))
+                        0.55 / (hi[1] - lo[1]))
         else:
             scale = size / max(hi[0] - lo[0], hi[2] - lo[2])
         geom.setScale(scale)
+        if squeeze:
+            geom = _squeeze(geom, squeeze)
+            geom.reparentTo(tilt)
         lo, hi = geom.getTightBounds(tilt)
         if way == 'pack':
             contactZ = lo[2]
