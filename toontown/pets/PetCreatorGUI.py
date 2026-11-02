@@ -100,7 +100,7 @@ class PetCreatorGUI(DirectFrame):
         if self.restyle:
             self.dna = list(restyleAvatar.getDNA())
             self.name = restyleAvatar.getName()
-            self.accessories = list(getattr(restyleAvatar, 'accessories', [])) or list(PetAccessories.NoAccessories)
+            self.accessories = PetAccessories.withoutRetired(getattr(restyleAvatar, 'accessories', []))
             if not PetAccessories.isValid(self.accessories):
                 self.accessories = list(PetAccessories.NoAccessories)
             # What it wears now is the doodle's already; only new ones cost.

@@ -13,7 +13,7 @@ every animation) or on its back, through a shared base placement for each kind
 
 import math
 from panda3d.core import Texture, NodePath, Point3, Vec3, GeomVertexReader, GeomVertexRewriter
-from panda3d.core import Geom, GeomTriangles, GeomVertexData, GeomVertexWriter, LVecBase4f
+from panda3d.core import Geom, GeomTriangles, GeomVertexData, GeomVertexWriter, LVecBase4f, Plane, PlaneNode, Mat4
 from toontown.toon import ToonDNA
 
 HAT, GLASSES, BACKPACK = range(3)
@@ -48,6 +48,20 @@ def styleDict(kind):
 
 _choices = {}
 
+# Toon looks doodles can't wear: the oil jar (backpack 31) was taken off
+# the doodle list. A doodle that already wore one just takes it off.
+NOT_FOR_DOODLES = {BACKPACK: (31,)}
+
+
+def withoutRetired(accessories):
+    # These accessories with anything doodles can no longer wear taken off.
+    accessories = list(accessories) if accessories else list(NoAccessories)
+    if len(accessories) == 6:
+        for kind, models in NOT_FOR_DOODLES.items():
+            if accessories[kind * 2] in models:
+                accessories[kind * 2] = accessories[kind * 2 + 1] = 0
+    return accessories
+
 
 def getChoices(kind):
     # Every look of this kind that a toon can wear: (model, texture) pairs
@@ -55,7 +69,7 @@ def getChoices(kind):
     if kind not in _choices:
         seen = set()
         for model, texture, color in styleDict(kind).values():
-            if model and model < len(modelList(kind)):
+            if model and model < len(modelList(kind)) and model not in NOT_FOR_DOODLES.get(kind, ()):
                 seen.add((model, texture))
         _choices[kind] = [(0, 0)] + sorted(seen)
     return _choices[kind]
@@ -206,7 +220,7 @@ OVERRIDES = {HAT: {}, GLASSES: {
     22: ((0.0, 0.33, 0.26), (0.0, 0.0, 0.0), (0.55, 0.55, 0.92))}, BACKPACK: {   # snow goggles
     26: ((0.0, 0.2, -0.3), (180.0, 24.0, 0.0), (1.65, 1.65, 1.3)),   # scarf, round the neck under the mouth, its lower edge flared (SCARF_FLARE), its ends hanging (SCARF_DRAPE)
     27: ((0.0, 0.68, -0.17), (0.0, 0.0, 0.0), 0.24),     # bow tie, under the mouth, its knot on the chest
-    32: ((0.0, -0.5278, 0.021), (0.0, -95.0, 0.0), 0.6)}}  # trash lid, lying flat on the hump, handle up
+    32: ((0.0, -0.4624, 0.0203), (0.0, -96.0, 0.0), 0.55)}}  # trash lid, lying flat in the middle of the hump, handle up
 for _model, (_top, _back, _s) in {23: (-0.22, 0.42, 0.5), 24: (-0.33, 0.43, 0.42),
                                   25: (-0.21, 0.47, 0.5)}.items():
     OVERRIDES[GLASSES][_model] = ((0.0, 0.57 - _back * _s, 0.12 - _top * _s), (0.0, 0.0, 0.0), _s)
@@ -248,12 +262,11 @@ BACK_FITS = {
     20: ('cape', 0.7, 0.08, 0.27, -42.0),  # vampireCape
     22: ('pack', 1.0, -0.031, -0.07, -13.0, {'wide': 1.1, 'hug': 0.024, 'ease': 0.4, 'lift': 0.02, 'smooth': 200, 'deep': 0.8}),  # band, bent to lie flush on the back
     23: ('pack', 0.8, -0.017, -0.05, -13.0, {'wide': 0.95, 'hug': 0.024, 'ease': 0.4, 'lift': 0.02, 'smooth': 200}),  # gags, bent to lie flush on the back
-    24: ('pack', 0.8, 0.0, -0.07, -4.0, {'wide': 0.95, 'hug': 0.013, 'ease': 1.0, 'lift': 0.02, 'smooth': 200}),  # flunky, bent to lie flush on the back
+    24: ('pack', 0.65, 0.0452, -0.0149, -6.0, {'wide': 0.77}),  # flunky, one solid piece: its back on the back, its feet on the hips (placed by exact touch tests)
     25: ('pack', 0.8, -0.013, -0.07, -13.0, {'wide': 0.95, 'hug': 0.007, 'ease': 0.4, 'lift': 0.02, 'turn': 180.0, 'smooth': 200}),  # santa, bent to lie flush on the back
     28: ('pack', 0.8, -0.041, -0.07, -13.0, {'wide': 0.95, 'hug': 0.007, 'ease': 0.4, 'lift': 0.02, 'x': 0.06, 'smooth': 200}),  # creamPack, bent to lie flush on the back
-    29: ('pack', 0.8, 0.0, -0.07, -4.0, {'wide': 0.95, 'hug': 0.011, 'ease': 1.0, 'lift': 0.02, 'deep': 0.7, 'smooth': 200}),  # jellybeanJar, bent to lie flush on the back
+    29: ('pack', 0.8, 0.058, 0.0079, -4.0, {'wide': 0.95, 'deep': 0.7}),  # jellybeanJar, one solid piece (glass doesn't bend): against the back of the neck, resting on the hips (placed by exact touch tests)
     30: ('pack', 0.8, 0.0, -0.07, -18.0, {'wide': 0.95, 'hug': 0.008, 'ease': 0.4, 'lift': 0.02, 'smooth': 200}),  # lipstickPack, bent to lie flush on the back
-    31: ('pack', 0.8, 0.0, -0.07, -4.0, {'wide': 0.95, 'hug': 0.015, 'ease': 1.0, 'lift': 0.02, 'deep': 0.7, 'smooth': 200}),  # oilJar, bent to lie flush on the back
 }
 
 
@@ -774,7 +787,36 @@ def getPlacement(kind, model):
     return (x, y + dy, z + dz), (h, p + dp, r), scale
 
 
-def loadAccessory(kind, model, texture):
+# Where the solid back items sit, by how much they're made smaller
+# (shrunk), so they still rest in the corner between the back of the neck
+# and the hips, touching both (found with exact touch tests on the body).
+RIGID_SPOTS = {
+    24: {1.0: (0.0452, -0.0149), 0.95: (0.0397, -0.0149), 0.9: (0.0352, -0.0306), 0.85: (0.0333, -0.0311),
+         0.8: (0.0273, -0.0288), 0.75: (0.0246, -0.0434), 0.7: (0.0241, -0.0432), 0.65: (0.0218, -0.03),
+         0.6: (0.0113, -0.0262)},
+    29: {1.0: (0.058, 0.0079), 0.95: (0.0514, 0.0104), 0.9: (0.0448, 0.013), 0.85: (0.0367, 0.0129),
+         0.8: (0.0278, 0.0118), 0.75: (0.0201, 0.0131), 0.7: (0.0124, 0.0143), 0.65: (0.0042, 0.0146),
+         0.6: (-0.0042, 0.0146), 0.55: (-0.0096, 0.0205), 0.5: (-0.0209, 0.0147)}}
+
+
+def shrunk(spec, shrink):
+    # A BACK_FITS spec made smaller by shrink (from where it sits).
+    if shrink == 1.0:
+        return spec
+    way, size, y, z, pitch = spec[:5]
+    rest = list(spec[5:])
+    if rest and isinstance(rest[0], dict):
+        opts = dict(rest[0])
+        if way == 'pack':
+            opts['wide'] = opts.get('wide', 0.75) * shrink
+            opts['deep'] = opts.get('deep', 0.55) * shrink
+        rest[0] = opts
+    elif way == 'pack':
+        rest = [dict(zip(('squeeze', 'turn', 'roll'), rest), wide=0.75 * shrink, deep=0.55 * shrink)]
+    return (way, size * shrink, y, z, pitch) + tuple(rest)
+
+
+def loadAccessory(kind, model, texture, shrink=1.0):
     geom = loader.loadModel(modelList(kind)[model], okMissing=True)
     if not geom:
         return None
@@ -785,7 +827,14 @@ def loadAccessory(kind, model, texture):
             tex.setMagfilter(Texture.FTLinear)
             geom.setTexture(tex, 1)
     if kind == BACKPACK and model in BACK_FITS:
-        return _fitToBack(geom, *BACK_FITS[model])
+        spec = shrunk(BACK_FITS[model], shrink)
+        spots = RIGID_SPOTS.get(model)
+        if spots:
+            # A solid one made smaller goes back into the corner between
+            # the back of the neck and the hips, where it rests.
+            y, z = spots[min(spots, key=lambda size: abs(size - shrink))]
+            spec = spec[:2] + (y, z) + spec[4:]
+        return _fitToBack(geom, *spec)
     if kind == BACKPACK and model == SCARF:
         geom = _drapeScarf(geom)
     pos, hpr, scale = getPlacement(kind, model)
@@ -800,6 +849,152 @@ def loadAccessory(kind, model, texture):
     return geom
 
 
+# Hats whose brims or sides come down through these glasses' frames
+# (found with exact triangle tests on the real models, worn on a doodle):
+# with them, the glasses go under the hat (tuckUnderHat). Where the hat
+# sits so low it would hide most of them, the pair is given room (how far
+# the brim has to go up): the hat is raised a little (at most HAT_RAISE,
+# still resting on the head) and the glasses lowered a little on the eyes
+# (at most GLASSES_DROP). {hat: {glasses: room}}
+HATS_OVER_GLASSES = {
+    1: {1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0, 10: 0, 11: 0, 12: 0, 13: 0, 14: 0, 15: 0, 16: 0.035, 17: 0, 18: 0, 19: 0, 20: 0, 21: 0.135, 22: 0, 26: 0, 27: 0, 28: 0},
+    2: {1: 0.015, 2: 0.01, 3: 0, 4: 0.055, 5: 0, 6: 0, 7: 0, 8: 0.045, 9: 0.02, 10: 0.015, 12: 0.04, 13: 0, 14: 0.015, 15: 0.01, 16: 0.095, 17: 0, 18: 0.015, 19: 0.01, 22: 0.03, 26: 0.015, 27: 0.015, 28: 0.035},
+    5: {1: 0, 2: 0, 3: 0, 4: 0.025, 5: 0, 6: 0, 7: 0, 8: 0.01, 9: 0, 10: 0, 11: 0.02, 12: 0.01, 13: 0, 14: 0, 15: 0, 16: 0.06, 17: 0, 18: 0, 19: 0, 21: 0.16, 22: 0, 26: 0, 27: 0, 28: 0},
+    6: {22: 0},
+    9: {16: 0},
+    11: {1: 0, 2: 0, 3: 0, 4: 0.025, 5: 0, 6: 0, 7: 0, 8: 0.01, 9: 0, 10: 0, 12: 0.01, 13: 0, 14: 0, 15: 0, 16: 0.06, 17: 0, 18: 0, 19: 0, 22: 0, 26: 0, 27: 0, 28: 0},
+    15: {1: 0, 2: 0, 4: 0, 6: 0, 8: 0, 9: 0, 10: 0, 11: 0, 12: 0, 13: 0, 14: 0, 15: 0, 16: 0.005, 17: 0, 18: 0, 19: 0, 21: 0.08, 22: 0, 26: 0, 27: 0, 28: 0},
+    16: {1: 0, 2: 0, 3: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0, 12: 0, 13: 0, 14: 0, 16: 0.05, 18: 0, 19: 0, 22: 0, 26: 0, 27: 0, 28: 0},
+    18: {1: 0.01, 2: 0.005, 3: 0, 4: 0.055, 5: 0, 6: 0, 7: 0, 8: 0.035, 9: 0.01, 10: 0.01, 11: 0.045, 12: 0.04, 13: 0, 14: 0.01, 15: 0, 16: 0.09, 17: 0, 18: 0.01, 19: 0.005, 21: 0.185, 22: 0.015, 26: 0.01, 27: 0.005, 28: 0.03},
+    19: {1: 0, 2: 0, 4: 0, 6: 0, 8: 0, 9: 0, 10: 0, 11: 0, 12: 0, 13: 0, 14: 0, 15: 0, 16: 0, 17: 0, 18: 0, 19: 0, 20: 0, 21: 0.08, 22: 0, 26: 0, 27: 0, 28: 0},
+    20: {1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0, 10: 0, 11: 0, 12: 0, 13: 0, 14: 0, 15: 0, 16: 0.02, 17: 0, 18: 0, 19: 0, 21: 0.09, 22: 0, 26: 0, 27: 0, 28: 0},
+    21: {4: 0, 8: 0, 11: 0, 12: 0, 16: 0, 19: 0, 21: 0.035, 22: 0, 27: 0, 28: 0},
+    23: {4: 0, 12: 0, 16: 0, 21: 0},
+    24: {1: 0, 2: 0, 4: 0, 6: 0, 8: 0, 9: 0, 10: 0, 11: 0, 12: 0, 13: 0, 14: 0, 15: 0, 16: 0, 17: 0, 18: 0, 19: 0, 21: 0.085, 22: 0, 26: 0, 27: 0, 28: 0},
+    25: {16: 0, 21: 0},
+    26: {1: 0, 2: 0, 4: 0, 8: 0, 9: 0, 10: 0, 11: 0, 12: 0, 14: 0, 15: 0, 16: 0, 17: 0, 19: 0, 20: 0, 21: 0.09, 22: 0, 26: 0, 27: 0, 28: 0},
+    28: {1: 0, 2: 0, 3: 0, 4: 0.02, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0, 10: 0, 11: 0.025, 12: 0.01, 13: 0, 14: 0, 15: 0, 16: 0.065, 17: 0, 18: 0, 19: 0, 21: 0.17, 22: 0, 26: 0, 27: 0, 28: 0},
+    29: {1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0, 10: 0, 11: 0, 12: 0, 13: 0, 14: 0, 15: 0, 16: 0.025, 17: 0, 18: 0, 19: 0, 20: 0, 21: 0.13, 22: 0, 26: 0, 27: 0, 28: 0},
+    30: {2: 0.055, 3: 0.04, 5: 0.045, 6: 0.04, 7: 0.035, 8: 0.085, 9: 0.06, 12: 0.085, 13: 0.045, 14: 0.06, 18: 0.055, 19: 0.055, 22: 0.07, 27: 0.06, 28: 0.08},
+    31: {4: 0, 8: 0, 9: 0, 12: 0, 14: 0, 16: 0, 18: 0, 19: 0, 21: 0.085, 22: 0, 27: 0, 28: 0},
+    33: {4: 0, 12: 0, 16: 0, 21: 0},
+    38: {4: 0, 12: 0, 16: 0, 21: 0, 28: 0},
+    39: {4: 0, 12: 0, 16: 0, 21: 0, 28: 0},
+    40: {1: 0, 2: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0, 10: 0, 11: 0, 12: 0, 13: 0, 14: 0, 15: 0, 16: 0.035, 17: 0, 18: 0, 19: 0, 20: 0, 22: 0, 26: 0, 27: 0, 28: 0},
+    41: {2: 0, 3: 0, 5: 0, 6: 0, 7: 0, 8: 0.01, 9: 0, 13: 0, 16: 0.06, 18: 0, 22: 0, 27: 0, 28: 0.005},
+    43: {1: 0, 2: 0, 4: 0, 6: 0, 8: 0, 9: 0, 10: 0, 11: 0, 12: 0, 13: 0, 14: 0, 15: 0, 16: 0, 17: 0, 18: 0, 19: 0, 20: 0, 21: 0.095, 22: 0, 26: 0, 27: 0, 28: 0},
+    45: {1: 0, 2: 0, 3: 0, 4: 0, 6: 0, 7: 0, 8: 0, 9: 0, 10: 0, 11: 0, 12: 0, 13: 0, 14: 0, 15: 0, 16: 0, 17: 0, 18: 0, 19: 0, 22: 0, 26: 0, 27: 0, 28: 0},
+    46: {1: 0, 2: 0, 4: 0, 6: 0, 7: 0, 8: 0, 9: 0, 10: 0, 11: 0, 12: 0, 13: 0, 14: 0, 15: 0, 16: 0, 17: 0, 18: 0, 19: 0, 22: 0, 26: 0, 27: 0, 28: 0},
+    48: {16: 0},
+    50: {1: 0, 4: 0, 8: 0, 10: 0, 11: 0.025, 12: 0, 15: 0, 16: 0.055, 17: 0, 19: 0, 21: 0.17, 26: 0, 28: 0},
+    51: {1: 0, 2: 0, 4: 0, 6: 0, 8: 0, 9: 0, 10: 0, 11: 0, 12: 0, 13: 0, 14: 0, 15: 0, 16: 0, 17: 0, 18: 0, 19: 0, 20: 0, 22: 0, 26: 0, 27: 0, 28: 0},
+    54: {1: 0, 2: 0, 4: 0, 8: 0, 9: 0, 10: 0, 11: 0, 12: 0, 13: 0, 14: 0, 16: 0.005, 17: 0, 18: 0, 19: 0, 21: 0.095, 26: 0, 28: 0},
+    55: {1: 0, 2: 0, 4: 0, 5: 0, 6: 0, 8: 0, 9: 0, 10: 0, 11: 0, 12: 0, 13: 0, 14: 0, 15: 0, 16: 0.02, 17: 0, 18: 0, 19: 0, 20: 0, 21: 0.12, 22: 0, 26: 0, 27: 0, 28: 0},
+    59: {4: 0, 8: 0, 11: 0, 12: 0, 16: 0, 19: 0, 21: 0.035, 22: 0, 27: 0, 28: 0},
+    63: {1: 0.01, 2: 0.005, 3: 0, 4: 0.055, 5: 0, 6: 0, 7: 0, 8: 0.03, 9: 0.01, 10: 0.01, 11: 0.045, 12: 0.04, 13: 0, 14: 0.01, 15: 0, 16: 0.09, 17: 0, 18: 0.005, 19: 0.005, 21: 0.185, 22: 0.01, 26: 0.01, 27: 0, 28: 0.03},
+    64: {1: 0, 2: 0, 4: 0, 6: 0, 8: 0, 9: 0, 10: 0, 11: 0, 12: 0, 13: 0, 14: 0, 15: 0, 16: 0, 17: 0, 18: 0, 19: 0, 20: 0, 21: 0.095, 22: 0, 26: 0, 27: 0, 28: 0}}
+
+
+# Back items whose tops would reach into these hats (their backs, brims,
+# plumes or strings hang down behind the head over the doodle's short
+# back), in the idle, walk and run poses (found with exact triangle tests):
+# worn with one, the back item is made smaller, by how much, so it clears
+# it. {back item: {hat: size}}
+BACKS_UNDER_HATS = {
+    1: {1: 0.8, 2: 0.7, 5: (0.75, 9), 6: 0.9, 7: 0.8, 8: 0.85, 9: 0.9, 10: 0.75, 11: 0.8, 12: 0.75, 13: 0.75, 14: 0.85, 15: 0.7, 16: 0.7, 17: 0.75, 18: 0.7, 19: 0.75, 20: 0.75, 21: (0.75, 9), 23: 0.75, 24: 0.75, 25: 0.8, 26: 0.8, 28: 0.75, 29: 0.75, 30: (0.7, 6), 31: (0.7, 6), 32: (0.8, 12), 33: 0.7, 34: (0.65, 9), 36: 0.8, 37: 0.8, 38: 0.85, 39: 0.85, 40: 0.75, 41: 0.7, 42: 0.75, 43: 0.8, 44: 0.7, 45: 0.8, 46: 0.8, 47: (0.65, 9), 48: 0.8, 49: 0.7, 50: (0.8, 6), 51: 0.8, 52: 0.75, 53: 0.75, 54: (0.65, 9), 55: 0.75, 56: (0.65, 9), 57: 0.85, 58: 0.75, 59: (0.75, 9), 60: 0.8, 61: (0.65, 9), 62: 0.75, 63: 0.7, 64: 0.75},
+    2: {2: (0.8, 9), 5: (0.8, 9), 9: 0.9, 11: 0.9, 15: 0.75, 16: 0.7, 18: (0.8, 9), 19: (0.8, 6), 20: 0.8, 21: (0.65, 12), 24: 0.8, 26: 0.7, 28: 0.8, 33: 0.7, 38: 0.75, 39: 0.75, 40: (0.8, 6), 41: (0.7, 9), 43: 0.7, 47: 0.8, 50: (0.85, 12), 51: 0.75, 54: (0.7, 9), 56: 0.75, 57: 0.95, 59: (0.65, 12), 61: 0.75, 63: (0.8, 9), 64: (0.8, 6)},
+    3: {1: 0.95, 2: (0.75, 9), 5: (0.8, 9), 9: 0.85, 11: 0.85, 13: 0.95, 15: 0.75, 16: 0.7, 17: 0.95, 18: (0.75, 9), 19: 0.7, 20: 0.8, 21: (0.65, 12), 24: 0.85, 25: 0.95, 26: 0.95, 28: 0.8, 30: (1.0, 6), 32: 0.95, 38: 0.8, 39: 0.8, 40: (0.8, 9), 41: (0.75, 9), 42: 0.8, 43: 0.7, 44: 0.7, 47: (0.85, 9), 49: 0.75, 50: (0.8, 9), 51: 0.75, 52: 0.9, 53: 0.85, 54: (1.0, 9), 56: (0.8, 6), 57: 0.7, 58: 0.8, 59: (0.65, 12), 60: 0.9, 61: (0.8, 6), 63: (0.75, 9), 64: 0.7},
+    4: {2: (0.85, 6), 5: (0.85, 6), 15: 0.95, 16: 0.8, 18: (0.85, 6), 19: 0.75, 21: (0.65, 12), 26: 0.85, 30: (0.8, 3), 32: (0.9, 3), 33: 0.8, 34: (0.9, 9), 38: 0.9, 39: 0.9, 40: 0.7, 41: (0.85, 9), 43: 0.8, 44: 0.95, 47: 0.8, 50: (0.8, 6), 51: 0.95, 54: (1.0, 12), 56: 0.75, 59: (0.65, 12), 61: 0.75, 63: (0.85, 6), 64: 0.75},
+    5: {1: 0.85, 2: 0.8, 5: 0.7, 6: 0.9, 7: 0.85, 8: 0.85, 9: 0.95, 10: 0.8, 11: 0.8, 12: 0.8, 13: 0.85, 14: 0.9, 15: 0.75, 16: 0.75, 17: 0.8, 18: 0.8, 19: 0.85, 20: 0.8, 21: 0.7, 23: 0.75, 24: 0.85, 25: 0.85, 26: 0.9, 28: 0.8, 29: 0.8, 30: 0.7, 31: (0.75, 9), 32: 0.8, 33: 0.85, 34: (0.7, 9), 37: 0.8, 38: 0.9, 39: 0.9, 40: 0.9, 41: 0.8, 42: 0.8, 43: 0.85, 44: 0.75, 45: 0.8, 46: 0.8, 47: (0.65, 6), 48: 0.8, 49: 0.75, 50: 0.9, 51: 0.9, 52: 0.8, 53: 0.8, 54: (0.8, 12), 55: 0.85, 56: (0.7, 9), 57: 0.9, 58: 0.8, 59: 0.7, 60: 0.85, 61: (0.7, 9), 62: 0.8, 63: 0.8, 64: 0.85},
+    6: {54: 0.95},
+    7: {2: (0.75, 9), 5: (0.7, 9), 9: 0.8, 11: 0.7, 15: (0.8, 6), 16: (0.75, 9), 18: (0.75, 9), 19: 0.7, 20: (0.85, 6), 21: (0.65, 9), 24: 0.75, 26: 0.8, 28: (0.8, 6), 30: 0.95, 33: 0.7, 34: 0.9, 38: 0.75, 39: 0.75, 40: (0.8, 9), 41: (0.75, 9), 42: 0.7, 43: 0.7, 44: (0.7, 6), 47: (0.7, 9), 48: 0.8, 49: (1.0, 3), 50: (0.75, 9), 51: 0.7, 54: (1.0, 12), 56: 0.7, 57: (0.8, 9), 58: (0.8, 9), 59: (0.65, 9), 60: 0.75, 61: 0.7, 63: (0.75, 9), 64: 0.7},
+    8: {1: 0.95, 2: 0.75, 5: 0.7, 11: 0.8, 12: 0.8, 13: 0.8, 15: 0.8, 16: 0.7, 17: 0.8, 18: 0.75, 19: 0.85, 20: 0.8, 21: 0.7, 24: 0.85, 25: 0.8, 26: 0.9, 28: 0.8, 29: 0.9, 30: (0.85, 9), 31: 0.8, 32: 0.8, 33: 0.8, 34: (0.8, 9), 36: 0.95, 37: 0.95, 38: 0.85, 39: 0.85, 40: 0.75, 41: 0.8, 42: 0.8, 43: 0.85, 44: 0.75, 45: 0.9, 46: 0.9, 47: (0.75, 9), 48: 0.8, 49: 0.75, 50: 0.8, 51: 0.85, 52: 0.8, 53: 0.8, 54: (0.9, 12), 55: 0.85, 56: 0.75, 57: 0.8, 58: 0.75, 59: 0.7, 60: 0.8, 61: 0.75, 63: 0.8, 64: 0.85},
+    9: {2: (1.0, 6), 16: 0.75, 18: (0.8, 6), 19: 0.9, 21: (0.7, 9), 40: (1.0, 6), 41: 0.7, 43: 0.85, 44: 0.75, 50: (1.0, 6), 57: (0.85, 9), 59: (0.7, 9), 63: (0.8, 6), 64: 0.85},
+    10: {2: 0.85, 3: 0.9, 5: 0.75, 11: 0.95, 15: 0.95, 16: 0.75, 18: 0.85, 20: 0.9, 21: 0.7, 28: 0.9, 40: 0.85, 41: 0.85, 42: 0.85, 44: 0.85, 47: (0.8, 6), 49: 0.85, 50: 0.9, 53: 0.95, 54: (1.0, 6), 57: 0.8, 58: 0.9, 59: 0.7, 63: 0.9},
+    11: {1: 0.8, 2: 0.75, 5: (0.8, 9), 6: 0.85, 7: 0.85, 8: 0.9, 9: 0.9, 10: 0.8, 11: 0.8, 12: 0.8, 13: 0.8, 14: 0.85, 15: 0.75, 16: 0.7, 17: 0.8, 18: 0.75, 19: 0.8, 20: 0.75, 21: (0.8, 9), 23: 0.9, 24: 0.85, 25: 0.8, 26: 0.9, 28: 0.8, 29: 0.75, 30: (0.75, 9), 31: 0.75, 32: (0.8, 6), 33: 0.8, 34: (0.65, 9), 36: 0.75, 37: 0.8, 38: 0.85, 39: 0.85, 40: 0.8, 41: 0.75, 42: 0.75, 43: 0.85, 44: 0.7, 45: 0.8, 46: 0.8, 47: (0.65, 6), 48: 0.8, 49: 0.7, 50: 0.8, 51: 0.85, 52: 0.8, 53: 0.8, 54: (0.75, 12), 55: 0.8, 56: (0.65, 6), 57: 0.85, 58: 0.75, 59: (0.8, 9), 60: 0.8, 61: (0.65, 6), 62: 0.8, 63: 0.75, 64: 0.85},
+    12: {2: (1.0, 12), 5: (0.85, 12), 15: (0.9, 6), 18: (0.85, 12), 19: (0.9, 6), 20: (0.9, 3), 21: (0.6, 12), 24: 0.7, 26: (0.85, 6), 28: (1.0, 3), 30: (1.0, 3), 32: (1.0, 3), 33: (0.85, 9), 34: 0.8, 38: 0.85, 39: 0.85, 40: (0.85, 6), 41: (0.85, 12), 43: (0.85, 6), 47: 0.85, 50: (0.7, 9), 51: (0.9, 6), 54: (0.7, 15), 56: (0.85, 9), 59: (0.6, 12), 61: (0.85, 9), 63: (0.85, 12), 64: (0.85, 6)},
+    13: {1: 0.8, 2: 0.75, 5: (0.75, 9), 6: 0.9, 7: 0.85, 8: 0.9, 9: 0.9, 10: 0.8, 11: 0.8, 12: 0.75, 13: 0.8, 14: 0.9, 15: 0.7, 16: 0.7, 17: 0.8, 18: 0.7, 19: 0.8, 20: 0.75, 21: (0.8, 9), 23: 0.8, 24: 0.8, 25: 0.8, 26: 0.85, 28: 0.75, 29: 0.75, 30: (0.75, 9), 31: (0.8, 9), 32: (0.8, 6), 33: 0.8, 34: (0.7, 9), 37: 0.8, 38: 0.85, 39: 0.85, 40: 0.85, 41: 0.75, 42: 0.75, 43: 0.8, 44: 0.7, 45: 0.8, 46: 0.8, 47: (0.7, 9), 48: 0.8, 49: 0.7, 50: 0.8, 51: 0.8, 52: 0.8, 53: 0.8, 54: (0.65, 6), 55: 0.8, 56: (0.7, 9), 57: 0.95, 58: 0.8, 59: (0.8, 9), 60: 0.85, 61: (0.7, 9), 62: 0.8, 63: 0.75, 64: 0.8},
+    14: {2: 0.75, 5: 0.75, 15: 0.95, 16: 0.85, 18: 0.75, 19: (0.8, 9), 20: 0.8, 21: (0.8, 12), 24: 0.95, 26: 0.9, 28: 0.95, 30: 0.75, 32: 0.85, 33: 0.8, 34: 0.95, 38: (0.8, 6), 39: (0.8, 6), 40: 0.85, 41: (0.6, 6), 43: 0.85, 44: 0.9, 47: 0.9, 49: 0.95, 50: (0.85, 6), 51: 0.95, 54: (0.8, 9), 56: 0.9, 59: (0.8, 12), 61: 0.9, 63: 0.75, 64: (1.0, 6)},
+    15: {1: 0.8, 2: 0.7, 5: (0.75, 9), 6: 0.95, 7: 0.85, 8: 0.9, 9: 0.9, 10: 0.8, 11: 0.8, 12: 0.8, 13: 0.8, 14: 0.95, 15: 0.7, 16: 0.7, 17: 0.8, 18: 0.7, 19: 0.8, 20: 0.75, 21: (0.75, 9), 23: 0.85, 24: 0.8, 25: 0.8, 26: 0.8, 28: 0.8, 29: 0.8, 30: (0.75, 9), 31: (0.8, 9), 32: (0.8, 6), 33: 0.75, 34: (0.7, 9), 37: 0.8, 38: 0.85, 39: 0.85, 40: 0.8, 41: 0.75, 42: 0.75, 43: 0.8, 44: 0.7, 45: 0.8, 46: 0.8, 47: (0.7, 6), 48: 0.8, 49: 0.7, 50: (0.9, 9), 51: 0.8, 52: 0.8, 53: 0.8, 54: (0.65, 9), 55: 0.8, 56: (0.7, 6), 58: 0.8, 59: (0.75, 9), 60: 0.85, 61: (0.7, 6), 62: 0.8, 63: 0.7, 64: 0.8},
+    16: {1: 0.8, 2: 0.7, 5: (0.75, 9), 6: 0.9, 7: 0.85, 8: 0.9, 9: 0.9, 10: 0.75, 11: 0.8, 12: 0.75, 13: 0.8, 14: 0.9, 15: 0.7, 16: 0.7, 17: 0.8, 18: 0.7, 19: 0.8, 20: 0.75, 21: (0.75, 9), 23: 0.85, 24: 0.8, 25: 0.8, 26: 0.8, 28: 0.75, 29: 0.75, 30: (0.75, 9), 31: 0.7, 32: (0.8, 9), 33: 0.75, 34: (0.7, 12), 37: 0.8, 38: 0.85, 39: 0.85, 40: 0.85, 41: 0.7, 42: 0.75, 43: 0.8, 44: 0.7, 45: 0.8, 46: 0.8, 47: (0.7, 9), 48: 0.8, 49: 0.7, 50: 0.7, 51: 0.8, 52: 0.8, 53: 0.8, 54: (0.65, 9), 55: 0.8, 56: (0.65, 6), 57: 0.95, 58: 0.75, 59: (0.75, 9), 60: 0.8, 61: (0.65, 6), 62: 0.75, 63: 0.7, 64: 0.8},
+    17: {21: 0.95, 54: 0.75, 59: 0.95},
+    22: {1: 0.7, 2: (0.65, 9), 5: (0.6, 9), 6: 0.75, 7: 0.9, 9: 0.75, 10: 0.85, 11: (0.8, 9), 12: (0.65, 6), 13: (0.75, 6), 15: (0.7, 9), 16: (0.65, 9), 17: (0.75, 6), 18: (0.65, 9), 19: (0.8, 9), 20: (0.75, 9), 21: (0.6, 12), 23: 0.75, 24: (0.75, 9), 25: (0.8, 6), 26: (0.75, 9), 28: (0.7, 9), 29: 0.8, 30: (0.6, 9), 31: (0.85, 6), 32: (0.6, 9), 33: (0.7, 9), 34: (0.75, 9), 36: 0.9, 37: 0.7, 38: 0.7, 39: 0.7, 40: (0.75, 9), 41: (0.65, 9), 42: (0.75, 9), 43: (0.75, 9), 44: (0.7, 9), 45: (0.8, 9), 46: (0.8, 9), 47: (0.65, 9), 48: (0.8, 9), 49: (0.65, 6), 50: (0.65, 9), 51: (0.75, 9), 52: (0.8, 12), 53: (1.0, 9), 54: (0.55, 12), 55: (0.8, 6), 56: (0.65, 9), 57: 0.75, 58: (0.75, 9), 59: (0.6, 12), 60: (0.8, 9), 61: (0.65, 9), 62: 0.85, 63: (0.65, 9), 64: (0.75, 9)},
+    23: {1: 0.9, 2: (0.85, 12), 5: (0.75, 9), 9: 0.85, 10: 0.9, 11: 0.9, 12: 0.9, 13: 0.9, 15: 0.7, 16: 0.7, 17: 0.9, 18: (0.85, 12), 19: 0.75, 20: 0.75, 21: (0.7, 9), 24: 0.75, 25: 0.9, 26: 0.75, 28: 0.8, 29: 0.85, 30: (0.8, 3), 31: 0.85, 32: (0.8, 9), 33: (0.8, 6), 34: (0.8, 9), 37: 0.9, 38: 0.85, 39: 0.85, 40: 0.75, 41: (0.8, 9), 42: 0.85, 43: 0.75, 44: 0.8, 45: 0.9, 46: 0.9, 47: 0.75, 48: 0.9, 49: 0.8, 50: (0.75, 9), 51: 0.75, 52: 0.9, 53: 0.9, 54: (0.65, 9), 55: 0.9, 56: 0.7, 58: 0.85, 59: (0.7, 9), 60: 0.95, 61: 0.7, 62: 0.9, 63: (0.85, 12), 64: 0.75},
+    24: {1: 0.95, 2: 0.85, 4: 0.9, 5: (0.8, 3), 11: 0.95, 12: 0.9, 13: 0.95, 15: 0.85, 16: 0.8, 17: 0.9, 18: 0.85, 19: 0.9, 20: 0.9, 21: (0.8, 3), 23: 0.95, 24: 0.9, 26: 0.95, 28: 0.9, 29: 0.95, 30: (0.8, 6), 31: 0.85, 32: (0.8, 3), 33: 0.9, 34: (0.8, 6), 40: 0.95, 41: 0.85, 42: 0.95, 43: 0.95, 44: 0.8, 45: 0.95, 46: 0.95, 47: (0.8, 9), 49: 0.8, 50: 0.9, 51: 0.95, 52: 0.9, 53: 0.9, 54: (0.9, 15), 55: 0.9, 56: (0.8, 6), 58: 0.9, 59: (0.8, 3), 61: (0.8, 6), 63: 0.85, 64: 0.95},
+    25: {1: 0.9, 2: 0.7, 5: (0.8, 9), 7: 0.95, 9: 0.9, 10: 0.9, 11: 0.9, 12: 0.85, 13: 0.9, 15: 0.75, 16: 0.7, 17: 0.9, 18: 0.7, 19: 0.8, 20: 0.75, 21: (0.75, 9), 23: 0.95, 24: 0.8, 25: 0.9, 26: 0.85, 28: 0.75, 29: 0.85, 30: (0.8, 6), 31: 0.8, 32: (0.95, 9), 33: 0.8, 34: (0.8, 12), 36: 0.9, 37: 0.9, 38: 0.85, 39: 0.85, 40: 0.8, 41: 0.7, 42: 0.85, 43: 0.8, 44: 0.8, 45: 0.9, 46: 0.9, 47: (0.8, 9), 48: 0.9, 49: 0.8, 50: 0.8, 51: 0.8, 52: 0.9, 53: 0.9, 54: (0.7, 9), 55: 0.9, 56: (0.75, 6), 57: 0.8, 58: 0.85, 59: (0.75, 9), 60: 0.9, 61: (0.75, 6), 62: 0.9, 63: (0.8, 3), 64: 0.8},
+    26: {32: (1.0, 3), 34: (1.0, 3)},
+    28: {1: 0.8, 2: 0.75, 5: (0.75, 9), 6: 0.95, 7: 0.85, 8: 0.95, 9: 0.95, 10: 0.8, 11: 0.8, 12: 0.75, 13: 0.8, 14: 0.95, 15: 0.7, 16: 0.7, 17: 0.8, 18: 0.75, 19: 0.8, 20: 0.75, 21: (0.8, 9), 23: 0.9, 24: 0.8, 25: 0.8, 26: 0.85, 28: 0.75, 29: 0.75, 30: (0.8, 9), 31: 0.7, 32: (0.8, 3), 33: 0.8, 34: (0.7, 9), 37: 0.8, 38: 0.9, 39: 0.9, 40: 0.85, 41: 0.75, 42: 0.75, 43: 0.8, 44: 0.7, 45: 0.8, 46: 0.8, 47: (0.75, 9), 48: 0.8, 49: 0.7, 50: 0.8, 51: 0.85, 52: 0.8, 53: 0.8, 54: (0.7, 9), 55: 0.75, 56: (0.7, 6), 58: 0.75, 59: (0.8, 9), 60: 0.85, 61: (0.7, 6), 62: 0.8, 63: 0.8, 64: 0.85},
+    29: {2: (0.8, 3), 4: 0.95, 5: (0.85, 6), 11: 0.95, 12: 0.9, 15: 0.85, 16: 0.8, 18: (0.8, 3), 19: 0.85, 20: 0.9, 21: (0.9, 15), 24: 0.85, 26: 0.85, 28: 0.9, 29: 0.95, 30: (0.9, 9), 31: 0.8, 32: (0.8, 3), 33: (0.85, 3), 34: (0.8, 9), 40: 0.85, 41: (0.9, 6), 43: 0.85, 44: 0.9, 47: (0.8, 9), 49: 0.8, 50: (0.9, 9), 51: 0.9, 53: 0.95, 54: (0.9, 15), 56: (0.8, 6), 58: 0.95, 59: (0.9, 15), 61: (0.8, 6), 63: (0.8, 3), 64: 0.85},
+    30: {1: 0.8, 2: 0.75, 5: (0.75, 6), 6: 0.85, 7: 0.8, 8: 0.85, 9: 0.9, 10: 0.75, 11: 0.75, 12: 0.75, 13: 0.8, 14: 0.9, 15: 0.7, 16: 0.7, 17: 0.8, 18: 0.75, 19: 0.8, 20: 0.75, 21: (0.8, 9), 23: 0.95, 24: 0.8, 25: 0.8, 26: 0.85, 28: 0.75, 29: 0.75, 30: (0.75, 9), 31: 0.75, 32: (0.8, 9), 33: 0.8, 34: (0.65, 9), 36: 0.8, 37: 0.8, 38: 0.85, 39: 0.85, 40: 0.8, 41: 0.75, 42: 0.75, 43: 0.8, 44: 0.7, 45: 0.8, 46: 0.8, 47: (0.7, 9), 48: 0.8, 49: 0.7, 50: 0.8, 51: 0.8, 52: 0.8, 53: 0.8, 54: (0.7, 9), 55: 0.8, 56: (0.65, 6), 57: 0.9, 58: 0.75, 59: (0.8, 9), 60: 0.8, 61: (0.65, 6), 62: 0.75, 63: 0.75, 64: 0.8}}
+
+
+# Hats with something hanging down behind the head (the princess hat's
+# ribbon, the roman helmet's neck guard): worn with a back item, that part
+# is trimmed off where it would reach down into it, under this plane
+# (normal, a point on it; on the neck joint, y forward, z up).
+HAT_TRIMS = {
+    32: ((0, 0.5, 1), (0, -0.16, 0.37)),
+    34: ((0, 0.5, 1), (0, -0.1, 0.28))}
+
+
+def trimHat(hatGeom, hat):
+    # Takes off what hangs down behind the hat (HAT_TRIMS), which would
+    # come down into a back item. hatGeom must be on its holder already.
+    trim = HAT_TRIMS.get(hat)
+    if trim:
+        normal, point = trim
+        plane = Plane(-Vec3(*normal), Point3(*point))
+        _cutAbove(hatGeom, _movePlane(plane, hatGeom.getParent().getMat(hatGeom)))
+
+
+# Hats with ties hanging down to the neck (the winter hat's pom-poms): worn
+# with the scarf, the ties are shortened so the pom-poms rest on top of it
+# instead of in it. (everything below z goes up by lift; the ties between
+# z and z + span are squeezed to make up for it)
+OVER_SCARF = {
+    57: (0.035, 0.21, 0.19)}
+
+
+def liftHatEnds(hatGeom, z0, span, lift):
+    holder = hatGeom.getParent()
+    for np_ in hatGeom.findAllMatches('**/+GeomNode'):
+        mat = np_.getMat(holder)
+        back = Mat4(mat)
+        back.invertInPlace()
+        node = np_.node()
+        for i in range(node.getNumGeoms()):
+            rewriter = GeomVertexRewriter(node.modifyGeom(i).modifyVertexData(), 'vertex')
+            while not rewriter.isAtEnd():
+                q = mat.xformPoint(rewriter.getData3())
+                if q[2] < z0 + span:
+                    q[2] += lift * min(1.0, (z0 + span - q[2]) / span)
+                rewriter.setData3(back.xformPoint(q))
+
+
+def backUnderHat(back, hat):
+    # How much smaller the back item is made, and how far (degrees) the hat
+    # is tipped forward, when they're worn together.
+    fit = BACKS_UNDER_HATS.get(back, {}).get(hat, 1.0)
+    if isinstance(fit, tuple):
+        return fit
+    return fit, 0
+
+
+def tipHat(hatGeom, degrees):
+    # Tips the hat forward about the bottom of its front, which stays where
+    # it is on the head, so its back comes up off the back of the neck,
+    # like a hat pushed forward.
+    if not degrees:
+        return
+    holder = hatGeom.getParent()
+    pts = _points(hatGeom, holder)
+    if not pts:
+        return
+    pivot = Vec3(0, max(q[1] for q in pts), min(q[2] for q in pts))
+    turn = Mat4.translateMat(-pivot) * Mat4.rotateMat(-degrees, Vec3(1, 0, 0)) * Mat4.translateMat(pivot)
+    hatGeom.setMat(hatGeom.getMat() * turn)
+
+
 def dressPet(pet, accessories):
     # Puts the accessories on a Pet (or takes them off), replacing what it
     # wore before.
@@ -808,10 +1003,11 @@ def dressPet(pet, accessories):
     pet.accessoryNodes = []
     if not hasattr(pet, 'accessoryJoints'):
         pet.accessoryJoints = {}
-    accessories = list(accessories) if accessories else NoAccessories
+    accessories = withoutRetired(accessories)
     if not isValid(accessories):
         accessories = NoAccessories
     hatOn = accessories[0] != 0
+    hatGeom = glassesGeom = None
     for part in HIDE_UNDER_HAT:
         for node in pet.findAllMatches('**/' + part):
             if hatOn:
@@ -827,7 +1023,10 @@ def dressPet(pet, accessories):
         if joint is None:
             joint = pet.exposeJoint(None, 'modelRoot', jointName)
             pet.accessoryJoints[jointName] = joint
-        geom = loadAccessory(kind, model, texture)
+        shrink = 1.0
+        if kind == BACKPACK:
+            shrink, tip = backUnderHat(model, accessories[0])
+        geom = loadAccessory(kind, model, texture, shrink)
         if geom is None:
             continue
         holder = joint.attachNewNode('accessory-%d' % kind)
@@ -842,3 +1041,188 @@ def dressPet(pet, accessories):
             # where its accessories already come after its eyes.
             holder.setBin('fixed', 4)
         pet.accessoryNodes.append(holder)
+        if kind == HAT:
+            hatGeom = geom
+        if kind == GLASSES:
+            glassesGeom = geom
+    tip = 0
+    if hatGeom is not None and accessories[4]:
+        if getJointName(BACKPACK, accessories[4]) != 'joint_neck':
+            trimHat(hatGeom, accessories[0])
+        tip = backUnderHat(accessories[4], accessories[0])[1]
+        tipHat(hatGeom, tip)
+        if accessories[4] == SCARF and accessories[0] in OVER_SCARF:
+            liftHatEnds(hatGeom, *OVER_SCARF[accessories[0]])
+    room = HATS_OVER_GLASSES.get(accessories[0], {}).get(accessories[2])
+    if room is None and tip:
+        # Tipped forward, the hat can come down over glasses it would
+        # otherwise clear.
+        room = 0
+    if hatGeom is not None and glassesGeom is not None and room is not None:
+        raise_ = min(room, HAT_RAISE)
+        hatGeom.getParent().setZ(raise_)
+        glassesGeom.getParent().setZ(-min(room - raise_, GLASSES_DROP))
+        tuckUnderHat(hatGeom, glassesGeom)
+
+
+def _movePlane(plane, mat):
+    # The plane carried by mat (which may stretch), keeping its up side up.
+    base = plane.getPoint()
+    normal = plane.getNormal()
+    side = Vec3(1, 0, 0) if abs(normal[0]) < 0.9 else Vec3(0, 1, 0)
+    u = normal.cross(side)
+    v = normal.cross(u)
+    a, b, c = (mat.xformPoint(q) for q in (base, base + u, base + v))
+    moved = Plane(a, b, c)
+    if moved.distToPlane(mat.xformPoint(base + normal)) < 0:
+        moved = Plane(a, c, b)
+    return moved
+
+
+def _cutAbove(root, plane):
+    # Cuts away every bit of the model under root that lies above plane
+    # (given in root's space, its normal pointing up): triangles across it
+    # are cut along it, so its edge is clean. Returns how much was cut.
+    cut = 0
+    for np_ in root.findAllMatches('**/+GeomNode'):
+        node = np_.node()
+        local = _movePlane(plane, root.getMat(np_))
+        for i in range(node.getNumGeoms()):
+            old = node.getGeom(i)
+            vdata = old.getVertexData()
+            fmt = vdata.getFormat()
+            names = []
+            for a in range(fmt.getNumArrays()):
+                array = fmt.getArray(a)
+                for c in range(array.getNumColumns()):
+                    names.append(str(array.getColumn(c).getName()))
+            rows = {}
+            for name in names:
+                reader = GeomVertexReader(vdata, name)
+                values = []
+                while not reader.isAtEnd():
+                    values.append(LVecBase4f(reader.getData4()))
+                rows[name] = values
+            pos = rows['vertex']
+            height = [local.distToPlane(Point3(v[0], v[1], v[2])) for v in pos]
+            out = GeomVertexData(vdata.getName(), fmt, Geom.UHStatic)
+            writers = dict((name, GeomVertexWriter(out, name)) for name in names)
+            tris = GeomTriangles(Geom.UHStatic)
+            count = [0]
+
+            def add(a, b=None, t=0.0):
+                for name in names:
+                    va = rows[name][a]
+                    writers[name].addData4(va if b is None else va + (rows[name][b] - va) * t)
+                count[0] += 1
+                return count[0] - 1
+
+            for k in range(old.getNumPrimitives()):
+                prim = old.getPrimitive(k).decompose()
+                for t in range(prim.getNumPrimitives()):
+                    start = prim.getPrimitiveStart(t)
+                    corners = [prim.getVertex(start + q) for q in range(3)]
+                    if all(height[c] <= 0.0 for c in corners):
+                        made = [add(c) for c in corners]
+                    else:
+                        cut += 1
+                        made = []
+                        for q in range(3):
+                            a, b = corners[q], corners[(q + 1) % 3]
+                            if height[a] <= 0.0:
+                                made.append(add(a))
+                            if (height[a] <= 0.0) != (height[b] <= 0.0):
+                                made.append(add(a, b, height[a] / (height[a] - height[b])))
+                    for q in range(1, len(made) - 1):
+                        tris.addVertices(made[0], made[q], made[q + 1])
+            geom = Geom(out)
+            geom.addPrimitive(tris)
+            node.setGeom(i, geom)
+    return cut
+
+
+TUCK_GAP = 0.004
+TUCK_FRONT = 0.07
+HAT_RAISE = 0.03
+GLASSES_DROP = 0.02
+
+
+def _points(root, ref):
+    # Every vertex of the model under root, in ref's space.
+    pts = []
+    for np_ in root.findAllMatches('**/+GeomNode'):
+        mat = np_.getMat(ref)
+        node = np_.node()
+        for i in range(node.getNumGeoms()):
+            reader = GeomVertexReader(node.getGeom(i).getVertexData(), 'vertex')
+            while not reader.isAtEnd():
+                pts.append(mat.xformPoint(reader.getData3()))
+    return pts
+
+
+def _hatBottomOver(hatGeom, x0, x1, y0, y1):
+    # How low (in the hat's own space, z up) the hat comes down over the
+    # box x0..x1, y0..y1: each triangle is cut down to the box first, since
+    # a brim is a few big ones whose corners lie outside it.
+    low = None
+    for np_ in hatGeom.findAllMatches('**/+GeomNode'):
+        mat = np_.getMat(hatGeom)
+        node = np_.node()
+        for i in range(node.getNumGeoms()):
+            geom = node.getGeom(i)
+            reader = GeomVertexReader(geom.getVertexData(), 'vertex')
+            verts = []
+            while not reader.isAtEnd():
+                verts.append(mat.xformPoint(reader.getData3()))
+            for k in range(geom.getNumPrimitives()):
+                prim = geom.getPrimitive(k).decompose()
+                for t in range(prim.getNumPrimitives()):
+                    start = prim.getPrimitiveStart(t)
+                    a, b, c = [verts[prim.getVertex(start + q)] for q in range(3)]
+                    if max(a[0], b[0], c[0]) < x0 or min(a[0], b[0], c[0]) > x1 or \
+                       max(a[1], b[1], c[1]) < y0 or min(a[1], b[1], c[1]) > y1:
+                        continue
+                    # The triangle cut down to the box; its lowest corner.
+                    poly = [a, b, c]
+                    for axis, edge, keep in ((0, x0, 1), (0, x1, -1), (1, y0, 1), (1, y1, -1)):
+                        cut = []
+                        for q in range(len(poly)):
+                            p0, p1 = poly[q], poly[(q + 1) % len(poly)]
+                            d0, d1 = (p0[axis] - edge) * keep, (p1[axis] - edge) * keep
+                            if d0 >= 0:
+                                cut.append(p0)
+                            if (d0 >= 0) != (d1 >= 0):
+                                cut.append(p0 + (p1 - p0) * (d0 / (d0 - d1)))
+                        poly = cut
+                        if not poly:
+                            break
+                    for q in poly:
+                        if low is None or q[2] < low:
+                            low = q[2]
+    return low
+
+
+def tuckUnderHat(hatGeom, glassesGeom):
+    # Glasses worn under a hat whose brim would cut through them go under
+    # it, like real ones: whatever of their frames would come up past the
+    # bottom of the hat over them is cut away there (it would be under the
+    # hat). Only the part of the hat over the front of the glasses counts,
+    # not its sideburns, jaw or feathers lower down elsewhere.
+    joint = glassesGeom.getParent()
+    pts = _points(glassesGeom, joint)
+    if not pts:
+        return
+    front = max(q[1] for q in pts) - TUCK_FRONT
+    mat = joint.getMat(hatGeom)
+    over = [mat.xformPoint(q) for q in pts if q[1] >= front]
+    low = _hatBottomOver(hatGeom, min(q[0] for q in over), max(q[0] for q in over),
+                         min(q[1] for q in over), max(q[1] for q in over))
+    if low is None:
+        return
+    # Worked out on the joint, where a distance is a distance: a hair under
+    # the hat, so the cut edge doesn't touch it.
+    plane = _movePlane(Plane(Vec3(0, 0, 1), Point3(0, 0, low)), hatGeom.getMat(joint))
+    normal = plane.getNormal()
+    normal.normalize()
+    plane = Plane(normal, plane.getPoint() - normal * TUCK_GAP)
+    _cutAbove(glassesGeom, _movePlane(plane, joint.getMat(glassesGeom)))

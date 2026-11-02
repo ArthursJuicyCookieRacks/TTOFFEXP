@@ -205,6 +205,8 @@ class DistributedNPCPetclerkAI(DistributedNPCToonBaseAI):
         av = self.air.doId2do.get(avId)
         if av is None:
             return
+        if wearing:
+            wearing = PetAccessories.withoutRetired(wearing)
         if not wearing or not PetCreator.isValidAccessories(wearing):
             wearing = None
         cost = PetAccessories.getCost(accessories, wearing)
