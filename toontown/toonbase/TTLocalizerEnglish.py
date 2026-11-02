@@ -4267,6 +4267,7 @@ AvatarChooserPickAToon = 'Pick  A  Toon  To  Play'
 AvatarChooserQuit = lQuit
 AvatarChooserQuestionable = '???'
 AvatarChooserSurvival = 'SURVIVAL'
+AvatarChooserPlay = 'Play'
 SurvivalTitle = 'Survival Mode'
 SurvivalPlay = 'Map Select'
 SurvivalMapSelect = 'MAP SELECT'

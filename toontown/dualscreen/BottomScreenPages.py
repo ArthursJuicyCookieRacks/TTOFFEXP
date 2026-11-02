@@ -23,6 +23,7 @@ from panda3d.core import CardMaker, NodePath, PNMImage, Point3, TextNode, Textur
 from toontown.hood import ZoneUtil
 from toontown.toonbase import ToontownBattleGlobals
 from toontown.toonbase import ToontownGlobals
+from toontown.toonbase import TTLocalizer
 
 notify = DirectNotifyGlobal.directNotify.newCategory('BottomScreen')
 
@@ -206,7 +207,7 @@ class BottomScreen(DirectObject):
                      'phase_3.5/models/gui/stickerbook_gui', 'phase_3/models/gui/tt_m_gui_pat_mainGui',
                      'phase_3/models/gui/tt_m_gui_mat_mainGui', 'phase_3.5/models/gui/friendslist_gui',
                      'phase_3.5/models/gui/chat_input_gui', 'phase_3.5/models/gui/jar_gui',
-                     'phase_3/models/gui/quit_button', 'phase_3.5/models/gui/toontown_map',
+                     'phase_3/models/gui/quit_button', 'phase_3/models/gui/pick_a_toon_gui', 'phase_3.5/models/gui/toontown_map',
                      'phase_3.5/models/gui/cloud', 'phase_3/models/gui/cog_icons'):
             models[name.split('/')[-1]] = loader.loadModel(name)
         self.models = models
@@ -522,6 +523,21 @@ class BottomScreen(DirectObject):
         toon.setScale(size)
         toon.setPos(-(low[0] + high[0]) / 2.0 * size, 0, -0.9 - low[2] * size)
         self.slotToon = toon
+        # Arthur: a Play button in the bottom right corner, like the top
+        # screen's Quit button.
+        image = self.find('pick_a_toon_gui', 'QuitBtn_RLVR')
+        play = DirectFrame(parent=self.slotNode, relief=None, image=image, scale=1.05, pos=(self.width - 0.27, 0, -0.88),
+                           text=getattr(TTLocalizer, 'AvatarChooserPlay', 'Play'), text_font=ToontownGlobals.getSignFont(),
+                           text_fg=(0.977, 0.816, 0.133, 1), text_scale=0.08, text_pos=(0, -0.025), state=DGG.NORMAL)
+        play.setTransparency(TransparencyAttrib.MAlpha)
+        self.tap(play, self.play, av.position)
+
+    def play(self, position):
+        if self.leaving or pickAToon() is None:
+            return
+        self.leaving = True
+        # As if that toon's Play This Toon was pressed on the top screen.
+        messenger.send('avChoicePanel-%d' % position, ['chose', position])
 
     def showMakeAToon(self, position):
         from toontown.login import AvatarChooser
