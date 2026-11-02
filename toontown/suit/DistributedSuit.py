@@ -432,8 +432,7 @@ class DistributedSuit(DistributedSuitBase.DistributedSuitBase, DelayDeletable):
 
     def exitFromSky(self):
         self.disableBattleDetect()
-        self.mtrack.finish()
-        del self.mtrack
+        self.__stopMoveTrack()
         self.detachPropeller()
 
     def enterWalkToStreet(self, leg, time):
@@ -454,8 +453,7 @@ class DistributedSuit(DistributedSuitBase.DistributedSuitBase, DelayDeletable):
     def exitWalkToStreet(self):
         self.disableBattleDetect()
         self.enableRaycast(0)
-        self.mtrack.finish()
-        del self.mtrack
+        self.__stopMoveTrack()
 
     def enterWalkFromStreet(self, leg, time):
         self.enableBattleDetect('walkFromStreet', self.__handleToonCollision)
@@ -475,8 +473,7 @@ class DistributedSuit(DistributedSuitBase.DistributedSuitBase, DelayDeletable):
     def exitWalkFromStreet(self):
         self.disableBattleDetect()
         self.enableRaycast(0)
-        self.mtrack.finish()
-        del self.mtrack
+        self.__stopMoveTrack()
 
     def enterWalk(self, leg, time):
         self.enableBattleDetect('bellicose', self.__handleToonCollision)
@@ -491,8 +488,20 @@ class DistributedSuit(DistributedSuitBase.DistributedSuitBase, DelayDeletable):
 
     def exitWalk(self):
         self.disableBattleDetect()
-        self.mtrack.pause()
-        del self.mtrack
+        self.__stopMoveTrack(finish=False)
+
+    def __stopMoveTrack(self, finish=True):
+        # Every moving state starts self.mtrack only after verifySuitPlanner();
+        # when the street's planner is not there yet (or already gone, say
+        # while the toon is leaving through a door or teleporting) the state
+        # starts without one, and leaving that state crashed the game.
+        track = getattr(self, 'mtrack', None)
+        if track is not None:
+            if finish:
+                track.finish()
+            else:
+                track.pause()
+        self.mtrack = None
 
     def enterToSky(self, leg, time):
         self.enableBattleDetect('toSky', self.__handleToonCollision)
@@ -507,8 +516,7 @@ class DistributedSuit(DistributedSuitBase.DistributedSuitBase, DelayDeletable):
 
     def exitToSky(self):
         self.disableBattleDetect()
-        self.mtrack.finish()
-        del self.mtrack
+        self.__stopMoveTrack()
         self.detachPropeller()
 
     def enterFromSuitBuilding(self, leg, time):
@@ -532,8 +540,7 @@ class DistributedSuit(DistributedSuitBase.DistributedSuitBase, DelayDeletable):
 
     def exitFromSuitBuilding(self):
         self.disableBattleDetect()
-        self.mtrack.finish()
-        del self.mtrack
+        self.__stopMoveTrack()
 
     def enterToToonBuilding(self, leg, time):
         self.loop('neutral', 0)
@@ -560,8 +567,7 @@ class DistributedSuit(DistributedSuitBase.DistributedSuitBase, DelayDeletable):
         self.mtrack.start(time)
 
     def exitToSuitBuilding(self):
-        self.mtrack.finish()
-        del self.mtrack
+        self.__stopMoveTrack()
 
     def enterToCogHQ(self, leg, time):
         self.loop('neutral', 0)
@@ -602,8 +608,7 @@ class DistributedSuit(DistributedSuitBase.DistributedSuitBase, DelayDeletable):
 
     def exitFlyAway(self):
         self.disableBattleDetect()
-        self.mtrack.finish()
-        del self.mtrack
+        self.__stopMoveTrack()
         self.detachPropeller()
 
     def enterDanceThenFlyAway(self):
@@ -618,8 +623,7 @@ class DistributedSuit(DistributedSuitBase.DistributedSuitBase, DelayDeletable):
 
     def exitDanceThenFlyAway(self):
         self.disableBattleDetect()
-        self.mtrack.finish()
-        del self.mtrack
+        self.__stopMoveTrack()
         self.detachPropeller()
 
     def playCurrentDialogue(self, dialogue, chatFlags, interrupt = 1):
