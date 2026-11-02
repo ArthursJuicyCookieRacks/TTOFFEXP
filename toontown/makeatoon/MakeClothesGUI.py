@@ -35,6 +35,24 @@ ACCESSORY_KINDS = (('hat', TTLocalizer.TrunkHatGUI, ToonDNA.HatStyles),
  ('backpack', TTLocalizer.TrunkBackpackGUI, ToonDNA.BackpackStyles),
  ('shoes', TTLocalizer.TrunkShoesGUI, ToonDNA.ShoesStyles))
 
+# Glove colours: white (the classic look) first, then every toon colour.
+GLOVE_COLORS = list(range(len(ToonDNA.allColorsList)))
+
+def gloveColorName(color):
+    names = getattr(TTLocalizer, 'ToonColorNames', [])
+    if 0 <= color < len(names):
+        return names[color]
+    return str(color)
+
+# The accessory rows, then Gloves under them as a fifth row: a little closer
+# together than the four clothes rows so all five, their name labels and
+# Shuffle fit above the arrows at the bottom.
+ACCESSORY_ROW_TOP = -0.073
+ACCESSORY_ROW_STEP = 0.19
+ACCESSORY_ROW_SCALE = 0.95
+ACCESSORY_ROW_TILT = (3, -2, 3, -2, 3)
+ACCESSORY_SHUFFLE_Z = -1.06
+
 class MakeClothesGUI(ClothesGUI.ClothesGUI):
     notify = directNotify.newCategory('MakeClothesGUI')
 
@@ -44,6 +62,9 @@ class MakeClothesGUI(ClothesGUI.ClothesGUI):
         for kind, label, styles in ACCESSORY_KINDS:
             self.accessories[kind] = [accessoryChoices(styles), 0]
         self.showingAccessories = 0
+        # Index in GLOVE_COLORS; None until the first toon comes in, and
+        # then taken from its DNA.
+        self.gloveChoice = None
 
     def load(self):
         ClothesGUI.ClothesGUI.load(self)
@@ -57,29 +78,44 @@ class MakeClothesGUI(ClothesGUI.ClothesGUI):
         self.clothesFrames = [self.shirtStyleFrame, self.shirtFrame, self.bottomStyleFrame, self.bottomFrame]
         self.accessoryFrame = DirectFrame(parent=self.parentFrame, relief=None)
         self.accessoryButtons = {}
-        for i, (kind, label, styles) in enumerate(ACCESSORY_KINDS):
-            frame = DirectFrame(parent=self.accessoryFrame, image=shuffleFrame, image_scale=halfButtonInvertScale, relief=None, pos=(0, 0, -0.073 - 0.227 * i), hpr=(0, 0, (3, -2, 3, -2)[i]), scale=1.0, frameColor=(1, 1, 1, 1), text=label, text_scale=0.0575, text_pos=(-0.001, -0.015), text_fg=(1, 1, 1, 1))
+        def makeRow(i, label, command, kind):
+            frame = DirectFrame(parent=self.accessoryFrame, image=shuffleFrame, image_scale=halfButtonInvertScale, relief=None, pos=(0, 0, ACCESSORY_ROW_TOP - ACCESSORY_ROW_STEP * i), hpr=(0, 0, ACCESSORY_ROW_TILT[i]), scale=ACCESSORY_ROW_SCALE, frameColor=(1, 1, 1, 1), text=label, text_scale=0.0575, text_pos=(-0.001, -0.015), text_fg=(1, 1, 1, 1))
             lButton = DirectButton(parent=frame, relief=None, image=(shuffleArrowUp,
              shuffleArrowDown,
              shuffleArrowUp,
-             shuffleArrowDisabled), image_scale=halfButtonScale, image1_scale=halfButtonHoverScale, image2_scale=halfButtonHoverScale, pos=(-0.2, 0, 0), command=self.swapAccessory, extraArgs=[kind, -1])
+             shuffleArrowDisabled), image_scale=halfButtonScale, image1_scale=halfButtonHoverScale, image2_scale=halfButtonHoverScale, pos=(-0.2, 0, 0), command=command, extraArgs=[kind, -1])
             rButton = DirectButton(parent=frame, relief=None, image=(shuffleArrowUp,
              shuffleArrowDown,
              shuffleArrowUp,
-             shuffleArrowDisabled), image_scale=halfButtonInvertScale, image1_scale=halfButtonInvertHoverScale, image2_scale=halfButtonInvertHoverScale, pos=(0.2, 0, 0), command=self.swapAccessory, extraArgs=[kind, 1])
+             shuffleArrowDisabled), image_scale=halfButtonInvertScale, image1_scale=halfButtonInvertHoverScale, image2_scale=halfButtonInvertHoverScale, pos=(0.2, 0, 0), command=command, extraArgs=[kind, 1])
             # The accessory's name and number, so one that doesn't show can
             # be named (Arthur asked).
             nameLabel = DirectLabel(parent=frame, relief=None, pos=(0, 0, -0.085), text='', text_scale=0.038,
                                     text_fg=(1, 1, 1, 1), text_shadow=(0, 0, 0, 1), text_font=ToontownGlobals.getInterfaceFont())
-            self.accessoryButtons[kind] = (frame, lButton, rButton, nameLabel)
+            return (frame, lButton, rButton, nameLabel)
+
+        for i, (kind, label, styles) in enumerate(ACCESSORY_KINDS):
+            self.accessoryButtons[kind] = makeRow(i, label, self.swapAccessory, kind)
+        # Glove colour, the same kind of row (Arthur asked). Its name label
+        # carries a little swatch of the colour.
+        self.gloveButtons = makeRow(len(ACCESSORY_KINDS), TTLocalizer.MakeAToonGloves, lambda kind, offset: self.swapGloves(offset), 'gloves')
+        # A dark edge, so white and pale colours show against the frame.
+        self.gloveSwatch = DirectFrame(parent=self.gloveButtons[3], relief=DGG.FLAT, frameSize=(-0.017, 0.017, -0.017, 0.017),
+                                       pos=(0, 0, 0.01), frameColor=(0.1, 0.1, 0.15, 1))
+        self.gloveSwatchColor = DirectFrame(parent=self.gloveSwatch, relief=DGG.FLAT, frameSize=(-0.012, 0.012, -0.012, 0.012),
+                                            frameColor=(1, 1, 1, 1))
         self.accessoryFrame.hide()
         # Shuffle for the accessories, in the clothes Shuffle button's place
         # while they are showing. A shuffle leaves each kind off about a
         # third of the time, so a toon isn't always wearing all four.
         self.accessoryShuffleMsg = 'AccessoryShuffle'
         self.accessoryShuffle = ShuffleButton.ShuffleButton(AccessoryShuffleOwner(self), self.accessoryShuffleMsg)
+        # Gloves stay white about half the time, as most toons wear them.
         self.accessoryShuffle.setChoicePool([[0] * max(1, len(choices) // 2) + list(range(1, len(choices)))
-                                             for choices, choice in (self.accessories[kind] for kind, label, styles in ACCESSORY_KINDS)])
+                                             for choices, choice in (self.accessories[kind] for kind, label, styles in ACCESSORY_KINDS)]
+                                            + [[0] * (len(GLOVE_COLORS) - 1) + list(range(1, len(GLOVE_COLORS)))])
+        # A little lower than the clothes Shuffle, under the Gloves row.
+        self.accessoryShuffle.parentFrame.setZ(ACCESSORY_SHUFFLE_Z)
         self.accessoryShuffle.parentFrame.hide()
         # The same button as Shuffle, just under it.
         self.accessoriesButton = DirectButton(parent=self.parentFrame, relief=None, pos=(0, 0, 0.15), hpr=(0, 0, 5), image=(shuffleUp, shuffleDown, shuffleUp), image_scale=(-0.9, 0.6, 0.6), image1_scale=(-0.93, 0.6, 0.6), image2_scale=(-0.93, 0.6, 0.6), text=TTLocalizer.MakeAToonAccessories, text_font=ToontownGlobals.getInterfaceFont(), text_scale=TTLocalizer.SBshuffleBtn * 0.75, text_pos=(0, -0.02), text_fg=(1, 1, 1, 1), text_shadow=(0, 0, 0, 1), command=self.toggleAccessories)
@@ -96,6 +132,13 @@ class MakeClothesGUI(ClothesGUI.ClothesGUI):
             rButton.destroy()
             frame.destroy()
         del self.accessoryButtons
+        self.gloveSwatchColor.destroy()
+        del self.gloveSwatchColor
+        self.gloveSwatch.destroy()
+        del self.gloveSwatch
+        for widget in reversed(self.gloveButtons):
+            widget.destroy()
+        del self.gloveButtons
         self.accessoryFrame.destroy()
         del self.accessoryFrame
         del self.clothesFrames
@@ -105,6 +148,9 @@ class MakeClothesGUI(ClothesGUI.ClothesGUI):
         ClothesGUI.ClothesGUI.enter(self, toon)
         for kind in self.accessories:
             self.swapAccessory(kind, 0)
+        if self.gloveChoice is None:
+            self.setGloveFromDna(toon.getStyle())
+        self.swapGloves(0)
         self.accept(self.accessoryShuffleMsg, self.shuffleAccessories)
         self.acceptOnce('MAT-newToonCreated', self.accessoryShuffle.cleanHistory)
         self.showAccessories(self.showingAccessories)
@@ -150,13 +196,41 @@ class MakeClothesGUI(ClothesGUI.ClothesGUI):
             self.toon.setShoes(idx, textureIdx, colorIdx)
         messenger.send('wakeup')
 
+    def setGloveFromDna(self, dna):
+        color = getattr(dna, 'gloveColor', 0)
+        self.gloveChoice = GLOVE_COLORS.index(color) if color in GLOVE_COLORS else 0
+
+    def swapGloves(self, offset):
+        """Steps the glove colour; it is part of the toon's DNA, so it saves
+        with the toon and shows in game."""
+        choice = max(0, min(len(GLOVE_COLORS) - 1, (self.gloveChoice or 0) + offset))
+        self.gloveChoice = choice
+        color = GLOVE_COLORS[choice]
+        frame, lButton, rButton, nameLabel = self.gloveButtons
+        self.updateScrollButtons(choice, len(GLOVE_COLORS), 0, lButton, rButton)
+        name = '%s, %d of %d' % (gloveColorName(color), choice + 1, len(GLOVE_COLORS))
+        nameLabel['text'] = name
+        # The swatch sits just left of the name.
+        width = nameLabel.component('text0').textNode.getWidth() * 0.038 if nameLabel.hascomponent('text0') else 0.2
+        self.gloveSwatch.setPos(-width / 2.0 - 0.025, 0, 0.012)
+        self.gloveSwatchColor['frameColor'] = ToonDNA.allColorsList[color]
+        if not getattr(self, 'toon', None):
+            return
+        self.toon.style.gloveColor = color
+        self.toon.generateToonColor()
+        messenger.send('wakeup')
+
     def getAccessoryChoices(self):
-        return [self.accessories[kind][1] for kind, label, styles in ACCESSORY_KINDS]
+        return [self.accessories[kind][1] for kind, label, styles in ACCESSORY_KINDS] + [self.gloveChoice or 0]
 
     def shuffleAccessories(self):
-        for (kind, label, styles), choice in zip(ACCESSORY_KINDS, self.accessoryShuffle.getCurrChoice()):
+        choices = self.accessoryShuffle.getCurrChoice()
+        for (kind, label, styles), choice in zip(ACCESSORY_KINDS, choices):
             self.accessories[kind][1] = choice
             self.swapAccessory(kind, 0)
+        if len(choices) > len(ACCESSORY_KINDS):
+            self.gloveChoice = choices[len(ACCESSORY_KINDS)]
+            self.swapGloves(0)
 
     def getAccessories(self):
         """(hat, glasses, backpack, shoes) as picked here."""

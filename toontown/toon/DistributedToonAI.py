@@ -5147,10 +5147,6 @@ def dna(part, value):
         dna.legColor = value
         av.b_setDNAString(dna.makeNetString())
     elif part=='gloves': # Incase anyone tries to change glove color for whatever reason...
-        return "DNA: Change of glove colors are not allowed."
-        # If you ever want to be able to edit gloves, feel free to comment out this return.
-        # However, since DToonAI checks ToonDNA, this would be impossible unless changes
-        # are made.
         value = int(value)
         if not 0 <= value <= 38:
             return "DNA: Color index out of range."

@@ -2717,7 +2717,9 @@ class ToonDNA(AvatarDNA.AvatarDNA):
         if armColor >= len(allColorsList):
             return False
 
-        if gloveColor != 0 and not config.ConfigVariableBool('want-glove-colors', False).getValue():
+        # Make-A-Toon lets a toon pick any colour for its gloves (Arthur
+        # asked); white (0) is the classic look.
+        if gloveColor >= len(allColorsList):
             return False
 
         if legColor >= len(allColorsList):

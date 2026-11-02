@@ -235,6 +235,7 @@ class LookEditor(DirectObject):
     def startFrom(self, look):
         toon = Toon.Toon()
         toon.setDNA(ToonLooks.dnaOf(look))
+        self.cls.setGloveFromDna(toon.style)
         for kind in ToonLooks.ACCESSORIES:
             getattr(toon, 'set' + kind.capitalize())(*look.get(kind, (0, 0, 0)))
             choices = self.cls.accessories[kind][0]

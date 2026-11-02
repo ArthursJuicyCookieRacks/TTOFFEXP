@@ -273,6 +273,12 @@ def scenarioLogin():
                     gui.swapAccessory(kind, steps)
                 yield sleep(0.5)
                 base.screenshot(os.path.join(os.environ.get('AUTOPLAY_SHOTS', '/tmp'), 'mat-accessories.png'), defaultFilename=0)
+                if GLOVES:
+                    # The Gloves row, under Shoes: step to the colour asked for.
+                    gui.swapGloves(GLOVES - gui.gloveChoice)
+                    yield sleep(0.5)
+                    log('gloves picked: %s' % gui.gloveButtons[3]['text'])
+                    base.screenshot(os.path.join(os.environ.get('AUTOPLAY_SHOTS', '/tmp'), 'mat-gloves.png'), defaultFilename=0)
                 gui.showAccessories(False)
         yield sleep(2)
         typed = os.environ.get('AUTOPLAY_TYPED_NAME')
@@ -307,6 +313,8 @@ def scenarioLogin():
 # AUTOPLAY_TUTORIAL=1 makes the new toon go through the Toontorial (the
 # tutorial scenario) instead of skipping it.
 TUTORIAL = bool(os.environ.get('AUTOPLAY_TUTORIAL'))
+# A glove colour (index in ToonDNA.allColorsList) for the new toon to pick.
+GLOVES = int(os.environ.get('AUTOPLAY_GLOVES', '0'))
 
 
 def scenarioTutorial():
@@ -1310,6 +1318,28 @@ def scenarioOffice():
     yield from boardElevator('DistributedLawOfficeElevatorExt',
                              lambda do: getattr(do, 'intZoneId', None) == ToontownGlobals.LawbotStageIntA)
     yield from clearRooms('StageInterior', 'DistributedStage')
+
+
+def scenarioGloves():
+    # The glove colour picked in Make-A-Toon (AUTOPLAY_GLOVES) is on the
+    # toon, on the server's copy of it, and drawn on its hands in game.
+    yield until(walking, 60, 'walking')
+    want = GLOVES or 18
+    av = base.localAvatar
+    aiAv = onDistrict(lambda air: air.doId2do.get(av.doId))
+    log('glove colour: client %s, server %s' % (av.style.gloveColor, aiAv and aiAv.dna.gloveColor))
+    if av.style.gloveColor != want or aiAv is None or aiAv.dna.gloveColor != want:
+        raise StepFailed('glove colour %s did not reach the game' % want)
+    hands = av.getPart('torso', '1000').find('**/hands')
+    log('hands colour in game: %s' % (hands.getColor(),))
+    from toontown.toon import ToonDNA
+    if not hands.getColor().almostEqual(ToonDNA.allColorsList[want], 0.01):
+        raise StepFailed('the hands are not drawn in the glove colour')
+    av.setH(render, 180)
+    # After the playground's name has faded.
+    yield sleep(6)
+    front = av.getPos(render) + render.getRelativeVector(av, Vec3(0, 7, 3.2))
+    shotFrom('gloves-in-game.png', front, av.getPos(render) + Vec3(0, 0, 2.2))
 
 
 def shotFrom(name, pos, lookAt):
@@ -4531,6 +4561,7 @@ def scenarioNPCEmote():
 
 SCENARIOS = [
     ('login', scenarioLogin),
+    ('gloves', scenarioGloves),
     ('exittoontown', scenarioExitToontown),
     ('displaysettings', scenarioDisplaySettings),
     ('doublexp', scenarioDoubleXp),
