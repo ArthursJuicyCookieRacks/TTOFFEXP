@@ -11,7 +11,9 @@ every animation) or on its back, through a shared base placement for each kind
 (BASE) and the small corrections that one model needs (FITS).
 """
 
-from panda3d.core import Texture, NodePath, Point3, Vec3, GeomVertexRewriter
+import math
+from panda3d.core import Texture, NodePath, Point3, Vec3, GeomVertexReader, GeomVertexRewriter
+from panda3d.core import Geom, GeomTriangles, GeomVertexData, GeomVertexWriter, LVecBase4f
 from toontown.toon import ToonDNA
 
 HAT, GLASSES, BACKPACK = range(3)
@@ -19,6 +21,7 @@ KINDS = (HAT, GLASSES, BACKPACK)
 NoAccessories = [0, 0, 0, 0, 0, 0]
 
 HEAD_JOINT = 'joint_neck'
+SCARF = 26
 BACK_JOINT = 'joint_Backspine2'
 JOINTS = {HAT: HEAD_JOINT, GLASSES: HEAD_JOINT, BACKPACK: BACK_JOINT}
 # Back items that are worn round the neck instead, so they follow the head.
@@ -153,11 +156,11 @@ FITS = {HAT: {3: (-0.17, -0.02, 1.0, 0.0),    # bow, on top of the head, not the
               40: (0.0, -0.025, 1.0, 0.0),     # conquistador helmet
               41: (0.02, -0.07, 1.0, 0.0),     # firefighter helmet
               50: (0.0, -0.06, 1.0, 0.0),      # bobby hat
-              10: (-0.1, -0.09, 1.0, 0.0),      # fez, on the top of the head
+              10: (-0.05, -0.061, 1.0, -14.0),  # fez, centred on the head tip, tipped back with it, its rim resting on the head
               12: (-0.06, -0.015, 1.0, 0.0),    # party hat, on the top of the head
-              56: (-0.09, -0.12, 1.0, 0.0),      # bird nest, on the top of the head
-              61: (-0.09, -0.12, 1.0, 0.0),      # bird nest B
-              62: (-0.1, -0.09, 1.0, 0.0),       # fez B
+              56: (-0.03, -0.087, 1.0, -28.0),  # bird nest: its pot's rim rests round the head tip, tipped back with it
+              61: (-0.03, -0.087, 1.0, -28.0),  # bird nest B
+              62: (-0.05, -0.061, 1.0, -14.0),  # fez B
               # The extra models were made about 3.6 times smaller.
               57: (-0.04, -0.04, 4.0, 0.0),     # ball hat, round the whole head top
               58: (0.0, -0.03, 3.6, 0.0),     # elf hat
@@ -201,8 +204,8 @@ OVERRIDES = {HAT: {}, GLASSES: {
     17: ((-0.095, 0.56, 0.03), (180.0, 0.0, 0.0), 0.215),  # monocle, on one eye
     20: ((0.09, 0.36, 0.17), (180.0, 0.0, 0.0), 0.21),   # eye patch, over one whole eye
     22: ((0.0, 0.33, 0.26), (0.0, 0.0, 0.0), (0.55, 0.55, 0.92))}, BACKPACK: {   # snow goggles
-    26: ((0.0, 0.18, -0.28), (180.0, 20.0, 0.0), 1.6),   # scarf, round the neck, its ends over the hips
-    27: ((0.0, 0.6, -0.17), (0.0, 0.0, 0.0), 0.27)}}    # bow tie, under the mouth
+    26: ((0.0, 0.2, -0.32), (180.0, 20.0, 0.0), (1.55, 1.55, 1.3)),   # scarf, round the neck under the mouth (its ends: SCARF_DRAPE)
+    27: ((0.0, 0.68, -0.17), (0.0, 0.0, 0.0), 0.24)}}    # bow tie, under the mouth, its knot on the chest
 for _model, (_top, _back, _s) in {23: (-0.22, 0.42, 0.5), 24: (-0.33, 0.43, 0.42),
                                   25: (-0.21, 0.47, 0.5)}.items():
     OVERRIDES[GLASSES][_model] = ((0.0, 0.57 - _back * _s, 0.12 - _top * _s), (0.0, 0.0, 0.0), _s)
@@ -222,35 +225,35 @@ for _model, (_top, _back, _s) in {23: (-0.22, 0.42, 0.5), 24: (-0.33, 0.43, 0.42
 # far in toward each other (see _squeeze). turn spins it round first (for
 # the few made facing the other way), and roll leans it to one side.
 BACK_FITS = {
-    1: ('pack', 0.75, -0.12, -0.14, -28.0),  # backpack
-    2: ('wing', 0.8, 0.04, 0.1, 0.0, 0.1),  # batWings
-    3: ('wing', 0.8, 0.04, 0.17, 0.0, 0.1),  # beeWings
-    4: ('wing', 0.8, 0.04, 0.17, 0.0, 0.1),  # dragonFlyWings
-    5: ('pack', 0.75, -0.12, -0.14, -20.0),  # scubaTank
-    6: ('wing', 0.6, 0.04, 0.12, 0.0),  # sharkFin
-    7: ('wing', 0.8, 0.03, 0.12, 0.0, 0.1),  # angelWings
-    8: ('pack', 0.75, -0.11, -0.14, -20.0),  # backpackWithToys
-    9: ('wing', 0.8, 0.06, 0.27, 0.0, 0.06),  # butterflyWings
-    10: ('wing', 0.8, 0.04, 0.22, 0.0, 0.1),  # dragonWing
-    11: ('pack', 0.75, -0.1, -0.14, -20.0),  # jetPack
+    1: ('pack', 0.66, -0.013, 0.038, -8.0),  # backpack
+    2: ('wing', 0.8, 0.03, 0.05, -6.0, 0.1),  # batWings
+    3: ('wing', 0.6, -0.026, 0.12, -36.0, 0.1),  # beeWings
+    4: ('wing', 0.8, 0.06, 0.17, -24.0, 0.1),  # dragonFlyWings
+    5: ('pack', 0.66, -0.085, 0.037, -8.0),  # scubaTank
+    6: ('wing', 0.42, 0.0, 0.27, -8.0, {'hug': 0.003}),  # sharkFin, its base bent to lie on the back
+    7: ('wing', 0.6, -0.022, 0.12, -36.0, 0.1),  # angelWings
+    8: ('pack', 0.7, -0.026, 0.007, -8.0),  # backpackWithToys
+    9: ('wing', 0.6, 0.049, 0.28, -24.0, 0.06),  # butterflyWings
+    10: ('wing', 0.66, -0.012, 0.16, -36.0, 0.1),  # dragonWing
+    11: ('pack', 0.7, -0.003, 0.02, -8.0),  # jetPack
     12: ('wing', 0.8, 0.04, 0.3, 0.0, 0.1),  # spiderLegs
-    13: ('pack', 0.75, -0.15, -0.14, -20.0),  # stuffedAnimalBackpackA
-    14: ('wing', 0.8, -0.04, 0.12, 0.0, 0.1),  # birdWings
-    15: ('pack', 0.75, -0.17, -0.14, -20.0),  # stuffedAnimalBackpackCat
-    16: ('pack', 0.75, -0.16, -0.14, -20.0),  # stuffedAnimalBackpackDog
-    17: ('wing', 1.1, 0.02, 0.14, 0.0),  # airplane
-    18: ('pack', 0.62, -0.09, -0.06, -15.0, 0.0, 0.0, 35.0),  # woodenSword
+    13: ('pack', 0.665, -0.026, 0.04, -8.0),  # stuffedAnimalBackpackA
+    14: ('wing', 0.8, 0.009, 0.15, -12.0, 0.1),  # birdWings
+    15: ('pack', 0.66, -0.025, 0.04, -8.0),  # stuffedAnimalBackpackCat
+    16: ('pack', 0.665, -0.017, 0.04, -8.0),  # stuffedAnimalBackpackDog
+    17: ('wing', 1.1, 0.06, 0.14, -24.0),  # airplane
+    18: ('pack', 1.0, -0.132, -0.1, -25.0, {'roll': 80.0, 'wide': 0.95}),  # woodenSword, slung across the small of the back
     19: ('cape', 0.7, 0.08, 0.27, -42.0),  # supertoonCape
     20: ('cape', 0.7, 0.08, 0.27, -42.0),  # vampireCape
-    22: ('pack', 0.75, -0.13, -0.14, -20.0),  # band
-    23: ('pack', 0.75, -0.11, -0.14, -20.0),  # gags
-    24: ('pack', 0.75, 0.02, -0.14, -20.0),  # flunky
-    25: ('pack', 0.75, -0.12, -0.14, -20.0, 0.0, 180.0),  # santa
-    28: ('pack', 0.75, -0.11, -0.14, -20.0),  # creamPack
-    29: ('pack', 0.75, -0.08, -0.14, -20.0),  # jellybeanJar
-    30: ('pack', 0.75, -0.09, -0.14, -20.0),  # lipstickPack
-    31: ('pack', 0.75, -0.03, -0.14, -20.0),  # oilJar
-    32: ('pack', 0.75, -0.19, -0.14, -20.0, 0.0, 180.0),  # trashLid
+    22: ('pack', 0.66, -0.031, 0.006, -8.0),  # band
+    23: ('pack', 0.675, -0.017, 0.02, -8.0),  # gags
+    24: ('pack', 0.66, 0.143, 0.026, 0.0),  # flunky
+    25: ('pack', 0.66, -0.013, 0.04, -8.0, {'turn': 180.0}),  # santa
+    28: ('pack', 0.66, -0.041, 0.027, -8.0, {'x': 0.06}),  # creamPack
+    29: ('pack', 0.7, 0.064, 0.067, 0.0),  # jellybeanJar
+    30: ('pack', 0.7, 0.031, 0.035, 0.0),  # lipstickPack
+    31: ('pack', 0.66, 0.089, 0.074, 0.0),  # oilJar, upright
+    32: ('pack', 0.66, -0.008, 0.025, -8.0, {'turn': 180.0}),  # trashLid
 }
 
 
@@ -361,7 +364,13 @@ def _squeeze(geom, shift):
     return holder
 
 
-def _fitToBack(geom, way, size, y, z, pitch, squeeze=0.0, turn=0.0, roll=0.0):
+def _fitToBack(geom, way, size, y, z, pitch, *extra):
+    # extra is a dict of options: squeeze, turn, roll and x (a sideways
+    # shift, for the few whose middle isn't the middle of their bounds).
+    opts = extra[0] if extra and isinstance(extra[0], dict) else dict(zip(('squeeze', 'turn', 'roll'), extra))
+    squeeze = opts.get('squeeze', 0.0)
+    turn = opts.get('turn', 0.0)
+    roll = opts.get('roll', 0.0)
     holder = NodePath('fit')
     tilt = holder.attachNewNode('tilt')
     geom.reparentTo(tilt)
@@ -371,7 +380,7 @@ def _fitToBack(geom, way, size, y, z, pitch, squeeze=0.0, turn=0.0, roll=0.0):
         lo, hi = bounds
         if way == 'pack':
             # No taller, wider or deeper than a doodle's back can carry.
-            scale = min(size / (hi[2] - lo[2]), 0.75 / (hi[0] - lo[0]),
+            scale = min(size / (hi[2] - lo[2]), opts.get('wide', 0.75) / (hi[0] - lo[0]),
                         0.55 / (hi[1] - lo[1]))
         else:
             scale = size / max(hi[0] - lo[0], hi[2] - lo[2])
@@ -389,8 +398,246 @@ def _fitToBack(geom, way, size, y, z, pitch, squeeze=0.0, turn=0.0, roll=0.0):
             contactZ = min(max(0.0, lo[2]), hi[2])
         geom.setPos(geom.getPos() - Point3((lo[0] + hi[0]) / 2.0, hi[1], contactZ))
     tilt.setP(pitch)
-    tilt.setPos(0, y, z)
+    tilt.setPos(opts.get('x', 0.0), y, z)
+    if opts.get('hug') is not None:
+        return _hugBack(holder, pitch, y, z, opts['hug'])
     return holder
+
+
+# Where the doodle's back is (how far back it reaches), on the back joint,
+# the furthest back of all its idle frames. Rows go up the back (z 0.04,
+# 0.08 .. 0.64), columns out to the side (x 0.0, 0.04 .. 0.16). Measured by
+# casting lines onto the body mesh from behind.
+BACK_Y = (
+    (-0.096, -0.078, -0.059, -0.042, -0.027),
+    (-0.069, -0.056, -0.041, -0.027, -0.013),
+    (-0.048, -0.038, -0.028, -0.014, 0.000),
+    (-0.028, -0.018, -0.008, 0.002, 0.014),
+    (-0.007, 0.003, 0.013, 0.023, 0.035),
+    (0.016, 0.030, 0.044, 0.051, 0.065),
+    (0.038, 0.051, 0.063, 0.074, 0.087),
+    (0.040, 0.050, 0.061, 0.072, 0.087),
+    (0.040, 0.050, 0.059, 0.070, 0.086),
+    (0.041, 0.050, 0.059, 0.069, 0.086),
+    (0.041, 0.050, 0.060, 0.069, 0.089),
+    (0.043, 0.052, 0.062, 0.071, 0.093),
+    (0.045, 0.054, 0.064, 0.073, 0.097),
+    (0.048, 0.057, 0.066, 0.078, 0.104),
+    (0.054, 0.064, 0.072, 0.086, 0.114),
+    (0.071, 0.079, 0.094, 0.115, 0.166))
+
+
+def backY(x, z):
+    fz = min(max((z - 0.04) / 0.04, 0.0), len(BACK_Y) - 1.0)
+    fx = min(abs(x) / 0.04, len(BACK_Y[0]) - 1.0)
+    iz, ix = min(int(fz), len(BACK_Y) - 2), min(int(fx), len(BACK_Y[0]) - 2)
+    tz, tx = fz - iz, fx - ix
+    row0 = BACK_Y[iz][ix] * (1 - tx) + BACK_Y[iz][ix + 1] * tx
+    row1 = BACK_Y[iz + 1][ix] * (1 - tx) + BACK_Y[iz + 1][ix + 1] * tx
+    return row0 * (1 - tz) + row1 * tz
+
+
+def _along(corners, u):
+    # Straight-line reading between the corners of a sorted (u, v) list.
+    if u <= corners[0][0]:
+        return corners[0][1]
+    for (u1, v1), (u2, v2) in zip(corners, corners[1:]):
+        if u <= u2:
+            return v1 + (v2 - v1) * (u - u1) / max(u2 - u1, 1e-9)
+    return corners[-1][1]
+
+
+def _subdivide(holder, longest):
+    # Cuts every triangle into smaller ones whose sides are at most
+    # longest, so that bending the model bends it smoothly. Returns the
+    # new vertex datas.
+    datas = []
+    for np_ in holder.findAllMatches('**/+GeomNode'):
+        node = np_.node()
+        for i in range(node.getNumGeoms()):
+            old = node.getGeom(i)
+            vdata = old.getVertexData()
+            fmt = vdata.getFormat()
+            names = []
+            for a in range(fmt.getNumArrays()):
+                array = fmt.getArray(a)
+                for c in range(array.getNumColumns()):
+                    names.append(str(array.getColumn(c).getName()))
+            rows = {}
+            for name in names:
+                reader = GeomVertexReader(vdata, name)
+                values = []
+                while not reader.isAtEnd():
+                    values.append(LVecBase4f(reader.getData4()))
+                rows[name] = values
+            corners = []
+            for k in range(old.getNumPrimitives()):
+                prim = old.getPrimitive(k).decompose()
+                for t in range(prim.getNumPrimitives()):
+                    start = prim.getPrimitiveStart(t)
+                    corners.append([prim.getVertex(start + q) for q in range(3)])
+            out = GeomVertexData(vdata.getName(), fmt, Geom.UHStatic)
+            writers = dict((name, GeomVertexWriter(out, name)) for name in names)
+            tris = GeomTriangles(Geom.UHStatic)
+            count = 0
+            pos = rows['vertex']
+            # The same number of cuts everywhere, so that two triangles
+            # sharing a side cut it at the same points (no cracks).
+            edge = max(max((pos[a] - pos[b]).getXyz().length(),
+                           (pos[b] - pos[c]).getXyz().length(),
+                           (pos[c] - pos[a]).getXyz().length())
+                       for a, b, c in corners) if corners else 0.0
+            n = max(1, int(math.ceil(edge / longest)))
+            for a, b, c in corners:
+                index = {}
+                for u in range(n + 1):
+                    for v in range(n + 1 - u):
+                        fu, fv = u / float(n), v / float(n)
+                        for name in names:
+                            va, vb, vc = rows[name][a], rows[name][b], rows[name][c]
+                            writers[name].addData4(va + (vb - va) * fu + (vc - va) * fv)
+                        index[(u, v)] = count
+                        count += 1
+                for u in range(n):
+                    for v in range(n - u):
+                        tris.addVertices(index[(u, v)], index[(u + 1, v)], index[(u, v + 1)])
+                        if u + v < n - 1:
+                            tris.addVertices(index[(u + 1, v)], index[(u + 1, v + 1)], index[(u, v + 1)])
+            geom = Geom(out)
+            geom.addPrimitive(tris)
+            node.setGeom(i, geom)
+            datas.append(node.modifyGeom(i).modifyVertexData())
+    return datas
+
+
+def _hugBack(holder, pitch, y0, z0, gap):
+    # A shark fin is a shell open at the front, made to sit on a toon's
+    # back. A doodle's back bends (sloping above the hips, upright higher
+    # up), so the fin is bent a little to match: it is cut into thin
+    # slices, and each slice is slid along the fin's front-to-back line
+    # until the first bit of it to reach the back just touches it (gap
+    # away) without going in.
+    holder.flattenStrong()
+    p = math.radians(pitch)
+    ny, nz = math.cos(p), math.sin(p)
+
+    def local(x, y, z):
+        # (across, front-to-back, up) in the fin's own upright frame.
+        dy, dz = y - y0, z - z0
+        return x, dy * ny + dz * nz, dz * ny - dy * nz
+
+    datas = []
+    tris = []
+    for np_ in holder.findAllMatches('**/+GeomNode'):
+        node = np_.node()
+        for i in range(node.getNumGeoms()):
+            geom = node.modifyGeom(i)
+            vdata = geom.modifyVertexData()
+            if not any(vdata == other for other in datas):
+                datas.append(vdata)
+            reader = GeomVertexReader(vdata, 'vertex')
+            verts = []
+            while not reader.isAtEnd():
+                v = reader.getData3()
+                verts.append(local(v[0], v[1], v[2]))
+            for k in range(geom.getNumPrimitives()):
+                prim = geom.getPrimitive(k).decompose()
+                for t in range(prim.getNumPrimitives()):
+                    start = prim.getPrimitiveStart(t)
+                    tris.append([verts[prim.getVertex(start + q)] for q in range(3)])
+    if not tris:
+        return holder
+    lows = [min(v[2] for v in tri) for tri in tris]
+    highs = [max(v[2] for v in tri) for tri in tris]
+    step = 0.01
+    slides = []
+    for key in range(int(math.floor(min(lows) / step)), int(math.ceil(max(highs) / step)) + 1):
+        lz = min(max(key * step, min(lows) + 1e-4), max(highs) - 1e-4)
+        best = None
+        for tri, lo, hi in zip(tris, lows, highs):
+            if lo > lz or hi < lz:
+                continue
+            # Where this slice crosses the triangle's edges.
+            for a, b in ((tri[0], tri[1]), (tri[1], tri[2]), (tri[2], tri[0])):
+                if (a[2] - lz) * (b[2] - lz) > 0 or a[2] == b[2]:
+                    continue
+                t = (lz - a[2]) / (b[2] - a[2])
+                x, ly = a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t
+                ry, rz = y0 + ly * ny - lz * nz, z0 + ly * nz + lz * ny
+                s = 0.0
+                for _ in range(8):
+                    s = (backY(x, rz + s * nz) - gap - ry) / ny
+                if best is None or s < best:
+                    best = s
+        if best is not None:
+            slides.append((lz, best))
+    # Never more than the least of its neighbours, so nothing between two
+    # slices goes in either.
+    slides = [(u, min(v for w, v in slides[max(0, i - 1):i + 2]))
+              for i, (u, _) in enumerate(slides)]
+    # Its triangles are big and flat; cut them small so its edge can
+    # follow the curve of the back instead of cutting straight across it.
+    datas = _subdivide(holder, 0.02)
+    for vdata in datas:
+        rewriter = GeomVertexRewriter(vdata, 'vertex')
+        while not rewriter.isAtEnd():
+            x, y, z = rewriter.getData3()
+            s = _along(slides, local(x, y, z)[2])
+            rewriter.setData3(x, y + s * ny, z + s * nz)
+    return holder
+
+
+# The scarf is stiff, made for a toon's thin neck. On a doodle its back
+# end would hang into the hips and its front end stick out from the
+# chest, so each end is swung about where it leaves the ring (easing in
+# over the first bit, like cloth) and made shorter.
+# (angle, length kept) for the front and the back end, in the scarf's own
+# space: its front end runs off toward -y and down, its back end hangs
+# down from +y.
+SCARF_DRAPE = {'front': (30.0, 0.65),   # down in front of the chest
+               'back': (35.0, 0.6)}     # back over the hips, lying on them
+_SCARF_ENDS = {'front': ((-0.22, -0.05), (-0.81, -0.58)),   # where it leaves the ring, which way it runs
+               'back': ((0.3, 0.0), (0.0, -1.0))}
+_SCARF_EASE = 0.06
+
+
+def _scarfEnd(y, z):
+    if y < _SCARF_ENDS['front'][0][0]:
+        return 'front'
+    if y > _SCARF_ENDS['back'][0][0] - 0.08 and z < _SCARF_ENDS['back'][0][1]:
+        return 'back'
+    return None
+
+
+def drapeScarfPoint(y, z):
+    end = _scarfEnd(y, z)
+    if not end:
+        return y, z
+    angle, keep = SCARF_DRAPE[end]
+    (hy, hz), (dy, dz) = _SCARF_ENDS[end]
+    oy, oz = y - hy, z - hz
+    along = oy * dy + oz * dz
+    if along <= 0.0:
+        return y, z
+    # Shorten along the end's length, then swing it.
+    oy += dy * along * (keep - 1.0)
+    oz += dz * along * (keep - 1.0)
+    a = math.radians(angle) * min(1.0, along / _SCARF_EASE)
+    c, s_ = math.cos(a), math.sin(a)
+    return hy + oy * c - oz * s_, hz + oy * s_ + oz * c
+
+
+def _drapeScarf(geom):
+    for np_ in geom.findAllMatches('**/+GeomNode'):
+        node = np_.node()
+        for i in range(node.getNumGeoms()):
+            vdata = node.modifyGeom(i).modifyVertexData()
+            rewriter = GeomVertexRewriter(vdata, 'vertex')
+            while not rewriter.isAtEnd():
+                x, y, z = rewriter.getData3()
+                y, z = drapeScarfPoint(y, z)
+                rewriter.setData3(x, y, z)
+    return geom
 
 
 # Head parts the doodle tucks under any hat: they stand up from the top of
@@ -422,6 +669,8 @@ def loadAccessory(kind, model, texture):
             geom.setTexture(tex, 1)
     if kind == BACKPACK and model in BACK_FITS:
         return _fitToBack(geom, *BACK_FITS[model])
+    if kind == BACKPACK and model == SCARF:
+        geom = _drapeScarf(geom)
     pos, hpr, scale = getPlacement(kind, model)
     geom.setPos(*pos)
     geom.setHpr(*hpr)
