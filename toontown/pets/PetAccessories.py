@@ -204,7 +204,7 @@ OVERRIDES = {HAT: {}, GLASSES: {
     17: ((-0.095, 0.56, 0.03), (180.0, 0.0, 0.0), 0.215),  # monocle, on one eye
     20: ((0.09, 0.36, 0.17), (180.0, 0.0, 0.0), 0.21),   # eye patch, over one whole eye
     22: ((0.0, 0.33, 0.26), (0.0, 0.0, 0.0), (0.55, 0.55, 0.92))}, BACKPACK: {   # snow goggles
-    26: ((0.0, 0.2, -0.32), (180.0, 20.0, 0.0), (1.55, 1.55, 1.3)),   # scarf, round the neck under the mouth (its ends: SCARF_DRAPE)
+    26: ((0.0, 0.2, -0.3), (180.0, 24.0, 0.0), (1.65, 1.65, 1.3)),   # scarf, round the neck under the mouth, its lower edge flared (SCARF_FLARE), its ends hanging (SCARF_DRAPE)
     27: ((0.0, 0.68, -0.17), (0.0, 0.0, 0.0), 0.24)}}    # bow tie, under the mouth, its knot on the chest
 for _model, (_top, _back, _s) in {23: (-0.22, 0.42, 0.5), 24: (-0.33, 0.43, 0.42),
                                   25: (-0.21, 0.47, 0.5)}.items():
@@ -225,35 +225,35 @@ for _model, (_top, _back, _s) in {23: (-0.22, 0.42, 0.5), 24: (-0.33, 0.43, 0.42
 # far in toward each other (see _squeeze). turn spins it round first (for
 # the few made facing the other way), and roll leans it to one side.
 BACK_FITS = {
-    1: ('pack', 0.66, -0.013, 0.038, -8.0),  # backpack
+    1: ('pack', 0.8, -0.013, -0.02, -8.0, {'wide': 0.95, 'hug': 0.006, 'ease': 0.4, 'lift': 0.02}),  # backpack, bent to lie flush on the back
     2: ('wing', 1.09, 0.03, -0.05, -6.0, {'squeeze': 0.1, 'hug': 0.008, 'ease': 0.6, 'lift': 0.02}),  # batWings
     3: ('wing', 0.98, -0.026, 0.0, -36.0, {'squeeze': 0.03, 'spread': 10.0, 'hug': 0.008, 'ease': 0.6, 'lift': 0.03}),  # beeWings
     4: ('wing', 1.09, 0.06, 0.17, -24.0, {'squeeze': 0.1, 'hug': 0.004, 'ease': 0.6, 'lift': 0.02}),  # dragonFlyWings
-    5: ('pack', 0.66, -0.085, 0.037, -8.0),  # scubaTank
+    5: ('pack', 0.8, -0.085, -0.02, -18.0, {'wide': 0.95, 'hug': 0.006, 'ease': 0.4, 'lift': 0.02}),  # scubaTank, bent to lie flush on the back
     6: ('wing', 0.42, -0.2, 0.17, -8.0, {'hug': 0.003, 'lift': 0.02}),  # sharkFin, its base bent to lie on the back, its tip laid along the hips
     7: ('wing', 0.92, -0.022, 0.0, -36.0, {'squeeze': 0.03, 'hug': 0.004, 'ease': 0.6, 'lift': 0.02}),  # angelWings
-    8: ('pack', 0.7, -0.026, 0.007, -8.0),  # backpackWithToys
+    8: ('pack', 0.8, -0.026, -0.02, -8.0, {'wide': 0.95, 'hug': 0.015, 'ease': 0.4, 'lift': 0.02}),  # backpackWithToys, bent to lie flush on the back
     9: ('wing', 0.92, 0.049, 0.2, -24.0, {'squeeze': 0.06, 'spread': 22.0, 'hug': 0.006, 'ease': 0.6, 'lift': 0.02}),  # butterflyWings, opened into a V
     10: ('wing', 0.98, -0.012, 0.12, -36.0, {'squeeze': 0.1, 'open': 45.0, 'spread': 10.0, 'hug': 0.004, 'ease': 0.6, 'lift': 0.02}),  # dragonWing, swung open
-    11: ('pack', 0.7, -0.003, 0.02, -8.0),  # jetPack
+    11: ('pack', 0.8, -0.003, -0.02, -18.0, {'wide': 0.95, 'hug': 0.006, 'ease': 0.4, 'lift': 0.02}),  # jetPack, bent to lie flush on the back
     12: ('wing', 0.8, 0.04, 0.3, 0.0, 0.1),  # spiderLegs
-    13: ('pack', 0.665, -0.026, 0.04, -8.0),  # stuffedAnimalBackpackA
+    13: ('pack', 0.8, -0.026, -0.02, -8.0, {'wide': 0.95, 'hug': 0.006, 'ease': 0.4, 'lift': 0.02}),  # stuffedAnimalBackpackA, bent to lie flush on the back
     14: ('wing', 1.09, 0.009, 0.0, -12.0, {'squeeze': 0.1, 'hug': 0.004, 'ease': 0.6, 'lift': 0.02}),  # birdWings
-    15: ('pack', 0.66, -0.025, 0.04, -8.0),  # stuffedAnimalBackpackCat
-    16: ('pack', 0.665, -0.017, 0.04, -8.0),  # stuffedAnimalBackpackDog
+    15: ('pack', 0.8, -0.025, -0.02, -8.0, {'wide': 0.95, 'hug': 0.006, 'ease': 0.4, 'lift': 0.02}),  # stuffedAnimalBackpackCat, bent to lie flush on the back
+    16: ('pack', 0.8, -0.017, -0.02, -8.0, {'wide': 0.95, 'hug': 0.006, 'ease': 0.4, 'lift': 0.02}),  # stuffedAnimalBackpackDog, bent to lie flush on the back
     17: ('wing', 1.27, -0.04, 0.14, -24.0),  # airplane, its body resting on the back
     18: ('pack', 1.0, -0.132, -0.1, -25.0, {'roll': 80.0, 'wide': 0.95}),  # woodenSword, slung across the small of the back
     19: ('cape', 0.7, 0.08, 0.27, -42.0),  # supertoonCape
     20: ('cape', 0.7, 0.08, 0.27, -42.0),  # vampireCape
-    22: ('pack', 0.66, -0.031, 0.006, -8.0),  # band
-    23: ('pack', 0.675, -0.017, 0.02, -8.0),  # gags
-    24: ('pack', 0.66, 0.143, 0.026, 0.0),  # flunky
-    25: ('pack', 0.66, -0.013, 0.04, -8.0, {'turn': 180.0}),  # santa
-    28: ('pack', 0.66, -0.041, 0.027, -8.0, {'x': 0.06}),  # creamPack
-    29: ('pack', 0.7, 0.064, 0.067, 0.0),  # jellybeanJar
-    30: ('pack', 0.7, 0.031, 0.035, 0.0),  # lipstickPack
-    31: ('pack', 0.66, 0.089, 0.074, 0.0),  # oilJar, upright
-    32: ('pack', 0.66, -0.008, 0.025, -8.0, {'turn': 180.0}),  # trashLid
+    22: ('pack', 0.8, -0.031, -0.02, -8.0, {'wide': 0.95, 'hug': 0.02, 'ease': 0.4, 'lift': 0.02}),  # band, bent to lie flush on the back
+    23: ('pack', 0.8, -0.017, 0.0, -8.0, {'wide': 0.95, 'hug': 0.032, 'ease': 0.4, 'lift': 0.02}),  # gags, bent to lie flush on the back
+    24: ('pack', 0.8, 0.0, -0.02, -8.0, {'wide': 0.95, 'hug': 0.016, 'ease': 0.4, 'lift': 0.02}),  # flunky, bent to lie flush on the back
+    25: ('pack', 0.8, -0.013, -0.02, -8.0, {'wide': 0.95, 'hug': 0.006, 'ease': 0.4, 'lift': 0.02, 'turn': 180.0}),  # santa, bent to lie flush on the back
+    28: ('pack', 0.8, -0.041, -0.02, -8.0, {'wide': 0.95, 'hug': 0.006, 'ease': 0.4, 'lift': 0.02, 'x': 0.06}),  # creamPack, bent to lie flush on the back
+    29: ('pack', 0.8, 0.0, -0.02, -8.0, {'wide': 0.95, 'hug': 0.014, 'ease': 0.4, 'lift': 0.02, 'deep': 0.7}),  # jellybeanJar, bent to lie flush on the back
+    30: ('pack', 0.8, 0.0, -0.02, -18.0, {'wide': 0.95, 'hug': 0.006, 'ease': 0.4, 'lift': 0.02}),  # lipstickPack, bent to lie flush on the back
+    31: ('pack', 0.8, 0.0, -0.02, 0.0, {'wide': 0.95, 'hug': 0.017, 'ease': 0.4, 'lift': 0.02, 'deep': 0.7}),  # oilJar, bent to lie flush on the back
+    32: ('pack', 0.8, -0.008, -0.02, -8.0, {'wide': 0.95, 'hug': 0.002, 'ease': 0.4, 'lift': 0.02, 'turn': 180.0, 'extend': True}),  # trashLid, bent to lie flush on the back
 }
 
 
@@ -397,7 +397,7 @@ def _fitToBack(geom, way, size, y, z, pitch, *extra):
         if way == 'pack':
             # No taller, wider or deeper than a doodle's back can carry.
             scale = min(size / (hi[2] - lo[2]), opts.get('wide', 0.75) / (hi[0] - lo[0]),
-                        0.55 / (hi[1] - lo[1]))
+                        opts.get('deep', 0.55) / (hi[1] - lo[1]))
         else:
             scale = size / max(hi[0] - lo[0], hi[2] - lo[2])
         geom.setScale(scale)
@@ -416,7 +416,8 @@ def _fitToBack(geom, way, size, y, z, pitch, *extra):
     tilt.setP(pitch)
     tilt.setPos(opts.get('x', 0.0), y, z)
     if opts.get('hug') is not None:
-        return _hugBack(holder, pitch, y, z, opts['hug'], opts.get('ease', 3.0), opts.get('lift', 0.0))
+        return _hugBack(holder, pitch, y, z, opts['hug'], opts.get('ease', 3.0), opts.get('lift', 0.0),
+                        opts.get('extend', False))
     return holder
 
 
@@ -443,7 +444,11 @@ BACK_Y = (
     (0.071, 0.079, 0.094, 0.115, 0.166))
 
 
-def backY(x, z):
+def backY(x, z, extend=False):
+    if extend and abs(x) > 0.16:
+        # Past the last column the body keeps curving forward, about as fast
+        # as it does between the last two columns.
+        return backY(0.16, z) + (abs(x) - 0.16) * (backY(0.16, z) - backY(0.12, z)) / 0.04
     fz = min(max((z - 0.04) / 0.04, 0.0), len(BACK_Y) - 1.0)
     fx = min(abs(x) / 0.04, len(BACK_Y[0]) - 1.0)
     iz, ix = min(int(fz), len(BACK_Y) - 2), min(int(fx), len(BACK_Y[0]) - 2)
@@ -574,7 +579,7 @@ def _subdivide(holder, longest):
     return datas
 
 
-def _hugBack(holder, pitch, y0, z0, gap, ease=3.0, lift=0.0):
+def _hugBack(holder, pitch, y0, z0, gap, ease=3.0, lift=0.0, extend=False):
     # A shark fin is a shell open at the front, made to sit on a toon's
     # back. A doodle's back bends (sloping above the hips, upright higher
     # up), so the fin is bent a little to match: it is cut into thin
@@ -630,7 +635,7 @@ def _hugBack(holder, pitch, y0, z0, gap, ease=3.0, lift=0.0):
                 ry, rz = y0 + ly * ny - lz * nz, z0 + ly * nz + lz * ny
                 s = 0.0
                 for _ in range(8):
-                    s = (backY(x, rz + s * nz) - gap - ry) / ny
+                    s = (backY(x, rz + s * nz, extend) - gap - ry) / ny
                 # Nor so far that it runs into the top of the hips.
                 t = 0.0
                 while t < s and not lift:
@@ -709,6 +714,25 @@ def drapeScarfPoint(y, z):
     return hy + oy * c - oz * s_, hz + oy * s_ + oz * c
 
 
+# The ring's lower edge is flared out a little so it rests on the doodle's
+# shoulders instead of cutting into them when it breathes: (height where
+# the flare starts, how far down it reaches its full width, how much wider
+# it gets there). In the scarf model's own units; the ring's middle is at
+# _SCARF_MIDDLE.
+SCARF_FLARE = (0.1, 0.17, 0.35)
+_SCARF_MIDDLE = (0.0, 0.096)
+
+
+def flareScarfPoint(x, y, z):
+    top, reach, more = SCARF_FLARE
+    w = min(max((top - z) / reach, 0.0), 1.0)
+    # Fade out again down the hanging ends, which already lie on the body.
+    w *= min(max((z + 0.2) / 0.13, 0.0), 1.0)
+    f = 1.0 + more * w
+    mx, my = _SCARF_MIDDLE
+    return mx + (x - mx) * f, my + (y - my) * f
+
+
 def _drapeScarf(geom):
     for np_ in geom.findAllMatches('**/+GeomNode'):
         node = np_.node()
@@ -718,6 +742,7 @@ def _drapeScarf(geom):
             while not rewriter.isAtEnd():
                 x, y, z = rewriter.getData3()
                 y, z = drapeScarfPoint(y, z)
+                x, y = flareScarfPoint(x, y, z)
                 rewriter.setData3(x, y, z)
     return geom
 
