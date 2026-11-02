@@ -278,7 +278,7 @@ HOOD_MAPS = {
     'brrrgh': {
         'title': 'The Brrrgh',
         'description': 'The frozen playground after dark, snow piled high round the frozen pond. '
-                       'Pluto upgrades your gag by Toon HQ, the trunk waits by the snowman '
+                       'Pluto upgrades your gag by Toon HQ, the trunk waits on the snow pile by the flag '
                        'and Fisherman Freddy sells Toon Tonics at the pond.',
         'picture': 'phase_4/maps/survival_map_brrrgh.jpg',
         'dayAndNight': True,
@@ -293,8 +293,9 @@ HOOD_MAPS = {
             'upgrader': (Point3(-88.6, 60.7, 6.2), -90),
             # On the bank of the fishing hole, facing the playground.
             'fisherman': (Point3(-40, -38, 6.2), -125),
-            # Beside the snowman, its lid facing the player's way in.
-            'trunk': (Point3(20, 12, 6.2), 0),
+            # In the middle of the snow pile with the flag (Arthur), on its
+            # flat top, facing out over the playground.
+            'trunk': (Point3(-109.4, -40.6, 8.8), 80),
             'start': (Point3(0, -60, 6.2), 0),
         },
         'reachSpan': 220.0,
@@ -322,8 +323,9 @@ HOOD_MAPS = {
         'spots': {
             # Against Toon HQ's north door, centred on it, looking out.
             'upgrader': (Point3(76.4, -10.5, -13.5), 0),
-            # At the edge of the fishing pond in the middle, facing out.
-            'fisherman': (Point3(-15, -50, -13), 139),
+            # Right at the fishing pond's south edge, his back to the water,
+            # facing out (he stood ten feet off it: Arthur).
+            'fisherman': (Point3(-9, -44.6, -13), 180),
             # Out on the bowl's floor, the lid toward the pond.
             'trunk': (Point3(-35, 35, -15), 32.5),
             'start': (Point3(0, 40, -15), 180),
