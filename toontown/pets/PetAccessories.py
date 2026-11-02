@@ -225,35 +225,35 @@ for _model, (_top, _back, _s) in {23: (-0.22, 0.42, 0.5), 24: (-0.33, 0.43, 0.42
 # far in toward each other (see _squeeze). turn spins it round first (for
 # the few made facing the other way), and roll leans it to one side.
 BACK_FITS = {
-    1: ('pack', 0.8, -0.013, -0.02, -8.0, {'wide': 0.95, 'hug': 0.006, 'ease': 0.4, 'lift': 0.02}),  # backpack, bent to lie flush on the back
+    1: ('pack', 0.8, -0.52, 0.08, -50.0, {'wide': 0.95, 'hug': 0.008, 'ease': 3.0, 'smooth': 150}),  # backpack, laid forward and bent into the back
     2: ('wing', 1.09, 0.03, -0.05, -6.0, {'squeeze': 0.1, 'hug': 0.008, 'ease': 0.6, 'lift': 0.02}),  # batWings
     3: ('wing', 0.98, -0.026, 0.0, -36.0, {'squeeze': 0.03, 'spread': 10.0, 'hug': 0.008, 'ease': 0.6, 'lift': 0.03}),  # beeWings
     4: ('wing', 1.09, 0.06, 0.17, -24.0, {'squeeze': 0.1, 'hug': 0.004, 'ease': 0.6, 'lift': 0.02}),  # dragonFlyWings
-    5: ('pack', 0.8, -0.085, -0.02, -18.0, {'wide': 0.95, 'hug': 0.006, 'ease': 0.4, 'lift': 0.02}),  # scubaTank, bent to lie flush on the back
+    5: ('pack', 0.8, -0.52, 0.08, -50.0, {'wide': 0.95, 'hug': 0.013, 'ease': 3.0, 'smooth': 150}),  # scubaTank, laid forward and bent into the back
     6: ('wing', 0.42, -0.2, 0.17, -8.0, {'hug': 0.003, 'lift': 0.02}),  # sharkFin, its base bent to lie on the back, its tip laid along the hips
     7: ('wing', 0.92, -0.022, 0.0, -36.0, {'squeeze': 0.03, 'hug': 0.004, 'ease': 0.6, 'lift': 0.02}),  # angelWings
-    8: ('pack', 0.8, -0.026, -0.02, -8.0, {'wide': 0.95, 'hug': 0.015, 'ease': 0.4, 'lift': 0.02}),  # backpackWithToys, bent to lie flush on the back
+    8: ('pack', 0.8, -0.52, 0.16, -50.0, {'wide': 0.95, 'hug': 0.01, 'ease': 3.0, 'smooth': 150, 'lift': 0.03}),  # backpackWithToys, laid forward and bent into the back
     9: ('wing', 0.92, 0.049, 0.2, -24.0, {'squeeze': 0.06, 'spread': 22.0, 'hug': 0.006, 'ease': 0.6, 'lift': 0.02}),  # butterflyWings, opened into a V
     10: ('wing', 0.98, -0.012, 0.12, -36.0, {'squeeze': 0.1, 'open': 45.0, 'spread': 10.0, 'hug': 0.004, 'ease': 0.6, 'lift': 0.02}),  # dragonWing, swung open
-    11: ('pack', 0.8, -0.003, -0.02, -18.0, {'wide': 0.95, 'hug': 0.006, 'ease': 0.4, 'lift': 0.02}),  # jetPack, bent to lie flush on the back
+    11: ('pack', 0.8, -0.52, 0.08, -50.0, {'wide': 0.95, 'hug': 0.006, 'ease': 3.0, 'smooth': 150}),  # jetPack, laid forward and bent into the back
     12: ('wing', 0.8, 0.04, 0.3, 0.0, 0.1),  # spiderLegs
-    13: ('pack', 0.8, -0.026, -0.02, -8.0, {'wide': 0.95, 'hug': 0.006, 'ease': 0.4, 'lift': 0.02}),  # stuffedAnimalBackpackA, bent to lie flush on the back
+    13: ('pack', 0.8, -0.52, 0.08, -50.0, {'wide': 0.95, 'hug': 0.011, 'ease': 3.0, 'smooth': 150, 'lift': 0.02}),  # stuffedAnimalBackpackA, laid forward and bent into the back
     14: ('wing', 1.09, 0.009, 0.0, -12.0, {'squeeze': 0.1, 'hug': 0.004, 'ease': 0.6, 'lift': 0.02}),  # birdWings
-    15: ('pack', 0.8, -0.025, -0.02, -8.0, {'wide': 0.95, 'hug': 0.006, 'ease': 0.4, 'lift': 0.02}),  # stuffedAnimalBackpackCat, bent to lie flush on the back
-    16: ('pack', 0.8, -0.017, -0.02, -8.0, {'wide': 0.95, 'hug': 0.006, 'ease': 0.4, 'lift': 0.02}),  # stuffedAnimalBackpackDog, bent to lie flush on the back
+    15: ('pack', 0.8, -0.52, 0.08, -50.0, {'wide': 0.95, 'hug': 0.013, 'ease': 3.0, 'smooth': 150}),  # stuffedAnimalBackpackCat, laid forward and bent into the back
+    16: ('pack', 0.8, -0.52, 0.08, -50.0, {'wide': 0.95, 'hug': 0.009, 'ease': 3.0, 'smooth': 150}),  # stuffedAnimalBackpackDog, laid forward and bent into the back
     17: ('wing', 1.27, -0.04, 0.14, -24.0),  # airplane, its body resting on the back
     18: ('pack', 1.0, -0.132, -0.1, -25.0, {'roll': 80.0, 'wide': 0.95}),  # woodenSword, slung across the small of the back
     19: ('cape', 0.7, 0.08, 0.27, -42.0),  # supertoonCape
     20: ('cape', 0.7, 0.08, 0.27, -42.0),  # vampireCape
-    22: ('pack', 0.8, -0.031, -0.02, -8.0, {'wide': 0.95, 'hug': 0.02, 'ease': 0.4, 'lift': 0.02}),  # band, bent to lie flush on the back
-    23: ('pack', 0.8, -0.017, 0.0, -8.0, {'wide': 0.95, 'hug': 0.032, 'ease': 0.4, 'lift': 0.02}),  # gags, bent to lie flush on the back
-    24: ('pack', 0.8, 0.0, -0.02, -8.0, {'wide': 0.95, 'hug': 0.016, 'ease': 0.4, 'lift': 0.02}),  # flunky, bent to lie flush on the back
-    25: ('pack', 0.8, -0.013, -0.02, -8.0, {'wide': 0.95, 'hug': 0.006, 'ease': 0.4, 'lift': 0.02, 'turn': 180.0}),  # santa, bent to lie flush on the back
-    28: ('pack', 0.8, -0.041, -0.02, -8.0, {'wide': 0.95, 'hug': 0.006, 'ease': 0.4, 'lift': 0.02, 'x': 0.06}),  # creamPack, bent to lie flush on the back
-    29: ('pack', 0.8, 0.0, -0.02, -8.0, {'wide': 0.95, 'hug': 0.014, 'ease': 0.4, 'lift': 0.02, 'deep': 0.7}),  # jellybeanJar, bent to lie flush on the back
-    30: ('pack', 0.8, 0.0, -0.02, -18.0, {'wide': 0.95, 'hug': 0.006, 'ease': 0.4, 'lift': 0.02}),  # lipstickPack, bent to lie flush on the back
-    31: ('pack', 0.8, 0.0, -0.02, 0.0, {'wide': 0.95, 'hug': 0.017, 'ease': 0.4, 'lift': 0.02, 'deep': 0.7}),  # oilJar, bent to lie flush on the back
-    32: ('pack', 0.8, -0.008, -0.02, -8.0, {'wide': 0.95, 'hug': 0.002, 'ease': 0.4, 'lift': 0.02, 'turn': 180.0, 'extend': True}),  # trashLid, bent to lie flush on the back
+    22: ('pack', 0.95, -0.52, 0.12, -50.0, {'wide': 0.95, 'hug': 0.009, 'ease': 3.0, 'smooth': 150, 'lift': 0.02, 'deep': 0.75}),  # band, laid forward and bent into the back
+    23: ('pack', 0.8, -0.52, 0.08, -50.0, {'wide': 0.95, 'hug': 0.006, 'ease': 3.0, 'smooth': 150}),  # gags, laid forward and bent into the back
+    24: ('pack', 0.8, -0.52, 0.11, -50.0, {'wide': 0.95, 'hug': 0.01, 'ease': 3.0, 'smooth': 150}),  # flunky, laid forward and bent into the back
+    25: ('pack', 0.8, -0.52, 0.08, -50.0, {'wide': 0.95, 'hug': 0.006, 'ease': 3.0, 'smooth': 150, 'turn': 180.0}),  # santa, laid forward and bent into the back
+    28: ('pack', 0.8, -0.52, 0.08, -50.0, {'wide': 0.95, 'hug': 0.006, 'ease': 3.0, 'smooth': 150, 'x': 0.06}),  # creamPack, laid forward and bent into the back
+    29: ('pack', 0.8, -0.52, 0.15, -50.0, {'wide': 0.95, 'hug': 0.008, 'ease': 3.0, 'smooth': 150, 'lift': 0.03, 'deep': 0.7}),  # jellybeanJar, laid forward and bent into the back
+    30: ('pack', 0.8, -0.52, 0.08, -50.0, {'wide': 0.95, 'hug': 0.006, 'ease': 3.0, 'smooth': 150}),  # lipstickPack, laid forward and bent into the back
+    31: ('pack', 0.8, -0.52, 0.16, -50.0, {'wide': 0.95, 'hug': 0.01, 'ease': 3.0, 'smooth': 150, 'lift': 0.03, 'deep': 0.7}),  # oilJar, laid forward and bent into the back
+    32: ('pack', 0.8, -0.52, 0.08, -50.0, {'wide': 0.95, 'hug': 0.006, 'ease': 3.0, 'smooth': 150, 'turn': 180.0, 'extend': True}),  # trashLid, laid forward and bent into the back
 }
 
 
@@ -417,7 +417,7 @@ def _fitToBack(geom, way, size, y, z, pitch, *extra):
     tilt.setPos(opts.get('x', 0.0), y, z)
     if opts.get('hug') is not None:
         return _hugBack(holder, pitch, y, z, opts['hug'], opts.get('ease', 3.0), opts.get('lift', 0.0),
-                        opts.get('extend', False))
+                        opts.get('extend', False), opts.get('smooth', 0))
     return holder
 
 
@@ -579,7 +579,7 @@ def _subdivide(holder, longest):
     return datas
 
 
-def _hugBack(holder, pitch, y0, z0, gap, ease=3.0, lift=0.0, extend=False):
+def _hugBack(holder, pitch, y0, z0, gap, ease=3.0, lift=0.0, extend=False, smooth=0):
     # A shark fin is a shell open at the front, made to sit on a toon's
     # back. A doodle's back bends (sloping above the hips, upright higher
     # up), so the fin is bent a little to match: it is cut into thin
@@ -654,6 +654,16 @@ def _hugBack(holder, pitch, y0, z0, gap, ease=3.0, lift=0.0, extend=False):
     slides = [(u, min(v for w, v in slides[max(0, i - 1):i + 2]))
               for i, (u, _) in enumerate(slides)]
     slides = [(u, min(v + ease * abs(u - w) for w, v in slides)) for u, _ in slides]
+    # Round off the bend: average each slice with its neighbours, never
+    # past where it touches, so a pack lying over a dip curves into it
+    # instead of folding at one spot.
+    if smooth:
+        most = [v for _, v in slides]
+        cur = most[:]
+        for _ in range(smooth):
+            cur = [min(most[i], (cur[max(i - 1, 0)] + cur[i] + cur[min(i + 1, len(cur) - 1)]) / 3.0)
+                   for i in range(len(cur))]
+        slides = [(u, v) for (u, _), v in zip(slides, cur)]
     # Its triangles are big and flat; cut them small so its edge can
     # follow the curve of the back instead of cutting straight across it.
     datas = _subdivide(holder, 0.02)
