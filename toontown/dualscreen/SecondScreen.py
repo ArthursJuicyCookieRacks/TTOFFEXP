@@ -22,6 +22,10 @@ notify = DirectNotifyGlobal.directNotify.newCategory('SecondScreen')
 # How often the bottom screen is drawn and handed over, and how often a
 # missing second display is looked for again.
 FRAME_TIME = 1.0 / 12
+# Pages with a moving toon on them (Pick-A-Toon) are drawn this often
+# instead, so the toon's animation looks smooth (Arthur: 12 a second
+# looked choppy). The top screen has little else to do then.
+SMOOTH_FRAME_TIME = 1.0 / 30
 LOOK_TIME = 2.0
 # Drawn at no more than this many pixels across (and stretched to fit):
 # reading the picture back is the costly part.
@@ -60,6 +64,7 @@ class SecondScreen(DirectObject):
         self.lastFrame = 0
         self.lastPicture = None
         self.nextLook = 0
+        self.frameTime = FRAME_TIME
         taskMgr.add(self.tick, 'secondScreen', sort=48)
 
     # --- Finding the second display ---
@@ -111,6 +116,11 @@ class SecondScreen(DirectObject):
         notify.info('second screen %dx%d, drawn at %dx%d' % (width, height, renderWidth, renderHeight))
         from toontown.dualscreen import BottomScreenPages
         self.pages = BottomScreenPages.BottomScreen(self, self.aspect, self.aspectRatio)
+
+    def setSmooth(self, smooth):
+        """Draws the bottom screen more often while it shows something
+        moving."""
+        self.frameTime = SMOOTH_FRAME_TIME if smooth else FRAME_TIME
 
     def sceneRoot(self):
         """Where 3D models (the toon on the Pick-A-Toon page) go: drawn
@@ -166,7 +176,7 @@ class SecondScreen(DirectObject):
         if self.armed:
             self.armed = False
             self.handOver()
-        if now - self.lastFrame >= FRAME_TIME:
+        if now - self.lastFrame >= self.frameTime:
             self.lastFrame = now
             self.buffer.setOneShot(True)
             self.armed = True

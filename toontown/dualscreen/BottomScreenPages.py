@@ -231,6 +231,7 @@ class BottomScreen(DirectObject):
             self.laffMeter = None
         self.ignore('toonLookChanged')
         self.clearSlot()
+        self.screen.setSmooth(False)
         if self.page is not None:
             self.page.removeNode()
             self.page = None
@@ -421,6 +422,7 @@ class BottomScreen(DirectObject):
         chooser = pickAToon()
         self.chooser = chooser
         self.leaving = False
+        self.screen.setSmooth(True)
         avatars = sorted((av for av in chooser.avatarList if av.dna), key=lambda av: av.position)
         taken = set(av.position for av in avatars)
         # Arthur: the arrows go through the toons first, then the empty
