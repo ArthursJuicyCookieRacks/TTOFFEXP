@@ -30,6 +30,8 @@ FLEE_DISTANCE = 45.0
 STUCK_TIME = 20.0
 STILL_TIME = 4.0
 STILL_DISTANCE = 3.0
+# Closer to its toon than its reach and this, a still cog isn't stuck.
+STUCK_NEAR = 2.0
 # How long a cog stays under (or over) a toon it can't reach before it
 # flies back in on the toon's level.
 OFF_LEVEL_TIME = 5.0
@@ -325,7 +327,9 @@ class SurvivalCog:
             self.offLevelSince = None
             self.__reland(goal)
             return
-        if self.lure is None and dist > 10.0 and now - self.stillSince > STILL_TIME:
+        # (Near the toon too: a cog wedged in a corner a few feet off,
+        # out of reach, used to stand there for good.)
+        if self.lure is None and dist > reach + STUCK_NEAR and now - self.stillSince > STILL_TIME:
             self.__reland(goal)
             return
         # A Presentation pulls hard: every cog hurries to it, so the ones
@@ -419,11 +423,13 @@ class SurvivalCog:
 
     def __step(self, direction, length, now, routed=False):
         pos = self.pos
-        if routed:
+        if self.detour is not None and now < self.detourUntil:
+            # Stepping round something (a wall felt for, or a corner the
+            # route cut too fine for this cog's body).
+            direction = self.detour
+        elif routed:
             # The way was checked (a clear walk, or the playground's cells).
             self.detour = None
-        elif self.detour is not None and now < self.detourUntil:
-            direction = self.detour
         if not routed and not self.__fits(direction, max(length, 2.5)):
             # A wall: try the ways round it and keep the first that is clear.
             found = None
@@ -463,8 +469,21 @@ class SurvivalCog:
                     direction = turned
                     break
             else:
-                self.__loop('neutral')
-                return
+                # Boxed in where the route said there was room (the cells
+                # are checked for a thin body; a big cog's is wider): feel
+                # for a way out, back the way it came if need be, instead
+                # of standing there until it flies off (Arthur: cogs stuck
+                # by the mailbox and the lamp post on Downsizer Drive).
+                for angle in (120, -120, 150, -150, 180):
+                    turned = self.__turn(direction, angle)
+                    if self.__fits(turned, max(length, 2.0)):
+                        self.detour = turned
+                        self.detourUntil = now + DETOUR_TIME
+                        direction = turned
+                        break
+                else:
+                    self.__loop('neutral')
+                    return
         new = Point3(pos + direction * length)
         if now >= self.nextGround:
             self.nextGround = now + GROUND_EVERY

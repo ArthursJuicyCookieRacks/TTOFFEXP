@@ -67,6 +67,10 @@ class Mesh:
         return node
 
 
+# How high the posts round any solid reach, at the least (MapKit.__posts).
+POST_MIN_TOP = 2.6
+
+
 class MapKit:
 
     def __init__(self, root):
@@ -223,7 +227,11 @@ class MapKit:
 
     def __posts(self, node, pts, z0, z1, closed=True):
         r = self.POST_RADIUS
-        top = max(z0 + 0.6, z1 - r)
+        # At least up past the middle of a toon's wall ball (1.4 feet up):
+        # posts round a low box (a lamp post's foot) only reached its
+        # bottom, pushed it up more than out, and a toon slid over them
+        # into the ring and couldn't get out (Farewell Fair).
+        top = max(z0 + POST_MIN_TOP, z1 - r)
         pairs = list(zip(pts, pts[1:] + pts[:1])) if closed else list(zip(pts[:-1], pts[1:]))
         for (ax, ay), (bx, by) in pairs:
             length = math.hypot(bx - ax, by - ay)

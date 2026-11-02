@@ -238,6 +238,8 @@ class SurvivalGame(DirectObject):
         # Nor through Mickey or Fisherman Freddy, on any map (Arthur).
         self.arena.addBlocker(self.arena.mickeySpot()[0], STATION_RADIUS, 4.0)
         self.arena.addBlocker(self.arena.fishermanSpot()[0], STATION_RADIUS, 4.0)
+        for pos, radius, height in self.arena.map.get('blockers', ()):
+            self.arena.addBlocker(pos, radius, height)
         self.arena.buildReach(start)
         self.player = SurvivalPlayer(self, start, h)
         self.hud = SurvivalHUD(self, self.dna)

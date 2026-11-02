@@ -331,33 +331,56 @@ class MapKit:
         node.setFromCollideMask(BitMask32.allOff())
         return self.root.attachNewNode(node)
 
-    def collideWall(self, a, b, height, parent=None, name='mapWall', thick=0.3):
-        """A wall from a to b that stops toons and cogs from both sides: a
-        stack of thin capsules along it, a foot or so apart up to height.
-        (Two polygons back to back don't work: a toon touching both is
-        pushed both ways at once and walks through; a CollisionBox pushes
-        toons the wrong way from one side.)"""
+    # Where a toon's wall sphere sits when it stands on the ground: a ball
+    # 1.4 feet round, its middle 1.4 feet up.
+    TOON_SPHERE_Z = 1.4
+    # The rail at that height is this thick round, so a cog's knee and waist
+    # checks (0.9 and 1.9 feet up) meet it too.
+    TOON_RAIL_RADIUS = 0.55
+    # The next rail up starts here: out of reach of a toon's sphere on the
+    # ground while it leans on the low rail, in reach of a cog's chest check.
+    UPPER_RAIL_Z = 3.2
+
+    def railHeights(self, height):
+        """The heights of a wall's rails: one at the middle of a toon's
+        sphere, the rest from the cogs' chest up to the top, a foot or so
+        apart. Never two in reach of a toon's sphere at once: stacked rails
+        a foot apart (0.6, 1.8, 3.0) made notches the sphere sank into, and
+        the fluid pusher then held the toon there until it jumped (Arthur,
+        Downsizer Drive's fences)."""
+        heights = [min(self.TOON_SPHERE_Z, max(0.3, height - 0.3))]
+        z = self.UPPER_RAIL_Z
+        while z <= height - 0.3 + 1e-6:
+            heights.append(z)
+            z += 1.2
+        if height - 0.3 > heights[-1] + 0.3:
+            heights.append(height - 0.3)
+        return heights
+
+    def collideWall(self, a, b, height, parent=None, name='mapWall', thick=0.3, z0=0.0):
+        """A wall from a to b that stops toons and cogs from both sides:
+        capsules lying along it (railHeights). (Two polygons back to back
+        don't work: a toon touching both is pushed both ways at once and
+        walks through; a CollisionBox pushes toons the wrong way from one
+        side.)"""
         from panda3d.core import BitMask32, CollisionCapsule, CollisionNode, Point3
         node = CollisionNode(name)
-        radius = max(0.15, thick * 0.5)
-        z = 0.6
-        while True:
-            node.addSolid(CollisionCapsule(Point3(a[0], a[1], z), Point3(b[0], b[1], z), radius))
-            if z >= height - 0.3:
-                break
-            z = min(height - 0.3, z + 1.2)
+        thin = max(0.15, thick * 0.5)
+        for i, z in enumerate(self.railHeights(height)):
+            radius = max(thin, self.TOON_RAIL_RADIUS) if i == 0 else thin
+            node.addSolid(CollisionCapsule(Point3(a[0], a[1], z0 + z), Point3(b[0], b[1], z0 + z), radius))
         node.setIntoCollideMask(ToontownGlobals.WallBitmask)
         node.setFromCollideMask(BitMask32.allOff())
         return (parent or self.root).attachNewNode(node)
 
     def solid(self, np, shrink=0.9, name='mapSolid', minSize=None):
-        """Make a model without collisions of its own solid: a ring of
-        upright posts round the box it fills (in its own space, so they turn
-        and scale with it). An upright post always pushes a toon straight
-        out sideways; lying capsules or a CollisionBox pushed it up, down or
-        the wrong way, and it walked through (Arthur). minSize (feet) widens
-        a flat model, such as the flower basket card."""
-        from panda3d.core import BitMask32, CollisionNode, CollisionTube, Point3
+        """Make a model without collisions of its own solid: a wall
+        (collideWall) round the box it fills, turned with it. It used to
+        be a ring of upright posts, but a toon could sink into the notch
+        between two posts and stick there until it jumped (Arthur, the
+        target on Downsizer Drive). minSize (feet) widens a flat model,
+        such as the flower basket card."""
+        from panda3d.core import Point3
         low, high = np.getTightBounds(np)
         if low is None:
             return None
@@ -368,22 +391,22 @@ class MapKit:
             half = [max(h, minSize * 0.5 / scale) for h in half]
         x0, x1 = mid[0] - half[0], mid[0] + half[0]
         y0, y1 = mid[1] - half[1], mid[1] + half[1]
-        top = low[2] + max(high[2] - low[2], 4.0 / scale)
-        radius = 0.45 / scale
-        step = 0.8 / scale
-        node = CollisionNode(name)
-        corners = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
+        # The walls' rails are thick: pull the outline in by their radius,
+        # so the model is as solid as before and no wider.
+        inset = min(self.TOON_RAIL_RADIUS * 0.6 / scale, half[0] * 0.5, half[1] * 0.5)
+        x0, x1, y0, y1 = x0 + inset, x1 - inset, y0 + inset, y1 - inset
+        parent = self.root
+        corners = [parent.getRelativePoint(np, Point3(x, y, low[2])) for (x, y) in ((x0, y0), (x1, y0), (x1, y1), (x0, y1))]
+        # From the ground the model stands on (its origin), not from the
+        # bottom of its geometry: the watering cans reach ten feet under
+        # the lawn, and their walls' toon-height rail went with them.
+        base = max(min(c[2] for c in corners), parent.getRelativePoint(np, Point3(0, 0, 0))[2])
+        top = max(parent.getRelativePoint(np, Point3(mid[0], mid[1], high[2]))[2] - base, 4.0)
+        group = parent.attachNewNode(name)
         for i in range(4):
-            (ax, ay), (bx, by) = corners[i], corners[(i + 1) % 4]
-            length = ((bx - ax) ** 2 + (by - ay) ** 2) ** 0.5
-            count = max(1, int(length / step + 0.999))
-            for j in range(count):
-                t = float(j) / count
-                x, y = ax + (bx - ax) * t, ay + (by - ay) * t
-                node.addSolid(CollisionTube(Point3(x, y, low[2]), Point3(x, y, top), radius))
-        node.setIntoCollideMask(ToontownGlobals.WallBitmask)
-        node.setFromCollideMask(BitMask32.allOff())
-        return np.attachNewNode(node)
+            a, b = corners[i], corners[(i + 1) % 4]
+            self.collideWall((a[0], a[1]), (b[0], b[1]), top, parent=group, name=name, z0=base)
+        return group
 
     def collideTube(self, pos, radius, height=4.0, name='mapTube'):
         from panda3d.core import BitMask32, CollisionNode, CollisionTube

@@ -20,6 +20,18 @@ from toontown.survival import SurvivalGlobals as G
 from toontown.toonbase import ToontownGlobals, TouchControls
 
 SOURCE = 'survival'
+# Frames the toon can try to walk without moving before the plain pusher
+# frees it, and how many frames the plain pusher then has.
+STUCK_FRAMES = 3
+PLAIN_FRAMES = 4
+# A step longer than this, while the plain pusher has the toon, is checked
+# for going through a wall.
+GUARD_STEP = 1.0
+# How many such steps are taken back before a wedged toon is let out anyway.
+GUARD_TRIES = 3
+# Walking into something this squarely (the cosine against its face) is
+# being blocked by it, not stuck.
+WALL_FACING = 0.3
 MOUSE_SENSITIVITY = 0.12
 # Camera sensitivity 1 (very slow) to 10 (very fast), from the pause
 # menu's Settings; 5 is the turn speed the game always had.
@@ -162,6 +174,39 @@ class SurvivalPlayer(DirectObject):
         base.cTrav.setRespectPrevTransform(True)
         self.walker.setWalkSpeed(G.WALK_SPEED, G.JUMP_FORCE, G.WALK_SPEED * G.REVERSE_SCALE, 0)
         self.walker.placeOnFloor()
+        # The fluid pusher's weak spot: in a notch between two solids (a
+        # lamp post and a mailbox, two of the posts round a prop, two of a
+        # fence's stacked rails) it sinks the toon a hair into them, and
+        # from then on it puts the toon back where it was every frame,
+        # whichever way it walks: stuck until a jump lifts it out (Arthur,
+        # Downsizer Drive). When the toon is trying to walk and hasn't
+        # moved for a few frames, the plain pusher takes over for a few
+        # frames: it pushes the toon out of what it has sunk into. The
+        # plain pusher can carry a toon through a thin wall on a slow
+        # frame (why the fluid one is there), so while it has the toon
+        # each frame's step is checked, and one that crossed a wall is
+        # undone.
+        from panda3d.core import CollisionHandlerPusher
+        self.plainPusher = CollisionHandlerPusher()
+        self.plainPusher.addCollider(self.walker.cWallSphereNodePath, self.body)
+        from panda3d.core import CollisionTraverser
+        # A ball a little bigger than the wall sphere, for what the toon is
+        # touching and which way each thing faces.
+        from panda3d.core import BitMask32, CollisionHandlerQueue, CollisionNode, CollisionSphere
+        touchNode = CollisionNode('survivalTouch')
+        touchNode.addSolid(CollisionSphere(0, 0, self.walker.avatarRadius, self.walker.avatarRadius + 0.15))
+        touchNode.setFromCollideMask(ToontownGlobals.WallBitmask)
+        touchNode.setIntoCollideMask(BitMask32.allOff())
+        self.touchPath = self.body.attachNewNode(touchNode)
+        self.touchQueue = CollisionHandlerQueue()
+        self.touchTrav = CollisionTraverser('survivalTouch')
+        self.touchTrav.addCollider(self.touchPath, self.touchQueue)
+        self.stuckFrames = 0
+        self.plainFrames = 0
+        self.lastFlat = Point3(self.body.getPos())
+        self.guardFrom = None
+        self.guardUndone = 0
+        self.mayForce = False
         self.mouseCentered = False
         self.touchMode = TouchControls.wantTouchControls()
         self.sprintLatched = False
@@ -242,10 +287,13 @@ class SurvivalPlayer(DirectObject):
             self.touch = None
         self.grabMouse(False)
         self.__footsteps(off=True)
+        self.__usePlainPusher(False)
         taskMgr.remove('survivalPlayer')
 
     def destroy(self):
         self.disable()
+        self.__usePlainPusher(False)
+        self.touchTrav.clearColliders()
         self.walker.setCollisionsActive(0)
         self.walker.deleteCollisions()
         if base.cTrav:
@@ -501,6 +549,7 @@ class SurvivalPlayer(DirectObject):
         else:
             self.moveState = 'walk'
         self.__footsteps()
+        self.__unstick(moving and speed > 0, speed, dt)
         # Laff comes back out of the cogs' reach.
         now = globalClock.getFrameTime()
         if not self.down and self.hp < self.maxHp:
@@ -513,6 +562,95 @@ class SurvivalPlayer(DirectObject):
         if self.down:
             self.game.playerDownTick(dt)
         return task.cont
+
+    def __usePlainPusher(self, on):
+        sphere = getattr(self.walker, 'cWallSphereNodePath', None)
+        taskMgr.remove('survivalUnstickGuard')
+        self.guardFrom = None
+        if not on:
+            self.plainFrames = 0
+        if sphere is None or not base.cTrav or not base.cTrav.hasCollider(sphere):
+            self.plainFrames = 0
+            return
+        base.cTrav.addCollider(sphere, self.plainPusher if on else self.walker.pusher)
+        if on:
+            self.guardFrom = Point3(self.body.getPos())
+            # After the collisions (sort 30), before the frame is drawn.
+            taskMgr.add(self.__guard, 'survivalUnstickGuard', sort=35)
+
+    def __guard(self, task):
+        """While the plain pusher has the toon: a step that went through a
+        wall is taken back."""
+        pos = Point3(self.body.getPos())
+        start = self.guardFrom
+        arena = getattr(self.game, 'arena', None)
+        # Only a long step can carry the toon's ball past the middle of a
+        # rail (the plain pusher puts a shorter one back on the side it came
+        # from), so only long steps are checked. A toon wedged in a corner
+        # and walking away from everything it touches (by the gazebo
+        # steps beside Freddy in Toontown Central) is let out after a few
+        # tries whichever way the push goes: free beats stuck for good.
+        if (start is not None and arena is not None and (pos - start).length() > GUARD_STEP
+                and (not self.mayForce or self.guardUndone < GUARD_TRIES) and not arena.bodyClear(start, pos)):
+            self.body.setPos(start)
+            pos = start
+            self.guardUndone += 1
+        self.guardFrom = pos
+        return task.cont
+
+    def __unstick(self, trying, speed, dt):
+        """Watch for the fluid pusher holding the toon still while it
+        walks, and hand it to the plain pusher for a few frames."""
+        pos = self.body.getPos()
+        moved = math.hypot(pos[0] - self.lastFlat[0], pos[1] - self.lastFlat[1])
+        self.lastFlat = Point3(pos)
+        if self.plainFrames:
+            self.plainFrames -= 1
+            if not self.plainFrames:
+                self.__usePlainPusher(False)
+            return
+        airborne = getattr(self.walker, 'isAirborne', False)
+        if trying and not airborne and dt > 0 and moved < speed * dt * 0.05:
+            self.stuckFrames += 1
+        else:
+            self.stuckFrames = 0
+            if moved > speed * dt * 0.5:
+                # Walking freely again.
+                self.guardUndone = 0
+        if self.stuckFrames >= STUCK_FRAMES:
+            self.stuckFrames = 0
+            # The plain pusher frees it either way; a toon walking into a
+            # wall never gets a step through one (the guard), a wedged one
+            # walking away from everything it touches may after a few tries.
+            self.mayForce = self.__walkingAway()
+            self.plainFrames = PLAIN_FRAMES
+            self.__usePlainPusher(True)
+
+    def __walkingAway(self):
+        """Whether the way the toon is walking leads away from everything
+        it touches, so that nothing should stop it: then it is stuck. Held
+        still walking into a wall or a fence is only blocked, and stays
+        with the fluid pusher (the plain one would carry it through on a
+        slow frame)."""
+        step = Vec3(self.walker.vel)
+        step.setZ(0)
+        if step.lengthSquared() < 1e-8:
+            return False
+        step.normalize()
+        self.touchQueue.clearEntries()
+        self.touchTrav.traverse(render)
+        for i in range(self.touchQueue.getNumEntries()):
+            entry = self.touchQueue.getEntry(i)
+            if not entry.getInto().isTangible():
+                continue
+            normal = Vec3(entry.getSurfaceNormal(render))
+            normal.setZ(0)
+            if normal.lengthSquared() < 1e-6:
+                continue
+            normal.normalize()
+            if step.dot(normal) < -WALL_FACING:
+                return False
+        return True
 
     def __footsteps(self, off=False):
         want = None

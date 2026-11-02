@@ -5,7 +5,9 @@ Skelecog test dummies stand about the lawns. Past the board fence there is
 only sand, Cog buildings and the factory's smoke.
 """
 
-from panda3d.core import Fog, Vec4
+import math
+
+from panda3d.core import Fog, Point3, Vec4
 
 from toontown.survival.maps.MapKit import MapKit
 
@@ -40,6 +42,9 @@ class DownsizerDrive:
     # The sky reaches 500 feet up and the factory stands 800 feet out:
     # Survival's camera draws this far here, not its usual 400.
     CAMERA_FAR = 1000.0
+    # The cul-de-sac's fountain, and the mailbox on the sidewalk round it.
+    FOUNTAIN = (48, 0)
+    MAILBOX_SPOT = (31.1, 24.2, 0.04)
     # The toons' ground: inside the board fence.
     SITE = (-110, -100, 90, 100)
     SHOTS = [
@@ -107,9 +112,10 @@ class DownsizerDrive:
         mickey.nametag3d.stash()
         self.actors += [freddy, mickey]
 
-    # Things without collisions of their own get a box round them.
+    # Things without collisions of their own get a box round them. (The
+    # trolley toaster's own is a post a foot across: toons walked through it.)
     SOLID_MODELS = ('flowerBasket', 'picnic_table', 'target', 'watering_cans', 'shovels', 'Kart3_Final', 'Kart1_Final',
-                    'Coggolf_cart3')
+                    'Coggolf_cart3', 'ttr_r_prp_est_trolleyToaster')
 
     def buildSolids(self):
         kit = self.kit
@@ -179,7 +185,18 @@ class DownsizerDrive:
                       'doorColor': (0.92, 0.92, 0.92), 'cornice': ('cornice_shingles_ur', (0.45, 0.32, 0.22))}]
             side = [{'code': 'wall_md_board_ur', 'height': 12, 'color': color,
                      'windows': ('window_sm_square_ur', 1, (0.95, 0.95, 0.95))}]
-            kit.boxBuilding((x, y, 0), h, 18, 20, front, side, roofTex=ROOF_TEX)
+            garage = kit.boxBuilding((x, y, 0), h, 18, 20, front, side, roofTex=ROOF_TEX)
+            # Its flats' own walls are back-to-back pairs that cancel out
+            # and its camera barriers only keep the camera out: toons and
+            # cogs walked straight through the garages. A wall all round.
+            corners = [self.root.getRelativePoint(garage, Point3(cx, cy, 0)) for cx, cy in ((0, 0), (18, 0), (18, 20), (0, 20))]
+            for i in range(4):
+                a, b = corners[i], corners[(i + 1) % 4]
+                kit.collideWall((a[0], a[1]), (b[0], b[1]), 12, name='garageCollide', thick=0.6)
+            # The garage door's trigger is a ball in front of the door that
+            # stopped a toon there like an invisible post.
+            for trigger in garage.findAllMatches('**/door_*_trigger*'):
+                trigger.stash()
 
     def picket(self, a, b):
         self.kit.wallQuad(a, b, 0, 4, tex=PICKET_TEX[0], alpha=PICKET_TEX[1], tile=8, tileZ=4, name='picket')
@@ -200,7 +217,8 @@ class DownsizerDrive:
         self.picket((30, 30), (30, 100))
         self.picket((30, -30), (30, -100))
         # Mailboxes by the curb.
-        kit.model('phase_5.5/models/estate/mailboxHouse', pos=(-38, 21.5, 0), h=180)
+        # Back from the picket fence's end, where a toon wedged beside it.
+        kit.model('phase_5.5/models/estate/mailboxHouse', pos=(-41, 23.5, 0), h=180)
         kit.model('phase_5.5/models/estate/mailboxHouse', pos=(-22, -21.5, 0), h=0)
         # Trees.
         kit.prop('prop_tree_large_ur', pos=(-75, 40, 0))
@@ -229,7 +247,9 @@ class DownsizerDrive:
         kit.model('phase_5.5/models/estate/watering_cans', pos=(-56, 70, 0), h=30)
         kit.model('phase_5.5/models/estate/shovels', pos=(-58, -58, 0), h=-20)
         kit.model('phase_5.5/models/estate/flowerBasket', pos=(-15, 30, 0), h=180)
-        kit.model('phase_5.5/models/estate/west_barrelStand', pos=(26, 50, 0), h=-90)
+        # Two feet further from the picket fence: the gap between them was
+        # just too narrow for a toon, which wedged in it.
+        kit.model('phase_5.5/models/estate/west_barrelStand', pos=(24, 50, 0), h=-90)
         kit.model('phase_5.5/models/estate/ttr_r_prp_est_trolleyToaster', pos=(-8, 50, 0), h=-120)
         kit.model('phase_5.5/models/estate/wheelbarrel', pos=(20, -60, 0), h=-30)
         kit.model('phase_6/models/golf/picnic_table', pos=(-85, 70, 0), h=60)
@@ -237,7 +257,8 @@ class DownsizerDrive:
         kit.prop('prop_tree_fat_ur', pos=(-94, 80, 0))
         kit.prop('prop_tree_small_ul', pos=(40, -90, 0))
         kit.prop('prop_tree_large_ul', pos=(-40, 90, 0))
-        kit.prop('prop_big_planter', pos=(84, 0, 0))
+        # Off the board fence: the gap between them wedged toons.
+        kit.prop('prop_big_planter', pos=(80, 0, 0))
         # A few more trees in the open lawns.
         kit.prop('prop_tree_large_ur', pos=(82, 38, 0))
         kit.prop('prop_tree_fat_ul', pos=(80, -42, 0))
@@ -261,17 +282,34 @@ class DownsizerDrive:
         # Central's do (its own idle animations).
         self.animProp('hydrant', 'idle0', (-45, 16, 0), 180)
         self.animProp('trashcan', 'idleHiccup0', (5, -16, 0), 0)
-        self.animProp('mailbox', 'idle0', (30, 16, 0), 200)
+        # The mailbox's slot is on its -y side. This one stands on the
+        # cul-de-sac's sidewalk, slot to the street: it used to stand on
+        # the grass corner facing the yard, a few feet from a lamp post, and
+        # toons and cogs got wedged between the two (Arthur).
+        self.animProp('mailbox', 'idle0', self.MAILBOX_SPOT, self.facing(self.MAILBOX_SPOT, self.FOUNTAIN, back=True))
         self.animProp('hydrant', 'idle0', (-25, -16, 0), 0)
         self.animProp('trashcan', 'idleHiccup0', (-82, 16, 0), 180)
-        self.animProp('mailbox', 'idle0', (-95, -16, 0), 20)
+        self.animProp('mailbox', 'idle0', (-95, -16, 0), 200)
         # The cul-de-sac's fountain, a smaller copy of the one in Toontown Central.
-        self.fountain = kit.prop('prop_toontown_central_fountain', pos=(48, 0, 0.03), scale=0.8)
-        # Benches round the cul-de-sac.
-        kit.prop('prop_playground_bench', pos=(46, -29.5, 0.04), h=180)
-        kit.prop('prop_playground_bench', pos=(46, 29.5, 0.04), h=0)
+        self.fountain = kit.prop('prop_toontown_central_fountain', pos=(self.FOUNTAIN[0], self.FOUNTAIN[1], 0.03), scale=0.8)
+        # Benches round the cul-de-sac, facing the fountain (a bench's seat
+        # is on its +y side; they had their backs to it).
+        for spot in ((47.6, -28.2, 0.04), (47.6, 28.2, 0.04)):
+            bench = kit.prop('prop_playground_bench', pos=spot, h=self.facing(spot, self.FOUNTAIN))
+            # Its origin is at one end: turned round, it would swing out
+            # onto the grass. Keep the middle of it where it was.
+            lo, hi = bench.getTightBounds(self.root)
+            bench.setPos(bench.getPos() + Point3(spot[0] - (lo[0] + hi[0]) * 0.5, spot[1] - (lo[1] + hi[1]) * 0.5, 0))
         kit.prop('prop_playground_bench', pos=(-40, 17.5, 0.04), h=0)
         kit.prop('prop_playground_bench', pos=(-40, -17.5, 0.04), h=180)
+
+    @staticmethod
+    def facing(spot, target, back=False):
+        """The heading that turns a model's +y (or its -y, back) at target."""
+        dx, dy = target[0] - spot[0], target[1] - spot[1]
+        if back:
+            dx, dy = -dx, -dy
+        return math.degrees(math.atan2(-dx, dy))
 
     def animProp(self, kind, anim, pos, h):
         from direct.actor.Actor import Actor
@@ -293,8 +331,10 @@ class DownsizerDrive:
         self.trolley = kit.model('phase_4/models/modules/trolley_station_TT', find='trolley_car', pos=(66, -16, 0.12), h=135,
                                  parent=station)
         # A kart in each driveway and one left in the street.
-        kit.model('phase_6/models/karting/Kart3_Final', pos=(13, 17, 0.05), h=90, scale=2.6, color=(0.5, 0.85, 0.5, 1))
-        kit.model('phase_6/models/karting/Kart1_Final', pos=(16.5, -16, 0.05), h=-90, scale=2.6, color=(1.0, 0.85, 0.4, 1))
+        # Pulled right up to the garage doors: the two-foot gap behind them
+        # was a pocket cogs walked into and got stuck in.
+        kit.model('phase_6/models/karting/Kart3_Final', pos=(13, 18.9, 0.05), h=90, scale=2.6, color=(0.5, 0.85, 0.5, 1))
+        kit.model('phase_6/models/karting/Kart1_Final', pos=(16.5, -18.9, 0.05), h=-90, scale=2.6, color=(1.0, 0.85, 0.4, 1))
         kit.model('phase_12/models/bossbotHQ/Coggolf_cart3', pos=(-70, -5, 0.05), h=75)
 
     def buildDummies(self):

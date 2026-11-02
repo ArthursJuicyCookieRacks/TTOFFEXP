@@ -78,6 +78,10 @@ MAPS = {
         'gazebo': GAZEBO,
         'trunkPanelAngle': TRUNK_PANEL_ANGLE,
         'playerStart': PLAYER_START,
+        # Invisible posts filling pockets a toon could walk into and not
+        # out of: (where, radius, height). The slot between Freddy and the
+        # gazebo steps' side, up on the stringer outside the railing.
+        'blockers': ((Point3(-66.1, -4.0, -1.975), 1.3, 4.5),),
     },
     'beta_ttc': {
         'title': 'Old School Toontown',
@@ -121,6 +125,9 @@ MAPS['downsizer'] = {
                    'the trunk and Fisherman Freddy stand by the fountain.',
     'picture': 'phase_4/maps/survival_map_downsizer.jpg',
     'parody': ('toontown.survival.maps.DownsizerDrive', 'DownsizerDrive'),
+    # Finer cells: the gaps between the fences, garages and karts are a
+    # few feet, and five-foot cells routed cogs into ones they can't fit.
+    'reachStep': 2.5,
 }
 # The night maps built in code (toontown/survival/previewmaps).
 MAPS['farewell_fair'] = {
@@ -159,6 +166,9 @@ CELL_SIDE = 0.6
 # A landing cell needs this many rings of open cells round it, so a cog
 # (a big one is 3 feet across) never lands against a wall, fence or tree.
 LANDING_CLEARANCE = 1
+
+# How far into the ground a blocker post (addBlocker) reaches.
+BLOCKER_BELOW = 3.0
 
 
 class SurvivalArena:
@@ -699,7 +709,10 @@ class SurvivalArena:
     def addBlocker(self, pos, radius, height=3.0):
         """Something solid where the playground had nothing (the trunk):
         a wall the toons walk round and the cogs' way-finding sees."""
-        tube = CollisionTube(0, 0, 0.2, 0, 0, height, radius)
+        # Down into the ground too: a toon stepping up from lower ground
+        # (onto Donald's pier from the drained harbour) came in under the
+        # post's foot and ended up inside it.
+        tube = CollisionTube(0, 0, -BLOCKER_BELOW, 0, 0, height, radius)
         node = CollisionNode('survivalBlocker')
         node.addSolid(tube)
         node.setIntoCollideMask(ToontownGlobals.WallBitmask)
