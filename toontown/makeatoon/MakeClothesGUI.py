@@ -13,23 +13,6 @@ def accessoryChoices(styles):
     choices.remove((0, 0, 0))
     return [(0, 0, 0)] + choices
 
-def accessoryName(kind, choice):
-    """What the game calls the accessory with this (model, texture, colour)."""
-    if tuple(choice) == (0, 0, 0):
-        return TTLocalizer.MakeAToonNoAccessory
-    styles, descriptions, models = {
-        'hat': (ToonDNA.HatStyles, TTLocalizer.HatStylesDescriptions, ToonDNA.HatModels),
-        'glasses': (ToonDNA.GlassesStyles, TTLocalizer.GlassesStylesDescriptions, ToonDNA.GlassesModels),
-        'backpack': (ToonDNA.BackpackStyles, TTLocalizer.BackpackStylesDescriptions, ToonDNA.BackpackModels),
-        'shoes': (ToonDNA.ShoesStyles, TTLocalizer.ShoesStylesDescriptions, ToonDNA.ShoesModels)}[kind]
-    for style, value in styles.items():
-        if tuple(value) == tuple(choice) and style in descriptions:
-            return descriptions[style]
-    # One of the models the catalog never named: its file name.
-    model = models[choice[0]] or ''
-    return model.split('_')[-1]
-
-
 ACCESSORY_KINDS = (('hat', TTLocalizer.TrunkHatGUI, ToonDNA.HatStyles),
  ('glasses', TTLocalizer.TrunkGlassesGUI, ToonDNA.GlassesStyles),
  ('backpack', TTLocalizer.TrunkBackpackGUI, ToonDNA.BackpackStyles),
@@ -38,15 +21,9 @@ ACCESSORY_KINDS = (('hat', TTLocalizer.TrunkHatGUI, ToonDNA.HatStyles),
 # Glove colours: white (the classic look) first, then every toon colour.
 GLOVE_COLORS = list(range(len(ToonDNA.allColorsList)))
 
-def gloveColorName(color):
-    names = getattr(TTLocalizer, 'ToonColorNames', [])
-    if 0 <= color < len(names):
-        return names[color]
-    return str(color)
-
 # The accessory rows, then Gloves under them as a fifth row: a little closer
-# together than the four clothes rows so all five, their name labels and
-# Shuffle fit above the arrows at the bottom.
+# together than the four clothes rows so all five and Shuffle fit above the
+# arrows at the bottom.
 ACCESSORY_ROW_TOP = -0.073
 ACCESSORY_ROW_STEP = 0.19
 ACCESSORY_ROW_SCALE = 0.95
@@ -88,22 +65,12 @@ class MakeClothesGUI(ClothesGUI.ClothesGUI):
              shuffleArrowDown,
              shuffleArrowUp,
              shuffleArrowDisabled), image_scale=halfButtonInvertScale, image1_scale=halfButtonInvertHoverScale, image2_scale=halfButtonInvertHoverScale, pos=(0.2, 0, 0), command=command, extraArgs=[kind, 1])
-            # The accessory's name and number, so one that doesn't show can
-            # be named (Arthur asked).
-            nameLabel = DirectLabel(parent=frame, relief=None, pos=(0, 0, -0.085), text='', text_scale=0.038,
-                                    text_fg=(1, 1, 1, 1), text_shadow=(0, 0, 0, 1), text_font=ToontownGlobals.getInterfaceFont())
-            return (frame, lButton, rButton, nameLabel)
+            return (frame, lButton, rButton)
 
         for i, (kind, label, styles) in enumerate(ACCESSORY_KINDS):
             self.accessoryButtons[kind] = makeRow(i, label, self.swapAccessory, kind)
-        # Glove colour, the same kind of row (Arthur asked). Its name label
-        # carries a little swatch of the colour.
+        # Glove colour, the same kind of row (Arthur asked).
         self.gloveButtons = makeRow(len(ACCESSORY_KINDS), TTLocalizer.MakeAToonGloves, lambda kind, offset: self.swapGloves(offset), 'gloves')
-        # A dark edge, so white and pale colours show against the frame.
-        self.gloveSwatch = DirectFrame(parent=self.gloveButtons[3], relief=DGG.FLAT, frameSize=(-0.017, 0.017, -0.017, 0.017),
-                                       pos=(0, 0, 0.01), frameColor=(0.1, 0.1, 0.15, 1))
-        self.gloveSwatchColor = DirectFrame(parent=self.gloveSwatch, relief=DGG.FLAT, frameSize=(-0.012, 0.012, -0.012, 0.012),
-                                            frameColor=(1, 1, 1, 1))
         self.accessoryFrame.hide()
         # Shuffle for the accessories, in the clothes Shuffle button's place
         # while they are showing. A shuffle leaves each kind off about a
@@ -126,16 +93,11 @@ class MakeClothesGUI(ClothesGUI.ClothesGUI):
         del self.accessoryShuffle
         self.accessoriesButton.destroy()
         del self.accessoriesButton
-        for frame, lButton, rButton, nameLabel in self.accessoryButtons.values():
-            nameLabel.destroy()
+        for frame, lButton, rButton in self.accessoryButtons.values():
             lButton.destroy()
             rButton.destroy()
             frame.destroy()
         del self.accessoryButtons
-        self.gloveSwatchColor.destroy()
-        del self.gloveSwatchColor
-        self.gloveSwatch.destroy()
-        del self.gloveSwatch
         for widget in reversed(self.gloveButtons):
             widget.destroy()
         del self.gloveButtons
@@ -180,9 +142,8 @@ class MakeClothesGUI(ClothesGUI.ClothesGUI):
         choices, choice = self.accessories[kind]
         choice = max(0, min(len(choices) - 1, choice + offset))
         self.accessories[kind][1] = choice
-        frame, lButton, rButton, nameLabel = self.accessoryButtons[kind]
+        frame, lButton, rButton = self.accessoryButtons[kind]
         self.updateScrollButtons(choice, len(choices), 0, lButton, rButton)
-        nameLabel['text'] = '%s, %d of %d' % (accessoryName(kind, choices[choice]), choice + 1, len(choices))
         if not getattr(self, 'toon', None):
             return
         idx, textureIdx, colorIdx = choices[choice]
@@ -206,14 +167,8 @@ class MakeClothesGUI(ClothesGUI.ClothesGUI):
         choice = max(0, min(len(GLOVE_COLORS) - 1, (self.gloveChoice or 0) + offset))
         self.gloveChoice = choice
         color = GLOVE_COLORS[choice]
-        frame, lButton, rButton, nameLabel = self.gloveButtons
+        frame, lButton, rButton = self.gloveButtons
         self.updateScrollButtons(choice, len(GLOVE_COLORS), 0, lButton, rButton)
-        name = '%s, %d of %d' % (gloveColorName(color), choice + 1, len(GLOVE_COLORS))
-        nameLabel['text'] = name
-        # The swatch sits just left of the name.
-        width = nameLabel.component('text0').textNode.getWidth() * 0.038 if nameLabel.hascomponent('text0') else 0.2
-        self.gloveSwatch.setPos(-width / 2.0 - 0.025, 0, 0.012)
-        self.gloveSwatchColor['frameColor'] = ToonDNA.allColorsList[color]
         if not getattr(self, 'toon', None):
             return
         self.toon.style.gloveColor = color

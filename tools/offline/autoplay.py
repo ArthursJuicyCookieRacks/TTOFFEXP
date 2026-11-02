@@ -277,7 +277,7 @@ def scenarioLogin():
                     # The Gloves row, under Shoes: step to the colour asked for.
                     gui.swapGloves(GLOVES - gui.gloveChoice)
                     yield sleep(0.5)
-                    log('gloves picked: %s' % gui.gloveButtons[3]['text'])
+                    log('gloves picked: colour %d' % gui.toon.style.gloveColor)
                     base.screenshot(os.path.join(os.environ.get('AUTOPLAY_SHOTS', '/tmp'), 'mat-gloves.png'), defaultFilename=0)
                 gui.showAccessories(False)
         yield sleep(2)

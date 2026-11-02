@@ -5622,11 +5622,6 @@ LooksEdit = 'Edit'
 LooksDeleteAsk = 'Delete Look %d? This cannot be undone.'
 MakeAToonClothes = 'Clothes'
 MakeAToonGloves = 'Gloves'
-# Names for ToonDNA.allColorsList, by index, for the glove colour picker.
-ToonColorNames = ['White', 'Peach', 'Bright Red', 'Red', 'Maroon', 'Sienna', 'Brown', 'Tan', 'Coral', 'Orange',
- 'Yellow', 'Cream', 'Citrine', 'Lime', 'Sea Green', 'Green', 'Light Blue', 'Aqua', 'Blue', 'Periwinkle',
- 'Royal Blue', 'Slate Blue', 'Purple', 'Lavender', 'Pink', 'Plum', 'Pale Blue', 'Mint', 'Emerald', 'Teal',
- 'Salmon', 'Gold', 'Crimson', 'Forest Green', 'Denim', 'Beige', 'Watermelon', 'Gray', 'Black']
 GagShopName = "Goofy's Gag Shop"
 GagShopPlayAgain = 'PLAY\nAGAIN'
 GagShopBackToPlayground = 'EXIT BACK TO\nPLAYGROUND'
