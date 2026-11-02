@@ -1,0 +1,889 @@
+"""Kino der Toonen: an old Toontown picture theater the cogs took over.
+
+Black Ops 1's Kino der Toten, laid out the way Arthur described it, built
+from Toontown's own walls, floors and props. Feet; +y runs from the lobby
+to the stage.
+
+- The lobby (start): ground floor with the ticket counter, two stairs up
+  to a balcony along the back, the teleporter's return pad in the middle.
+- Indoor route (upstairs door): upper hall, the portrait room, the foyer
+  (a gallery over a tiled lounge), the dressing room, onto the stage.
+- Alley route (downstairs door): lower hall with the fire trap, the
+  brick alley outside, the fenced stairs, the storage room up high, down
+  onto the stage.
+- The stage: the power, the teleporter, the big curtain that rises with
+  the power over the auditorium, whose back passage leads to the lobby.
+- The projection booth over the auditorium's back door, only by the
+  teleporter, with Mickey's gag upgrade; and four rooms the teleporter
+  sometimes drops a toon in on the way back.
+"""
+
+import math
+import random
+
+from direct.interval.IntervalGlobal import Func, LerpColorScaleInterval, LerpPosInterval, Sequence, Wait
+from panda3d.core import Point3, TextNode, TransparencyAttrib, Vec3, Vec4
+
+from toontown.survival import SurvivalGlobals as G
+from toontown.survival.bigmaps.BigMap import BigMap
+from toontown.survival.bigmaps.Building import *  # noqa: F401,F403 (the shared textures and colours)
+from toontown.survival.bigmaps.Building import Building
+from toontown.survival.previewmaps.MapKit import heading, rng
+
+
+# Where the four rooms the teleporter can drop a toon in are: far below
+# the theater, out of everyone's way.
+ROOMS_Z = -200.0
+ROOMS = (('bedroom', Point3(0, 400, ROOMS_Z)), ('ruined', Point3(60, 400, ROOMS_Z)),
+         ('dentist', Point3(120, 400, ROOMS_Z)), ('meeting', Point3(180, 400, ROOMS_Z)))
+BOOTH_PAD = Point3(-9, -51.5, 22)
+LOBBY_PAD = Point3(0, -84, 0)
+STAGE_PAD = Point3(0, 52, 4)
+
+
+class Theater(Building):
+    KEY = 'theater'
+    TITLE = 'Kino der Toonen'
+    DESCRIPTION = 'An old picture theater the cogs turned into a laboratory.'
+    PLAYER_START = (Point3(0, -94, 0), 0)
+    MICKEY_SPOT = (Point3(10, -52, 22), 90)
+    TRUNK_SPOT = (Point3(28, -62.5, 14), 0)
+    FISHERMAN_SPOT = (Point3(0, -94, 0), 0)
+    REACH_CENTER = Point3(0, -10, 0)
+    REACH_SPAN = 110.0
+    NAV_TOP = 60.0
+    NAV_LOWEST = -5.0
+    SPAWN_RING = (0.0, 300.0)
+    NO_LANDING = ()
+    NIGHT_SCALE = Vec4(0.95, 0.9, 0.86, 1)
+    SKY_FILE = 'phase_3.5/models/props/BR_sky'
+    SKY_COLOR = Vec4(0.16, 0.17, 0.26, 1)
+    BACKGROUND = Vec4(0.03, 0.03, 0.05, 1)
+    FOG = ((0.07, 0.06, 0.06), 0.0045)
+    LIGHT = ((0.24, 0.21, 0.2), (0.26, 0.28, 0.38), (-25, -60, 0))
+    CAMERA_FAR = 900.0
+
+    # --- Building ---
+
+    def build(self):
+        self.rand = rng(1963)
+        self.boothTime = 0.0
+        self.lobby()
+        self.upperHall()
+        self.portraitRoom()
+        self.foyer()
+        self.dressingRoom()
+        self.lowerHall()
+        self.alley()
+        self.storage()
+        self.stage()
+        self.auditorium()
+        self.booth()
+        self.returnRooms()
+        self.outside()
+
+    # --- The lobby ---
+
+    def lobby(self):
+        g = 'lobby'
+        self.zone('lobby', 'the lobby', (-40, -100, -1, 40, -60, 32), startOpen=True)
+        lower = (WAINSCOT, 4.0, PANEL)
+        trim = (MOLDING, (0.75, 0.6, 0.45, 1))
+        # Floor: worn red carpet with a wood border; coffered ceiling.
+        self.floor(-40, -100, 40, -60, 0, PLANKS, tile=6, color=OLD_WOOD, group=g)
+        self.kit.quad([(-34, -96, 0.03), (34, -96, 0.03), (34, -78, 0.03), (-34, -78, 0.03)], CARPET,
+                      [(0, 0), (8, 0), (8, 2), (0, 2)], RED_CARPET, g)
+        self.ceiling(-40, -100, 40, -60, 30, COFFER, tile=8, color=(0.7, 0.6, 0.55, 1), group=g, holes=[(-36, -71, -30, -65)])
+        self.ceilingHole('lobby', Point3(-33, -68, 14), 16)
+        # Walls: the street front, the doors out at either side, the
+        # passage to the auditorium under the balcony.
+        self.shell(-40, -100, 40, -60, 0, 30, WALLPAPER, ops={
+            's': [(-28, 6, 2, 8), (28, 6, 2, 8)],
+            'n': [(0, 10, 0, 10)],
+            'w': [(-71, 6, 14, 23)],
+            'e': [(-75, 6, 0, 9)],
+        }, group=g, lower=lower, trim=trim, outside={'s': (BRICK, BRICK_C)})
+        # The front doors (nailed shut) between the two windows.
+        for x in (-4.2, 0.2):
+            self.kit.box((x, -100.2, 0), (x + 4.0, -99.8, 10), side=DARK_PANEL, top=DARK_PANEL, tile=5, color=(0.7, 0.55, 0.45, 1),
+                         collide=False, group=g)
+        self.kit.beam((-5, -99.6, 10.4), (5, -99.6, 10.4), 0.6, MOLDING, color=(0.75, 0.6, 0.45, 1), tile=3, group=g)
+        for z in (3.2, 6.5):
+            self.kit.beam((-5, -99.5, z), (5, -99.5, z + 0.6), 0.45, BOARDS, color=GREY_WOOD, tile=3, group=g)
+        self.window('lobby', (-28, -100, 0), 0)
+        self.window('lobby', (28, -100, 0), 0)
+        # The balcony along the back, its railing, and the two stairs up
+        # the side walls (kept tight to the walls so the floor stays open)
+        # onto a landing at each end of it.
+        self.floor(-40, -76, 40, -60, 14, PLANKS, tile=6, color=OLD_WOOD, group=g, thick=1.0, under=COFFER)
+        for x0, x1 in ((-40, -33), (33, 40)):
+            self.floor(x0, -78, x1, -76, 14, PLANKS, tile=6, color=OLD_WOOD, group=g, thick=1.0, under=COFFER)
+        self.kit.railing([(-33, -78), (-33, -76), (33, -76), (33, -78)], 14, texPath=MOLDING, color=(0.7, 0.55, 0.42, 1))
+        for x in (-36.5, 36.5):
+            self.kit.stairs((x, -94, 0), 0, 7, 14, run=16, steps=14, side=DARK_PANEL, tread=CARPET, color=(0.72, 0.52, 0.45, 1),
+                            railTex=MOLDING)
+        for x in (-32, -10, 10, 32):
+            self.kit.cylinder((x, -76.5, 0), 0.9, 13.0, MARBLE, sides=12, color=(0.75, 0.68, 0.6, 1), tile=4, group=g)
+        # The ticket counter (BO1's reception bar) on the west side.
+        # It stands under the balcony, out of the way.
+        self.kit.model('phase_3.5/models/modules/counter', pos=(-33, -68, 0), h=-90, scale=(1.0, 1.4, 1.6), color=(0.7, 0.55, 0.45, 1))
+        self.kit.wallBox((-35.5, -75, 0), (-31.5, -61, 3.4))
+        self.kit.model('phase_3.5/models/modules/lamp_short', pos=(-34, -63, 3.2), scale=0.8, color=(0.9, 0.8, 0.7, 1))
+        self.kit.model('phase_11/models/lawbotHQ/LB_CardBoardBox', pos=(-37.5, -97.5, 0), h=20, scale=0.35)
+        # The marquee sign over the doors, inside; broken seats and dust.
+        self.text('KINO DER TOONEN', (0, -99.4, 12.4), 180, 1.5, (0.95, 0.75, 0.4, 1), parent=self.root)
+        # Outside, over the street: the marquee with the name on it.
+        self.kit.model('phase_5/models/props/marquee', pos=(0, -100.9, 3.8), h=0, scale=1.0, color=(0.75, 0.62, 0.52, 1))
+        self.text('KINO DER TOONEN', (0, -106.0, 13.2), 0, 1.4, (1.0, 0.85, 0.5, 1), parent=self.root)
+        self.text('NOW SHOWING: NOTHING', (0, -106.0, 11.7), 0, 0.8, (0.9, 0.3, 0.25, 1), parent=self.root)
+        self.poster((-20, -99.4, 4.5), 0)
+        self.poster((21, -99.4, 4.5), 0)
+        self.poster((-15, -59.5, 18), 180)
+        # The return pad in the middle of the floor.
+        self.pad(LOBBY_PAD, 'lobby', glow=(0.6, 0.85, 1.0))
+        self.teleporter('mainframe', LOBBY_PAD, 0, role='mainframe')
+        # What the lobby sells.
+        self.tonic('wind', (-12, -98.4, 0), 0, needsPower=False)
+        self.wallGag((G.SOUND, 2), (14, -100, 0), 0, 500, 'lobby')     # Olympia: Bugle
+        self.wallGag((G.THROW, 2), (-20, -60, 14), 180, 500, 'lobby')  # M14: Cream Pie Slice
+        self.boxSpot('lobby balcony', (28, -62.5, 14), 0, start=True)
+        # The lights: a chandelier glow in the middle, sconces round.
+        self.lamp((0, -84, 22), AMBER, 55.0, groups=(g, 'static'))
+        for p, hh in (((-39.5, -97, 7), -90), ((39.5, -97, 7), 90), ((-39.5, -66, 19), -90), ((39.5, -66, 19), 90)):
+            self.sconce(p, hh, g, light=False)
+        self.chandelier((0, -84, 29.5))
+
+    def chandelier(self, top, scale=1.0):
+        top = Point3(top)
+        self.kit.beam(top, top + Vec3(0, 0, -4 * scale), 0.15, METAL, color=(0.5, 0.45, 0.35, 1), tile=2)
+        ring = top + Vec3(0, 0, -4.5 * scale)
+        self.kit.cylinder(ring, 2.6 * scale, 0.5, MOLDING, sides=16, color=(0.85, 0.7, 0.35, 1), tile=3, collide=False)
+        for i in range(8):
+            a = 2 * math.pi * i / 8
+            p = ring + Vec3(math.cos(a) * 2.6 * scale, math.sin(a) * 2.6 * scale, 0.5)
+            self.kit.model('phase_11/models/lawbotHQ/LB_torch_lampA', pos=p, scale=0.45, color=(1, 0.9, 0.75, 1))
+
+    # --- Indoor route: upper hall, portrait room, foyer, dressing room ---
+
+    def upperHall(self):
+        g = 'upper'
+        z = 14
+        self.zone('upper', 'the upper hall', (-72, -92, 13, -42, -68, 27))
+        self.floor(-72, -92, -42, -68, z, PLANKS, tile=6, color=OLD_WOOD, group=g, thick=1.0)
+        self.kit.quad([(-70, -84, z + 0.03), (-44, -84, z + 0.03), (-44, -76, z + 0.03), (-70, -76, z + 0.03)], CARPET,
+                      [(0, 0), (4, 0), (4, 1), (0, 1)], RED_CARPET, g)
+        self.ceiling(-72, -92, -42, -68, z + 12, CEILING, color=(0.6, 0.55, 0.5, 1), group=g)
+        self.shell(-72, -92, -42, -68, z, 12, WALLPAPER, color=PAPER_DARK, ops={
+            'e': [(-71, 6, 0, 9)],
+            'n': [(-63, 6, 0, 9)],
+            's': [(-57, 6, 2, 8)],
+        }, group=g, lower=(WAINSCOT, 4.0, PANEL), trim=(MOLDING, (0.75, 0.6, 0.45, 1)), outside={'s': (BRICK, BRICK_C)})
+        self.threshold(-42, -74, -40, -68, z)
+        d = self.door('upstairs', 750, (-41, -74), (-41, -68), z, z + 9, ['upper', 'portrait'], title='the upstairs door')
+        self.leaves(d)
+        self.window('upper', (-57, -92, z), 0, hover=True)
+        self.wallGag((G.SQUIRT, 0), (-50, -68, z), 180, 1000, 'upper')  # PM63: Squirting Flower
+        self.boxSpot('upper hall', (-69.5, -78, z), 90)
+        # The electric trap where the hall meets the portrait room.
+        self.trap('upper', 'electric', (-66, -69, -60, -65), (-56, -68, z), 180, z=(z, z + 10),
+                  line=(Point3(-66, -67, z), Point3(-60, -67, z)))
+        self.lamp((-57, -80, z + 10), DIM_AMBER, 24.0, groups=(g,), flicker=True)
+        self.sconce((-71.5, -80, z + 6), -90, g, light=False)
+        self.kit.model('phase_3.5/models/modules/couch_2person', pos=(-66, -91, z), h=0, scale=0.9, color=(0.6, 0.45, 0.4, 1))
+        self.kit.wallBox((-70, -92, z), (-62, -89, z + 3))
+        self.poster((-42.6, -86, z + 4), 90)
+
+    def portraitRoom(self):
+        g = 'portrait'
+        z = 14
+        self.zone('portrait', 'the portrait room', (-86, -66, 13, -56, -36, 28))
+        self.floor(-86, -66, -56, -36, z, PLANKS, tile=6, color=GREY_WOOD, group=g, thick=1.0)
+        self.ceiling(-86, -66, -56, -36, z + 13, CEILING, color=(0.55, 0.5, 0.46, 1), group=g, holes=[(-80, -52, -74, -46)])
+        self.ceilingHole('portrait', Point3(-77, -49, z), 13)
+        self.shell(-86, -66, -56, -36, z, 13, WALLPAPER, color=(0.68, 0.55, 0.5, 1), ops={
+            's': [(-63, 6, 0, 9)],
+            'n': [(-66, 6, 0, 9)],
+            'w': [(-50, 6, 2, 8)],
+        }, group=g, lower=(DARK_PANEL, 4.0, PANEL), trim=(MOLDING, (0.7, 0.55, 0.42, 1)), outside={'w': (BRICK, BRICK_C)})
+        self.threshold(-66, -68, -60, -66, z)
+        self.window('portrait', (-86, -50, z), -90, hover=True)
+        # The portraits: the cogs' own paintings, hung crooked and torn.
+        # (Game models face their own -y.)
+        for path, pos, hh, rr in (('tt_m_ara_crg_paintingMoverShaker', (-56.6, -51, z + 6.8), -90, 6),
+                                  ('tt_m_ara_crg_paintingLegalEagle', (-76, -65.0, z + 6.8), 180, -9)):
+            np = self.kit.model('phase_5/models/cogdominium/' + path, pos=pos, h=hh, r=rr, scale=0.36,
+                                color=(0.78, 0.7, 0.64, 1))
+            np.find('**/shadow').removeNode()
+        self.kit.model('phase_5.5/models/estate/West_bisonPortrait', pos=(-85.6, -60, z + 7), h=90, r=12, scale=1.2,
+                       color=(0.8, 0.7, 0.6, 1))
+        self.tonic('tracks', (-57.4, -44, z), 90)                       # Mule Kick
+        self.lamp((-71, -51, z + 10), DIM_AMBER, 22.0, groups=(g,), flicker=True)
+        # Fallen plaster and a toppled bookcase.
+        # One bookcase still stands against the wall, leaning; its twin has
+        # fallen flat on its face.
+        shelf = self.kit.model('phase_11/models/lawbotHQ/LB_bookshelfA', pos=(-79, -37.4, z), h=0, r=4, scale=0.7,
+                               color=(0.62, 0.52, 0.46, 1))
+        shelf.find('**/shadow').removeNode()
+        self.kit.wallBox((-83.2, -38.4, z), (-74.8, -36, z + 4.6))
+        fallen = self.kit.model('phase_11/models/lawbotHQ/LB_bookshelfA', pos=(-82, -47, z + 0.96), h=-80, p=-90, scale=0.7,
+                                color=(0.55, 0.46, 0.4, 1))
+        fallen.find('**/shadow').removeNode()
+        self.kit.wallBox((-84, -51, z), (-80, -43, z + 1.2))
+        r = rng(7)
+        for i in range(8):
+            x, y = r.uniform(-82, -60), r.uniform(-62, -40)
+            self.kit.box((x, y, z), (x + r.uniform(0.6, 1.6), y + r.uniform(0.6, 1.6), z + r.uniform(0.2, 0.6)), side=PLASTER,
+                         top=PLASTER, tile=2, color=(0.52, 0.47, 0.42, 1), collide=False, group=g)
+        d = self.door('portrait', 1000, (-69, -35), (-63, -35), z, z + 9, ['foyer', 'dressing'], kind='junk', title='the junk')
+        self.junk(d)
+
+    def foyer(self):
+        g = 'foyer'
+        self.zone('foyer', 'the foyer', (-96, -34, -1, -56, 10, 28))
+        # The gallery (upstairs) and the lounge below it.
+        self.floor(-96, -34, -56, -18, 14, PLANKS, tile=6, color=OLD_WOOD, group=g, thick=1.0, under=COFFER)
+        self.floor(-96, -18, -56, 10, 0, MARBLE, tile=8, color=(0.8, 0.74, 0.66, 1), group=g)
+        self.ceiling(-96, -34, -56, 10, 27, COFFER, tile=8, color=(0.6, 0.52, 0.48, 1), group=g, holes=[(-74, -30, -68, -24)])
+        self.ceilingHole('foyer', Point3(-71, -27, 14), 13)
+        self.shell(-96, -34, -56, 10, 0, 27, WALLPAPER, color=PAPER, ops={
+            's': [(-66, 6, 14, 23)],
+            'w': [(-2, 6, 2, 8)],
+            'n': [(-77, 6, 4, 13)],
+        }, group=g, lower=(WAINSCOT, 4.0, PANEL), trim=(MOLDING, (0.75, 0.6, 0.45, 1)), outside={'w': (BRICK, BRICK_C)})
+        self.threshold(-69, -36, -63, -34, 14)
+        # Under the gallery: a panelled wall so nobody walks under it.
+        self.wall((-96, -18), (-56, -18), 0, 13, DARK_PANEL, tile=4, color=PANEL, faces='left', group=g)
+        self.kit.railing([(-96, -18), (-90, -18)], 14, texPath=MOLDING, color=(0.7, 0.55, 0.42, 1))
+        self.kit.railing([(-82, -18), (-56, -18)], 14, texPath=MOLDING, color=(0.7, 0.55, 0.42, 1))
+        # Stairs down from the gallery to the lounge along the west wall.
+        self.kit.stairs((-86, 4, 0), 180, 8, 14, run=22, steps=14, side=WAINSCOT, tread=CARPET, color=(0.72, 0.52, 0.45, 1),
+                        railTex=MOLDING)
+        self.window('foyer', (-96, -2, 0), -90)
+        self.wallGag((G.SOUND, 3), (-72, -34, 14), 0, 1500, 'foyer')   # Stakeout: Aoogah
+        self.wallGag((G.THROW, 3), (-56, -6, 0), 90, 1000, 'foyer')    # MP40: Whole Fruit Pie
+        self.tonic('seltzer', (-62, 8.6, 0), 180)                     # Speed Cola
+        self.boxSpot('foyer', (-58.5, -13, 0), -90)
+        # The lounge: tables (one with the pie cannon), the bar.
+        for x, y in ((-74, -6), (-66, 2)):
+            self.kit.model('phase_11/models/lawbotHQ/LB_endtableA', pos=(x, y, 0), scale=1.0, color=(0.65, 0.5, 0.42, 1))
+            self.kit.wallTube((x, y, 0), 2.0, 2.4)
+            for a in (0, 120, 240):
+                cx = x + 3.3 * math.cos(math.radians(a))
+                cy = y + 3.3 * math.sin(math.radians(a))
+                self.kit.model('phase_5.5/models/estate/deskChair', pos=(cx, cy, 0), h=a + 90 + self.rand.uniform(-20, 20),
+                               scale=0.9, color=(0.6, 0.45, 0.4, 1))
+        self.turret((-74, -6, 2.4), 0, (-77.5, -17.4, 0), 0)
+        self.kit.model('phase_3.5/models/modules/counter', pos=(-94, -16, 0), h=180, scale=(1.0, 1.3, 1.6), color=(0.55, 0.42, 0.36, 1))
+        self.kit.wallBox((-96, -16.6, 0), (-81, -13.6, 3.3))
+        self.lamp((-74, -4, 10), AMBER, 30.0, groups=(g,))
+        self.lamp((-76, -26, 24), DIM_AMBER, 22.0, groups=(g,), flicker=True)
+        self.chandelier((-74, -4, 26.5), 0.8)
+        self.poster((-95.4, -26, 18), -90)
+
+    def dressingRoom(self):
+        g = 'dressing'
+        z = 4
+        self.zone('dressing', 'the dressing room', (-90, 12, -1, -52, 48, 16))
+        self.floor(-90, 12, -52, 48, z, OLD_PLANKS, tile=6, color=OLD_WOOD, group=g)
+        self.ceiling(-90, 12, -52, 48, z + 11, CEILING, color=(0.5, 0.46, 0.42, 1), group=g, holes=[(-72, 26, -64, 34)])
+        self.ceilingHole('dressing', Point3(-68, 30, z), 11)
+        self.shell(-90, 12, -52, 48, z, 11, PLASTER, color=(0.72, 0.62, 0.55, 1), ops={
+            's': [(-77, 6, 0, 9)],
+            'e': [(45, 6, 0, 9)],
+            'w': [(22, 6, 2, 8)],
+        }, group=g, lower=(DARK_PANEL, 3.5, PANEL), outside={'w': (BRICK, BRICK_C)})
+        # Up from the lounge: four steps in the doorway.
+        self.threshold(-80, 10, -74, 12, z)
+        self.kit.stairs((-77, 4, 0), 0, 6, 4, run=6, steps=4, side=WOOD, tread=CARPET, color=(0.72, 0.52, 0.45, 1), rails=True)
+        self.window('dressing', (-90, 22, z), -90, hover=True)
+        # Mirrors, racks, partitions and a heap of costumes.
+        for x in (-86, -78, -70):
+            self.kit.model('phase_3.5/models/modules/coatrack', pos=(x, 45, z), scale=1.0, color=(0.7, 0.6, 0.5, 1))
+        self.kit.wallBox((-89, 43, z), (-67, 47, z + 5))
+        for y in (20, 34):
+            self.kit.box((-89.5, y - 3, z), (-88.5, y + 3, z + 7), side=CEMENT, top=CEMENT, tile=4, color=(0.6, 0.6, 0.62, 1), collide='wall')
+        self.kit.model('phase_3.5/models/modules/desk', pos=(-63, 13, z), h=180, scale=0.9, color=(0.7, 0.58, 0.5, 1))
+        self.kit.wallBox((-67, 12, z), (-59, 15, z + 3))
+        # The make-up mirrors along the south wall, ringed with bulbs, a
+        # few of them dead, over a long dressing table.
+        vanity = self.kit.visual.attachNewNode('vanity')
+        self.boxNode(vanity, (-89.6, 12, z), (-81, 14.2, z + 2.8), WOOD, color=(0.55, 0.42, 0.34, 1), tile=3)
+        self.kit.wallBox((-89.6, 12, z), (-81, 14.4, z + 2.8))
+        bulbs = vanity.attachNewNode('bulbs')
+        r = rng(41)
+        for cx in (-87.4, -83.2):
+            self.boxNode(vanity, (cx - 1.7, 12.02, z + 3.4), (cx + 1.7, 12.25, z + 7.4), WOOD, color=(0.35, 0.26, 0.2, 1), tile=2)
+            glass = self.boxNode(vanity, (cx - 1.4, 12.26, z + 3.7), (cx + 1.4, 12.3, z + 7.1), MARBLE, color=(0.55, 0.62, 0.66, 1), tile=6)
+            glass.setLightOff(1)
+            for i in range(5):
+                for bx, bz in ((cx - 1.55, z + 3.7 + i * 0.85), (cx + 1.55, z + 3.7 + i * 0.85)):
+                    lit = r.random() > 0.25
+                    b = self.boxNode(bulbs, (bx - 0.13, 12.25, bz - 0.13), (bx + 0.13, 12.5, bz + 0.13), CEMENT,
+                                     color=(1.0, 0.92, 0.65, 1) if lit else (0.25, 0.23, 0.2, 1), tile=1)
+                    if lit:
+                        b.setLightOff(1)
+        # Folding screens.
+        for x, y, hh in ((-72, 22, 30), (-62, 40, -20)):
+            self.kit.box((x - 3, y - 0.2, z), (x + 3, y + 0.2, z + 6), side=CURTAIN, top=WOOD, tile=4, color=(0.6, 0.38, 0.32, 1))
+        self.mannequins(((-84, 30), (-82, 38), (-58, 30)), z)
+        self.wallGag((G.SQUIRT, 2), (-90, 34, z), -90, 1000, 'dressing')  # MP5K: Squirt Gun
+        self.boxSpot('dressing room', (-54.5, 22, z), -90)
+        self.trap('dressing', 'electric', (-55, 42, -48, 48), (-52, 39, z), 90, z=(z, z + 10),
+                  line=(Point3(-51, 42, z), Point3(-51, 48, z)))
+        self.lamp((-71, 30, z + 9), DIM_AMBER, 24.0, groups=(g,), flicker=True)
+        self.threshold(-52, 42, -50, 48, z)
+        d = self.door('dressing', 1250, (-51, 42), (-51, 48), z, z + 9, ['stage'], title='the stage door')
+        self.leaves(d)
+
+    def mannequins(self, spots, z):
+        """Dress forms: a pillar on a stand with a torso of cloth on it."""
+        for x, y in spots:
+            self.kit.cylinder((x, y, z), 0.9, 0.25, WOOD, sides=10, color=(0.5, 0.4, 0.32, 1), collide=False)
+            self.kit.cylinder((x, y, z + 0.25), 0.12, 3.0, METAL, sides=6, color=(0.5, 0.5, 0.5, 1), collide=False)
+            self.kit.cylinder((x, y, z + 3.2), 0.9, 1.8, CURTAIN, sides=10, color=(0.75, 0.68, 0.6, 1), collide=False, radiusTop=1.05)
+            self.kit.dome((x, y, z + 5.0), 1.05, CURTAIN, rings=3, sides=10, color=(0.75, 0.68, 0.6, 1))
+            self.kit.wallTube((x, y, z), 1.0, 6)
+
+    # --- Alley route: lower hall, the alley, the fenced stairs, storage ---
+
+    def lowerHall(self):
+        g = 'lowerhall'
+        self.zone('lowerhall', 'the lower hall', (42, -92, -1, 70, -72, 12))
+        self.floor(42, -92, 70, -72, 0, TILE, tile=4, color=(0.4, 0.37, 0.35, 1), group=g)
+        self.ceiling(42, -92, 70, -72, 11, CEILING, color=(0.42, 0.39, 0.36, 1), group=g)
+        self.shell(42, -92, 70, -72, 0, 11, PLASTER, color=(0.48, 0.43, 0.39, 1), ops={
+            'w': [(-75, 6, 0, 9)],
+            'n': [(63, 6, 0, 9)],
+            's': [(58, 6, 2, 8)],
+        }, group=g, lower=(CEMENT, 3.5, (0.6, 0.6, 0.6, 1)), outside={'s': (BRICK, BRICK_C), 'n': (BRICK2, BRICK_C), 'e': (BRICK2, BRICK_C)})
+        self.threshold(40, -78, 42, -72, 0)
+        d = self.door('downstairs', 750, (41, -78), (41, -72), 0, 9, ['lowerhall', 'alley'], title='the downstairs door')
+        self.leaves(d)
+        self.window('lowerhall', (58, -92, 0), 0)
+        self.wallGag((G.SQUIRT, 1), (70, -82, 0), 90, 1000, 'lowerhall')  # MPL: Glass of Water
+        self.boxSpot('lower hall', (66, -74.5, 0), 0)
+        # The fire trap across the floor.
+        self.trap('fire', 'fire', (49, -91, 55, -73), (52, -72, 0), 180, z=(0, 10), line=(Point3(52, -91, 0), Point3(52, -73, 0)))
+        self.lamp((56, -82, 9), (0.95, 0.7, 0.5), 22.0, groups=(g,), flicker=True)
+        for x in (46, 66):
+            self.kit.box((x, -91.6, 0), (x + 2.5, -90.0, 6), side=BOARDS, top=BOARDS, tile=3, color=GREY_WOOD, collide='wall')
+        # Burnt black where the fire trap has gone off before.
+        self.kit.box((49.2, -91.8, 0.02), (54.8, -72.2, 0.05), top=TILE, side=TILE, tile=4, color=(0.18, 0.15, 0.13, 1),
+                     collide=False, group=g)
+        # Old pipes along the ceiling, a fuse box and a fire bucket.
+        for y, rad in ((-90.6, 0.35), (-89.6, 0.25)):
+            self.kit.box((42, y - rad, 10.1 - rad), (70, y + rad, 10.1 + rad), side=RUST, top=RUST, tile=3,
+                         color=(0.5, 0.44, 0.4, 1), collide=False, group=g)
+        self.kit.box((43, -90, 4.5), (44, -87, 7.5), side=METAL, top=METAL, tile=2, color=(0.45, 0.47, 0.5, 1), collide=False)
+        self.kit.model('phase_6/models/props/small_round_barrel', pos=(68.5, -89, 0), scale=0.7, color=(0.75, 0.25, 0.2, 1))
+        self.kit.wallTube((68.5, -89, 0), 1.0, 2)
+
+    def alley(self):
+        g = 'alley'
+        self.zone('alley', 'the alley', (56, -70, -1, 92, 10, 22))
+        self.floor(56, -70, 92, 10, 0, COBBLE, tile=10, color=(0.62, 0.6, 0.62, 1), group=g)
+        # Brick buildings on both sides, the lower hall at the south end.
+        self.wall((55.5, -70), (55.5, 10.5), 0, 22, BRICK, faces='right', tile=12, color=BRICK_C, group=g)
+        self.wall((92.5, 10.5), (92.5, -70), 0, 20, BRICK2, faces='right', tile=12, color=BRICK_C, group=g)
+        self.wall((56, 10.5), (64, 10.5), 0, 14, BRICK, faces='both', tile=12, color=BRICK_C, group=g)
+        self.wall((80, 10.5), (92.5, 10.5), 0, 14, BRICK, faces='both', tile=12, color=BRICK_C, group=g)
+        self.threshold(60, -72, 66, -70, 0, COBBLE, (0.62, 0.6, 0.62, 1), g)
+        self.wall((70.5, -70.5), (92.5, -70.5), 0, 20, BRICK2, faces='left', tile=12, color=BRICK_C, group=g)
+        # Rubbish: crates, barrels, an old poster wall.
+        for x, y, hh in ((60, -20, 10), (62, -16, 40), (89, -60, -10), (88, -8, 20)):
+            self.kit.model('phase_9/models/cogHQ/woodCrateB', pos=(x, y, 0), h=hh, scale=0.55, color=(0.7, 0.62, 0.55, 1))
+            self.kit.wallTube((x, y, 0), 2.3, 3)
+        for x, y in ((90, -36), (89, -32)):
+            self.kit.model('phase_6/models/props/small_round_barrel', pos=(x, y, 0), scale=1.0, color=(0.6, 0.55, 0.5, 1))
+            self.kit.wallTube((x, y, 0), 1.3, 2)
+        self.poster((56.1, -40, 5), 90, 1.4)
+        self.poster((56.1, -46, 5), 90, 1.4)
+        self.wallGag((G.SQUIRT, 3), (92, -24, 0), 90, 1200, 'alley')   # AK-74u: Seltzer Bottle
+        self.boxSpot('alley', (89.5, -46, 0), -90)
+        # Cogs come over the roofs on either side.
+        self.roofEdge('alley', Point3(55.5, -26, 22.5), Point3(61, -26, 0), -90)
+        self.roofEdge('alley', Point3(92.5, -4, 20.5), Point3(87, -4, 0), 90)
+        self.roofEdge('alley', Point3(92.5, -54, 20.5), Point3(87, -54, 0), 90)
+        # Cold street lamps.
+        self.kit.model('phase_6/models/karting/GoofyStadium_Lamppost_Base1', pos=(90.5, -16, 0), scale=0.6, color=(0.5, 0.5, 0.55, 1))
+        self.lamp((88, -16, 12), COLD, 45.0, groups=(g, 'static'))
+        self.lamp((60, -60, 10), COLD, 30.0, groups=(g,), flicker=True)
+        # The gate to the fenced stairs.
+        d = self.door('gate', 1000, (64, 10.5), (80, 10.5), 0, 9, ['storage'], kind='gate', title='the gate')
+        self.gate(d)
+
+    def storage(self):
+        g = 'storage'
+        z = 12
+        self.zone('storage', 'the storage room', (52, 10, -1, 92, 56, 26))
+        # The fenced stairs up.
+        self.floor(55.5, 10.5, 92.5, 30, 0, COBBLE, tile=10, color=(0.5, 0.49, 0.52, 1), group=g)
+        self.kit.stairs((72, 13, 0), 0, 16, 12, run=17, steps=12, side=CEMENT, tread=CEMENT, color=(0.55, 0.55, 0.56, 1), rails=False)
+        # The yards each side behind the railings, shut in by the buildings.
+        self.wall((55.5, 10.5), (55.5, 30), 0, 26, BRICK, faces='right', tile=12, color=BRICK_C, group=g)
+        self.wall((92.5, 30), (92.5, 10.5), 0, 26, BRICK2, faces='right', tile=12, color=BRICK_C, group=g)
+        iron = (0.22, 0.21, 0.21, 1)
+        for x in (63.6, 80.4):
+            # Nobody gets past the railings, whatever the height.
+            self.kit.wallBox((x - 0.2, 10.5, -1), (x + 0.2, 30, 34))
+            self.kit.box((x - 0.3, 10.5, 0), (x + 0.3, 13, 1.6), side=SMALL_BRICK, top=CEMENT, tile=4, color=BRICK_C, collide=False)
+            y = 10.8
+            while y < 30:
+                base = max(0.0, (y - 13) / 17.0 * 12.0)
+                self.kit.box((x - 0.07, y - 0.07, base), (x + 0.07, y + 0.07, base + 8.0), side=METAL, top=METAL, tile=1,
+                             color=iron, collide=False, group=g)
+                # Spear tips.
+                self.kit.box((x - 0.13, y - 0.13, base + 8.0), (x + 0.13, y + 0.13, base + 8.35), side=METAL, top=METAL, tile=1,
+                             color=(0.4, 0.36, 0.25, 1), collide=False, group=g)
+                y += 0.7
+            # The rails, stepped up the slope.
+            for i in range(17):
+                y0, y1 = 13 + i, 14 + i
+                for zz in (0.8, 4.0, 7.6):
+                    b0 = (y0 - 13) / 17.0 * 12.0
+                    self.kit.box((x - 0.1, y0, b0 + zz), (x + 0.1, y1, b0 + zz + 0.18), side=METAL, top=METAL, tile=1,
+                                 color=iron, collide=False, group=g)
+            for zz in (0.8, 4.0, 7.6):
+                self.kit.box((x - 0.1, 10.5, zz), (x + 0.1, 13, zz + 0.18), side=METAL, top=METAL, tile=1, color=iron,
+                             collide=False, group=g)
+        # Junk in the yards behind the railings.
+        for x, y, hh in ((59, 14, 15), (59.5, 18, 70), (88, 24, -20)):
+            self.kit.model('phase_9/models/cogHQ/woodCrateB', pos=(x, y, 0), h=hh, scale=0.55, color=(0.6, 0.55, 0.5, 1))
+        self.kit.model('phase_6/models/props/small_round_barrel', pos=(89, 14, 0), scale=1.0, color=(0.5, 0.47, 0.44, 1))
+        self.lamp((72, 20, 16), COLD, 26.0, groups=(g,))
+        # The storage room, up high.
+        self.floor(52, 30, 92, 56, z, OLD_PLANKS, tile=6, color=GREY_WOOD, group=g, thick=1.0)
+        self.ceiling(52, 30, 92, 56, z + 12, CEILING, color=(0.5, 0.46, 0.42, 1), group=g, holes=[(70, 40, 76, 46)])
+        self.ceilingHole('storage', Point3(73, 43, z), 12)
+        self.shell(52, 30, 92, 56, z, 12, BRICK2, color=BRICK_C, ops={
+            's': [(72, 14, -12, 9)],
+            'w': [(47, 6, 0, 9)],
+            'e': [(44, 6, 2, 8)],
+        }, group=g, outside={'e': (BRICK2, BRICK_C), 's': (BRICK2, BRICK_C)}, tile=12)
+        self.window('storage', (92, 44, z), 90, hover=True)
+        # Shelves, loose letters off the marquee, crates.
+        for y in (33, 41):
+            self.kit.model('phase_10/models/cashbotHQ/shelf_A1', pos=(55, y, z), h=-90, scale=0.55, color=(0.6, 0.55, 0.5, 1))
+            self.kit.wallBox((52, y - 3, z), (57, y + 3, z + 6))
+        for x, y, letter, hh, lean in ((76, 55.2, 'K', 0, 14), (80.5, 55.2, 'I', 0, 10), (85, 55.2, 'N', 0, 16),
+                                       (64, 54.0, 'O', 25, 70), (91.2, 40, 'T', -90, 12), (68, 52, 'D', 160, 90)):
+            self.marqueeLetter(letter, (x, y, z), hh, lean)
+        for x, y in ((89, 52), (84, 52.5), (62, 52)):
+            self.kit.model('phase_9/models/cogHQ/woodCrate_cube', pos=(x, y, z), h=self.rand.uniform(0, 90), scale=1.2,
+                           color=(0.7, 0.62, 0.55, 1))
+            self.kit.wallBox((x - 1.3, y - 1.3, z), (x + 1.3, y + 1.3, z + 2.4))
+        self.boxSpot('storage', (85, 32.5, z), 180)
+        self.trap('storage', 'electric', (60, 31, 70, 55), (70, 55.5, z), 180, z=(z, z + 11),
+                  line=(Point3(65, 31, z), Point3(65, 55, z)))
+        self.lamp((72, 43, z + 10), DIM_AMBER, 26.0, groups=(g,), flicker=True)
+        self.threshold(50, 44, 52, 50, z)
+        d = self.door('storage', 1250, (51, 44), (51, 50), z, z + 9, ['stage'], kind='junk', title='the junk')
+        self.junk(d)
+        # Down to the stage: short stairs on the stage side.
+        self.kit.stairs((38, 47, 4), -90, 6, 8, run=12, steps=8, side=WOOD, tread=OLD_PLANKS, color=(0.6, 0.5, 0.42, 1))
+
+    def marqueeLetter(self, letter, pos, h, lean):
+        """One of the marquee's letters on its white board, propped against
+        a wall (lean in degrees back from upright; 90 is flat on the floor)."""
+        node = self.kit.visual.attachNewNode('letter')
+        node.setPos(Point3(*pos))
+        node.setHpr(h, -lean, 0)
+        self.boxNode(node, (-1.6, -0.12, 0), (1.6, 0.12, 4.2), PLASTER, color=(0.85, 0.82, 0.74, 1), tile=4)
+        self.text(letter, (0, -0.14, 0.75), 0, 3.6, (0.12, 0.1, 0.1, 1), parent=node)
+        if lean >= 80:
+            node.setZ(pos[2] + 0.13)
+
+    # --- The stage and the auditorium ---
+
+    def stage(self):
+        g = 'stage'
+        z = 4
+        self.zone('stage', 'the stage', (-50, 41, 3, 50, 80, 36))
+        self.floor(-50, 41, 50, 80, z, OLD_PLANKS, tile=6, color=OLD_WOOD, group=g, thick=4.0)
+        self.ceiling(-50, 41, 50, 80, 36, OLD_PLANKS, tile=8, color=(0.35, 0.32, 0.3, 1), group=g,
+                     holes=[(-24, 66, -18, 72), (20, 56, 26, 62)])
+        self.ceilingHole('stage', Point3(-21, 69, z), 32)
+        self.ceilingHole('stage', Point3(23, 59, z), 32)
+        self.shell(-50, 41, 50, 80, z, 32, BRICK2, color=(0.6, 0.5, 0.46, 1), ops={
+            'w': [(45, 6, 0, 9)],
+            'e': [(47, 6, 8, 17)],
+            's': [(0, 76, 0, 24)],
+            'n': [(30, 6, 2, 8)],
+        }, group=g, tile=12, outside={'n': (BRICK2, BRICK_C)})
+        self.window('stage', (30, 80, z), 180, hover=True)
+        # Backstage: flats, ropes, crates and a piano to run round.
+        self.kit.box((-12, 62, z), (12, 64, z + 14), side=BOARDS, top=WOOD, tile=6, color=(0.62, 0.55, 0.48, 1))
+        self.kit.box((-14, 66, z), (-2, 67, z + 10), side=BOARDS, top=WOOD, tile=6, color=(0.55, 0.5, 0.45, 1))
+        self.kit.model('phase_6/models/props/piano', pos=(-34, 70, z + 1.8), h=30, scale=0.55, color=(0.55, 0.5, 0.45, 1))
+        self.kit.wallTube((-34, 70, z), 3.5, 4)
+        for x, y in ((34, 74), (37, 70), (30, 76)):
+            self.kit.model('phase_9/models/cogHQ/woodCrateB', pos=(x, y, z), h=self.rand.uniform(0, 90), scale=0.45,
+                           color=(0.68, 0.6, 0.52, 1))
+            self.kit.wallTube((x, y, z), 1.9, 3)
+        # The fly lines down the side walls, each tied off with a sandbag.
+        for x in (-46, -40, 40, 46):
+            self.kit.beam((x, 78, 36), (x, 78, z + 3.6), 0.12, WOOD, color=(0.75, 0.68, 0.55, 1), tile=2)
+            self.kit.model('phase_5/models/props/sandbag-mod', pos=(x, 78, z + 0.1), h=self.rand.uniform(0, 360), scale=1.1,
+                           color=(0.75, 0.68, 0.58, 1))
+        # The old painted backdrop, a sunset sky gone brown, high on the
+        # back wall over the flats.
+        self.kit.quad([(-40, 79.6, 15), (40, 79.6, 15), (40, 79.6, 33), (-40, 79.6, 33)], 'phase_6/maps/lateday_sky3.jpg',
+                      [(0, 0), (1, 0), (1, 1), (0, 1)], (0.42, 0.34, 0.3, 1), g)
+        self.kit.beam((-41, 79.2, 33.2), (41, 79.2, 33.2), 0.35, WOOD, color=(0.5, 0.42, 0.35, 1), tile=3)
+        self.kit.beam((-41, 79.2, 14.8), (41, 79.2, 14.8), 0.35, WOOD, color=(0.5, 0.42, 0.35, 1), tile=3)
+        # Footlights along the front edge and a batten of stage lights
+        # over it: dead until the power comes on.
+        self.powerBulbs = []
+        self.powerLamps = []
+        lights = self.kit.visual.attachNewNode('stageLights')
+        for i in range(19):
+            x = -36 + i * 4
+            self.boxNode(lights, (x - 0.9, 41.6, z), (x + 0.9, 42.6, z + 0.5), METAL, color=(0.3, 0.28, 0.26, 1), tile=1)
+            bulb = self.boxNode(lights, (x - 0.6, 42.2, z + 0.1), (x + 0.6, 42.7, z + 0.55), CEMENT, color=(0.25, 0.22, 0.18, 1),
+                                tile=1)
+            self.powerBulbs.append(bulb)
+        self.kit.beam((-34, 47, 30), (34, 47, 30), 0.3, METAL, color=(0.3, 0.3, 0.32, 1), tile=2)
+        for x in (-30, -15, 0, 15, 30):
+            self.kit.beam((x, 47, 36), (x, 47, 30), 0.08, METAL, color=(0.3, 0.3, 0.32, 1), tile=1)
+        for x in (-24, -8, 8, 24):
+            can = lights.attachNewNode('can')
+            can.setPos(x, 47, 29.4)
+            can.setP(-35)
+            self.boxNode(can, (-0.8, -1.4, -0.8), (0.8, 1.0, 0.8), METAL, color=(0.25, 0.25, 0.27, 1), tile=1)
+            lens = self.boxNode(can, (-0.6, -1.5, -0.6), (0.6, -1.38, 0.6), CEMENT, color=(0.25, 0.22, 0.18, 1), tile=1)
+            self.powerBulbs.append(lens)
+            self.powerLamps.append((self.lamp((x, 44, 20), (0, 0, 0), 34.0, groups=(g, 'aud')), Vec4(1.0, 0.86, 0.62, 1)))
+        self.powerLamps.append((self.lamp((0, 40, 7), (0, 0, 0), 30.0, groups=(g, 'aud')), Vec4(1.0, 0.8, 0.55, 1)))
+        # The power, the M16 and the Rakes on the back wall.
+        self.switch((-20, 80, z), 180)
+        self.wallGag((G.DROP, 1), (-11, 80, z), 180, 1200, 'stage')    # M16: Sandbag
+        self.wallGag('rake', (-50, 70, z), -90, 1000, 'stage')        # Claymores: Rakes
+        self.boxSpot('backstage', (-29, 77.5, z), 0)
+        # The teleporter at the front and the podium's pie cannon.
+        self.pad(STAGE_PAD, g, glow=(1.0, 0.6, 0.4))
+        self.teleporter('stage', STAGE_PAD, 180, role='stage')
+        self.kit.model('phase_4/models/events/election_stagePodium', pos=(20, 50, z), h=180, scale=0.85, color=(0.7, 0.6, 0.55, 1))
+        self.kit.wallTube((20, 50, z), 2.0, 4.8)
+        self.turret((20, 50.5, z + 4.85), 180, (24.5, 50, z), 180)
+        # The curtain, down until the power comes on.
+        d = self.door('curtain', 0, (-38, 41.2), (38, 41.2), z, z + 24, ['aud'], kind='curtain', title='the curtain', power=True)
+        self.curtain(d)
+        self.lamp((0, 60, 26), (1.0, 0.8, 0.6), 60.0, groups=(g,))
+        self.lamp((-30, 72, 12), DIM_AMBER, 24.0, groups=(g,), flicker=True)
+
+    def curtain(self, entry):
+        """Velvet in folds across the proscenium."""
+        a, b = entry['a'], entry['b']
+        z0, z1 = entry['z']
+        node = entry['visual']
+        node.setPos(0, a[1], z0)
+        width = b[0] - a[0]
+        from toontown.survival.previewmaps.MapKit import Mesh
+        m = Mesh()
+        folds = 38
+        for i in range(folds):
+            xa = a[0] + width * i / folds
+            xb = a[0] + width * (i + 1) / folds
+            ya = 0.5 if i % 2 == 0 else -0.5
+            yb = -ya
+            pts = [Point3(xa, ya, -0.3), Point3(xb, yb, -0.3), Point3(xb, yb, z1 - z0 + 4), Point3(xa, ya, z1 - z0 + 4)]
+            m.quad(pts, [(i * 0.5, 0), ((i + 1) * 0.5, 0), ((i + 1) * 0.5, 3), (i * 0.5, 3)], Vec4(*VELVET))
+            m.quad([pts[1], pts[0], pts[3], pts[2]], [(i * 0.5, 0), ((i + 1) * 0.5, 0), ((i + 1) * 0.5, 3), (i * 0.5, 3)], Vec4(*VELVET))
+        np = node.attachNewNode(m.node('curtain'))
+        np.setTexture(self.kit.tex(CURTAIN), 1)
+        np.setX(0)
+        # A gold fringe at the bottom.
+        self.boxNode(node, (a[0], -0.7, -0.3), (b[0], 0.7, 0.5), MOLDING, color=(0.9, 0.7, 0.3, 1), tile=2)
+
+    def auditorium(self):
+        g = 'aud'
+        self.zone('aud', 'the auditorium', (-44, -56, -1, 44, 39, 31))
+        self.floor(-44, -56, 44, 39, 0, CARPET, tile=10, color=(0.45, 0.17, 0.16, 1), group=g)
+        self.ceiling(-44, -56, 44, 39, 31, COFFER, tile=10, color=(0.55, 0.48, 0.44, 1), group=g,
+                     holes=[(-30, -24, -24, -18), (24, 6, 30, 12), (-4, 18, 4, 26)])
+        self.ceilingHole('aud', Point3(-27, -21, 0), 31)
+        self.ceilingHole('aud', Point3(27, 9, 0), 31)
+        self.ceilingHole('aud', Point3(0, 22, 0), 31)
+        self.shell(-44, -56, 44, 39, 0, 31, WALLPAPER, color=(0.7, 0.56, 0.52, 1), ops={
+            'n': [(0, 76, 4, 28)],
+            's': [(0, 10, 0, 10)],
+        }, group=g, lower=(DARK_PANEL, 5.0, PANEL), trim=(MOLDING, (0.75, 0.6, 0.45, 1)),
+            outside={'e': (BRICK, BRICK_C), 'w': (BRICK, BRICK_C)})
+        # The proscenium's front: gold trim round the opening.
+        self.kit.beam((-38, 38.7, 28.2), (38, 38.7, 28.2), 1.2, MOLDING, color=(0.85, 0.65, 0.3, 1), tile=3)
+        for x in (-38.4, 38.4):
+            self.kit.beam((x, 38.7, 4), (x, 38.7, 28.8), 1.0, MOLDING, color=(0.85, 0.65, 0.3, 1), tile=3)
+        self.threshold(-38, 39, 38, 41, 4, OLD_PLANKS, OLD_WOOD, g)
+        # Steps up to the stage on both sides; anyone can jump off it.
+        for x in (-34, 34):
+            self.kit.stairs((x, 33, 0), 0, 6, 4, run=6, steps=4, side=WOOD, tread=CARPET, color=(0.6, 0.45, 0.4, 1))
+        for x in (-16, 0, 16):
+            self.drop((x, 39.5, 4), (x, 35, 0))
+        # Seats: rows of folding velvet theatre seats on iron standards,
+        # some gone, some with the back broken off, some knocked flat.
+        r = rng(55)
+        rows = [y for y in range(-44, 26, 5) if not -16 <= y <= 0]
+        iron = (0.2, 0.19, 0.19, 1)
+        velvet = (0.36, 0.12, 0.11, 1)
+        for bank in ((-37, -11), (11, 37)):
+            x0, x1 = bank
+            for y in rows:
+                if r.random() < 0.08:
+                    continue
+                n = int((x1 - x0) / 2.6)
+                for i in range(n + 1):
+                    # The iron standard between two seats.
+                    sx = x0 + 0.4 + i * 2.6
+                    self.kit.box((sx - 0.1, y - 1.1, 0), (sx + 0.1, y + 0.7, 2.6), side=METAL, top=METAL, tile=1, color=iron,
+                                 collide=False, group=g)
+                    if i == n:
+                        break
+                    x = sx + 1.3
+                    roll = r.random()
+                    if roll < 0.1:
+                        continue                                   # torn out
+                    self.kit.box((x - 1.1, y - 0.5, 1.4), (x + 1.1, y + 0.8, 1.9), side=CURTAIN, top=CURTAIN, tile=2,
+                                 color=velvet, collide=False, group=g)
+                    if roll < 0.22:
+                        # The back snapped off and lying in the row.
+                        self.kit.box((x - 1.0, y + 1.2, 0), (x + 1.2, y + 1.6, 2.4), side=CURTAIN, top=WOOD, tile=2,
+                                     color=(0.42, 0.13, 0.12, 1), collide=False, group=g)
+                        continue
+                    self.kit.box((x - 1.1, y - 1.0, 1.4), (x + 1.1, y - 0.55, 4.2), side=CURTAIN, top=WOOD, tile=2,
+                                 color=velvet, collide=False, group=g)
+                self.kit.wallBox((x0, y - 1.2, 0), (x1, y + 0.9, 3.6))
+        # Fallen beams through the broken ceiling.
+        for x, y, hh in ((-27, -21, 30), (27, 9, -55)):
+            self.kit.beam((x - 6 * math.cos(math.radians(hh)), y - 6 * math.sin(math.radians(hh)), 0.5),
+                          (x + 6 * math.cos(math.radians(hh)), y + 6 * math.sin(math.radians(hh)), 6.5), 0.7, OLD_PLANKS,
+                          color=GREY_WOOD, tile=3, group=g)
+        # Pilasters down the side walls with a lamp on each.
+        for y in (-44, -26, -8, 10, 28):
+            for x, hh in ((-43.4, -90), (43.4, 90)):
+                self.kit.box((x - 0.6, y - 1.0, 0), (x + 0.6, y + 1.0, 30), side=MOLDING, top=MOLDING, tile=4,
+                             color=(0.62, 0.5, 0.4, 1), collide='wall', group=g)
+                self.sconce((x - 0.7 if x > 0 else x + 0.7, y, 12), hh, g, light=False)
+        # Rubble from the broken ceiling.
+        for x, y in ((-27, -21), (27, 9)):
+            for i in range(6):
+                dx, dy = r.uniform(-4, 4), r.uniform(-4, 4)
+                self.kit.box((x + dx, y + dy, 0), (x + dx + r.uniform(0.8, 2), y + dy + r.uniform(0.8, 2), r.uniform(0.3, 1.2)),
+                             side=PLASTER, top=PLASTER, tile=2, color=(0.5, 0.45, 0.41, 1), collide=False, group=g)
+        self.boxSpot('auditorium', (41.5, -38, 0), -90)
+        # The passage back to the lobby, under the booth, opens with the power.
+        self.threshold(-5, -59, 5, -57, 0, CARPET, (0.45, 0.17, 0.16, 1), g)
+        for x in (-5.5, 5.5):
+            self.wall((x, -59), (x, -57), 0, 10, DARK_PANEL, faces='both', color=PANEL, group=g, thick=1.0)
+        d = self.door('passage', 0, (-5, -58), (5, -58), 0, 10, ['aud'], kind='shutter', title='the passage', power=True)
+        self.shutter(d)
+        self.kit.quad([(-5, -57, 10), (5, -57, 10), (5, -59, 10), (-5, -59, 10)], CEILING, [(0, 0), (1, 0), (1, 0.2), (0, 0.2)],
+                      (0.5, 0.45, 0.42, 1), g)
+        self.trap('passage', 'electric', (-5, -62, 5, -54), (8, -60, 0), 180, z=(0, 10),
+                  line=(Point3(-5, -59.5, 0), Point3(5, -59.5, 0)))
+        self.lamp((0, -10, 28), DIM_AMBER, 70.0, groups=(g,))
+        self.lamp((0, 32, 6), (1.0, 0.75, 0.5), 30.0, groups=(g,), flicker=True)
+        self.chandelier((0, -10, 30.5), 1.4)
+
+    # --- The projection booth and the four rooms ---
+
+    def booth(self):
+        g = 'booth'
+        z = 22
+        self.floor(-16, -56, 16, -47, z, PLANKS, tile=6, color=GREY_WOOD, group=g, thick=1.0, under=DARK_PANEL)
+        self.shell(-16, -56, 16, -47, z, 8.5, PLASTER, color=(0.62, 0.58, 0.54, 1), ops={
+            'n': [(-6, 3, 3, 5), (0, 3, 3, 5), (6, 3, 3, 5)],
+        }, sides='new', group=g, lower=(DARK_PANEL, 3.0, PANEL), outside={'n': (DARK_PANEL, PANEL), 'e': (DARK_PANEL, PANEL),
+                                                                          'w': (DARK_PANEL, PANEL)})
+        self.ceiling(-16, -56, 16, -47, z + 8.5, CEILING, color=(0.5, 0.46, 0.42, 1), group=g)
+        # The projector at the middle window, film cans, the clock.
+        # The projector: a pedestal, the lamp house, the lens barrel
+        # through the middle window, and two film reels on arms on top.
+        proj = self.kit.visual.attachNewNode('projector')
+        proj.setPos(0, -50.2, z)
+        steel = (0.55, 0.55, 0.58, 1)
+        self.boxNode(proj, (-0.9, -0.9, 0), (0.9, 0.9, 2.6), METAL, color=(0.35, 0.35, 0.37, 1), tile=2)
+        self.boxNode(proj, (-1.1, -1.6, 2.6), (1.1, 1.4, 4.4), METAL, color=steel, tile=2)
+        self.boxNode(proj, (-0.45, 1.4, 3.0), (0.45, 2.9, 3.9), METAL, color=(0.3, 0.3, 0.32, 1), tile=1)
+        self.boxNode(proj, (-0.3, -1.3, 4.4), (0.3, -0.9, 6.0), METAL, color=steel, tile=1)
+        self.boxNode(proj, (-0.3, 0.7, 4.4), (0.3, 1.1, 6.0), METAL, color=steel, tile=1)
+        for y, zz in ((-1.1, 6.6), (0.9, 6.6)):
+            reel = proj.attachNewNode('reel')
+            reel.setPos(0, y, zz)
+            for a in range(4):
+                spoke = self.boxNode(reel, (-0.12, -1.05, -0.44), (0.12, 1.05, 0.44), METAL, color=(0.28, 0.28, 0.3, 1), tile=1)
+                spoke.setP(a * 45)
+        self.kit.wallBox((-1.2, -51.9, z), (1.2, -47.3, z + 4.4))
+        # Shaded by hand: the booth lamp's glow, from above.
+        proj.setLightOff(1)
+        proj.setColorScale(1.5, 1.38, 1.22, 1)
+        # Film cans stacked by the wall.
+        for i, (x, y) in enumerate(((13.5, -55, ), (13.5, -55), (14.6, -53.6))):
+            self.kit.cylinder((x, y, z + (0.5 if i == 1 else 0)), 0.9, 0.5, METAL, sides=14, color=(0.45, 0.43, 0.4, 1), collide=False)
+        self.kit.model('phase_13/models/parties/partyClock', pos=(-2, -55.2, z), scale=0.24, color=(0.8, 0.75, 0.7, 1))
+        # Nobody climbs out of the little windows.
+        self.kit.wallBox((-8, -47.5, z), (8, -46.5, z + 8))
+        self.clockText = self.text('', (0, -55.0, z + 6.6), 180, 0.8, (1, 0.3, 0.25, 1), parent=self.root)
+        self.pad(BOOTH_PAD, g, glow=(0.6, 0.85, 1.0))
+        self.wallGag('tnt', (6, -56, z), 0, 250, 'booth')
+        self.lamp((0, -51.5, z + 7), DIM_AMBER, 20.0, groups=(g,), flicker=True)
+        # A beam of light from the projector to the screen... long dead.
+
+    def returnRooms(self):
+        for key, c in ROOMS:
+            g = 'room-' + key
+            x0, y0, x1, y1 = c[0] - 12, c[1] - 10, c[0] + 12, c[1] + 10
+            z = c[2]
+            if key == 'bedroom':
+                self.floor(x0, y0, x1, y1, z, PLANKS, tile=6, color=(0.85, 0.75, 0.65, 1), group=g)
+                self.shell(x0, y0, x1, y1, z, 10, 'phase_3.5/maps/wall_paper_a1.jpg', color=(0.9, 0.85, 0.85, 1), group=g,
+                           lower=(WAINSCOT, 3.0, PANEL))
+                self.ceiling(x0, y0, x1, y1, z + 10, CEILING, group=g)
+                self.kit.model('phase_5.5/models/estate/regular_bed', pos=(c[0] - 8, c[1] + 9, z), h=0, scale=1.0)
+                self.kit.model('phase_5.5/models/estate/cabinetRwood', pos=(c[0] + 8, c[1] + 9, z), h=0, scale=0.75)
+                self.kit.model('phase_5.5/models/estate/rugA', pos=(c[0], c[1], z + 0.02), scale=2.0)
+                self.kit.model('phase_5.5/models/estate/lampA', pos=(c[0] - 4, c[1] + 9, z))
+                self.lamp((c[0], c[1], z + 8), (1.0, 0.85, 0.7), 26.0, groups=(g,))
+            elif key == 'ruined':
+                self.floor(x0, y0, x1, y1, z, OLD_PLANKS, tile=6, color=(0.5, 0.45, 0.42, 1), group=g)
+                self.shell(x0, y0, x1, y1, z, 10, 'phase_3.5/maps/wall_paper_a1.jpg', color=(0.45, 0.42, 0.42, 1), group=g,
+                           lower=(WAINSCOT, 3.0, (0.5, 0.45, 0.42, 1)))
+                self.ceiling(x0, y0, x1, y1, z + 10, CEILING, color=(0.4, 0.38, 0.36, 1), group=g, holes=[(c[0] - 3, c[1] - 2, c[0] + 4, c[1] + 3)])
+                self.kit.model('phase_5.5/models/estate/regular_bed', pos=(c[0] - 8, c[1] + 9, z), h=12, r=8, scale=1.0,
+                               color=(0.45, 0.4, 0.38, 1))
+                self.kit.model('phase_5.5/models/estate/cabinetRwood', pos=(c[0] + 8, c[1] + 7, z), h=25, r=-70,
+                               scale=0.75, color=(0.45, 0.4, 0.38, 1))
+                self.kit.model('phase_5.5/models/estate/lampA', pos=(c[0] - 3, c[1] + 2, z), r=90, color=(0.45, 0.4, 0.38, 1))
+                self.lamp((c[0], c[1], z + 8), (0.7, 0.75, 0.95), 26.0, groups=(g,), flicker=True)
+            elif key == 'dentist':
+                self.floor(x0, y0, x1, y1, z, TILE, tile=4, color=(0.8, 0.85, 0.82, 1), group=g)
+                self.shell(x0, y0, x1, y1, z, 10, TILE, color=(0.75, 0.82, 0.8, 1), group=g, tile=4)
+                self.ceiling(x0, y0, x1, y1, z + 10, CEILING, color=(0.8, 0.8, 0.8, 1), group=g)
+                self.kit.model('phase_5.5/models/estate/deskChair', pos=(c[0], c[1] + 3, z), h=180, scale=2.0, color=(0.6, 0.75, 0.75, 1))
+                self.kit.model('phase_3.5/models/modules/lamp_tall', pos=(c[0] + 3, c[1] + 6, z), scale=1.0, color=(0.85, 0.85, 0.85, 1))
+                self.kit.model('phase_11/models/lawbotHQ/LB_endtableA', pos=(c[0] - 4, c[1] + 5, z), color=(0.8, 0.8, 0.85, 1))
+                self.lamp((c[0], c[1] + 2, z + 8), (0.9, 1.0, 1.0), 26.0, groups=(g,))
+            else:
+                self.floor(x0, y0, x1, y1, z, CARPET, tile=8, color=(0.3, 0.3, 0.38, 1), group=g)
+                self.shell(x0, y0, x1, y1, z, 10, DARK_PANEL, color=PANEL, group=g, tile=4)
+                self.ceiling(x0, y0, x1, y1, z + 10, CEILING, color=(0.6, 0.6, 0.6, 1), group=g)
+                self.kit.box((c[0] - 7, c[1] + 2, z), (c[0] + 7, c[1] + 6, z + 2.6), side=DARK_PANEL, top=MARBLE, tile=4,
+                             color=(0.6, 0.5, 0.45, 1))
+                for i in range(5):
+                    for y, hh in ((c[1] + 0.5, 0), (c[1] + 7.5, 180)):
+                        self.kit.model('phase_11/models/lawbotHQ/LB_chairA', pos=(c[0] - 6 + i * 3, y, z), h=hh, scale=0.55)
+                self.kit.model('phase_11/models/lawbotHQ/LB_bookshelfA', pos=(c[0], c[1] + 9.5, z), h=0, scale=0.8)
+                self.lamp((c[0], c[1] + 4, z + 8), (1.0, 0.95, 0.85), 26.0, groups=(g,))
+            self.pad(Point3(c[0], c[1] - 5, z), g)
+
+    def outside(self):
+        """The street in front of the lobby and the lane down the west side
+        (where the cogs at those windows stand), and brick all round."""
+        street = (0.55, 0.55, 0.58, 1)
+        g = 'street'
+        self.floor(-112, -126, 100, -101, 0, COBBLE, tile=10, color=street, group=g)
+        self.floor(-112, -101, -41, -93, 0, COBBLE, tile=10, color=street, group=g)
+        self.floor(41, -101, 100, -93, 0, COBBLE, tile=10, color=street, group=g)
+        self.floor(-112, -93, -97, 50, 0, COBBLE, tile=10, color=street, group=g)
+        facade = (0.55, 0.5, 0.48, 1)
+        self.wall((-112, -126), (100, -126), 0, 22, BRICK2, faces='left', tile=12, color=facade, group=g)
+        self.wall((-112, 50), (-112, -126), 0, 22, BRICK2, faces='left', tile=12, color=facade, group=g)
+        self.wall((100, -126), (100, -93), 0, 22, BRICK2, faces='left', tile=12, color=facade, group=g)
+        self.wall((-97, 50), (-112, 50), 0, 22, BRICK2, faces='left', tile=12, color=facade, group=g)
+        self.lamp((0, -112, 12), COLD, 40.0, groups=(g, 'static'))
+        self.lamp((-104, -20, 12), COLD, 40.0, groups=(g, 'static'))
+        for x, y in ((-14, -112), (30, -112), (-104, -20)):
+            self.kit.model('phase_6/models/karting/GoofyStadium_Lamppost_Base1', pos=(x, y, 0), scale=0.6, color=(0.5, 0.5, 0.55, 1))
+
+    # --- In the game: the teleporter, the booth and the rooms ---
+
+    def startGame(self, game):
+        Building.startGame(self, game)
+        self.linked = False
+        self.charged = False
+        self.inBooth = False
+        self.coolUntil = 0.0
+        self.boothTask = None
+
+    def setPower(self, on):
+        # The lights come up a little everywhere, and the stage lights and
+        # the footlights come on.
+        self.lampBoost = 1.15
+        own = dict((id(np), color) for np, color in self.powerLamps)
+        for np, names, color in self.lamps:
+            np.node().setColor(own.get(id(np), color * self.lampBoost))
+        for bulb in self.powerBulbs:
+            bulb.setColorScale(6.0, 5.4, 4.0, 1)
+            bulb.setLightOff(1)
+
+    def teleporterPrompt(self, game, pad):
+        role = pad.entry.get('role')
+        now = globalClock.getFrameTime()
+        if role == 'stage':
+            if not game.powerOn:
+                return 'The teleporter needs the power on'
+            if not self.linked:
+                if self.charged:
+                    return 'Link the teleporter at the mainframe in the lobby'
+                return 'Use: get the teleporter ready'
+            if now < self.coolUntil:
+                return 'The teleporter is cooling down'
+            return 'Use: teleport for %d jellybeans' % 1500
+        if role == 'mainframe':
+            if game.powerOn and self.charged and not self.linked:
+                return 'Use: link the teleporter'
+        return ''
+
+    def useTeleporter(self, game, pad):
+        role = pad.entry.get('role')
+        now = globalClock.getFrameTime()
+        if role == 'mainframe':
+            if game.powerOn and self.charged and not self.linked:
+                self.linked = True
+                base.playSfx(base.loader.loadSfx('phase_11/audio/sfx/LB_sparks_1.ogg'), volume=0.7)
+                game.hud.say('The teleporter is linked!', 3.0)
+                return True
+            return False
+        if role != 'stage' or not game.powerOn:
+            return False
+        if not self.linked:
+            if not self.charged:
+                self.charged = True
+                game.hud.say('Now link it at the mainframe in the lobby.', 3.0)
+                return True
+            return False
+        if now < self.coolUntil or self.inBooth:
+            return False
+        if not game.spend(1500):
+            pad.say('Not enough jellybeans!')
+            return False
+        self.toBooth(game)
+        return True
+
+    def toBooth(self, game):
+        self.inBooth = True
+        game.count('teleports')
+        self.boothUntil = globalClock.getFrameTime() + 30.0
+        self.warp(game, BOOTH_PAD + Vec3(0, 0, 0.8), -90)
+        self.boothTask = self.addTask(self.__boothTick, 'booth')
+
+    def __boothTick(self, task):
+        game = self.game
+        if game.over:
+            return task.done
+        if game.paused:
+            return task.cont
+        left = self.boothUntil - globalClock.getFrameTime()
+        self.clockText.node().setText('%d' % max(0, int(left + 0.99)))
+        if left > 0:
+            return task.cont
+        self.clockText.node().setText('')
+        self.inBooth = False
+        self.coolUntil = globalClock.getFrameTime() + 90.0
+        if random.random() < 0.25:
+            key, c = random.choice(ROOMS)
+            pad = Point3(c[0], c[1] - 5, c[2] + 0.8)
+            self.warp(game, pad, 0, then=lambda: Sequence(Wait(5.0), Func(self.warp, game, LOBBY_PAD + Vec3(0, -6, 0), 0)).start())
+            game.count('teleport rooms')
+        else:
+            self.warp(game, LOBBY_PAD + Vec3(0, -6, 0), 0)
+        return task.done

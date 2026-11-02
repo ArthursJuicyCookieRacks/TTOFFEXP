@@ -37,6 +37,8 @@ OFF_LEVEL_TIME = 5.0
 ROUTE_EVERY = 0.35
 # How far ahead along its route a cog looks for a corner it can cut.
 ROUTE_LOOKAHEAD = 5
+# A cog dropping through a big map's ceiling lands with a thud.
+CEILING_SOUND = 'phase_5/audio/sfx/cogbldg_land.ogg'
 # Footsteps: heard this far, by the nearest few cogs.
 STEP_SOUND = 'phase_5/audio/sfx/ENC_cogside_step.ogg'
 # Arthur: cogs behind the toon couldn't be heard. Louder, heard further,
@@ -71,7 +73,7 @@ class SurvivalCog:
     notify = DirectNotifyGlobal.directNotify.newCategory('SurvivalCog')
     gearSounds = None
 
-    def __init__(self, game, name, landing, roundNum, snatcher=False):
+    def __init__(self, game, name, landing, roundNum, snatcher=False, entry=None):
         self.game = game
         self.snatcher = snatcher
         self.arena = game.arena
@@ -125,7 +127,15 @@ class SurvivalCog:
         self.nextWarn = 0.0
         self.suit.setPos(landing)
         self.suit.setH(random.uniform(0, 360))
-        self.__flyIn(landing)
+        self.prop = None
+        # A big map's way in: a window, the ceiling, a roof (see __enter).
+        self.entry = entry
+        self.enterNext = 0.0
+        self.climbing = False
+        if entry is not None and entry.kind != 'sky':
+            self.__enter(entry)
+        else:
+            self.__flyIn(landing)
 
     # --- Arriving ---
 
@@ -149,6 +159,142 @@ class SurvivalCog:
             Func(self.__landed))
         self.track.start()
 
+    # --- Coming in on a big map ---
+
+    def __enter(self, entry):
+        """A window: the cog shows up outside it and tears the boards off
+        one by one before it climbs in. A hole in the ceiling: it drops
+        through. A roof: it flies down onto the edge and jumps off."""
+        suit = self.suit
+        suit.setTransparency(1)
+        if entry.kind == 'window':
+            win = entry.window
+            self.pos = Point3(win['outside'])
+            suit.setPos(self.pos)
+            self.__face(Point3(win['inside']))
+            self.state = 'entering'
+            self.enterNext = globalClock.getFrameTime() + random.uniform(1.0, 1.6)
+            if win.get('hover'):
+                # An upstairs window: it hangs there on its propeller.
+                self.__propeller()
+            self.__loop('neutral')
+            self.track = Sequence(LerpColorScaleInterval(suit, 0.6, Vec4(1, 1, 1, 1), startColorScale=Vec4(1, 1, 1, 0)),
+                                  Func(suit.clearTransparency))
+            self.track.start()
+            return
+        if entry.kind == 'ceiling':
+            top, low = Point3(entry.top), Point3(entry.pos)
+            self.pos = low
+            dur = suit.getDuration('landing')
+            suit.pose('landing', 0)
+            self.track = Sequence(
+                Parallel(LerpColorScaleInterval(suit, 0.3, Vec4(1, 1, 1, 1), startColorScale=Vec4(1, 1, 1, 0)),
+                         LerpPosInterval(suit, 0.55, low, startPos=top, blendType='easeIn')),
+                Func(lambda: base.playSfx(base.loader.loadSfx(CEILING_SOUND), volume=0.5, node=suit)),
+                ActorInterval(suit, 'landing', startTime=dur * 0.55, duration=dur * 0.45),
+                Func(self.__landed))
+            self.track.start()
+            return
+        # A roof: down onto the edge on the propeller, then a jump off it.
+        top, low = Point3(entry.top), Point3(entry.pos)
+        self.pos = low
+        self.__propeller()
+        sky = Point3(top[0], top[1], top[2] + FLY_HEIGHT * 0.5)
+        mid = Point3((top[0] + low[0]) / 2, (top[1] + low[1]) / 2, max(top[2], low[2]) + 2.5)
+        sound = base.loader.loadSfx('phase_5/audio/sfx/ENC_propeller_in.ogg')
+        suit.setPos(sky)
+        d = low - top
+        if abs(d[0]) + abs(d[1]) > 0.01:
+            suit.setH(-math.degrees(math.atan2(d[0], d[1])))
+        self.track = Sequence(
+            Parallel(LerpPosInterval(suit, FLY_TIME * 0.6, top, startPos=sky, blendType='easeIn'),
+                     LerpColorScaleInterval(suit, 0.8, Vec4(1, 1, 1, 1), startColorScale=Vec4(1, 1, 1, 0)),
+                     SoundInterval(sound, duration=FLY_TIME * 0.6, node=suit, volume=0.5),
+                     ActorInterval(self.prop, 'propeller', constrainedLoop=1, duration=FLY_TIME * 0.6)),
+            Func(self.__dropProp),
+            LerpPosInterval(suit, 0.35, mid, startPos=top, blendType='easeOut'),
+            LerpPosInterval(suit, 0.35, low, startPos=mid, blendType='easeIn'),
+            Func(self.__landed))
+        self.track.start()
+
+    def __propeller(self):
+        if self.prop is None:
+            prop = BattleProps.globalPropPool.getProp('propeller')
+            head = self.suit.find('**/joint_head')
+            prop.reparentTo(head)
+            prop.loop('propeller')
+            self.prop = prop
+
+    def __dropProp(self):
+        if self.prop:
+            self.prop.cleanup()
+            self.prop.removeNode()
+            self.prop = None
+
+    def __tickEntering(self, dt, now):
+        """At a boarded window: swing at a toon right inside, otherwise
+        pull another board off; once there are none, climb in."""
+        if self.climbing:
+            return
+        win = self.entry.window
+        station = win.get('station')
+        if self.swingAt is not None and now >= self.swingAt:
+            self.swingAt = None
+            self.__hit()
+        target = self.game.nearestToon(self.pos)
+        self.target = target
+        if target is not None:
+            tp = target.getPos()
+            flat = Point3(tp[0], tp[1], 0) - Point3(self.pos[0], self.pos[1], 0)
+            if flat.length() <= G.COG_REACH + self.radius + 1.0 and abs(tp[2] - win['pos'][2]) < 4.0:
+                # BO1: a zombie at the window hits whoever stands at it.
+                if now >= self.nextSwing:
+                    self.__face(tp)
+                    self.__swing(now)
+                    self.state = 'entering'
+                return
+        if station is None or station.isOpen():
+            self.__climbIn(win)
+            return
+        if now >= self.enterNext:
+            self.enterNext = now + random.uniform(1.0, 1.4)
+            station.tearBoard()
+            anim = 'pickpocket' if 'pickpocket' in self.suit.getAnimNames() else 'neutral'
+            self.anim = None
+            self.suit.play(anim)
+
+    def __climbIn(self, win):
+        self.climbing = True
+        start = Point3(self.pos)
+        end = Point3(win['inside'])
+        mid = Point3((start[0] + end[0]) / 2, (start[1] + end[1]) / 2, max(start[2], end[2]) + win['sill'] + 0.5)
+        self.__face(end)
+        self.__loop('walk', 1.2)
+        self.track = Sequence(LerpPosInterval(self.suit, 0.45, mid, startPos=start, blendType='easeOut'),
+                              LerpPosInterval(self.suit, 0.4, end, startPos=mid, blendType='easeIn'),
+                              Func(self.__inside, end))
+        self.track.start()
+
+    def __inside(self, end):
+        self.climbing = False
+        self.pos = Point3(end)
+        self.__landed()
+
+    def __hop(self, point):
+        """Up onto a ledge a toon could only drop from: a short flight on
+        the propeller."""
+        self.state = 'landing'
+        start = Point3(self.pos)
+        end = Point3(point)
+        self.pos = end
+        mid = Point3((start[0] + end[0]) / 2, (start[1] + end[1]) / 2, max(start[2], end[2]) + 3.0)
+        self.__propeller()
+        self.__face(end)
+        self.track = Sequence(LerpPosInterval(self.suit, 0.6, mid, startPos=start, blendType='easeOut'),
+                              LerpPosInterval(self.suit, 0.4, end, startPos=mid, blendType='easeIn'),
+                              Func(self.__landed))
+        self.track.start()
+
     def __landed(self):
         if self.dead:
             return
@@ -157,6 +303,8 @@ class SurvivalCog:
             self.prop.removeNode()
             self.prop = None
         self.suit.clearTransparency()
+        self.suit.setColorScale(1, 1, 1, 1)
+        self.track = None
         self.state = 'chase'
         self.__findNeck()
         self.__moveAnim(self.speed if self.lure is None else max(self.speed, G.COG_SPEEDS[-1]))
@@ -271,6 +419,9 @@ class SurvivalCog:
     def tick(self, dt, now):
         if self.dead or self.state == 'landing':
             return
+        if self.state == 'entering':
+            self.__tickEntering(dt, now)
+            return
         if self.lure is not None and now > self.lureUntil:
             self.lure = None
         if self.state == 'swing':
@@ -332,6 +483,14 @@ class SurvivalCog:
         # across the playground get there before it pops.
         speed = self.speed if self.lure is None else max(self.speed, G.COG_SPEEDS[-1])
         way = self.__waypoint(goal, now)
+        if way is None:
+            # A big map: the toon is somewhere no cog can walk to (the
+            # projection booth). It waits where it is.
+            self.stillSince = now
+            self.__loop('neutral')
+            return
+        if self.state != 'chase':
+            return
         toWay = Point3(way[0], way[1], 0) - Point3(self.pos[0], self.pos[1], 0)
         wayDist = toWay.length()
         if wayDist < 0.05:
@@ -359,11 +518,15 @@ class SurvivalCog:
         self.routed = True
         # Straight at the goal only on its level: from the harbour bed
         # under a dock nothing stood between the cog and the toon overhead,
-        # so it walked under the toon and stayed there.
-        if abs(goal[2] - self.pos[2]) <= G.COG_REACH_RISE and self.__clearWide(self.pos, goal):
+        # so it walked under the toon and stayed there. On a big map, only
+        # on the very same floor.
+        if abs(goal[2] - self.pos[2]) <= G.COG_REACH_RISE \
+                and self.__clearWide(self.pos, goal) and (not self.arena.big or abs(goal[2] - self.pos[2]) < 1.5):
             return goal
         flow, goalCell = self.arena.flowTo(goal)
         cell = self.arena.nearestCell(self.pos)
+        if big:
+            return self.__bigWaypoint(goal, flow, cell)
         if not flow or cell is None or cell not in flow:
             # Off the map: feel along the walls the old way.
             self.routed = False
@@ -384,7 +547,48 @@ class SurvivalCog:
         self.route = Point3(self.arena.cellPoint(pick))
         return self.route
 
+    def __bigWaypoint(self, goal, flow, cell):
+        """The way over a big map's floors: the next cells along the flow,
+        cutting corners only along level floor, hopping (or dropping) where
+        the map joins two floors by hand. None when the toon can't be
+        reached from here."""
+        if not flow or cell is None or cell not in flow:
+            return None
+        chain = []
+        c = cell
+        while len(chain) < ROUTE_LOOKAHEAD:
+            nxt = flow.get(c)
+            if nxt is None:
+                break
+            kind = self.arena.isSpecial(c, nxt)
+            if kind:
+                if not chain:
+                    if kind == 'hop':
+                        self.__hop(self.arena.cellPoint(nxt))
+                        return Point3(self.pos)
+                    # A drop: walk off the edge toward the floor below.
+                    return Point3(self.arena.cellPoint(nxt))
+                break
+            chain.append(nxt)
+            c = nxt
+        if not chain:
+            return goal
+        here = Point3(self.pos[0], self.pos[1], self.pos[2] + 2)
+        pick = chain[0]
+        for c in reversed(chain[1:]):
+            p = self.arena.cellPoint(c)
+            if abs(p[2] - self.pos[2]) > 0.6:
+                continue
+            if all(abs(self.arena.cellPoint(k)[2] - self.pos[2]) <= 0.6 for k in chain[:chain.index(c) + 1]) and \
+                    self.arena.clearLine(here, Point3(p) + Vec3(0, 0, 2)):
+                pick = c
+                break
+        self.route = Point3(self.arena.cellPoint(pick))
+        return self.route
+
     def __reland(self, goal):
+        if self.arena.big:
+            return self.__bigReland(goal)
         player = self.game.player
         landing = self.arena.landingNear(goal, player.getEye(), player.getForward())
         if landing is None:
@@ -406,6 +610,30 @@ class SurvivalCog:
         self.suit.setPos(landing)
         self.game.count('cogs relanded')
         self.__flyIn(landing)
+
+    def __bigReland(self, goal):
+        """Stuck on a big map: back out and in again by the nearest way in."""
+        entry = self.game.pickEntry(near=goal)
+        if entry is None:
+            self.stillSince = globalClock.getFrameTime() - STILL_TIME + 1.0
+            return
+        self.bestDist = 1e9
+        self.lastProgress = 0.0
+        self.stillFrom = None
+        self.route = None
+        self.nextRoute = 0.0
+        self.detour = None
+        self.anim = None
+        self.entry = entry
+        self.game.count('cogs relanded')
+        if entry.kind == 'sky':
+            self.pos = Point3(entry.pos)
+            self.state = 'landing'
+            self.suit.setPos(self.pos)
+            self.__flyIn(self.pos)
+        else:
+            self.state = 'landing'
+            self.__enter(entry)
 
     def __goal(self, now):
         if self.lure is not None:
@@ -472,7 +700,7 @@ class SurvivalCog:
             if z is None:
                 # Off a ledge deeper than a step: down to the floor below
                 # (before, the cog kept its height and walked on air).
-                low = self.arena.groundZ(new[0], new[1])
+                low = self.arena.groundZ(new[0], new[1], pos[2] + 1.0)
                 if low is not None and low < pos[2]:
                     z = low
             new.setZ(z if z is not None else pos[2])

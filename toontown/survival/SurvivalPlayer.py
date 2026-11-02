@@ -83,6 +83,7 @@ GAMEPAD_BUTTONS = {
     'dpad_left': ('action', 'gag1'),
     'dpad_right': ('action', 'gag2'),
     'dpad_up': ('action', 'swap'),
+    'dpad_down': ('action', 'trap'),
     'start': ('action', 'pause'),
     'back': ('action', 'pause'),
 }
@@ -107,6 +108,7 @@ ACTIONS = {
     'bonk': ('v', 'mouse3'),
     'tnt': ('g',),
     'grenade': ('q',),
+    'trap': ('4',),
     'pause': ('escape',),
 }
 

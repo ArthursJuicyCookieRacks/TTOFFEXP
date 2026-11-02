@@ -200,6 +200,12 @@ class SurvivalGame(DirectObject):
         self.nextBehindWarn = 0.0
         self.nextPrompt = 0.0
         self.card = None
+        # A big map's (bigmaps/): the power, the zones bought open, the
+        # Bamboo Cane, the Rakes and Marbles.
+        self.powerOn = False
+        self.openZoneNames = set()
+        self.cane = False
+        self.mines = None
         self.build()
 
     # --- Setting up and tearing down ---
@@ -234,15 +240,19 @@ class SurvivalGame(DirectObject):
         start, h = self.arena.playerStart()
         # The trunk is solid: nobody walks through it (Arthur).
         from toontown.survival.SurvivalArena import TRUNK_RADIUS
-        self.arena.addBlocker(self.arena.trunkSpot()[0], TRUNK_RADIUS)
+        self.arena.trunkBlocker = self.arena.addBlocker(self.arena.trunkSpot()[0], TRUNK_RADIUS)
         # Nor through Mickey or Fisherman Freddy, on any map (Arthur).
         self.arena.addBlocker(self.arena.mickeySpot()[0], STATION_RADIUS, 4.0)
-        self.arena.addBlocker(self.arena.fishermanSpot()[0], STATION_RADIUS, 4.0)
+        if not self.arena.big:
+            self.arena.addBlocker(self.arena.fishermanSpot()[0], STATION_RADIUS, 4.0)
         self.arena.buildReach(start)
         self.player = SurvivalPlayer(self, start, h)
         self.hud = SurvivalHUD(self, self.dna)
         self.gags = GagHandler(self, self.player)
-        self.stations = [MickeyStation(self), TrunkStation(self), FishermanStation(self)]
+        if self.arena.big:
+            self.__buildBigStations()
+        else:
+            self.stations = [MickeyStation(self), TrunkStation(self), FishermanStation(self)]
         # A map with no trolley (the Cog HQs) has no way out: fight on.
         if not self.arena.geom.find('**/*trolley_station*').isEmpty():
             self.stations.append(TrolleyStation(self))
@@ -267,6 +277,49 @@ class SurvivalGame(DirectObject):
         self.roundState = 'intermission'
         self.roundChangeAt = globalClock.getFrameTime() + 4.0
 
+    def __buildBigStations(self):
+        """A big map's stations: the upgrade and the moving trunk, then
+        everything the map put in its rooms (bigmaps/Fixtures.py). The
+        windows come last, so a gag or a door beside one is used first."""
+        from toontown.survival.bigmaps import Fixtures as F
+        m = self.arena.parody
+        self.mines = F.Mines(self)
+        self.stations = [F.UpgradeStation(self), F.MovingTrunk(self)]
+        self.stations += [F.WallGag(self, e) for e in m.wallGags]
+        self.stations += [F.TonicMachine(self, e) for e in m.tonics]
+        self.stations += [F.DoorStation(self, e) for e in m.doors]
+        self.gates = [F.DoorStation(self, e) for e in m.powerGates]
+        self.stations += self.gates
+        if m.powerSwitch is not None:
+            self.stations.append(F.PowerSwitch(self, *m.powerSwitch))
+        self.stations += [F.TrapStation(self, e) for e in m.traps]
+        self.stations += [F.TurretStation(self, e) for e in m.turrets]
+        self.stations += [F.Teleporter(self, e) for e in m.teleporters]
+        self.stations += [F.WindowStation(self, w) for w in m.windows]
+        for station in self.stations:
+            if isinstance(station, F.WindowStation):
+                station.win['station'] = station
+        self.openZones([z.name for z in m.zones if z.startOpen])
+        m.startGame(self)
+
+    def openZones(self, names):
+        for name in names:
+            self.openZoneNames.add(name)
+
+    def zoneOpen(self, name):
+        return name in self.openZoneNames
+
+    def turnPowerOn(self):
+        """The lever is pulled: the machines light up, the gates open."""
+        if self.powerOn:
+            return
+        self.powerOn = True
+        for gate in getattr(self, 'gates', ()):
+            gate.open()
+        self.arena.parody.setPower(True)
+        self.hud.say('The power is on!', 3.0)
+        self.count('power')
+
     def destroy(self):
         self.thawClock()
         self.over = True
@@ -288,6 +341,9 @@ class SurvivalGame(DirectObject):
         for station in self.stations:
             station.destroy()
         self.stations = []
+        if self.mines is not None:
+            self.mines.destroy()
+            self.mines = None
         if self.gags:
             self.gags.destroy()
             self.gags = None
@@ -326,6 +382,8 @@ class SurvivalGame(DirectObject):
         self.nextSpawn = globalClock.getFrameTime() + 1.0
         self.dropsThisRound = 0
         self.gags.addTnt(G.TNT_PER_ROUND)
+        if self.mines is not None:
+            self.mines.newRound()
         self.hud.setRound(self.roundNum)
         self.arena.setFog(self.snatcherRound)
         if self.snatcherRound:
@@ -347,7 +405,7 @@ class SurvivalGame(DirectObject):
             pos = self.lastPop
             if pos is None or now - self.toonadoAt < 1.0:
                 pos = self.player.getPos() + self.player.getFlatForward() * 5.0
-                ground = self.arena.groundZ(pos[0], pos[1])
+                ground = self.arena.groundZ(pos[0], pos[1], pos[2] + 3.0)
                 if ground is not None and abs(ground - pos[2]) < 4.0:
                     pos.setZ(ground)
                 else:
@@ -364,7 +422,14 @@ class SurvivalGame(DirectObject):
         if len(alive) >= G.aliveCap(self.roundNum, self.npcCount):
             return
         toons = [self.player.getPos()] + [n.getPos() for n in self.npcs]
-        landing = self.arena.pickLanding(toons, self.player.getEye(), self.player.getForward())
+        entry = None
+        if self.arena.big:
+            entry = self.pickEntry()
+            if entry is None:
+                return
+            landing = entry.pos
+        else:
+            landing = self.arena.pickLanding(toons, self.player.getEye(), self.player.getForward())
         if landing is None:
             return
         looks = G.COG_LOOKS[0][1]
@@ -375,7 +440,7 @@ class SurvivalGame(DirectObject):
         if self.snatcherRound:
             name = random.choice(G.SNATCHER_LOOKS)
         self.cogSerial += 1
-        cog = SurvivalCog(self, name, landing, self.roundNum, snatcher=self.snatcherRound)
+        cog = SurvivalCog(self, name, landing, self.roundNum, snatcher=self.snatcherRound, entry=entry)
         self.cogs.append(cog)
         if self.lure:
             # A cog dropping in during a Presentation can't look away either.
@@ -384,6 +449,29 @@ class SurvivalGame(DirectObject):
             cog.fleeFrom(self.player.getPos(), self.secondWindAt)
         self.toSpawn -= 1
         self.nextSpawn = now + G.spawnDelay(self.roundNum) * random.uniform(0.7, 1.3)
+
+    def pickEntry(self, near=None):
+        """A big map's way in for a cog: a window, a hole in the ceiling or
+        a roof edge of a zone that is open, one of the nearest few to the
+        toons (BO1 sends zombies in near the players), not a window that
+        two cogs are already tearing at."""
+        m = self.arena.parody
+        toons = [self.player.getPos()] + [n.getPos() for n in self.npcs if n.alive()] if near is None else [near]
+        busy = {}
+        for cog in self.cogs:
+            entry = getattr(cog, 'entry', None)
+            if not cog.dead and cog.state == 'entering' and entry is not None:
+                busy[id(entry)] = busy.get(id(entry), 0) + 1
+        choices = []
+        for sp in m.spawners:
+            if not self.zoneOpen(sp.zone) or busy.get(id(sp), 0) >= 2:
+                continue
+            d = min((Vec3(sp.inside - t)).length() + abs(sp.inside[2] - t[2]) * 2.0 for t in toons)
+            choices.append((d, sp))
+        if not choices:
+            return None
+        choices.sort(key=lambda c: c[0])
+        return random.choice(choices[:4])[1]
 
     # --- Each frame ---
 
@@ -416,6 +504,8 @@ class SurvivalGame(DirectObject):
         for station in self.stations:
             station.tick(dt, now)
         self.gags.tick(dt)
+        if self.mines is not None:
+            self.mines.tick()
         # Power-ups time out, on the ground and in effect.
         for drop in list(self.drops):
             if not drop.tick(now):
@@ -663,14 +753,26 @@ class SurvivalGame(DirectObject):
             return False
         return self.gags.fire(held)
 
+    def nearStation(self, pos):
+        """The station the toon is at: on a big map, where several stand
+        close together, the nearest one (a window only when nothing else)."""
+        near = [s for s in self.stations if s.near(pos)]
+        if not near:
+            return None
+        if len(near) == 1 or not self.arena.big:
+            return near[0]
+        from toontown.survival.bigmaps.Fixtures import WindowStation
+        def score(s):
+            p = s.node.getPos(self.arena.root)
+            return (Vec3(p[0] - pos[0], p[1] - pos[1], 0)).length() + (100 if isinstance(s, WindowStation) else 0)
+        return min(near, key=score)
+
     def playerUses(self):
         if self.over or self.paused or self.inMenu() or self.player.down:
             return
-        pos = self.player.getPos()
-        for station in self.stations:
-            if station.near(pos):
-                station.use()
-                return
+        station = self.nearStation(self.player.getPos())
+        if station is not None:
+            station.use()
 
     def __holdUse(self, dt):
         if self.player.down:
@@ -682,6 +784,11 @@ class SurvivalGame(DirectObject):
                 if npc.reviveProgress >= G.REVIVE_TIME:
                     self.revive(npc, self.player)
                 return
+        if self.arena.big:
+            # Held at a broken window: the boards go back on.
+            station = self.nearStation(pos)
+            if station is not None and hasattr(station, 'holdUse'):
+                station.holdUse(dt)
 
     def playerAction(self, action):
         if self.over:
@@ -725,6 +832,9 @@ class SurvivalGame(DirectObject):
             self.gags.throwPresentation()
         elif action == 'tnt':
             self.gags.throwTnt()
+        elif action == 'trap' and self.mines is not None:
+            if not self.mines.place():
+                self.hud.say('No Rakes or Marbles to put down', 1.5)
 
     def __prompt(self):
         if self.player.down:
@@ -737,9 +847,9 @@ class SurvivalGame(DirectObject):
         for npc in self.npcs:
             if npc.down and (Vec3(npc.getPos() - pos)).length() < 5.0:
                 return npc.helpPrompt()
-        for station in self.stations:
-            if station.near(pos):
-                return station.prompt()
+        station = self.nearStation(pos)
+        if station is not None:
+            return station.prompt()
         return ''
 
     # --- Going sad and getting up ---

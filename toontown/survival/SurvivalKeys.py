@@ -26,6 +26,8 @@ BINDABLE = [
     ('bonk', 'Bonk', 'v'),
     ('tnt', 'TNT', 'g'),
     ('grenade', 'Presentation', 'q'),
+    # A big map's Rakes and Marbles (BO1's Claymores and Bouncing Betties).
+    ('trap', 'Rakes / Marbles', '4'),
     ('pause', 'Pause', 'escape'),
 ]
 DEFAULTS = dict((name, key) for name, label, key in BINDABLE)

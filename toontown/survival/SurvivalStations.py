@@ -354,6 +354,9 @@ class TrunkStation(Station):
             self.busy = False
             self.__openLid(False)
             self.game.count('doodles')
+            # A big map's trunk flies off somewhere else (bigmaps/Fixtures).
+            if hasattr(self, 'doodled'):
+                self.doodled()
             return
         self.offer = self.shownKey
         self.offerUntil = now + G.TRUNK_OFFER

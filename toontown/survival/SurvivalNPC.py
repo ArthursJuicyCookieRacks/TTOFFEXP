@@ -282,7 +282,9 @@ class SurvivalNPC:
 
     def __station(self, kind):
         for station in self.game.stations:
-            if station.__class__.__name__ == kind:
+            # By class or the class it is built on (a big map's moving trunk
+            # is a trunk), never one that is away.
+            if any(c.__name__ == kind for c in type(station).__mro__) and not getattr(station, 'away', False):
                 return station
         return None
 
@@ -330,7 +332,7 @@ class SurvivalNPC:
         return False
 
     def __buy(self, station):
-        if station.__class__.__name__ == 'TrunkStation':
+        if any(c.__name__ == 'TrunkStation' for c in type(station).__mro__):
             cost = station.cost()
             if self.beans < cost:
                 return
@@ -387,7 +389,7 @@ class SurvivalNPC:
             self.nextPath = 0.0
             if not self.arena.bodyClear(self.pos, nxt + side * BODY_LEAD):
                 return
-        z = self.arena.groundZ(nxt[0], nxt[1])
+        z = self.arena.groundZ(nxt[0], nxt[1], self.pos[2] + 4.0)
         if z is None or z < self.pos[2] - 4 or z > self.pos[2] + 4:
             self.nextPath = 0.0
             return

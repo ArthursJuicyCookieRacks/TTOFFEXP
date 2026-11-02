@@ -86,6 +86,11 @@ class MapKit:
         if path is None:
             return None
         tex = self.textures.get(path)
+        if tex is None and path.endswith('#solid'):
+            # The picture without its see-through mask (a lace rug as cloth).
+            tex = loader.loadTexture(path[:-len('#solid')])
+            tex = tex.makeCopy()
+            tex.setFormat(Texture.F_rgb)
         if tex is None:
             alpha = path.rsplit('.', 1)[0] + '_a.rgb'
             from panda3d.core import VirtualFileSystem, Filename
