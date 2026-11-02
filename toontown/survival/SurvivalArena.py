@@ -131,6 +131,21 @@ MAPS['farewell_fair'] = {
     'picture': 'phase_4/maps/survival_map_farewell_fair.jpg',
     'preview': 'farewell_fair',
 }
+# The big maps (bigmaps/), test-only until Arthur adds them to Map Select.
+MAPS['theater'] = {
+    'title': 'Kino der Toonen',
+    'description': 'An old picture theater the cogs turned into a laboratory. Buy your way through the rooms, '
+                   'turn on the power on the stage and teleport up to the projection booth, where Mickey waits.',
+    'picture': 'phase_4/maps/survival_map_farewell_fair.jpg',
+    'preview': 'theater',
+}
+MAPS['factory'] = {
+    'title': 'Der Toonen Riese',
+    'description': 'A cog gag factory deep in the snow. Get the power on in the courtyard, link the three teleporters '
+                   'at the mainframe and the shutter on Mickey\'s gag upgrade rolls up.',
+    'picture': 'phase_4/maps/survival_map_farewell_fair.jpg',
+    'preview': 'factory',
+}
 # The other playgrounds, straight from their DNA like Toontown Central,
 # and two Cog HQs loaded from their models (toontown/survival/HoodMaps.py
 # has them all). Each names who upgrades the gag there instead of Mickey.
@@ -161,6 +176,11 @@ CELL_SIDE = 0.6
 LANDING_CLEARANCE = 1
 
 
+# Solids on a big map that gags fly through (the windows' boards, the
+# railings' gaps are their own).
+SEE_THROUGH = ('window',)
+
+
 class SurvivalArena:
     notify = DirectNotifyGlobal.directNotify.newCategory('SurvivalArena')
 
@@ -170,6 +190,9 @@ class SurvivalArena:
         self.map = MAPS[self.mapName]
         self.parody = None
         self.preview = False
+        # A big map (bigmaps/): rooms, floors and doors.
+        self.big = False
+        self.layered = None
         self.mapFog = None
         self.skyFile = SKY_FILE
         self.skyColor = SKY_COLOR
@@ -239,6 +262,7 @@ class SurvivalArena:
         self.animProps = []
         self.parody = cls(self.root)
         self.geom = self.root
+        self.big = getattr(cls, 'BIG', False)
         self.spawnRing = cls.SPAWN_RING
         self.noLanding = tuple((Point3(spot[0], spot[1], 0), radius) for spot, radius in cls.NO_LANDING)
         self.reachSpan = cls.REACH_SPAN
@@ -518,6 +542,9 @@ class SurvivalArena:
         if self.sky:
             self.sky.removeNode()
             self.sky = None
+        if self.layered is not None:
+            self.layered.destroy()
+            self.layered = None
         if self.parody is not None:
             self.parody.destroy()
             self.parody = None
@@ -557,7 +584,12 @@ class SurvivalArena:
         self.aimTrav.traverse(self.root)
         best = None
         for i in range(self.aimQueue.getNumEntries()):
-            point = self.aimQueue.getEntry(i).getSurfacePoint(render)
+            entry = self.aimQueue.getEntry(i)
+            # A big map's boarded windows stop toons, not gags: a cog
+            # tearing at the boards can be hit through them.
+            if self.big and entry.getIntoNode().getName() in SEE_THROUGH:
+                continue
+            point = entry.getSurfacePoint(render)
             dist = (point - origin).length()
             if best is None or dist < best[0]:
                 best = (dist, point)
@@ -739,6 +771,52 @@ class SurvivalArena:
     REACH_SPAN = 150.0
 
     def buildReach(self, start):
+        if self.big:
+            return self.__buildLayered(start)
+        return self.__buildReach(start)
+
+    # --- A big map's floors (bigmaps/LayeredNav.py) ---
+
+    def __buildLayered(self, start):
+        from toontown.survival.bigmaps.LayeredNav import Blocker, LayeredNav
+        m = self.parody
+        nav = LayeredNav(self, m.NAV_STEP)
+        for entry in m.doors + m.powerGates:
+            z0, z1 = entry['z']
+            nav.addBlocker(Blocker(entry['name'], line=(entry['a'], entry['b']), z=(z0 - 1, z0 + 4)))
+        for name, area, z in getattr(m, 'navAreas', ()):
+            nav.addBlocker(Blocker(name, area=area, z=z))
+        for a, b, kind in m.navLinks:
+            nav.addLink(a, b, kind)
+        nav.build(start, m.REACH_CENTER, m.REACH_SPAN, top=m.NAV_TOP, lowest=m.NAV_LOWEST)
+        self.layered = nav
+        self.reach = nav.cells
+        self.reachList = list(nav.cells.values())
+        self.landingList = self.reachList
+        self.stairs = set()
+        self.flows = {}
+        self.notify.info('big map: %d cells on its floors' % len(nav.cells))
+
+    def openableSolids(self):
+        """What is shut now but opens later (doors, curtains, shutters, the
+        power's gates) and what only comes later (a bridge): the cells
+        under them are found with them all open."""
+        m = self.parody
+        shut = [e['solid'] for e in m.doors + m.powerGates]
+        shut += list(getattr(m, 'shutSolids', ()))
+        opened = list(getattr(m, 'laterSolids', ()))
+        return shut, opened
+
+    def openBlocker(self, name):
+        if self.layered is not None:
+            self.layered.setOpen(name, True)
+
+    def moveTrunkBlocker(self, pos):
+        blocker = getattr(self, 'trunkBlocker', None)
+        if blocker is not None and not blocker.isEmpty():
+            blocker.setPos(pos)
+
+    def __buildReach(self, start):
         """Flood the playground from where the player starts, one cell at
         a time, over ground a toon can walk: the open playground. Cells
         inside buildings, behind fences, on the hill or off the edge never
@@ -830,6 +908,8 @@ class SurvivalArena:
         return open_
 
     def nearestCell(self, p):
+        if self.layered is not None:
+            return self.layered.nearestCell(p)
         step = self.REACH_STEP
         cell = (int(round(p[0] / step)), int(round(p[1] / step)))
         reach = getattr(self, 'reach', None) or {}
@@ -852,6 +932,8 @@ class SurvivalArena:
         """Points to walk from a to b over the open playground's cells
         (breadth first, eight ways), ending at b itself; [b] when the way
         is clear or the grid doesn't know either end."""
+        if self.layered is not None:
+            return self.__layeredPath(a, b)
         if self.walkable(a, b):
             return [Point3(b)]
         reach = getattr(self, 'reach', None) or {}
@@ -896,7 +978,29 @@ class SurvivalArena:
         out.append(Point3(b))
         return out
 
+    def __layeredPath(self, a, b):
+        """A toon's way over a big map's floors: [] when it can't get
+        there (a shut door), corners cut only along level floor."""
+        if abs(a[2] - b[2]) < 1.0 and self.walkable(a, b):
+            return [Point3(b)]
+        points = self.layered.path(a, b, cog=False)
+        if not points:
+            return []
+        out = []
+        here = Point3(a)
+        i = 0
+        while i < len(points):
+            j = len(points) - 1
+            while j > i and not (abs(points[j][2] - here[2]) < 0.5 and self.walkable(here, points[j])):
+                j -= 1
+            out.append(points[j])
+            here = points[j]
+            i = j + 1
+        return out
+
     def randomSpot(self):
+        if self.layered is not None:
+            return self.layered.randomSpot()
         spots = getattr(self, 'reachList', None) or []
         return Point3(random.choice(spots)) if spots else None
 
@@ -912,6 +1016,8 @@ class SurvivalArena:
         cutting corners), refreshed at most every `every` seconds per goal
         cell. One map serves every cog chasing the same toon, so the cogs
         walk round the gazebo, fences and trees instead of into them."""
+        if self.layered is not None:
+            return self.layered.flowTo(goal)
         reach = getattr(self, 'reach', None)
         if not reach:
             return None, None
@@ -942,7 +1048,15 @@ class SurvivalArena:
         return came, cell
 
     def cellPoint(self, cell):
+        if self.layered is not None:
+            return self.layered.cellPoint(cell)
         return self.reach.get(cell)
+
+    def isSpecial(self, a, b):
+        """A big map's drop or hop between two cells (None for a walk)."""
+        if self.layered is None:
+            return None
+        return self.layered.isSpecial(a, b)
 
     def pickLanding(self, toons, eye, forward, tries=20):
         """A spot on the open playground the player cannot see, away from

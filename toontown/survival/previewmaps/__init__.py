@@ -6,6 +6,9 @@ only those in MAP_ORDER show in Map Select.
 
 PREVIEW_MAPS = {
     'farewell_fair': ('toontown.survival.previewmaps.FarewellFair', 'FarewellFair'),
+    # The big maps (bigmaps/): buildings with rooms, doors and power.
+    'theater': ('toontown.survival.bigmaps.Theater', 'Theater'),
+    'factory': ('toontown.survival.bigmaps.Factory', 'Factory'),
 }
 
 
