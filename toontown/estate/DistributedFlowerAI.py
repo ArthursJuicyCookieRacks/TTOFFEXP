@@ -1,6 +1,7 @@
 from direct.directnotify import DirectNotifyGlobal
 from toontown.estate.DistributedPlantBaseAI import DistributedPlantBaseAI
 from toontown.estate import GardenGlobals
+from toontown.toonbase import GameSettings
 
 
 class DistributedFlowerAI(DistributedPlantBaseAI):
@@ -22,4 +23,6 @@ class DistributedFlowerAI(DistributedPlantBaseAI):
         beans = GardenGlobals.getNumBeansRequired(self.typeIndex, self.optional)
         if beans == GardenGlobals.getShovelPower(av.getShovel(), av.getShovelSkill()):
             if av.getShovelSkill() < GardenGlobals.getMaxShovelSkill():
-                av.b_setShovelSkill(av.getShovelSkill() + 1)
+                # Double XP for gardening trains the shovel twice as fast.
+                gain = GameSettings.getXpMultiplier(GameSettings.DOUBLE_XP_GARDENING)
+                av.b_setShovelSkill(min(av.getShovelSkill() + gain, GardenGlobals.getMaxShovelSkill()))

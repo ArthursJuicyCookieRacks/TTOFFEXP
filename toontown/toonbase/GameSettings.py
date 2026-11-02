@@ -1,9 +1,12 @@
 """Field of view and volume, set from the Shticker Book's Settings page.
 
 Saved in settings.json under "game": "fov" (degrees), "music-volume" and
-"sfx-volume" (0..100). These are separate from the old "music-vol" and
+"sfx-volume" (0..100), and the Double XP switches "double-xp-gags",
+"double-xp-gardening" and "double-xp-doodles" (true/false). These are separate from the old "music-vol" and
 "sfx-vol" keys, which set Panda's master volume before the window opens.
 """
+
+import builtins
 
 from direct.directnotify import DirectNotifyGlobal
 
@@ -16,9 +19,18 @@ MUSIC_BASE = 0.65
 VOLUME_DEFAULT = 100
 
 
+_store = None
+
+
 def _settings():
-    display = getattr(base, 'display', None)
-    return getattr(display, 'settings', None)
+    # The game's settings.json. The in-process server code runs without
+    # "base" (Double XP is read there), so the client's copy is kept here.
+    global _store
+    display = getattr(builtins.__dict__.get('base'), 'display', None)
+    settings = getattr(display, 'settings', None)
+    if settings is not None:
+        _store = settings
+    return _store
 
 
 def _get(name, default, low, high):
@@ -99,6 +111,38 @@ def applyMusicVolume(level):
 def applySfxVolume(level):
     for mgr in getattr(base, 'sfxManagerList', []) or []:
         mgr.setVolume(level / 100.0)
+
+
+# Double XP: each kind of experience has its own on/off switch.
+DOUBLE_XP_GAGS = 'gags'
+DOUBLE_XP_GARDENING = 'gardening'
+DOUBLE_XP_DOODLES = 'doodles'
+DOUBLE_XP_KINDS = (DOUBLE_XP_GAGS, DOUBLE_XP_GARDENING, DOUBLE_XP_DOODLES)
+
+
+def getDoubleXp(kind):
+    s = _settings()
+    if s is None:
+        return False
+    value = s.getOption('game', 'double-xp-' + kind, False)
+    if isinstance(value, str):
+        return value.strip().lower() in ('1', 'true', 'yes', 'on')
+    return bool(value)
+
+
+def setDoubleXp(kind, on):
+    _set('double-xp-' + kind, bool(on))
+    notify.info('double %s xp %s' % (kind, 'on' if on else 'off'))
+
+
+def getXpMultiplier(kind):
+    # 2 while that kind's Double XP is on, otherwise 1.
+    return 2 if getDoubleXp(kind) else 1
+
+
+def isPlayerToon(av):
+    # Double XP is for the player's own toon, not the NPC players.
+    return av is not None and not getattr(av, 'isNPCPlayer', lambda: False)()
 
 
 def install():

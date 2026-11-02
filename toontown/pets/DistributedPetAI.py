@@ -8,7 +8,7 @@ from direct.distributed import DistributedSmoothNodeBase
 from direct.distributed import ClockDelta
 from direct.fsm import ClassicFSM, State
 from direct.interval.IntervalGlobal import *
-from toontown.toonbase import ToontownGlobals
+from toontown.toonbase import ToontownGlobals, GameSettings
 from direct.task import Task
 from toontown.pets import PetLookerAI
 from toontown.pets import PetConstants, PetDNA, PetTraits
@@ -998,14 +998,17 @@ class DistributedPetAI(DistributedSmoothNodeAI.DistributedSmoothNodeAI, PetLooke
         if trickId == PetTricks.Tricks.BALK:
             return
         aptitude = self.getTrickAptitude(trickId)
-        self.setTrickAptitude(trickId, aptitude + PetTricks.AptitudeIncrementDidTrick)
+        # Double XP for doodle training doubles what a trick teaches.
+        gain = PetTricks.AptitudeIncrementDidTrick * GameSettings.getXpMultiplier(GameSettings.DOUBLE_XP_DOODLES)
+        self.setTrickAptitude(trickId, aptitude + gain)
         self.addToMood('fatigue', lerp(PetTricks.MaxTrickFatigue, PetTricks.MinTrickFatigue, aptitude))
         self.trickLogger.addEvent(trickId)
 
     def _handleGotPositiveTrickFeedback(self, trickId, magnitude):
         if trickId == PetTricks.Tricks.BALK:
             return
-        self.setTrickAptitude(trickId, self.getTrickAptitude(trickId) + PetTricks.MaxAptitudeIncrementGotPraise * magnitude)
+        gain = PetTricks.MaxAptitudeIncrementGotPraise * magnitude * GameSettings.getXpMultiplier(GameSettings.DOUBLE_XP_DOODLES)
+        self.setTrickAptitude(trickId, self.getTrickAptitude(trickId) + gain)
 
     def toggleLeash(self, avId):
         if self.leashMode:

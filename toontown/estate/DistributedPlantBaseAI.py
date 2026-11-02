@@ -1,6 +1,7 @@
 from direct.directnotify import DirectNotifyGlobal
 from toontown.estate.DistributedLawnDecorAI import DistributedLawnDecorAI
 from toontown.estate import GardenGlobals
+from toontown.toonbase import GameSettings
 
 # Growth stops here so that it fits the int8 field.
 MAX_GROWTH = 100
@@ -77,7 +78,9 @@ class DistributedPlantBaseAI(DistributedLawnDecorAI):
             if self.waterLevel < 0:
                 # Water revives a wilted plant.
                 self.waterLevel = 0
-            av.b_setWateringCanSkill(av.getWateringCanSkill() + 1)
+            # Double XP for gardening trains the watering can twice as fast.
+            gain = GameSettings.getXpMultiplier(GameSettings.DOUBLE_XP_GARDENING)
+            av.b_setWateringCanSkill(av.getWateringCanSkill() + gain)
         self.startMovie(GardenGlobals.MOVIE_WATER, av.doId, self.__doneWatering)
 
     def waterPlantDone(self):

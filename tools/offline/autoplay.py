@@ -4263,11 +4263,198 @@ def scenarioNPCChat():
     if distance > 10:
         raise StepFailed('the whispered NPC did not come')
 
+def scenarioDoubleXp():
+    # Shticker Book > Settings > Double XP: turns each kind on and off and
+    # checks it is saved, then fights a cog with gag Double XP off and on,
+    # gardens and trains a doodle with it on, logging every gain.
+    from toontown.toonbase import GameSettings
+    from toontown.battle import BattleCalculatorAI
+    from toontown.toon import DistributedToonAI
+    from toontown.pets import DistributedPetAI, DistributedPetProxyAI
+    shots = os.environ.get('AUTOPLAY_SHOTS', '/tmp')
+    kinds = GameSettings.DOUBLE_XP_KINDS
+    for kind in kinds:
+        GameSettings.setDoubleXp(kind, False)
+    yield until(walking, 60, 'walking before opening the book')
+    place().fsm.request('stickerBook')
+    yield until(lambda: place().isAccepting('bookDone'), 30, 'the Shticker Book open')
+    book = localAvatar.book
+    page = localAvatar.settingsPage
+    book.setPage(page)
+    yield sleep(1)
+    base.screenshot(os.path.join(shots, 'doublexp-1-settings.png'), defaultFilename=0)
+    page._SettingsPage__openDoubleXp()
+    yield sleep(0.5)
+    base.screenshot(os.path.join(shots, 'doublexp-2-menu-off.png'), defaultFilename=0)
+    page._SettingsPage__toggleDoubleXp(GameSettings.DOUBLE_XP_GAGS)
+    yield sleep(0.3)
+    base.screenshot(os.path.join(shots, 'doublexp-3-gags-on.png'), defaultFilename=0)
+    for kind in (GameSettings.DOUBLE_XP_GARDENING, GameSettings.DOUBLE_XP_DOODLES):
+        page._SettingsPage__toggleDoubleXp(kind)
+    yield sleep(0.3)
+    base.screenshot(os.path.join(shots, 'doublexp-4-all-on.png'), defaultFilename=0)
+    import json
+    with open(base.display.settings.fileName if hasattr(base.display.settings, 'fileName') else 'settings.json') as f:
+        saved = json.load(f).get('game', {})
+    log('saved:', {k: saved.get('double-xp-' + k) for k in kinds})
+    if not all(saved.get('double-xp-' + k) is True for k in kinds):
+        raise StepFailed('Double XP switches were not saved')
+    page._SettingsPage__closeDoubleXp()
+    page.setMode(2)
+    yield sleep(0.5)
+    base.screenshot(os.path.join(shots, 'doublexp-0-controller-tab.png'), defaultFilename=0)
+    page.setMode(0)
+    yield sleep(0.3)
+    base.screenshot(os.path.join(shots, 'doublexp-0-general-tab.png'), defaultFilename=0)
+    book.doneStatus = {'mode': 'close'}
+    messenger.send(book.doneEvent)
+    yield until(walking, 60, 'walking after the book')
+
+    # Log every gain the server hands out.
+    me = localAvatar.doId
+    base_pts = {}
+    addExp = BattleCalculatorAI.BattleCalculatorAI._BattleCalculatorAI__addAttackExp
+
+    def countExp(calc, attack, track=-1, level=-1, attackerId=-1):
+        before = [x for x in calc.toonSkillPtsGained.get(me, [0] * 7)]
+        result = addExp(calc, attack, track, level, attackerId)
+        after = calc.toonSkillPtsGained.get(me, [0] * 7)
+        for i in range(7):
+            if after[i] != before[i]:
+                lvl = level if level != -1 else attack[BattleCalculatorAI.TOON_LVL_COL]
+                log('gag xp: track %d level %d gave %s (base %d)' % (i, lvl, after[i] - before[i], lvl + 1))
+                base_pts[i] = base_pts.get(i, 0) + lvl + 1
+        return result
+
+    BattleCalculatorAI.BattleCalculatorAI._BattleCalculatorAI__addAttackExp = countExp
+    gains = []
+
+    def wrapSkill(name):
+        orig = getattr(DistributedToonAI.DistributedToonAI, name)
+        getter = name.replace('b_set', 'get')
+
+        def wrapped(av, value, orig=orig):
+            log('%s: %d -> %d' % (name[5:], getattr(av, getter)(), value))
+            gains.append((name, value - getattr(av, getter)()))
+            return orig(av, value)
+        setattr(DistributedToonAI.DistributedToonAI, name, wrapped)
+        return orig
+
+    origShovel = wrapSkill('b_setShovelSkill')
+    origCan = wrapSkill('b_setWateringCanSkill')
+    origApt = {}
+    for cls in (DistributedPetAI.DistributedPetAI, DistributedPetProxyAI.DistributedPetProxyAI):
+        orig = cls.setTrickAptitude
+        origApt[cls] = orig
+
+        def wrapped(pet, trickId, aptitude, send=1, orig=orig, cls=cls):
+            log('%s trick %d aptitude %.5f -> %.5f (+%.5f)' % (cls.__name__, trickId, pet.getTrickAptitude(trickId),
+                                                              aptitude, aptitude - pet.getTrickAptitude(trickId)))
+            gains.append(('trick', aptitude - pet.getTrickAptitude(trickId)))
+            return orig(pet, trickId, aptitude, send)
+        cls.setTrickAptitude = wrapped
+
+    ratios = []
+    try:
+        for on in (False, True):
+            GameSettings.setDoubleXp(GameSettings.DOUBLE_XP_GAGS, on)
+            base_pts.clear()
+            assign = BattleExperienceAI_assign = __import__('toontown.battle.BattleExperienceAI', fromlist=['x'])
+            origAssign = assign.assignRewards
+            gained = {}
+
+            def logAssign(activeToons, toonSkillPtsGained, *args, **kw):
+                gained.update({i: v for i, v in enumerate(toonSkillPtsGained.get(me, [])) if v})
+                return origAssign(activeToons, toonSkillPtsGained, *args, **kw)
+            assign.assignRewards = logAssign
+            log('battle with gag Double XP', 'ON' if on else 'OFF')
+            shot = [False]
+
+            def rewardShot():
+                panel = None
+                for do in list(base.cr.doId2do.values()):
+                    movie = getattr(do, 'movie', None)
+                    if movie is not None and getattr(movie, 'rewardPanel', None) is not None:
+                        panel = movie.rewardPanel
+                if panel is not None and not shot[0] and not panel.isHidden():
+                    shot[0] = True
+                    doLater(2.5, lambda: base.screenshot(os.path.join(shots, 'doublexp-5-reward-%s.png' % ('on' if on else 'off')), defaultFilename=0))
+            try:
+                yield from scenarioBattleWith(rewardShot)
+            finally:
+                assign.assignRewards = origAssign
+            log('gag xp %s: base %s, earned %s' % ('ON' if on else 'OFF', base_pts, gained))
+            ratios.append(sum(gained.values()) / float(max(1, sum(base_pts.values()))))
+        log('gag xp per gag point: OFF %.2f, ON %.2f' % tuple(ratios))
+        if abs(ratios[1] - 2 * ratios[0]) > 0.05:
+            raise StepFailed('gag Double XP did not double the experience')
+
+        yield from scenarioGarden()
+        if not any(n == 'b_setWateringCanSkill' and g == 2 for n, g in gains):
+            raise StepFailed('watering did not give 2 skill points')
+        if not any(n == 'b_setShovelSkill' and g == 2 for n, g in gains):
+            raise StepFailed('picking a flower did not give 2 shovel points')
+
+        # A trick the doodle does, with doodle Double XP on and then off.
+        def trickTest(air, avId, on):
+            GameSettings.setDoubleXp(GameSettings.DOUBLE_XP_DOODLES, on)
+            from toontown.pets import PetTricks
+            pet = air.doId2do.get(air.doId2do[avId].getPetId())
+            if pet is None:
+                return None
+            before = pet.getTrickAptitude(PetTricks.Tricks.JUMP)
+            pet._handleDidTrick(PetTricks.Tricks.JUMP)
+            return pet.getTrickAptitude(PetTricks.Tricks.JUMP) - before
+
+        yield from scenarioPets()
+        place().goHomeNow(localAvatar.zoneId)
+        yield until(lambda: placeName() == 'Estate' and walking(), 180, 'walking at home with the doodle')
+        yield until(lambda: localAvatar.getPetId() in base.cr.doId2do, 60, 'the doodle on the estate')
+        on_ = onDistrict(trickTest, me, True)
+        off = onDistrict(trickTest, me, False)
+        log('doodle trick gain: ON %.5f, OFF %.5f' % (on_, off))
+        if abs(on_ - 2 * off) > 1e-9:
+            raise StepFailed('doodle Double XP did not double the trick gain')
+    finally:
+        BattleCalculatorAI.BattleCalculatorAI._BattleCalculatorAI__addAttackExp = addExp
+        DistributedToonAI.DistributedToonAI.b_setShovelSkill = origShovel
+        DistributedToonAI.DistributedToonAI.b_setWateringCanSkill = origCan
+        for cls, orig in origApt.items():
+            cls.setTrickAptitude = orig
+    for kind in kinds:
+        GameSettings.setDoubleXp(kind, True)
+    log('Double XP checks passed')
+
+
+def scenarioBattleWith(during):
+    street = ToontownGlobals.SillyStreet
+    if ZoneUtil.getBranchZone(localAvatar.zoneId) != street:
+        yield from teleport(street - street % 1000, firstVisgroup(street))
+    onDistrict(restock, localAvatar.doId)
+    def freeSuits():
+        # Cogs walking the street (not already fighting the NPC toons).
+        return [do for do in suitsNearby() if do.fsm.getCurrentState().getName() == 'Walk']
+
+    for attempt in range(10):
+        magicWord('~spawn f 1')
+        yield until(freeSuits, 120, 'a free cog on the street')
+        suit = min(freeSuits(), key=lambda s: (s.getPos(render) - localAvatar.getPos(render)).length())
+        end = time.time() + 20
+        while placeState() == 'walk' and not suit.isEmpty() and time.time() < end:
+            localAvatar.setPos(render, suit.getPos(render))
+            yield sleep(0.1)
+        if placeState() != 'walk':
+            break
+        yield sleep(1)
+    yield from fightBattle(during=during)
+    yield until(walking, 120, 'walking after the battle')
+
 
 SCENARIOS = [
     ('login', scenarioLogin),
     ('exittoontown', scenarioExitToontown),
     ('displaysettings', scenarioDisplaySettings),
+    ('doublexp', scenarioDoubleXp),
     ('npcstairs', scenarioNPCStairs),
     ('npcs', scenarioNPCs),
     ('npcmintride', scenarioNPCMintRide),

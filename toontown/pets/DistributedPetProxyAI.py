@@ -3,7 +3,7 @@ from direct.distributed import DistributedObjectAI
 from direct.directnotify import DirectNotifyGlobal
 from toontown.pets import PetTraits, PetTricks
 from toontown.pets import PetMood
-from toontown.toonbase import ToontownGlobals
+from toontown.toonbase import ToontownGlobals, GameSettings
 import random
 import time
 import copy
@@ -437,7 +437,9 @@ class DistributedPetProxyAI(DistributedObjectAI.DistributedObjectAI):
         if trickId == PetTricks.Tricks.BALK:
             return
         aptitude = self.getTrickAptitude(trickId)
-        self.setTrickAptitude(trickId, aptitude + PetTricks.AptitudeIncrementDidTrick)
+        # Double XP for doodle training doubles what a battle trick teaches.
+        gain = PetTricks.AptitudeIncrementDidTrick * GameSettings.getXpMultiplier(GameSettings.DOUBLE_XP_DOODLES)
+        self.setTrickAptitude(trickId, aptitude + gain)
         self.addToMood('fatigue', lerp(PetTricks.MaxTrickFatigue, PetTricks.MinTrickFatigue, aptitude))
         self.d_setDominantMood(self.mood.getDominantMood())
 

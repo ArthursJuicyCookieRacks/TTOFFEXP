@@ -1,7 +1,7 @@
 from .BattleBase import *
 from toontown.toonbase.ToontownBattleGlobals import *
 import random
-from toontown.toonbase import ToontownGlobals
+from toontown.toonbase import ToontownGlobals, GameSettings
 from toontown.suit import DistributedSuitBaseAI
 from . import SuitBattleGlobals
 from . import BattleExperienceAI
@@ -726,6 +726,9 @@ class BattleCalculatorAI:
             mult = self.__skillCreditMultiplier
             if simbase.air.holidayManager.isHolidayRunning(ToontownGlobals.MORE_XP_HOLIDAY):
                 mult *= getMoreXpHolidayMultiplier()
+            # Double XP for gags (Shticker Book > Settings > Double XP).
+            if GameSettings.isPlayerToon(simbase.air.doId2do.get(id)):
+                mult *= GameSettings.getXpMultiplier(GameSettings.DOUBLE_XP_GAGS)
             expList[trk] = min(ExperienceCap, expList[trk] + (lvl + 1) * mult)
         return
 

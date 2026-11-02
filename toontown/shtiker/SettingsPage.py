@@ -1,9 +1,10 @@
 """The Shticker Book's Settings page (after Events).
 
-General: field of view, music and sound effects volume, and how fast the
-controller moves the on-screen pointer (1 slowest .. 10 fastest).
+General: field of view, music and sound effects volume, and a Double XP button whose menu turns double experience on or off for gags,
+gardening and doodle training, each on its own.
 Keyboard: what key does each action (click one, then press the new key).
-Controller: what each controller button does.
+Controller: what each controller button does, and how fast the controller
+moves the on-screen pointer (1 slowest .. 10 fastest).
 """
 
 from panda3d.core import TextNode, Vec4
@@ -82,28 +83,30 @@ class SettingsPage(ShtikerPage.ShtikerPage):
             ('music', TTLocalizer.SettingsPageMusic, 0, 100, 5, GameSettings.getMusicVolume,
              GameSettings.setMusicVolume),
             ('sfx', TTLocalizer.SettingsPageSfx, 0, 100, 5, GameSettings.getSfxVolume, GameSettings.setSfxVolume),
-            ('cursor', TTLocalizer.SettingsPageCursor, 1, 10, 1, KeyBindings.getCursorSpeed,
-             KeyBindings.setCursorSpeed),
         )
         z = 0.45
-        for name, label, low, high, step, getter, setter in rows:
-            # The name on its own line, the slider and its value under it.
-            DirectLabel(parent=frame, relief=None, text=label, text_align=TextNode.ACenter, text_scale=0.055,
-                        text_fg=TEXT_COLOR, pos=(-0.06, 0, z))
-            value = DirectLabel(parent=frame, relief=None, text='', text_align=TextNode.ACenter, text_scale=0.055,
-                                text_fg=TEXT_COLOR, pos=(0.62, 0, z - 0.085))
-            slider = DirectSlider(parent=frame, range=(low, high), value=getter(), pageSize=step, scrollSize=step,
-                                  pos=(-0.06, 0, z - 0.07), scale=(0.6, 1, 0.4), frameColor=(0.55, 0.45, 0.3, 1),
-                                  thumb_relief=DGG.FLAT, thumb_frameColor=(1, 0.85, 0.2, 1),
-                                  thumb_frameSize=(-0.05, 0.05, -0.1, 0.1))
-            slider['command'] = self.__sliderMoved
-            slider['extraArgs'] = [name]
-            self.sliders[name] = (slider, value, low, high, step, getter, setter)
-            z -= 0.2
-        DirectLabel(parent=frame, relief=None, text=TTLocalizer.SettingsPageCursorHelp, text_align=TextNode.ALeft,
-                    text_scale=0.04, text_wordwrap=34, text_fg=TEXT_COLOR, pos=(-0.72, 0, z + 0.04))
+        for row in rows:
+            self.__addSlider(frame, z, *row)
+            z -= 0.22
         DirectButton(parent=frame, relief=None, image=self.btnImage, image_scale=(0.9, 1, 1), text=TTLocalizer.SettingsPageReset,
-                     text_scale=0.05, text_pos=(0, -0.02), pos=(0, 0, -0.5), command=self.__resetGeneral)
+                     text_scale=0.05, text_pos=(0, -0.02), pos=(-0.3, 0, -0.5), command=self.__resetGeneral)
+        DirectButton(parent=frame, relief=None, image=self.btnImage, image_scale=(0.9, 1, 1),
+                     image_color=(1, 0.85, 0.3, 1), text=TTLocalizer.SettingsPageDoubleXp, text_scale=0.05,
+                     text_pos=(0, -0.02), pos=(0.3, 0, -0.5), command=self.__openDoubleXp)
+
+    def __addSlider(self, frame, z, name, label, low, high, step, getter, setter):
+        # The name on its own line, the slider and its value under it.
+        DirectLabel(parent=frame, relief=None, text=label, text_align=TextNode.ACenter, text_scale=0.055,
+                    text_fg=TEXT_COLOR, pos=(-0.06, 0, z))
+        value = DirectLabel(parent=frame, relief=None, text='', text_align=TextNode.ACenter, text_scale=0.055,
+                            text_fg=TEXT_COLOR, pos=(0.62, 0, z - 0.085))
+        slider = DirectSlider(parent=frame, range=(low, high), value=getter(), pageSize=step, scrollSize=step,
+                              pos=(-0.06, 0, z - 0.07), scale=(0.6, 1, 0.4), frameColor=(0.55, 0.45, 0.3, 1),
+                              thumb_relief=DGG.FLAT, thumb_frameColor=(1, 0.85, 0.2, 1),
+                              thumb_frameSize=(-0.05, 0.05, -0.1, 0.1))
+        slider['command'] = self.__sliderMoved
+        slider['extraArgs'] = [name]
+        self.sliders[name] = (slider, value, low, high, step, getter, setter)
 
     def __sliderMoved(self, name):
         slider, valueLabel, low, high, step, getter, setter = self.sliders[name]
@@ -115,6 +118,8 @@ class SettingsPage(ShtikerPage.ShtikerPage):
 
     def __refreshGeneral(self):
         for name, (slider, valueLabel, low, high, step, getter, setter) in self.sliders.items():
+            if name == 'cursor':
+                continue
             slider['value'] = getter()
             valueLabel['text'] = str(getter())
 
@@ -122,8 +127,61 @@ class SettingsPage(ShtikerPage.ShtikerPage):
         GameSettings.setFov(GameSettings.FOV_DEFAULT)
         GameSettings.setMusicVolume(GameSettings.VOLUME_DEFAULT)
         GameSettings.setSfxVolume(GameSettings.VOLUME_DEFAULT)
-        KeyBindings.setCursorSpeed(KeyBindings.CURSOR_SPEED_DEFAULT)
         self.__refreshGeneral()
+
+    # Double XP
+
+    def __openDoubleXp(self):
+        # A menu with an on/off switch for each kind of experience.
+        messenger.send('wakeup')
+        self.__closeDoubleXp()
+        rows = ((GameSettings.DOUBLE_XP_GAGS, TTLocalizer.SettingsPageDoubleXpGags),
+                (GameSettings.DOUBLE_XP_GARDENING, TTLocalizer.SettingsPageDoubleXpGardening),
+                (GameSettings.DOUBLE_XP_DOODLES, TTLocalizer.SettingsPageDoubleXpDoodles))
+        top = 0.42
+        popup = DirectFrame(parent=self, relief=DGG.RIDGE, borderWidth=(0.015, 0.015),
+                            frameColor=(1, 0.97, 0.85, 1), frameSize=(-0.66, 0.66, -top, top),
+                            pos=(0, 0, 0.02), sortOrder=DGG.FOREGROUND_SORT_INDEX)
+        popup.setBin('gui-popup', 0)
+        DirectLabel(parent=popup, relief=None, text=TTLocalizer.SettingsPageDoubleXp, text_scale=0.075,
+                    text_fg=TEXT_COLOR, pos=(0, 0, top - 0.1))
+        DirectLabel(parent=popup, relief=None, text=TTLocalizer.SettingsPageDoubleXpHelp, text_scale=0.04,
+                    text_wordwrap=28, text_fg=TEXT_COLOR, pos=(0, 0, top - 0.17))
+        self.doubleXpButtons = {}
+        z = top - 0.33
+        for kind, label in rows:
+            DirectLabel(parent=popup, relief=None, text=label, text_align=TextNode.ALeft, text_scale=0.055,
+                        text_fg=TEXT_COLOR, pos=(-0.56, 0, z - 0.015))
+            toggle = DirectButton(parent=popup, relief=None, image=self.btnImage, image_scale=(0.6, 1, 0.9),
+                                  text='', text_scale=0.05, text_pos=(0, -0.017), pos=(0.38, 0, z),
+                                  command=self.__toggleDoubleXp, extraArgs=[kind])
+            self.doubleXpButtons[kind] = toggle
+            z -= 0.14
+        DirectButton(parent=popup, relief=None, image=self.btnImage, image_scale=(0.7, 1, 0.9),
+                     text=TTLocalizer.SettingsPageClose, text_scale=0.045, text_pos=(0, -0.015),
+                     pos=(0, 0, -top + 0.08), command=self.__closeDoubleXp)
+        self.doubleXpMenu = popup
+        self.frames[GENERAL].hide()
+        self.__refreshDoubleXp()
+
+    def __refreshDoubleXp(self):
+        for kind, toggle in self.doubleXpButtons.items():
+            on = GameSettings.getDoubleXp(kind)
+            toggle['text'] = TTLocalizer.SettingsPageOn if on else TTLocalizer.SettingsPageOff
+            toggle['image_color'] = (0.55, 1, 0.55, 1) if on else (1, 0.6, 0.6, 1)
+
+    def __toggleDoubleXp(self, kind):
+        GameSettings.setDoubleXp(kind, not GameSettings.getDoubleXp(kind))
+        self.__refreshDoubleXp()
+
+    def __closeDoubleXp(self):
+        popup = getattr(self, 'doubleXpMenu', None)
+        if popup is not None:
+            popup.destroy()
+            if self.mode == GENERAL:
+                self.frames[GENERAL].show()
+        self.doubleXpMenu = None
+        self.doubleXpButtons = {}
 
     # Keyboard
 
@@ -213,17 +271,23 @@ class SettingsPage(ShtikerPage.ShtikerPage):
         for i, (button, label, default) in enumerate(buttons):
             col, row = divmod(i, half)
             x = -0.72 + col * 0.76
-            z = 0.36 - row * 0.105
+            z = 0.35 - row * 0.085
             DirectLabel(parent=frame, relief=None, text=label, text_align=TextNode.ALeft, text_scale=0.045,
                         text_fg=TEXT_COLOR, pos=(x, 0, z))
             widget = DirectButton(parent=frame, relief=None, image=self.btnImage, image_scale=(0.95, 1, 0.85),
                                   text='', text_scale=0.036, text_pos=(0, -0.012), pos=(x + 0.46, 0, z + 0.012),
                                   command=self.__openPadList, extraArgs=[button])
             self.padButtons[button] = widget
+        # How fast the right stick moves the on-screen pointer.
+        self.__addSlider(frame, -0.33, 'cursor', TTLocalizer.SettingsPageCursor, 1, 10, 1,
+                         KeyBindings.getCursorSpeed, KeyBindings.setCursorSpeed)
         DirectButton(parent=frame, relief=None, image=self.btnImage, image_scale=(0.9, 1, 1), text=TTLocalizer.SettingsPageReset,
-                     text_scale=0.05, text_pos=(0, -0.02), pos=(0, 0, -0.5), command=self.__resetPad)
+                     text_scale=0.05, text_pos=(0, -0.02), pos=(0, 0, -0.54), command=self.__resetPad)
 
     def __refreshPad(self):
+        slider, valueLabel = self.sliders['cursor'][:2]
+        slider['value'] = KeyBindings.getCursorSpeed()
+        valueLabel['text'] = str(KeyBindings.getCursorSpeed())
         for button, widget in self.padButtons.items():
             widget['text'] = KeyBindings.PAD_LABELS.get(KeyBindings.getPad(button), '-')
             fitText(widget, 0.036, 0.36)
@@ -275,6 +339,7 @@ class SettingsPage(ShtikerPage.ShtikerPage):
     def __resetPad(self):
         self.__closePadList()
         KeyBindings.resetPad()
+        KeyBindings.setCursorSpeed(KeyBindings.CURSOR_SPEED_DEFAULT)
         self.__refreshPad()
 
     # Page
@@ -283,6 +348,7 @@ class SettingsPage(ShtikerPage.ShtikerPage):
         messenger.send('wakeup')
         self.__stopCapture()
         self.__closePadList()
+        self.__closeDoubleXp()
         self.mode = mode
         for i, frame in enumerate(self.frames):
             if i == mode:
@@ -305,6 +371,7 @@ class SettingsPage(ShtikerPage.ShtikerPage):
     def exit(self):
         self.__stopCapture()
         self.__closePadList()
+        self.__closeDoubleXp()
         ShtikerPage.ShtikerPage.exit(self)
 
     def unload(self):
