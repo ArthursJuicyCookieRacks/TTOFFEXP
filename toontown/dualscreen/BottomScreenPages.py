@@ -1,7 +1,9 @@
 """What the bottom screen of a dual-screen handheld shows (see SecondScreen).
 
-Before PLAY!: "Game Not Started". After it, until a toon is playing: "Toon
-Not Selected". Then the toon's own laff meter, with buttons (the game's own
+Before PLAY!: "Game Not Started". On Pick-A-Toon, one toon at a time in
+full (accessories on, name above, laff meter in the corner) with arrows to
+the others, and a Make A Toon button on the empty slots. Otherwise, until a
+toon is playing: "Toon Not Selected". Then the toon's own laff meter, with buttons (the game's own
 icons) for the gags, the ToonTasks, the map, the districts and the Shticker
 Book (which opens on the top screen), and below them the NPC friends, quick
 SpeedChat and emotes, jellybeans and Cog suit progress, and how the other
@@ -52,6 +54,11 @@ ICON_NUDGES = {'book': ((-0.056 + 0.0134) * 0.34 / 0.22, 0.034 * 0.34 / 0.22), '
 # The pages past the home page draw their writing and buttons this much
 # bigger than the home page's.
 BIG = 1.1
+# Pick-A-Toon: the size of the arrows, which way the toon faces (a little
+# turned, so a backpack shows) and the tallest it is drawn.
+ARROW_SCALE = 1.1
+TOON_HEADING = 200
+TOON_HEIGHT = 1.3
 NOT_STARTED = 'Game Not Started'
 NO_TOON = 'Toon Not Selected'
 SPEEDCHAT = ((100, 'Hi!'), (102, 'Hello!'), (300, 'Yay!'), (500, 'Thanks!'), (511, 'Can you help me?'), (200, 'Bye!'))
@@ -98,7 +105,23 @@ def currentStage():
         place = None
     if avatar is not None and not avatar.isEmpty() and place is not None and hasattr(avatar, 'laffMeter'):
         return 'game'
+    if pickAToon() is not None:
+        return 'pickAToon'
     return 'noToon'
+
+
+def pickAToon():
+    """The Pick-A-Toon screen, while it is up and waiting for a pick."""
+    cr = getattr(base, 'cr', None)
+    chooser = getattr(cr, 'avChoice', None) if cr else None
+    if chooser is None or not getattr(chooser, 'isLoaded', 0):
+        return None
+    try:
+        if cr.loginFSM.getCurrentState().getName() != 'chooseAvatar':
+            return None
+    except AttributeError:
+        return None
+    return chooser
 
 
 def survivalGame():
@@ -165,6 +188,15 @@ class BottomScreen(DirectObject):
         # The street the toon is on (its branch zone), to show its map the
         # moment the toon arrives there.
         self.street = None
+        # Pick-A-Toon: the screen shown, its slots in the order the arrows
+        # go through them, the one shown and the toon drawn for it.
+        self.chooser = None
+        self.slots = []
+        self.slot = 0
+        self.slotPosition = None
+        self.slotToon = None
+        self.slotNode = None
+        self.leaving = False
         self.loadArt()
 
     def loadArt(self):
@@ -197,6 +229,7 @@ class BottomScreen(DirectObject):
             self.laffMeter.destroy()
             self.laffMeter = None
         self.ignore('toonLookChanged')
+        self.clearSlot()
         if self.page is not None:
             self.page.removeNode()
             self.page = None
@@ -214,7 +247,14 @@ class BottomScreen(DirectObject):
         stage = 'survival' if survivalGame() is not None else currentStage()
         if stage != self.stage:
             self.stage = stage
-            self.show({'notStarted': 'notStarted', 'noToon': 'noToon', 'survival': 'survival'}.get(stage, 'home'))
+            self.show({'notStarted': 'notStarted', 'noToon': 'noToon', 'survival': 'survival',
+                       'pickAToon': 'pickAToon'}.get(stage, 'home'))
+            return
+        if stage == 'pickAToon':
+            # A new Pick-A-Toon (after a toon is deleted, or back from
+            # Make-A-Toon) has its own list of toons.
+            if pickAToon() is not self.chooser:
+                self.show('pickAToon')
             return
         if stage not in ('game', 'survival'):
             return
@@ -372,6 +412,134 @@ class BottomScreen(DirectObject):
 
     def buildNoToon(self):
         self.label(NO_TOON, (0, 0, -0.03), scale=0.17, wordwrap=8, fg=WHITE, shadow=(0.1, 0.2, 0.45, 0.9))
+
+    # --- Pick-A-Toon: the toons, one at a time ---
+
+    def buildPickAToon(self):
+        from toontown.login import AvatarChooser
+        chooser = pickAToon()
+        self.chooser = chooser
+        self.leaving = False
+        avatars = sorted((av for av in chooser.avatarList if av.dna), key=lambda av: av.position)
+        taken = set(av.position for av in avatars)
+        # Arthur: the arrows go through the toons first, then the empty
+        # slots, and the page opens on a toon.
+        self.slots = [('toon', av.position, av) for av in avatars]
+        self.slots += [('empty', position, None) for position in range(AvatarChooser.MAX_AVATARS) if position not in taken]
+        self.slot = 0
+        for i, (kind, position, av) in enumerate(self.slots):
+            if kind == 'toon' and position == self.slotPosition:
+                self.slot = i
+        background = self.find('tt_m_gui_pat_mainGui', 'tt_t_gui_pat_background')
+        if not background.isEmpty():
+            picture = self.page.attachNewNode('background')
+            background.copyTo(picture)
+            picture.setY(5)
+            low, high = picture.getTightBounds(self.page) or (Point3(-1), Point3(1))
+            # Covers the screen, cut at the sides rather than stretched.
+            size = max(2 * self.width / max(0.001, high[0] - low[0]), 2.0 / max(0.001, high[2] - low[2]))
+            picture.setScale(size)
+            picture.setPos(-(low[0] + high[0]) / 2.0 * size, 5, -(low[2] + high[2]) / 2.0 * size)
+            picture.setBin('background', 0)
+            picture.setDepthTest(False)
+            picture.setDepthWrite(False)
+        if len(self.slots) > 1:
+            # Make-A-Toon's own arrows (they point left; the right one is
+            # flipped).
+            image = self.find('tt_m_gui_mat_mainGui', 'tt_t_gui_mat_shuffleArrowUp')
+            for direction in (-1, 1):
+                arrow = DirectFrame(parent=self.page, relief=None, image=image, scale=(-ARROW_SCALE * direction, 1, ARROW_SCALE),
+                                    pos=(direction * (self.width - 0.15), 0, -0.1), state=DGG.NORMAL)
+                arrow.setTransparency(TransparencyAttrib.MAlpha)
+                self.tap(arrow, self.turnSlot, direction)
+        self.showSlot()
+
+    def turnSlot(self, direction):
+        if self.leaving or not self.slots:
+            return
+        self.slot = (self.slot + direction) % len(self.slots)
+        self.showSlot()
+
+    def clearSlot(self):
+        if self.slotToon is not None:
+            toon = self.slotToon
+            self.slotToon = None
+            try:
+                toon.stopBlink()
+                toon.stopLookAround()
+            except AttributeError:
+                pass
+            toon.delete()
+            toon.removeNode()
+        if self.slotNode is not None:
+            self.slotNode.removeNode()
+            self.slotNode = None
+            self.taps = [tap for tap in self.taps if not tap.node.isEmpty() and tap.node.hasParent()]
+
+    def showSlot(self):
+        self.clearSlot()
+        self.slotNode = self.page.attachNewNode('slot')
+        kind, position, av = self.slots[self.slot]
+        if kind == 'toon':
+            self.slotPosition = position
+            self.showToon(av)
+        else:
+            self.showMakeAToon(position)
+
+    def showToon(self, av):
+        from toontown.toon import LaffMeter, Toon, ToonDNA, ToonLooks
+        dna = ToonDNA.ToonDNA()
+        dna.makeFromNetString(av.dna)
+        name = av.approvedName or av.name
+        self.label(name, (0, 0, 0.58), scale=0.11, fg=WHITE, parent=self.slotNode, font=ToontownGlobals.getToonFont(),
+                   wordwrap=12, shadow=(0, 0, 0, 1))
+        hp, maxHp = ToonLooks.savedLaff(av.id)
+        meter = LaffMeter.LaffMeter(dna, hp, maxHp)
+        meter.reparentTo(self.slotNode)
+        meter.setScale(0.11)
+        meter.setPos(self.width - 0.2, 0, 0.8)
+        meter.start()
+        toon = Toon.Toon()
+        toon.setDNA(dna)
+        worn = ToonLooks.savedAccessories(av.id, ('hat', 'glasses', 'backpack', 'shoes'))
+        for kind in ('hat', 'glasses', 'backpack', 'shoes'):
+            if kind in worn:
+                try:
+                    getattr(toon, 'set' + kind.capitalize())(*worn[kind])
+                except Exception:
+                    notify.warning('could not put the %s on %s' % (kind, name))
+        toon.loop('neutral')
+        toon.startBlink()
+        scene = self.screen.sceneRoot()
+        toon.reparentTo(scene)
+        toon.setH(TOON_HEADING)
+        toon.setDepthTest(True)
+        toon.setDepthWrite(True)
+        # The whole toon, hat and all, fits between the name and the bottom
+        # of the screen, and between the arrows.
+        low, high = toon.getTightBounds(scene) or (Point3(-1, 0, 0), Point3(1, 0, 4))
+        size = min(TOON_HEIGHT / max(0.001, high[2] - low[2]), 2 * (self.width - 0.34) / max(0.001, high[0] - low[0]))
+        toon.setScale(size)
+        toon.setPos(-(low[0] + high[0]) / 2.0 * size, 0, -0.9 - low[2] * size)
+        self.slotToon = toon
+
+    def showMakeAToon(self, position):
+        from toontown.login import AvatarChooser
+        from toontown.toonbase import TTLocalizer
+        squares = ('Red', 'Green', 'Purple', 'Blue', 'Pink', 'Yellow')
+        square = self.find('tt_m_gui_pat_mainGui', 'tt_t_gui_pat_square' + squares[position])
+        button = DirectFrame(parent=self.slotNode, relief=None, image=square, image_scale=1.0, scale=1.25, pos=(0, 0, -0.05),
+                             text=TTLocalizer.AvatarChoiceMakeAToon, text_scale=0.12, text_pos=(0, 0.02),
+                             text_fg=(0, 1, 0.8, 1), text_font=ToontownGlobals.getSignFont(), state=DGG.NORMAL)
+        self.tap(button, self.makeAToon, position)
+
+    def makeAToon(self, position):
+        chooser = pickAToon()
+        if self.leaving or chooser is None:
+            return
+        self.leaving = True
+        # As if that slot's Make A Toon was pressed on the top screen.
+        messenger.send('avChoicePanel-%d' % position, ['create', position])
 
     # --- Survival Mode: round, laff, jellybeans, tonics, gags and ammo ---
 

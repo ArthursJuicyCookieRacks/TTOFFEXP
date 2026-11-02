@@ -133,27 +133,54 @@ class Looks:
         return True
 
 
-def savedAccessories(avId):
-    """{'hat': (...), 'glasses': (...)} a toon has on in its save, for the
-    heads drawn before the toon is in game (Pick-A-Toon)."""
+def savedFields(avId, names):
+    """{field: value} of the named fields in a toon's save (offline), for
+    what is drawn before the toon is in game (Pick-A-Toon)."""
     from otp.local import LocalServer
     from otp.local import LocalDCUtil
-    worn = {}
+    found = {}
     server = LocalServer.getInstance()
     obj = server.database.get(avId) if server is not None and avId else None
     if obj is None:
-        return worn
-    for kind in ('hat', 'glasses'):
-        name = 'set' + kind.capitalize()
+        return found
+    for name in names:
         data = obj.fields.get(name)
         if data is None:
             continue
         try:
-            value = ast.literal_eval(LocalDCUtil.formatValue(obj.dclass.getFieldByName(name), data))
-            worn[kind] = tuple(value)
+            found[name] = ast.literal_eval(LocalDCUtil.formatValue(obj.dclass.getFieldByName(name), data))
         except (ValueError, SyntaxError, TypeError):
             pass
+    return found
+
+
+def savedAccessories(avId, kinds=('hat', 'glasses')):
+    """{'hat': (...), 'glasses': (...)} a toon has on in its save, for the
+    heads drawn before the toon is in game (Pick-A-Toon). The bottom screen
+    of a dual-screen handheld asks for the backpack and shoes too."""
+    fields = savedFields(avId, ['set' + kind.capitalize() for kind in kinds])
+    worn = {}
+    for kind in kinds:
+        value = fields.get('set' + kind.capitalize())
+        if isinstance(value, (tuple, list)) and len(value) == 3:
+            worn[kind] = tuple(value)
     return worn
+
+
+def savedLaff(avId):
+    """(laff, max laff) in a toon's save; a new toon's 15 when unknown."""
+    fields = savedFields(avId, ('setHp', 'setMaxHp'))
+
+    def first(value):
+        if isinstance(value, (tuple, list)):
+            value = value[0] if value else None
+        return value if isinstance(value, int) else None
+
+    maxHp = first(fields.get('setMaxHp')) or 15
+    hp = first(fields.get('setHp'))
+    if hp is None:
+        hp = maxHp
+    return max(0, min(hp, maxHp)), maxHp
 
 
 # --- Wearing a look ---

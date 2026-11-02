@@ -107,9 +107,27 @@ class SecondScreen(DirectObject):
         self.aspectRatio = renderWidth / float(renderHeight)
         self.aspect = self.root.attachNewNode('secondScreenAspect')
         self.aspect.setScale(1.0 / self.aspectRatio, 1, 1)
+        self.scene = None
         notify.info('second screen %dx%d, drawn at %dx%d' % (width, height, renderWidth, renderHeight))
         from toontown.dualscreen import BottomScreenPages
         self.pages = BottomScreenPages.BottomScreen(self, self.aspect, self.aspectRatio)
+
+    def sceneRoot(self):
+        """Where 3D models (the toon on the Pick-A-Toon page) go: drawn
+        over the page with depth, in the page's own units (x from minus to
+        plus the aspect ratio, z from -1 to 1), looking along +y."""
+        if self.scene is None:
+            self.scene = NodePath('secondScreenScene')
+            lens = OrthographicLens()
+            lens.setFilmSize(2 * self.aspectRatio, 2)
+            lens.setNearFar(-100, 100)
+            camera = self.scene.attachNewNode(Camera('secondScreenSceneCam', lens))
+            region = self.buffer.makeDisplayRegion()
+            region.setSort(10)
+            region.setClearDepthActive(True)
+            region.setCamera(camera)
+            self.sceneRegion = region
+        return self.scene
 
     def close(self):
         if self.pages is not None:
@@ -119,6 +137,9 @@ class SecondScreen(DirectObject):
             base.graphicsEngine.removeWindow(self.buffer)
             self.buffer = None
             self.root.removeNode()
+            if self.scene is not None:
+                self.scene.removeNode()
+                self.scene = None
         self.size = None
         self.lastPicture = None
 
