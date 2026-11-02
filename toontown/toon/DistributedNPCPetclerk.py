@@ -199,8 +199,9 @@ class DistributedNPCPetclerk(DistributedNPCToonBase):
         self.ignore(self.eventDict['guiDone'])
         self.petshopGui.destroy()
         self.petshopGui = None
-        if not bTimedOut:
-            self.sendUpdate('transactionDone')
+        # Timed out or not, the clerk is told; the shop's clock is only the
+        # toon's now (the clerk no longer keeps its own).
+        self.sendUpdate('transactionDone')
         return
 
     def popupPetshopGUI(self, task):

@@ -491,6 +491,15 @@ class PetshopGUI(DirectObject):
     def doDialog(self, nDialog):
         self.destroyDialog()
         self.dialogStack.append(nDialog)
+        # No clock while building or restyling a doodle: that screen is
+        # only left with Go Back or by adopting (or saving). The other
+        # screens get a fresh clock.
+        if nDialog in (Dialog_PetCreator, Dialog_PetRestyle):
+            self.timer.stop()
+            self.timer.hide()
+        elif self.timer.isHidden():
+            self.timer.show()
+            self.timer.countdown(PetConstants.PETCLERK_TIMER, self.__timerExpired)
         if nDialog == Dialog_MainMenu:
             self.acceptOnce(self.mainMenuDoneEvent, self.__handleMainMenuDlg)
             self.dialog = self.MainMenuDlg(self.mainMenuDoneEvent)

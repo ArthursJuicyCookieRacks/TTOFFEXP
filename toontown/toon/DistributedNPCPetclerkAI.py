@@ -36,7 +36,9 @@ class DistributedNPCPetclerkAI(DistributedNPCToonBaseAI):
         self.acceptOnce(self.air.getAvatarExitEvent(avId), self.__handleUnexpectedExit, extraArgs=[avId])
         flag = NPCToons.SELL_MOVIE_START
         self.d_setMovie(avId, flag)
-        taskMgr.doMethodLater(PetConstants.PETCLERK_TIMER, self.sendTimeoutMovie, self.uniqueName('clearMovie'))
+        # The shop's clock is the toon's own (PetshopGUI), which stops while
+        # a doodle is being built; a toon who leaves the game frees the
+        # clerk through the exit event above.
         DistributedNPCToonBaseAI.avatarEnter(self)
 
     def rejectAvatar(self, avId):

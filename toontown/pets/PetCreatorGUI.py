@@ -50,6 +50,9 @@ STAGE_X = -(STAGE_WIDTH + BOARD_GAP + BOARD_WIDTH) / 2.0 + STAGE_WIDTH / 2.0
 BOARD_X = STAGE_X + STAGE_WIDTH / 2.0 + BOARD_GAP + BOARD_WIDTH / 2.0
 PANEL_WIDTH = 0.82
 SUM_X = 0.35
+# The doodle's window, and how tall the doodle stands in it.
+PET_WINDOW_Z = 0.215
+PET_HEIGHT = 0.46
 # The pages: their middle, help line and the middle of their rows.
 PAGE_Z = -0.08
 HELP_Z = 0.58
@@ -176,16 +179,16 @@ class PetCreatorGUI(DirectFrame):
                                      text_fg=PURPLE, text_shadow=(1, 1, 1, 1), pos=(0, 0, 0.585))
         # The doodle's window.
         DirectFrame(parent=self.stage, relief=None, image=self.dialogGeom, image_color=PALE_TEAL,
-                    image_scale=(PANEL_WIDTH, 1, 0.64), pos=(0, 0, 0.215))
+                    image_scale=(PANEL_WIDTH, 1, 0.64), pos=(0, 0, PET_WINDOW_Z))
         self.petView = self.stage.attachNewNode('petView')
-        self.petView.setPos(0, 0, -0.035)
+        self.petView.setPos(0, 0, PET_WINDOW_Z - PET_HEIGHT / 2.0)
         self.petTurn = self.petView.attachNewNode('petTurn')
         self.petTurn.setH(200)
         pawL = (self.shopArt.find('**/Paw1Up'), self.shopArt.find('**/Paw1Down'), self.shopArt.find('**/Paw1Rollover'))
         pawR = (self.shopArt.find('**/Paw2Up'), self.shopArt.find('**/Paw2Down'), self.shopArt.find('**/Paw2Rollover'))
         for art, arrow, x, turn in ((pawL, 'Arrow1', -0.31, -45), (pawR, 'Arrow2', 0.31, 45)):
             paw = DirectButton(parent=self.stage, relief=None, image=art, geom=self.shopArt.find('**/' + arrow),
-                               scale=0.075, pos=(x, 0, 0.215), pressEffect=False, command=self.__turnPet,
+                               scale=0.075, pos=(x, 0, PET_WINDOW_Z), pressEffect=False, command=self.__turnPet,
                                extraArgs=[turn])
             # The shop's paws were placed for its own board; this puts the
             # paw (and its arrow) where we want it.
@@ -411,11 +414,17 @@ class PetCreatorGUI(DirectFrame):
         self.petModel.getGeomNode().setDepthTest(1)
         self.petModel.pose('neutral', 0)
         # Fitted by its body alone, so the doodle stays the same size
-        # whatever it wears; it stands on the board's floor.
-        lo, hi = self.petModel.getGeomNode().getTightBounds()
-        scale = 0.46 / max(hi[2] - lo[2], 0.001)
+        # whatever it wears. It turns about the middle of its body (not of
+        # its tail and ears too, which would swing it from side to side),
+        # and stands with its middle at the window's middle, level with
+        # the paw buttons.
+        lo, hi = self.petModel.getGeomNode().getTightBounds(self.petModel)
+        body = self.petModel.find('**/body')
+        bodyBounds = body.getTightBounds(self.petModel) if not body.isEmpty() else None
+        blo, bhi = bodyBounds or (lo, hi)
+        scale = PET_HEIGHT / max(hi[2] - lo[2], 0.001)
         self.petModel.setScale(scale)
-        self.petModel.setPos(-(lo[0] + hi[0]) / 2.0 * scale, -(lo[1] + hi[1]) / 2.0 * scale, -lo[2] * scale)
+        self.petModel.setPos(-(blo[0] + bhi[0]) / 2.0 * scale, -(blo[1] + bhi[1]) / 2.0 * scale, -lo[2] * scale)
         self.petModel.reparentTo(self.petTurn)
         self.petModel.enterNeutralHappy()
         self.petModel.startBlink()

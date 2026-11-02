@@ -613,10 +613,43 @@ class Place(StateData.StateData, FriendsListManager.FriendsListManager):
 
     def enterTeleportOut(self, requestStatus, callback):
         base.localAvatar.laffMeter.start()
-        base.localAvatar.b_setAnimState('TeleportOut', 1, callback, [requestStatus])
+        # The toon's teleport animation calls back when it ends, and that
+        # is what moves the toon on. If anything puts the toon into another
+        # animation first, the call never comes and the toon would be stuck
+        # leaving for good, so a watch finishes the teleport instead.
+        finished = []
+
+        def finish(*args):
+            if finished:
+                return
+            finished.append(1)
+            taskMgr.remove(self.__teleportOutWatchName())
+            callback(*args)
+
+        taskMgr.add(self.__watchTeleportOut, self.__teleportOutWatchName(),
+                    extraArgs=[finish, finished, requestStatus, globalClock.getFrameTime()], appendTask=True)
+        base.localAvatar.b_setAnimState('TeleportOut', 1, finish, [requestStatus])
         base.localAvatar.obscureMoveFurnitureButton(1)
 
+    def __teleportOutWatchName(self):
+        return 'place-teleport-out-watch-%d' % id(self)
+
+    def __watchTeleportOut(self, finish, finished, requestStatus, started, task):
+        if finished:
+            return Task.done
+        anim = base.localAvatar.animFSM.getCurrentState().getName()
+        late = globalClock.getFrameTime() - started > 12.0
+        if anim in ('TeleportOut', 'TeleportedOut') and not late:
+            return Task.cont
+        Place.notify.warning('teleport out was cut short (animation %s, %s); finishing it' % (
+            anim, 'too slow' if late else 'interrupted'))
+        if hasattr(base.localAvatar, 'finishTeleportOut') and anim != 'TeleportedOut':
+            base.localAvatar.animFSM.request('TeleportedOut')
+        finish(requestStatus)
+        return Task.done
+
     def exitTeleportOut(self):
+        taskMgr.remove(self.__teleportOutWatchName())
         base.localAvatar.laffMeter.stop()
         base.localAvatar.stopQuestMap()
         base.localAvatar.obscureMoveFurnitureButton(-1)

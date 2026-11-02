@@ -18,7 +18,7 @@ from otp.distributed.TelemetryLimiter import RotationLimitToH, TLGatherAllAvs, T
 from . import HouseGlobals
 
 
-LeavingStates = ('teleportOut', 'tunnelOut', 'doorOut', 'died', 'final')
+LeavingStates = ('trialerFA', 'DFA', 'teleportOut', 'tunnelOut', 'doorOut', 'died', 'final')
 
 
 class Estate(Place.Place):
