@@ -108,6 +108,9 @@ class Factory(Building):
         self.dressTestingWing()
         self.dressGarageWing()
         self.dressCourtAndRear()
+        self.dress2Front()
+        self.dress2Garage()
+        self.dress2Back()
 
     def lamp(self, pos, color=(1.0, 0.78, 0.45), reach=40.0, groups=(), flicker=False):
         # The factory's lamps throw a little further than the theater's.
@@ -974,6 +977,223 @@ class Factory(Building):
         self.wallPic((76, 131.5, 3.2), 180, 4.0, 5.0, SOFT_SPOT, g, color=(0.1, 0.08, 0.06, 0.35), off=0.04)
         self.vent((64, 131.5, 9), 180, 2.6, 1.8, g)
         self.swingingLamp((70, 120, 12), 2.2, g, color=(1.0, 0.85, 0.6), angle=2.0, seconds=4.0, reach=16.0)
+
+    # --- Second pass: structure, machines, movement ---
+
+    def pillar(self, c, h, group, z0=0.0, z1=24.0, width=1.4, depth=0.8, color=(0.5, 0.5, 0.52, 1)):
+        """One steel pillar flat against a wall at c, sticking out toward h."""
+        f = heading(h)
+        side = Vec3(-f[1], f[0], 0)
+        p = Point3(c[0], c[1], 0) + f * (depth / 2.0)
+        lo = p - side * (width / 2) - f * (depth / 2)
+        hi = p + side * (width / 2) + f * (depth / 2)
+        self.kit.box((min(lo[0], hi[0]), min(lo[1], hi[1]), z0), (max(lo[0], hi[0]), max(lo[1], hi[1]), z1), side=METAL, top=METAL,
+                     tile=3, color=color, collide='wall', group=group)
+
+    def floodlight(self, pos, h, group, color=(1.0, 0.95, 0.8)):
+        """A floodlight bracketed high on a wall, glaring."""
+        f = heading(h)
+        p = Point3(*pos) + f * 0.8
+        self.kit.beam(Point3(*pos), p, 0.25, METAL, color=(0.3, 0.3, 0.32, 1), tile=1, group=group)
+        node = self.root.attachNewNode('flood')
+        node.setPos(p)
+        node.setH(h)
+        node.setP(-25)
+        self.boxNode(node, (-0.8, -0.4, -0.6), (0.8, 0.6, 0.6), METAL, color=(0.3, 0.3, 0.32, 1), tile=1)
+        lens = self.boxNode(node, (-0.65, 0.6, -0.45), (0.65, 0.66, 0.45), CEMENT, color=(1, 1, 1, 1), tile=1)
+        lens.setLightOff(1)
+        lens.setColorScale(color[0] * 3, color[1] * 3, color[2] * 3, 1)
+
+    def shelfUnit(self, a, h, length, group, z=0.0, height=7.0, items=None, seed=1):
+        """Steel shelves against a wall with jars, tanks and boxes on them."""
+        f = heading(h)
+        side = Vec3(-f[1], f[0], 0)
+        base = Point3(a[0], a[1], z) + f * 0.75
+        lo = base - side * (length / 2) - f * 0.75
+        hi = base + side * (length / 2) + f * 0.75
+        self.kit.wallBox((min(lo[0], hi[0]), min(lo[1], hi[1]), z), (max(lo[0], hi[0]), max(lo[1], hi[1]), z + height))
+        for s_ in (-length / 2, length / 2):
+            for d in (-0.7, 0.7):
+                q = base + side * s_ + f * d
+                self.kit.beam((q[0], q[1], z), (q[0], q[1], z + height), 0.15, METAL, color=(0.4, 0.4, 0.42, 1), tile=1, group=group)
+        r = rng(seed)
+        items = items or ['phase_9/models/cogHQ/ttr_m_prp_gen_gagTank']
+        for k, zz in enumerate((0.3, 2.6, 4.9)):
+            q0, q1 = base - side * (length / 2) + Vec3(0, 0, zz), base + side * (length / 2) + Vec3(0, 0, zz)
+            self.kit.beam(q0, q1, 1.5, METAL, color=(0.5, 0.5, 0.52, 1), tile=2, group=group, depth=0.12)
+            t = -length / 2 + 0.8
+            while t < length / 2 - 0.6:
+                if r.random() < 0.75:
+                    path = r.choice(items)
+                    q = base + side * t + Vec3(0, 0, zz + 0.06)
+                    sc = 0.1 if 'gagTank' in path else (0.25 if 'Crate' in path or 'crate' in path else (0.2 if 'Box' in path else 0.7))
+                    self.kit.model(path, pos=q, h=r.uniform(0, 360), scale=sc * r.uniform(0.8, 1.15),
+                                   color=(r.uniform(0.6, 1), r.uniform(0.6, 1), r.uniform(0.6, 1), 1))
+                t += r.uniform(1.0, 1.6)
+
+    def dress2Front(self):
+        # Forecourt: pillars round the walls, floodlights, a crane trolley
+        # over the yard, rails from the loading gate, pallets in corners.
+        g = 'forecourt'
+        for c, h in (((-30, -36), 0), ((15, -36), 0), ((31, -36), 0), ((-30, 24), 180), ((-2, 24), 180), ((14, 24), 180),
+                     ((-36, -28), -90), ((-36, 6), -90), ((-36, 20), -90), ((36, -28), 90), ((36, -16), 90), ((36, 22), 90)):
+            self.pillar(c, h, g)
+        for p, h in (((-35.5, -32, 20), -90), ((35.5, 18, 20), 90), ((-28, 23.5, 21), 180), ((28, -35.5, 21), 0)):
+            self.floodlight(p, h, g)
+        self.trolley((-30, -20), (30, -20), 21.5, g, seconds=18.0)
+        self.kit.beam((-35.5, -20, 22.1), (-34, -20, 22.1), 1.0, METAL, color=(0.4, 0.4, 0.42, 1), tile=1, group=g)
+        self.rails((0, -34.5), (0, -11), g)
+        self.rails((-6, -11), (-30, 2), g)
+        self.floorSeams(-14, -10, 14, 16, 0, g, every=5.6)
+        self.ladder((-35.5, 13), -90, 0, 24, g)
+        self.ladder((35.5, -8), 90, 0, 24, g)
+        for x, y, hh in ((-32.5, 20.6, 10), (32.6, -33, -20)):
+            self.kit.model('phase_10/models/cashbotHQ/crates_C1', pos=(x, y, 0), h=hh, scale=0.36, color=GRIME)
+            self.kit.wallBox((x - 1.6, y - 1.6, 0), (x + 1.6, y + 1.6, 5.2))
+        for x, y in ((-33, -12), (-31.6, -14.2), (-33.4, -15.6)):
+            self.kit.model('phase_6/models/props/small_round_barrel', pos=(x, y, 0), scale=0.9, color=(0.6, 0.35, 0.25, 1))
+            self.kit.wallTube((x, y, 0), 1.2, 3)
+        self.pipesAlong((-35, 23), (35, 23), 22.5, g, radius=0.45)
+        self.pipesAlong((-35.2, -35), (-35.2, 23), 22.0, g, radius=0.35, count=1)
+        # The testing hall: beams, a duct, strip lights, seams.
+        g = 'hallA'
+        self.ceilingBeams(-72, -16, -36, 4, 12, g, every=6, axis='y')
+        self.duct((-71, -13.5), (-37, -13.5), 10.4, 1.6, g)
+        for x in (-62, -46):
+            self.tubeLight((x, -4, 11.0), 90, g, flicker=(x == -62))
+        self.floorSeams(-72, -16, -36, 4, 0, g, every=5)
+        self.shelfUnit((-69, 3.2), 180, 5, g, seed=11, items=['phase_9/models/cogHQ/ttr_m_prp_gen_gagTank',
+                                                                'phase_3.5/models/props/tart'])
+        # The lab: tile seams, strip lights (one flickering), a fan, shelves
+        # of jars, a drain gutter.
+        g = 'lab'
+        for x, y, fl in ((-104, -18, False), (-80, -18, True), (-104, 0, False), (-80, 0, False)):
+            self.tubeLight((x, y, 13.0), 90, g, flicker=fl)
+        self.ceilingFan((-96, -22, 14), g, size=2.6)
+        self.ceilingBeams(-112, -28, -72, 8, 14, g, every=10, axis='x', depth=0.8)
+        self.shelfUnit((-81, 7.2), 180, 8, g, seed=12)
+        self.shelfUnit((-111.2, 4.0), -90, 3, g, seed=13, items=['phase_9/models/cogHQ/ttr_m_prp_gen_gagTank'])
+        self.floorPic((-92, -16), 22, 0.5, SOFT_GLOW, g, color=(0.05, 0.05, 0.05, 0.6), lift=0.04)
+        self.pipesAlong((-111.4, -27), (-111.4, 7), 12.6, g, radius=0.25)
+        # Teleporter A's room: beams, ducts, a trolley overhead, pillars.
+        g = 'teleA'
+        self.ceilingBeams(-112, 8, -72, 56, 24, g, every=8, axis='x', depth=1.4)
+        self.duct((-111, 12), (-111, 42), 21.0, 2.0, g)
+        self.duct((-108, 12), (-76, 12), 21.5, 1.6, g)
+        self.trolley((-108, 30), (-80, 30), 22.5, g, seconds=16.0, load='phase_9/models/cogHQ/woodCrateB')
+        for y in (16, 32):
+            self.pillar((-112, y), -90, g, z1=24)
+        for x, y in ((-104, 20), (-88, 20), (-104, 38), (-88, 38)):
+            self.tubeLight((x, y, 22.5), 0, g, flicker=(x == -88 and y == 38))
+        self.floorSeams(-112, 8, -72, 56, 0, g, every=8)
+        self.ladder((-72, 52), 90, 14, 24, g)
+        # The walkway: floodlights, pillars between the windows.
+        g = 'walkway'
+        for x in (-70, -58, -50, -38):
+            self.pillar((x, 56.5), 180, g, z0=14, z1=34, width=1.0, depth=0.6)
+        self.floodlight((-66, 56, 30), 180, g)
+        self.floodlight((-42, 56, 30), 180, g)
+
+    def tyres(self, pos, count, group):
+        """A stack of old tyres."""
+        for k in range(count):
+            self.kit.cylinder((pos[0] + (k % 2) * 0.15, pos[1], k * 0.75), 1.25, 0.72, GRAVEL, sides=14,
+                              color=(0.12, 0.12, 0.12, 1), tile=2, cap=GRAVEL, collide=False, group=group)
+        self.kit.wallTube((pos[0], pos[1], 0), 1.4, count * 0.75)
+
+    def dress2Garage(self):
+        # The garage: roof trusses, strip lights, a shelf of parts,
+        # tyres, a ladder, the roller door's frame.
+        g = 'garage'
+        self.ceilingBeams(36, -30, 80, 10, 18, g, every=7, axis='y', depth=1.4)
+        for x in (44, 70):
+            self.tubeLight((x, -10, 17.0), 0, g, flicker=(x == 70))
+        for c, h in (((36, -26), -90), ((36, 6), -90), ((52, -30), 0), ((80, -26), 90), ((80, 7), 90), ((66, 10), 180)):
+            self.pillar(c, h, g, z1=18)
+        for x in (-22.6, -5.4):
+            self.kit.beam((79.2, x, 0), (79.2, x, 13.6), 0.6, METAL, color=(0.75, 0.62, 0.15, 1), tile=2, group=g)
+        self.kit.beam((79.2, -22.6, 13.6), (79.2, -5.4, 13.6), 0.6, METAL, color=(0.75, 0.62, 0.15, 1), tile=2, group=g)
+        self.shelfUnit((62, -29.2), 0, 6, g, seed=21, items=['phase_9/models/cogHQ/ttr_m_prp_gen_gagTank',
+                                                              'phase_6/models/props/small_round_barrel'])
+        self.tyres((38.6, -20.5), 4, g)
+        self.tyres((39.2, -17.6), 3, g)
+        self.ladder((46, 9.6), 180, 0, 18, g)
+        self.floorSeams(37, -29, 79, 9, 0, g, every=7)
+        self.duct((37, 7.8), (54, 7.8), 15.4, 1.4, g)
+        self.floodlight((79.5, -28, 15.5), 90, g)
+        # The furnace hall: beams, a hopper chute above each furnace, ducts,
+        # rails for the coal cart, a stack of shovels' worth of coal sacks.
+        g = 'furnace'
+        self.ceilingBeams(56, 10, 96, 44, 16, g, every=8, axis='x', depth=1.2, color=(0.3, 0.27, 0.26, 1))
+        for x in (62, 72):
+            self.kit.beam((x, 39, 10.8), (x, 39, 16), 1.6, RUST, color=(0.45, 0.38, 0.34, 1), tile=2, group=g)
+        self.duct((94.6, 12), (94.6, 42), 12.0, 1.6, g, color=(0.5, 0.46, 0.44, 1))
+        self.rails((88, 12), (88, 34), g)
+        self.rails((88, 34), (77, 34.4), g)
+        for c, h in (((56, 28), -90), ((96, 12), 90), ((96, 40), 90), ((90, 44), 180)):
+            self.pillar(c, h, g, z1=16, color=(0.42, 0.38, 0.36, 1))
+        for x, y in ((76, 20), (76, 36)):
+            self.tubeLight((x, y, 15.0), 90, g, flicker=(y == 36))
+        for k, (x, y) in enumerate(((58.2, 30.5), (58.2, 32.2), (59.6, 31.4))):
+            self.kit.model('phase_10/models/cashbotHQ/crates_C1', pos=(x, y, 0), h=k * 30, scale=0.16, color=(0.45, 0.4, 0.36, 1))
+        self.kit.wallBox((57, 29.5, 0), (60.6, 33.4, 2.4))
+        # Steel jambs on the door to teleporter B (the lab's tiled jamb
+        # showed through as a green strip).
+        for x in (75.8, 84.2):
+            self.kit.beam((x, 43.5, 0), (x, 43.5, 16), 1.1, METAL, color=(0.38, 0.36, 0.36, 1), tile=2, group=g)
+        self.kit.beam((75.4, 43.7, 9.3), (84.6, 43.7, 9.3), 0.7, METAL, color=(0.38, 0.36, 0.36, 1), tile=2, group=g)
+        # Teleporter B's lab: beams, ducts, strip lights, a fan, a conveyor
+        # carrying pies under the balcony, shelves of specimens.
+        g = 'teleB'
+        self.ceilingBeams(56, 44, 100, 84, 26, g, every=8, axis='x', depth=1.4)
+        self.duct((57, 46), (86, 46), 23.0, 2.0, g)
+        self.duct((57, 82), (86, 82), 23.0, 2.0, g)
+        for x, y in ((64, 58), (78, 58), (64, 72), (78, 76)):
+            self.tubeLight((x, y, 24.8), 0, g, flicker=(x == 78 and y == 76))
+        self.ceilingFan((72, 64, 26), g, size=3.0)
+        self.conveyor((97, 60), (97, 79), 0, g, width=2.6, height=2.6, seconds=12.0, count=5)
+        self.shelfUnit((92, 44.8), 0, 5, g, seed=31, items=['phase_9/models/cogHQ/ttr_m_prp_gen_gagTank'])
+        for c, h in (((88, 48), 0), ((88, 80), 180)):
+            pass
+        for y in (52, 76):
+            self.kit.beam((88.2, y, 0), (88.2, y, 13.5), 0.5, METAL, color=(0.4, 0.4, 0.42, 1), tile=2, group=g)
+            self.kit.wallTube((88.2, y, 0), 0.4, 13.5)
+        self.floorSeams(57, 45, 87, 83, 0, g, every=6)
+        self.ladder((99.6, 47), 90, 0, 14, g)
+
+    def dress2Back(self):
+        # The courtyard: steel pillars round the walls, floodlights, a
+        # gantry trolley running over the yard, seams in the concrete.
+        g = 'court'
+        for c, h in (((-30, 44), 0), ((-10, 44), 0), ((34, 44), 0), ((50, 44), 0), ((-36, 72), -90), ((-36, 88), -90),
+                     ((56, 66), 90), ((56, 92), 90)):
+            self.pillar(c, h, g, z1=24, width=1.6, depth=0.9)
+        for p, h in (((-24, 44.5, 20.5), 0), ((40, 44.5, 20.5), 0), ((55.5, 74, 20.5), 90), ((-35.5, 80, 19.5), -90)):
+            self.floodlight(p, h, g)
+        self.trolley((-34, 62), (54, 62), 22.5, g, seconds=22.0, load='phase_10/models/cashbotHQ/crates_C1')
+        self.floorSeams(-6, 70, 40, 94, 0.04, g, every=4.6)
+        self.ladder((-28, 95.6), 180, 0, 24, g)
+        self.duct((-34, 45.2), (20, 45.2), 21.0, 1.6, g)
+        # The rear factory: roof trusses, a crate trolley, a conveyor under
+        # the catwalk, strip lights, pillars, ducts.
+        g = 'rear'
+        self.ceilingBeams(-36, 96, 56, 136, 30, g, every=10, axis='x', depth=1.6)
+        self.trolley((-22, 100), (48, 100), 27.0, g, seconds=20.0, load='phase_9/models/cogHQ/woodCrateB')
+        self.conveyor((-6, 133.6), (16, 133.6), 0, g, width=2.6, height=2.4, seconds=11.0, count=4,
+                      items=['phase_3.5/models/props/tart', 'phase_5/models/props/fruit-pie-slice'])
+        for x in (0, 30):
+            self.tubeLight((x, 131, 12.4), 0, g, flicker=(x == 30))
+        for x, y in ((-10, 116), (40, 124)):
+            self.tubeLight((x, y, 29.0), 90, g)
+        for x in (0, 22, 44):
+            self.pillar((x, 96), 0, g, z1=30, width=1.6, depth=0.9)
+        self.duct((-34, 134.4), (54, 134.4), 27.5, 1.8, g)
+        self.floorSeams(-27, 97, 55, 127, 0, g, every=8)
+        # The office: a ceiling fan, a shelf of boxes.
+        g = 'office'
+        self.ceilingFan((63, 118, 12), g, size=2.2, seconds=2.0)
+        self.shelfUnit((78, 131.2), 180, 5, g, seed=41, height=6.0,
+                       items=['phase_11/models/lawbotHQ/LB_CardBoardBox', 'phase_9/models/cogHQ/ttr_m_prp_gen_gagTank'])
 
     def yards(self):
         """The ground between the buildings nobody can reach, seen from the

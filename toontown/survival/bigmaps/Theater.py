@@ -41,6 +41,23 @@ LOBBY_PAD = Point3(0, -84, 0)
 STAGE_PAD = Point3(0, 52, 4)
 
 
+# Smaller gaps in the roof, just for the moonlight and the creepers (no
+# cogs come through these): group -> [(rect, ceiling z, floor z, vines)].
+CRACKS = {
+    'lobby': [((10, -93, 14, -88.5), 30, 0, 3), ((-14, -71, -11.5, -67), 30, 14, 1), ((22, -75, 26, -72.5), 30, 14, 0),
+              ((-24, -90, -22, -87.5), 30, 0, 2)],
+    'upper': [((-53, -88, -50, -85.5), 26, 14, 2)],
+    'portrait': [((-65, -61, -62, -58), 27, 14, 4), ((-84, -40, -82.5, -38.5), 27, 14, 0)],
+    'foyer': [((-81, 0, -78, 4), 27, 0, 5), ((-62, -31, -60, -28.5), 27, 14, 1), ((-66, 4, -64, 6.5), 27, 0, 0)],
+    'dressing': [((-84, 36, -81, 40), 15, 4, 2), ((-58, 18, -56.5, 19.5), 15, 4, 0)],
+    'storage': [((82, 34.5, 85, 37), 24, 12, 1), ((58, 48, 61, 52), 24, 12, 4)],
+    'stage': [((-40, 50, -35, 54), 36, 4, 3), ((6, 72, 9, 76), 36, 4, 0), ((36, 64, 38, 66.5), 36, 4, 5)],
+    'aud': [((-36, 10, -32.5, 14), 31, 0, 4), ((32, -40, 36, -36), 31, 0, 0), ((-10, -46, -7, -43), 31, 0, 2),
+            ((14, 26, 16, 28.5), 31, 0, 6), ((-18, -2, -16.5, 0), 31, 0, 1)],
+    'lowerhall': [((60, -77, 62, -75), 11, 0, 1)],
+}
+
+
 class Theater(Building):
     KEY = 'theater'
     TITLE = 'Kino der Toonen'
@@ -65,6 +82,17 @@ class Theater(Building):
 
     # --- Building ---
 
+    def ceiling(self, x0, y0, x1, y1, z, tex, tile=10.0, color=(1, 1, 1, 1), group='static', holes=()):
+        extra = [c[0] for c in CRACKS.get(group, ()) if abs(c[1] - z) < 0.01]
+        return Building.ceiling(self, x0, y0, x1, y1, z, tex, tile=tile, color=color, group=group, holes=list(holes) + extra)
+
+    def dressCracks(self):
+        seed = 600
+        for group, cracks in CRACKS.items():
+            for rect, cz, fz, vines in cracks:
+                seed += 7
+                self.roofHole(rect, cz, fz, group, seed, vines=vines)
+
     def build(self):
         self.rand = rng(1963)
         self.boothTime = 0.0
@@ -83,6 +111,9 @@ class Theater(Building):
         self.outside()
         self.dressIndoor()
         self.dressBack()
+        self.dress2Indoor()
+        self.dress2Back()
+        self.dressCracks()
 
     # --- The lobby ---
 
@@ -450,6 +481,408 @@ class Theater(Building):
         self.painting('degasHorseStar', (-52, 30, z + 4.4), 90, 2.2, tilt=-6)
         self.damp((-80, 48, z + 5), 180, 8, 6, g)
 
+    # --- Second pass: the building's bones, light, life ---
+
+    def shaft(self, top, floorZ, w=4.0, color=(1.0, 0.95, 0.85), alpha=0.13):
+        """Pale daylight (or moonlight) falling through a hole in the roof:
+        crossed soft cards, slowly breathing."""
+        from panda3d.core import ColorBlendAttrib
+        from toontown.survival.previewmaps.MapKit import Mesh
+        node = self.root.attachNewNode('shaft')
+        node.setPos(top[0], top[1], 0)
+        a, b = top[2], floorZ
+        # The moon is low in the sky: the light leans as it falls, and it
+        # spreads wide by the time it reaches the floor.
+        lean = Vec3(0.11, 0.07, 0) * (a - b)
+        m = Mesh()
+        for k in range(3):
+            ang = math.pi * k / 3
+            dx, dy = math.cos(ang) * w / 2, math.sin(ang) * w / 2
+            pts = [Point3(-dx, -dy, a), Point3(dx, dy, a), Point3(dx * 2.9, dy * 2.9, b) + lean, Point3(-dx * 2.9, -dy * 2.9, b) + lean]
+            m.quad(pts, [(0.1, 0.45), (0.9, 0.45), (0.9, 0.55), (0.1, 0.55)], Vec4(1, 1, 1, 1))
+            m.quad([pts[1], pts[0], pts[3], pts[2]], [(0.9, 0.45), (0.1, 0.45), (0.1, 0.55), (0.9, 0.55)], Vec4(1, 1, 1, 1))
+        np = node.attachNewNode(m.node('shaft'))
+        np.setTexture(self.kit.tex(SOFT_GLOW), 1)
+        node.setLightOff(1)
+        node.setDepthWrite(False)
+        node.setTwoSided(True)
+        node.setBin('fixed', 5)
+        node.setAttrib(ColorBlendAttrib.make(ColorBlendAttrib.MAdd, ColorBlendAttrib.OIncomingAlpha, ColorBlendAttrib.OOne))
+        lo, hi = Vec4(color[0], color[1], color[2], alpha * 0.6), Vec4(color[0], color[1], color[2], alpha)
+        node.setColorScale(hi)
+        secs = 5.0 + (abs(top[0]) % 3)
+        self.keepLooping(Sequence(LerpColorScaleInterval(node, secs, lo, startColorScale=hi, blendType='easeInOut'),
+                                  LerpColorScaleInterval(node, secs, hi, startColorScale=lo, blendType='easeInOut')))
+        # The pool of light where it lands, with a fainter wide spill round it.
+        cx, cy = top[0] + lean[0], top[1] + lean[1]
+        self.floorPic((cx, cy), w * 3.4, w * 3.0, SOFT_GLOW, 'static', color=(color[0], color[1], color[2], 0.24), z=floorZ, lift=0.07)
+        self.floorPic((cx, cy), w * 6.5, w * 6.0, SOFT_GLOW, 'static', color=(color[0], color[1], color[2], 0.1), z=floorZ, lift=0.068)
+
+    def vine(self, top, length, seed=1, count=None, rect=None):
+        """Creepers hanging in through a hole and stirring in the draught.
+        They hang from the hole's edges, some long, some short, a few
+        creeping along the underside of the ceiling."""
+        from panda3d.core import CardMaker
+        r = rng(seed)
+        tex = loader.loadTexture('phase_4/maps/swinging_vine.jpg', 'phase_4/maps/swinging_vine_a.rgb')
+        if count is None:
+            count = r.choice((1, 2, 2, 3, 4, 5))
+        if rect is None:
+            rect = (top[0] - 2.5, top[1] - 2.5, top[0] + 2.5, top[1] + 2.5)
+        x0, y0, x1, y1 = rect
+
+        def edgePoint(far=0.0):
+            if far and r.random() < 0.55:
+                # Rooted out on the ceiling, having crept from the hole.
+                cx, cy = (x0 + x1) / 2.0, (y0 + y1) / 2.0
+                ang = r.uniform(0, 2 * math.pi)
+                d = max(x1 - x0, y1 - y0) / 2.0 + r.uniform(1.0, far)
+                return cx + math.cos(ang) * d, cy + math.sin(ang) * d
+            t = r.random()
+            side = r.randrange(4)
+            if side == 0:
+                return x0 + (x1 - x0) * t, y0 + 0.2
+            if side == 1:
+                return x0 + (x1 - x0) * t, y1 - 0.2
+            if side == 2:
+                return x0 + 0.2, y0 + (y1 - y0) * t
+            return x1 - 0.2, y0 + (y1 - y0) * t
+
+        roots = []
+        for k in range(count):
+            x, y = edgePoint(far=6.0)
+            roots.append((x, y))
+            piv = self.root.attachNewNode('vine')
+            piv.setPos(x, y, top[2] + 0.4)
+            h0 = r.uniform(0, 180)
+            piv.setH(h0)
+            ln = length * r.uniform(0.3, 1.1)
+            wd = r.uniform(0.5, 1.3)
+            shade = r.uniform(0.75, 1.15)
+            # A hanging strand, sometimes doubled (two cards crossed).
+            for cross in ((0,) if r.random() < 0.6 else (0, 90)):
+                cm = CardMaker('v')
+                cm.setFrame(-wd / 2, wd / 2, -ln, 0)
+                cm.setUvRange((0, 0), (1, ln / (2.0 + wd)))
+                c = piv.attachNewNode(cm.generate())
+                c.setH(cross)
+                c.setTexture(tex, 1)
+                c.setTransparency(TransparencyAttrib.MAlpha)
+                c.setTwoSided(True)
+                c.setColorScale(0.5 * shade, 0.64 * shade, 0.36 * shade, 1)
+            sw, secs = r.uniform(2, 7), r.uniform(3.0, 6.5)
+            seq = Sequence(LerpHprInterval(piv, secs / 2, Vec3(h0, 0, sw), startHpr=Vec3(h0, 0, -sw), blendType='easeInOut'),
+                           LerpHprInterval(piv, secs / 2, Vec3(h0, 0, -sw), startHpr=Vec3(h0, 0, sw), blendType='easeInOut'))
+            self.keepLooping(seq)
+        # Some of it creeps along the ceiling from the hole.
+        for k in range(r.randrange(1, count + 3) if count else 0):
+            x, y = edgePoint()
+            ang = math.atan2(y - (y0 + y1) / 2, x - (x0 + x1) / 2) + r.uniform(-0.7, 0.7)
+            ln = r.uniform(3.0, 9.0)
+            cm = CardMaker('vc')
+            cm.setFrame(-0.45, 0.45, 0, ln)
+            cm.setUvRange((0, 0), (1, ln / 3.0))
+            c = self.root.attachNewNode(cm.generate())
+            c.setPos(x, y, top[2] - 0.08)
+            c.setHpr(math.degrees(ang) - 90, -90, 0)
+            c.setTexture(tex, 1)
+            c.setTransparency(TransparencyAttrib.MAlpha)
+            c.setTwoSided(True)
+            c.setColorScale(0.45, 0.58, 0.33, 1)
+
+    def jagged(self, rect, z, group, seed):
+        """Broken laths and plaster hanging down round a hole's edges."""
+        r = rng(seed)
+        x0, y0, x1, y1 = rect
+        for k in range(r.randrange(3, 7)):
+            side = r.randrange(4)
+            t = r.random()
+            if side < 2:
+                p, out = Point3(x0 + (x1 - x0) * t, y0 if side == 0 else y1, z), Vec3(0, -1 if side == 0 else 1, 0)
+            else:
+                p, out = Point3(x0 if side == 2 else x1, y0 + (y1 - y0) * t, z), Vec3(-1 if side == 2 else 1, 0, 0)
+            ln = r.uniform(0.8, 2.6)
+            drop = Vec3(0, 0, -ln * r.uniform(0.5, 0.95))
+            tip = p + drop - out * r.uniform(0.2, 1.0)
+            self.kit.beam(p + Vec3(0, 0, -0.05), tip, r.uniform(0.25, 0.5), r.choice((OLD_PLANKS, BOARDS, PLASTER)),
+                          color=(0.45, 0.38, 0.32, 1), tile=1, group=group, depth=0.1)
+
+    def roofHole(self, rect, ceilZ, floorZ, group, seed, vines=None, vineLen=None, color=(0.85, 0.9, 1.0)):
+        """A smaller gap in the roof (no cogs come through it): moonlight,
+        a few broken laths, perhaps vines, plaster fallen below."""
+        x0, y0, x1, y1 = rect
+        c = ((x0 + x1) / 2.0, (y0 + y1) / 2.0)
+        w = min(x1 - x0, y1 - y0)
+        self.shaft((c[0], c[1], ceilZ), floorZ, w=w * 0.85, color=color, alpha=0.08 + 0.015 * w)
+        self.jagged(rect, ceilZ, group, seed)
+        if vines != 0:
+            self.vine((c[0], c[1], ceilZ), vineLen or (ceilZ - floorZ) * 0.45, seed=seed, count=vines, rect=rect)
+        self.rubble(c, floorZ, group, seed + 1, spread=max(1.2, w * 0.5), n=int(3 + w))
+
+    def rubble(self, c, z, group, seed, spread=3.5, n=9):
+        """Chunks of fallen plaster under a hole, low enough to walk over."""
+        r = rng(seed)
+        for i in range(n):
+            x, y = c[0] + r.uniform(-spread, spread), c[1] + r.uniform(-spread, spread)
+            w = r.uniform(0.3, 1.1)
+            self.kit.box((x, y, z), (x + w, y + r.uniform(0.3, 1.1), z + r.uniform(0.12, 0.35)), side=PLASTER, top=PLASTER, tile=1,
+                         color=(0.62, 0.56, 0.5, 1), collide=False, group=group)
+        self.floorPic(c, spread * 2.6, spread * 2.6, SOFT_GLOW, group, color=(0.75, 0.7, 0.62, 0.35), z=z, lift=0.05)
+
+    def pilaster(self, c, h, z0, z1, group, color=(0.72, 0.62, 0.52, 1), width=1.6):
+        """A flat column against the wall with a base and a capital."""
+        f = heading(h)
+        side = Vec3(-f[1], f[0], 0)
+        p = Point3(c[0], c[1], 0)
+        for d, wd, za, zb, tex in ((0.35, width, z0, z1, MARBLE), (0.55, width + 0.6, z0, z0 + 1.0, MOLDING),
+                                   (0.55, width + 0.6, z1 - 0.9, z1, MOLDING)):
+            lo = p - side * (wd / 2)
+            hi = p + side * (wd / 2) + f * d
+            self.kit.box((min(lo[0], hi[0]), min(lo[1], hi[1]), za), (max(lo[0], hi[0]), max(lo[1], hi[1]), zb), side=tex, top=tex,
+                         tile=2, color=color, collide=('wall' if tex == MARBLE else False), group=group)
+
+    def crown(self, x0, y0, x1, y1, z, group, color=(0.72, 0.58, 0.44, 1)):
+        """Moulding round the top of a room's walls."""
+        for a, b in (((x0, y0 + 0.3), (x1, y0 + 0.3)), ((x0, y1 - 0.3), (x1, y1 - 0.3)), ((x0 + 0.3, y0), (x0 + 0.3, y1)),
+                     ((x1 - 0.3, y0), (x1 - 0.3, y1))):
+            self.kit.beam((a[0], a[1], z), (b[0], b[1], z), 0.6, MOLDING, color=color, tile=6, group=group, depth=0.7)
+
+    def torn(self, pos, hf, w, hgt, group, seed):
+        """Wallpaper peeled away, the plaster (and a lath or two) behind."""
+        self.wallPic(pos, hf, w, hgt, PLASTER, group, color=(0.5, 0.44, 0.38, 1), off=0.045,
+                     uv=[(0, 0), (w / 4.0, 0), (w / 4.0, hgt / 4.0), (0, hgt / 4.0)])
+        self.wallPic(pos, hf, w * 1.25, hgt * 1.25, SOFT_SPOT, group, color=(0.15, 0.1, 0.08, 0.3), off=0.04)
+        r = rng(seed)
+        f = heading(hf)
+        side = Vec3(-f[1], f[0], 0)
+        for k in range(2):
+            zz = pos[2] + r.uniform(-hgt / 4, hgt / 4)
+            q = Point3(pos[0], pos[1], zz) + f * 0.08
+            self.kit.beam(q - side * (w * 0.4), q + side * (w * 0.4), 0.3, BOARDS, color=(0.5, 0.4, 0.32, 1), tile=1, group=group,
+                          depth=0.08)
+
+    def boards(self, pos, hf, w, hgt, group, seed):
+        """Planks nailed crooked over a hole in the wall."""
+        r = rng(seed)
+        f = heading(hf)
+        side = Vec3(-f[1], f[0], 0)
+        self.wallPic(pos, hf, w * 0.9, hgt * 0.9, SOFT_SPOT, group, color=(0.02, 0.02, 0.02, 0.85), off=0.04)
+        for k in range(3):
+            zz = pos[2] - hgt / 2 + hgt * (k + 0.5) / 3 + r.uniform(-0.3, 0.3)
+            tilt = r.uniform(-0.5, 0.5)
+            q = Point3(pos[0], pos[1], zz) + f * 0.12
+            self.kit.beam(q - side * (w * 0.6) + Vec3(0, 0, -tilt), q + side * (w * 0.6) + Vec3(0, 0, tilt), 0.7, BOARDS,
+                          color=(0.55, 0.45, 0.36, 1), tile=1, group=group, depth=0.12)
+
+    def dress2Indoor(self):
+        # The lobby: columns, a cornice, light through the broken roof,
+        # vines hanging in, the paper torn off the walls.
+        g = 'lobby'
+        for x in (-23, -9, 9, 23):
+            self.pilaster((x, -100), 0, 0, 29.4, g)
+        for x in (-30, 15, 30):
+            self.pilaster((x, -60), 180, 14, 29.4, g)
+        self.crown(-40, -100, 40, -60, 29.0, g)
+        self.kit.beam((-40, -99.5, 13.6), (40, -99.5, 13.6), 0.5, MOLDING, color=(0.72, 0.58, 0.44, 1), tile=12, group=g, depth=0.5)
+        self.shaft((-33, -68, 30), 14, w=4.5)
+        self.vine((-33, -68, 30), 10, seed=1, count=4, rect=(-36, -71, -30, -65))
+        self.jagged((-36, -71, -30, -65), 30, g, 501)
+        self.rubble((-33, -68), 14, g, 401)
+        for p, hf, w, hgt, sd in (((-16, -99.9, 20), 0, 5, 4, 1), ((34, -99.9, 22), 0, 4, 6, 2), ((-39.9, -84, 22), -90, 6, 5, 3),
+                                  ((39.9, -70, 8), 90, 4, 4, 4)):
+            self.torn(p, hf, w, hgt, g, sd)
+        self.boards((16, -99.85, 21), 0, 4, 3.5, g, 5)
+        for p, hh in (((-9, -99.4, 18), 0), ((9, -99.4, 18), 0)):
+            self.sconce(p, hh, g, light=False)
+        # The upper hall.
+        g = 'upper'
+        z = 14
+        self.crown(-72, -92, -42, -68, z + 11.4, g)
+        for x in (-66, -48):
+            self.pilaster((x, -92), 0, z, z + 11.6, g, width=1.2)
+        self.torn((-60, -68, z + 7), 180, 4, 4, g, 11)
+        self.boards((-72, -78, z + 7), -90, 3.5, 3, g, 12)
+        self.sconce((-42.6, -78, z + 6), 90, g, light=False)
+        # The portrait room.
+        g = 'portrait'
+        self.crown(-86, -66, -56, -36, z + 12.4, g)
+        self.shaft((-77, -49, z + 13), z, w=3.6)
+        self.vine((-77, -49, z + 13), 8, seed=2, count=2, rect=(-80, -52, -74, -46))
+        self.jagged((-80, -52, -74, -46), z + 13, g, 502)
+        self.rubble((-77, -49), z, g, 402)
+        self.torn((-66, -66, z + 6), 0, 5, 5, g, 13)
+        self.torn((-86, -42, z + 8), -90, 4, 5, g, 14)
+        # The foyer.
+        g = 'foyer'
+        self.crown(-96, -34, -56, 10, 26.4, g)
+        for x in (-90, -68):
+            self.pilaster((x, 10), 180, 0, 26.4, g)
+        for y in (-28, -22):
+            self.pilaster((-56, y), 90, 14, 26.4, g, width=1.2)
+        self.shaft((-71, -27, 27), 14, w=3.6)
+        self.vine((-71, -27, 27), 10, seed=3, count=6, rect=(-74, -30, -68, -24))
+        self.jagged((-74, -30, -68, -24), 27, g, 503)
+        self.rubble((-71, -27), 14, g, 403)
+        self.torn((-96, -26, 22), -90, 4, 4, g, 15)
+        self.boards((-56, -10, 9), 90, 3, 3, g, 16)
+        for p, hh in (((-95.4, 4, 7), -90), ((-56.6, 6, 7), 90)):
+            self.sconce(p, hh, g, light=False)
+        # The dressing room.
+        g = 'dressing'
+        z = 4
+        self.shaft((-68, 30, z + 11), z, w=4.0, color=(0.9, 0.95, 1.0))
+        self.vine((-68, 30, z + 11), 5, seed=4, count=1, rect=(-72, 26, -64, 34))
+        self.jagged((-72, 26, -64, 34), z + 11, g, 504)
+        self.rubble((-68, 30), z, g, 404)
+        self.torn((-52, 20, z + 6), 90, 4, 3.5, g, 17)
+        self.boards((-74, 48, z + 6), 180, 3, 3, g, 18)
+
+    def streetWindow(self, pos, hf, w, hgt, lit=False, seed=1):
+        """A window in a neighbouring building: a frame, a sill, glass,
+        dark or with someone's lamp on behind it."""
+        f = heading(hf)
+        side = Vec3(-f[1], f[0], 0)
+        node = self.root.attachNewNode('streetWindow')
+        c = Point3(*pos) + f * 0.05
+        lo, hi = c - side * (w / 2), c + side * (w / 2) + f * 0.06
+        glass = self.boxNode(node, (min(lo[0], hi[0]), min(lo[1], hi[1]), pos[2]), (max(lo[0], hi[0]), max(lo[1], hi[1]), pos[2] + hgt),
+                             CEMENT, color=(1, 1, 1, 1), tile=1)
+        glass.setLightOff(1)
+        r = rng(seed)
+        if lit:
+            glass.setColorScale(1.1, 0.82, 0.45, 1)
+        else:
+            glass.setColorScale(0.06, 0.07, 0.1, 1)
+        frame = (0.32, 0.26, 0.22, 1)
+        q = Point3(*pos) + f * 0.15
+        for a, b in (((-w / 2 - 0.2, 0), (w / 2 + 0.2, 0)), ((-w / 2 - 0.2, hgt), (w / 2 + 0.2, hgt)), ((0, 0), (0, hgt)),
+                     ((-w / 2, 0), (-w / 2, hgt)), ((w / 2, 0), (w / 2, hgt)), ((-w / 2, hgt / 2), (w / 2, hgt / 2))):
+            self.kit.beam(q + side * a[0] + Vec3(0, 0, a[1]), q + side * b[0] + Vec3(0, 0, b[1]), 0.22, WOOD, color=frame, tile=1,
+                          group='static', depth=0.2)
+        self.kit.beam(q + side * (-w / 2 - 0.4) + f * 0.2 + Vec3(0, 0, -0.2), q + side * (w / 2 + 0.4) + f * 0.2 + Vec3(0, 0, -0.2),
+                      0.3, CEMENT, color=(0.5, 0.48, 0.46, 1), tile=1, group='static', depth=0.6)
+        if lit and r.random() < 0.5:
+            # Somebody walks past the lamp now and then.
+            dim = Vec4(0.5, 0.36, 0.2, 1)
+            self.keepLooping(Sequence(Wait(r.uniform(4, 9)), LerpColorScaleInterval(glass, 0.4, dim), Wait(r.uniform(0.6, 1.4)),
+                                      LerpColorScaleInterval(glass, 0.5, Vec4(1.1, 0.82, 0.45, 1))))
+        return node
+
+    def fireEscape(self, x, hf, y0, y1, levels, group):
+        """An iron fire escape up a wall: landings with railings and a
+        ladder between them, the bottom ladder pulled up out of reach."""
+        f = heading(hf)
+        iron = (0.2, 0.19, 0.19, 1)
+        xa, xb = (x, x + f[0] * 3.2)
+        lo, hi = min(xa, xb), max(xa, xb)
+        for z in levels:
+            self.kit.box((lo, y0, z - 0.25), (hi, y1, z), side=METAL, top=GRATE, tile=2, color=iron, collide=False, group=group)
+            for yy in (y0, y1):
+                self.kit.beam((xb, yy, z), (xb, yy, z + 3.2), 0.12, METAL, color=iron, tile=1, group=group)
+                self.kit.beam((xa, yy, z + 3.2), (xb, yy, z + 3.2), 0.12, METAL, color=iron, tile=1, group=group)
+            self.kit.beam((xb, y0, z + 3.2), (xb, y1, z + 3.2), 0.12, METAL, color=iron, tile=2, group=group)
+            self.kit.beam((xb, y0, z + 1.6), (xb, y1, z + 1.6), 0.08, METAL, color=iron, tile=2, group=group)
+            for t in range(int(y1 - y0) + 1):
+                self.kit.beam((xb, y0 + t, z), (xb, y0 + t, z + 3.2), 0.05, METAL, color=iron, tile=1, group=group)
+            # Brackets under the landing.
+            for yy in (y0 + 0.5, y1 - 0.5):
+                self.kit.beam((xa, yy, z - 2.4), (xb, yy, z - 0.3), 0.12, METAL, color=iron, tile=1, group=group)
+        for k, z in enumerate(levels):
+            top = levels[k + 1] if k + 1 < len(levels) else None
+            yy = y0 + 1.2 if k % 2 == 0 else y1 - 1.2
+            if top is not None:
+                self.ladder((x + f[0] * 2.4, yy), hf, z, top, group, color=iron)
+        self.ladder((x + f[0] * 2.4, (y0 + y1) / 2), hf, levels[0] - 4.5, levels[0], group, color=iron)
+
+    def neon(self, label, pos, h, scale, color, group):
+        """A neon sign on a bracket, buzzing and stuttering."""
+        f = heading(h)
+        plate = self.root.attachNewNode('neonPlate')
+        np = self.text(label, Point3(*pos) + f * 0.25, h + 180, scale, (1, 1, 1, 1), parent=self.root)
+        np.setLightOff(1)
+        lit = Vec4(color[0] * 2.2, color[1] * 2.2, color[2] * 2.2, 1)
+        dim = Vec4(color[0] * 0.35, color[1] * 0.35, color[2] * 0.35, 1)
+        np.setColorScale(lit)
+        self.keepLooping(Sequence(Wait(3.1), Func(np.setColorScale, dim), Wait(0.07), Func(np.setColorScale, lit), Wait(0.12),
+                                  Func(np.setColorScale, dim), Wait(0.3), Func(np.setColorScale, lit), Wait(5.5)))
+        w = len(label) * scale * 0.7 + 1.0
+        self.wallPic((pos[0], pos[1], pos[2] - 0.6), h, w, scale + 1.2, CEMENT, group, color=(0.12, 0.1, 0.1, 1), off=0.08)
+        self.floorPic((pos[0] + f[0] * 2, pos[1] + f[1] * 2), w * 1.2, 5, SOFT_GLOW, group,
+                      color=(color[0], color[1], color[2], 0.18), z=0, lift=0.07)
+
+    def dress2Back(self):
+        # The lower hall: a bare bulb, torn plaster, boarded patch, pipes.
+        g = 'lowerhall'
+        self.tubeLight((62, -80, 10.6), 0, g, length=4.0, flicker=True)
+        self.torn((42, -86, 6), -90, 4, 3.5, g, 21)
+        self.boards((70, -76, 6), 90, 3, 3, g, 22)
+        for x in (44.6, 69.4):
+            self.kit.beam((x, -91.4, 0), (x, -91.4, 10.1), 0.4, RUST, color=(0.5, 0.44, 0.4, 1), tile=3, group=g)
+        # The alley: a fire escape up each building, windows (a few
+        # lit), drainpipes, power lines across, a neon sign.
+        g = 'alley'
+        self.fireEscape(92.5, 90, -22, -10, (8, 14.5), g)
+        self.fireEscape(55.5, -90, -64, -54, (9, 15.5), g)
+        r = rng(271)
+        # (The brick walls' faces are half a foot in from their lines.)
+        for x, hf in ((56.0, -90), (92.0, 90)):
+            for y in (-66, -46, -36, -26, -6, 4):
+                for z in (7.5, 14):
+                    if (hf == 90 and -23 < y < -9) or (hf == -90 and -65 < y < -53):
+                        continue
+                    if hf == -90 and y in (-46, -36) and z < 10:
+                        continue                                 # the posters are there
+                    if r.random() < 0.8:
+                        self.streetWindow((x, y, z), hf, 3.0, 3.6, lit=r.random() < 0.25, seed=int(y * 7 + z))
+        for x, y, hf in ((56.0, -16, -90), (92.0, -40, 90), (92.0, 6, 90)):
+            self.kit.beam((x + heading(hf)[0] * 0.4, y, 0), (x + heading(hf)[0] * 0.4, y, 20), 0.45, METAL,
+                          color=(0.38, 0.38, 0.4, 1), tile=4, group=g)
+        for y0, y1, z in ((-56, -60, 18), (-4, 2, 17.5)):
+            self.kit.beam((56, y0, z), (92, y1, z - 0.5), 0.06, METAL, color=(0.1, 0.1, 0.1, 1), tile=1, group=g)
+        # The storage room: rafters, daylight through the roof, vines.
+        g = 'storage'
+        self.ceilingBeams(52, 30, 92, 56, 24, g, every=6, axis='y', depth=0.9, color=(0.4, 0.32, 0.26, 1), tex=OLD_PLANKS)
+        self.shaft((73, 43, 24), 12, w=3.6, color=(0.85, 0.9, 1.0))
+        self.vine((73, 43, 24), 8, seed=5, count=3, rect=(70, 40, 76, 46))
+        self.jagged((70, 40, 76, 46), 24, g, 505)
+        self.rubble((73, 43), 12, g, 405, spread=2.5, n=6)
+        self.boards((52, 36, 18), -90, 3, 3, g, 23)
+        # The stage: the fly gallery's beams, light through the roof,
+        # hanging vines, a ladder up the wall, sandbags overhead.
+        g = 'stage'
+        z = 4
+        self.ceilingBeams(-50, 41, 50, 80, 35.2, g, every=8, axis='x', depth=1.0, color=(0.32, 0.28, 0.25, 1), tex=OLD_PLANKS)
+        for c in ((-21, 69), (23, 59)):
+            self.shaft((c[0], c[1], 36), z, w=4.0, color=(0.85, 0.9, 1.0))
+            self.vine((c[0], c[1], 36), 14 if c[0] < 0 else 9, seed=int(c[0]) + 50, count=6 if c[0] < 0 else 2,
+                      rect=(c[0] - 3, c[1] - 3, c[0] + 3, c[1] + 3))
+            self.jagged((c[0] - 3, c[1] - 3, c[0] + 3, c[1] + 3), 36, g, int(c[0]) + 506)
+        self.ladder((49.6, 60), 90, z, 34, g)
+        for x, length in ((-30, 6), (-10, 9), (12, 5), (32, 8)):
+            self.kit.beam((x, 72, 35), (x, 72, 35 - length), 0.1, WOOD, color=(0.75, 0.68, 0.55, 1), tile=1, group=g)
+            self.kit.model('phase_5/models/props/sandbag-mod', pos=(x, 72, 35 - length - 1.4), h=x * 7, scale=1.0,
+                           color=(0.72, 0.64, 0.54, 1))
+        self.torn((-50, 52, 14), -90, 6, 5, g, 24)
+        # The auditorium: daylight down through the three holes, vines,
+        # the cornice, the wallpaper hanging off between the pilasters.
+        g = 'aud'
+        for c in ((-27, -21), (27, 9), (0, 22)):
+            self.shaft((c[0], c[1], 31), 0, w=4.5, color=(0.85, 0.9, 1.0), alpha=0.12)
+            self.vine((c[0], c[1], 31), {-27: 13, 27: 7, 0: 16}[c[0]], seed=int(c[0] * 3 + c[1]) + 90,
+                      count={-27: 5, 27: 1, 0: 7}[c[0]], rect=(c[0] - 3, c[1] - 3, c[0] + 3, c[1] + 3))
+            self.jagged((c[0] - 3, c[1] - 3, c[0] + 3, c[1] + 3), 31, g, int(c[0]) + 507)
+        self.crown(-44, -56, 44, 39, 30.4, g)
+        for p, hf, w, hgt, sd in (((-43.9, -17, 20), -90, 6, 6, 31), ((43.9, 19, 21), 90, 6, 5, 32), ((-43.9, 1, 9), -90, 4, 3.5, 33),
+                                  ((43.9, -35, 18), 90, 5, 6, 34), ((-30, -56, 18), 0, 6, 5, 35)):
+            self.torn(p, hf, w, hgt, g, sd)
+        self.boards((43.9, 1, 16), 90, 4, 3.5, g, 36)
+        self.boards((30, -56, 14), 0, 4, 3.5, g, 37)
+        # The booth: a shelf of film cans, a poster, the old schedule.
+        g = 'booth'
+        z = 22
+        self.torn((-16, -51, z + 5), -90, 3, 2.5, g, 38)
+        self.sign((-10, -55.9, z + 5.2), 0, 'SHOWTIMES\n7:00  9:00\nMIDNIGHT', g, plate=(0.85, 0.82, 0.75, 1), scale=0.45)
+
     def projectorLight(self):
         """The projector's beam from the booth's middle window over the
         seats to the curtain: two crossed soft cards, shown with the power."""
@@ -503,7 +936,7 @@ class Theater(Building):
         for x, y in ((57.4, -2), (90.8, -44)):
             self.kit.model('phase_5/models/props/trashcan_TT', pos=(x, y, 0), scale=0.8, color=(0.55, 0.55, 0.52, 1))
             self.kit.wallTube((x, y, 0), 1.3, 4)
-        self.sign((56.0, -30, 9), -90, 'NO LOITERING', g, plate=(0.8, 0.14, 0.1, 1), ink=(1, 0.95, 0.85, 1), scale=0.6)
+        self.sign((56.0, -32.3, 8.8), -90, 'NO LOITERING', g, plate=(0.8, 0.14, 0.1, 1), ink=(1, 0.95, 0.85, 1), scale=0.6)
         self.conduit((56.0, -60), -90, 0, 22, g)
         self.conduit((92.0, -14), 90, 0, 20, g)
         self.vent((92.0, -36, 10), 90, 3.2, 2.2, g)
@@ -645,8 +1078,8 @@ class Theater(Building):
         for x, y in ((90, -36), (89, -32)):
             self.kit.model('phase_6/models/props/small_round_barrel', pos=(x, y, 0), scale=1.0, color=(0.6, 0.55, 0.5, 1))
             self.kit.wallTube((x, y, 0), 1.3, 2)
-        self.poster((56.1, -40, 5), 90, 1.4)
-        self.poster((56.1, -46, 5), 90, 1.4)
+        self.poster((56.1, -40, 5), -90, 1.4)
+        self.poster((56.1, -46, 5), -90, 1.4)
         self.wallGag((G.SQUIRT, 3), (92, -24, 0), 90, 1200, 'alley')   # AK-74u: Seltzer Bottle
         self.boxSpot('alley', (89.5, -46, 0), -90)
         # Cogs come over the roofs on either side.
