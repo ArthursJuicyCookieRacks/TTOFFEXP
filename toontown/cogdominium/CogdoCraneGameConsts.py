@@ -19,7 +19,10 @@ Gravity = -32
 EmptyFrictionCoef = 0.1
 RopeLinkMass = 1.0
 MagnetMass = 1.0
-MoneyBagGrabHeight = -4.1
+# How far under the magnet's gripper a held bag hangs. The CFO's -8.2
+# fits its 8.2-tall safes; a money bag is only 5.26 tall, so at -8.2 it
+# hung with a gap of about 3 under the magnet.
+MoneyBagGrabHeight = -5.2
 
 # --- The room ---
 

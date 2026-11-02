@@ -900,6 +900,21 @@ def playCogdoCrane(dist):
             base.screenshot(os.path.join(shots, 'cash-%02d-play.png' % (10 + n)), defaultFilename=0)
             if n % 2 == 1:
                 shotFrom('cash-%02d-over.png' % (10 + n), Point3(0, -60, 45), Point3(0, 0, 0))
+            if os.environ.get('AUTOPLAY_CRANE_GRIP'):
+                # How a held bag sits under the magnet: the gap between the
+                # bottom of the magnet and the top of the bag, and a close-up.
+                for c in sorted(dist.cranes.values(), key=lambda c: c.index):
+                    held = c.heldObject
+                    if held is None or held.state not in ('Grabbed', 'LocalGrabbed') or held.lerpInterval and held.lerpInterval.isPlaying():
+                        continue
+                    # The gripper sits on the magnet's bottom face, facing
+                    # down its -z.
+                    top = held.getTightBounds(c.gripper)[1]
+                    log('  crane %d grip: gap between magnet and bag %.2f' % (c.index, -top[2]))
+                    if c.avId == localAvatar.doId or not getattr(dist, '_gripShot', False):
+                        dist._gripShot = True
+                        g = c.gripper.getPos(render)
+                        shotFrom('cash-%02d-grip-crane%d.png' % (10 + n, c.index), Point3(g[0] + 9, g[1] - 9, g[2] - 1), Point3(g[0], g[1], g[2] - 2))
             if os.environ.get('AUTOPLAY_CRANE_SHADOWS'):
                 # The magnets' and trolleys' shadows on the floor, from
                 # the side and from above, to check they lie on it.

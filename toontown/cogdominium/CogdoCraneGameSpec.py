@@ -35,7 +35,7 @@ GlobalEntities = {1000: {'type': 'levelMgr',
          'GameDuration': 180.0,
          'Gravity': -32,
          'MagnetMass': 1.0,
-         'MoneyBagGrabHeight': -4.1,
+         'MoneyBagGrabHeight': -5.2,
          'RopeLinkMass': 1.0}}
 Scenario0 = {}
 levelSpec = {'globalEntities': GlobalEntities,
