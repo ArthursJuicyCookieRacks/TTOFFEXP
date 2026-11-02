@@ -241,7 +241,7 @@ BACK_FITS = {
     14: ('wing', 1.09, 0.009, 0.0, -12.0, {'squeeze': 0.1, 'hug': 0.004, 'ease': 0.6, 'lift': 0.02}),  # birdWings
     15: ('pack', 0.66, -0.025, 0.04, -8.0),  # stuffedAnimalBackpackCat
     16: ('pack', 0.665, -0.017, 0.04, -8.0),  # stuffedAnimalBackpackDog
-    17: ('wing', 1.1, 0.06, 0.14, -24.0),  # airplane
+    17: ('wing', 1.27, -0.04, 0.14, -24.0),  # airplane, its body resting on the back
     18: ('pack', 1.0, -0.132, -0.1, -25.0, {'roll': 80.0, 'wide': 0.95}),  # woodenSword, slung across the small of the back
     19: ('cape', 0.7, 0.08, 0.27, -42.0),  # supertoonCape
     20: ('cape', 0.7, 0.08, 0.27, -42.0),  # vampireCape
