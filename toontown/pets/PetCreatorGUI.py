@@ -68,8 +68,14 @@ COL_LABEL = -0.55
 COL_LEFT = -0.17
 COL_RIGHT = 0.3
 COL_PRICE = 0.55
-# The traits page's level column, between the right arrow and the price.
-COL_LEVEL = 0.385
+# The traits page's own columns, closer together: the name, the arrows
+# round the trait, its level and its price, spread evenly across the page.
+TRAIT_COLS = (-0.55, -0.25, 0.275, 0.395, 0.556)
+# The tab buttons' art has a shadow along its bottom and right, so their
+# words sit a little up and left of the art's middle to be in the middle of
+# the button's face.
+TAB_TEXT_POS = (-0.005, -0.009)
+KIND_TEXT_POS = (-0.0095, -0.0125)
 # The Outfit page: its Hat/Glasses/Back buttons, the top row of tiles,
 # and the page selector, spread evenly down the page.
 KIND_Z = 0.54
@@ -274,7 +280,7 @@ class PetCreatorGUI(DirectFrame):
             self.tabButtons.append(None)
         for n, tab in enumerate(tabs):
             button = DirectButton(parent=inside, relief=None, image=tabArt,
-                                  text=TTLocalizer.PetCreatorTabs[tab], text_scale=0.05, text_pos=(0, -0.015),
+                                  text=TTLocalizer.PetCreatorTabs[tab], text_scale=0.05, text_pos=TAB_TEXT_POS,
                                   text_fg=PURPLE, pos=(left + n * width, 0, TAB_Z), pressEffect=False,
                                   command=self.__showTab, extraArgs=[tab])
             self.tabButtons[tab] = button
@@ -287,25 +293,26 @@ class PetCreatorGUI(DirectFrame):
         self.__makeNamePage(self.tabPages[TAB_NAME])
         self.__makeWearPage(self.tabPages[TAB_WEAR])
 
-    def __makeRow(self, page, key, label, z, scale, changer):
+    def __makeRow(self, page, key, label, z, scale, changer, cols=None):
         # One choice: its name, the arrows round what it is now, and what it
         # adds to the price. Every row lines up on the same columns.
         arrowArt = (self.matArt.find('**/tt_t_gui_mat_shuffleArrowUp'),
                     self.matArt.find('**/tt_t_gui_mat_shuffleArrowDown'),
                     self.matArt.find('**/tt_t_gui_mat_shuffleArrowUp'),
                     self.matArt.find('**/tt_t_gui_mat_shuffleArrowDisabled'))
+        colLabel, colLeft, colRight, colPrice = cols or (COL_LABEL, COL_LEFT, COL_RIGHT, COL_PRICE)
         row = DirectFrame(parent=page, relief=None, pos=(0, 0, z))
         textZ = -scale * 0.35
         DirectLabel(parent=row, relief=None, text=label, text_scale=scale, text_align=TextNode.ALeft,
-                    text_fg=DARK, pos=(COL_LABEL, 0, textZ))
+                    text_fg=DARK, pos=(colLabel, 0, textZ))
         left = DirectButton(parent=row, relief=None, image=arrowArt, image_scale=(0.5, 1, 0.5),
-                            pos=(COL_LEFT, 0, 0), pressEffect=False, command=changer, extraArgs=[-1])
+                            pos=(colLeft, 0, 0), pressEffect=False, command=changer, extraArgs=[-1])
         right = DirectButton(parent=row, relief=None, image=arrowArt, image_scale=(-0.5, 1, 0.5),
-                             pos=(COL_RIGHT, 0, 0), pressEffect=False, command=changer, extraArgs=[1])
+                             pos=(colRight, 0, 0), pressEffect=False, command=changer, extraArgs=[1])
         value = DirectLabel(parent=row, relief=None, text='', text_scale=scale, text_fg=PURPLE,
-                            pos=((COL_LEFT + COL_RIGHT) / 2.0, 0, textZ))
+                            pos=((colLeft + colRight) / 2.0, 0, textZ))
         price = DirectLabel(parent=row, relief=None, text='', text_scale=scale, text_align=TextNode.ARight,
-                            text_fg=PRICE_GREEN, pos=(COL_PRICE, 0, textZ))
+                            text_fg=PRICE_GREEN, pos=(colPrice, 0, textZ))
         self.rows[key] = (row, value, price, left, right)
         return row
 
@@ -333,10 +340,11 @@ class PetCreatorGUI(DirectFrame):
         step = 0.09
         z = ROWS_MID + step * (len(names) - 1) / 2.0
         for i, name in enumerate(names):
+            label, left, right, level, price = TRAIT_COLS
             row = self.__makeRow(page, ('trait', i), TTLocalizer.PetCreatorTraitNames[name], z, 0.042,
-                                 lambda step, i=i: self.__changeTrait(i, step))
+                                 lambda step, i=i: self.__changeTrait(i, step), (label, left, right, price))
             self.levelLabels[i] = DirectLabel(parent=row, relief=None, text='', text_scale=0.042, text_fg=DARK,
-                                              pos=(COL_LEVEL, 0, -0.042 * 0.35))
+                                              pos=(level, 0, -0.042 * 0.35))
             z -= step
 
     def __makeNamePage(self, page):
@@ -398,7 +406,7 @@ class PetCreatorGUI(DirectFrame):
                                            (PetAccessories.BACKPACK, TTLocalizer.PetCreatorBackpack))):
             self.kindButtons[kind] = DirectButton(parent=page, relief=None, image=kindArt,
                                                   text=label, text_scale=0.062,
-                                                  text_pos=(0, -0.018), text_fg=PURPLE,
+                                                  text_pos=KIND_TEXT_POS, text_fg=PURPLE,
                                                   pos=((n - 1) * 0.37, 0, KIND_Z), pressEffect=False,
                                                   command=self.__showWearKind, extraArgs=[kind])
         for i in range(TILES_PER_PAGE):
