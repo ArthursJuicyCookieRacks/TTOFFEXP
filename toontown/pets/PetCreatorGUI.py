@@ -51,7 +51,7 @@ BOARD_X = STAGE_X + STAGE_WIDTH / 2.0 + BOARD_GAP + BOARD_WIDTH / 2.0
 PANEL_WIDTH = 0.82
 SUM_X = 0.35
 # The doodle's window, and how tall the doodle stands in it.
-PET_WINDOW_Z = 0.215
+PET_WINDOW_Z = 0.25
 PET_HEIGHT = 0.46
 # The pages: their middle, help line and the middle of their rows.
 PAGE_Z = -0.04
@@ -180,9 +180,9 @@ class PetCreatorGUI(DirectFrame):
         self.titleLabel = DirectLabel(parent=self.stage, relief=None, text=title,
                                       text_scale=0.058 if self.restyle else 0.07,
                                       text_fg=Vec4(0.36, 0.94, 0.93, 1), text_shadow=(0, 0, 0, 1),
-                                      text_font=ToontownGlobals.getSignFont(), pos=(0, 0, 0.69))
+                                      text_font=ToontownGlobals.getSignFont(), pos=(0, 0, 0.7))
         self.nameLabel = DirectLabel(parent=self.stage, relief=None, text='', text_scale=0.065,
-                                     text_fg=PURPLE, text_shadow=(1, 1, 1, 1), pos=(0, 0, 0.585))
+                                     text_fg=PURPLE, text_shadow=(1, 1, 1, 1), pos=(0, 0, 0.6))
         # The doodle's window.
         DirectFrame(parent=self.stage, relief=None, image=self.dialogGeom, image_color=PALE_TEAL,
                     image_scale=(PANEL_WIDTH, 1, 0.64), pos=(0, 0, PET_WINDOW_Z))
@@ -346,7 +346,7 @@ class PetCreatorGUI(DirectFrame):
                           ('RandomUpButton', 'RandomDownButton', 'RandomRolloverButton'))
         DirectButton(parent=page, relief=None, image=randomArt,
                      text=TTLocalizer.PetCreatorRandomName, text_scale=0.05, text_pos=(0, -0.015),
-                     text_fg=GOLD, pos=(0, 0, -0.55), pressEffect=False, command=self.__randomName)
+                     text_fg=GOLD, pos=(0, 0, -0.573), pressEffect=False, command=self.__randomName)
         self.nameWarning = DirectLabel(parent=page, relief=None, text='', text_scale=0.04, text_fg=Vec4(0.8, 0, 0, 1),
                                        text_wordwrap=28, pos=(0, 0, 0.283))
 
@@ -375,23 +375,24 @@ class PetCreatorGUI(DirectFrame):
                                   incButton_pos=(0, 0, bottom + 0.06), incButton_image3_color=GREY)
 
     def __makeWearPage(self, page):
-        kindArt = tuple(self.__centered(self.nameArt, name, 0.24) for name in
+        kindArt = tuple(self.__centered(self.nameArt, name, 0.28) for name in
                         ('SubmitUpButton', 'SubmitDownButton', 'SubmitRolloverButton'))
         self.kindButtons = {}
         for n, (kind, label) in enumerate(((PetAccessories.HAT, TTLocalizer.PetCreatorHat),
                                            (PetAccessories.GLASSES, TTLocalizer.PetCreatorGlasses),
                                            (PetAccessories.BACKPACK, TTLocalizer.PetCreatorBackpack))):
             self.kindButtons[kind] = DirectButton(parent=page, relief=None, image=kindArt,
-                                                  text=label, text_scale=0.045,
-                                                  text_pos=(0, -0.013), text_fg=PURPLE,
-                                                  pos=((n - 1) * 0.3, 0, 0.55), pressEffect=False,
+                                                  text=label, text_scale=0.054,
+                                                  text_pos=(0, -0.016), text_fg=PURPLE,
+                                                  pos=((n - 1) * 0.34, 0, 0.53), pressEffect=False,
                                                   command=self.__showWearKind, extraArgs=[kind])
         gap = 0.265
+        rowGap = 0.27
         for i in range(TILES_PER_PAGE):
             row, column = divmod(i, TILE_COLUMNS)
             tile = DirectButton(parent=page, relief=None, image=self.dialogGeom, image_scale=(0.235, 1, 0.235),
                                 image_color=TEAL, text='', text_scale=0.04, text_fg=PURPLE,
-                                pos=((column - (TILE_COLUMNS - 1) / 2.0) * gap, 0, 0.3 - row * gap),
+                                pos=((column - (TILE_COLUMNS - 1) / 2.0) * gap, 0, 0.305 - row * rowGap),
                                 pressEffect=False, command=self.__pickTile, extraArgs=[i])
             tile.thumb = tile.attachNewNode('thumb')
             tile.thumb.setZ(0.016)
@@ -402,17 +403,17 @@ class PetCreatorGUI(DirectFrame):
                     self.matArt.find('**/tt_t_gui_mat_shuffleArrowDown'),
                     self.matArt.find('**/tt_t_gui_mat_shuffleArrowUp'),
                     self.matArt.find('**/tt_t_gui_mat_shuffleArrowDisabled'))
-        self.pageLeft = DirectButton(parent=page, relief=None, image=arrowArt, image_scale=(0.55, 1, 0.55),
-                                     pos=(-0.2, 0, -0.48), pressEffect=False, command=self.__turnWearPage,
+        self.pageLeft = DirectButton(parent=page, relief=None, image=arrowArt, image_scale=(0.8, 1, 0.8),
+                                     pos=(-0.25, 0, -0.5), pressEffect=False, command=self.__turnWearPage,
                                      extraArgs=[-1])
-        self.pageRight = DirectButton(parent=page, relief=None, image=arrowArt, image_scale=(-0.55, 1, 0.55),
-                                      pos=(0.2, 0, -0.48), pressEffect=False, command=self.__turnWearPage,
+        self.pageRight = DirectButton(parent=page, relief=None, image=arrowArt, image_scale=(-0.8, 1, 0.8),
+                                      pos=(0.25, 0, -0.5), pressEffect=False, command=self.__turnWearPage,
                                       extraArgs=[1])
-        self.pageLabel = DirectLabel(parent=page, relief=None, text='', text_scale=0.05, text_fg=PURPLE,
-                                     pos=(0, 0, -0.495))
-        help = TTLocalizer.PetCreatorWearHelpRestyle if self.restyle else TTLocalizer.PetCreatorWearHelp
-        DirectLabel(parent=page, relief=None, text=help, text_scale=0.042,
-                    text_fg=DARK, pos=(0, 0, -0.6))
+        self.pageLabel = DirectLabel(parent=page, relief=None, text='', text_scale=0.072, text_fg=PURPLE,
+                                     pos=(0, 0, -0.524))
+        if self.restyle:
+            DirectLabel(parent=page, relief=None, text=TTLocalizer.PetCreatorWearHelpRestyle, text_scale=0.04,
+                        text_fg=DARK, pos=(0, 0, -0.62))
 
     # The doodle.
 
