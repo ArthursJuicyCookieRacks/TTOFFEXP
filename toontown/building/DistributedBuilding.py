@@ -622,24 +622,26 @@ class DistributedBuilding(DistributedObject.DistributedObject):
         # Street lots stretch or squeeze the whole field office sideways, by a
         # different amount on each lot. The sign and the star keep their true
         # shape on every lot: they sit side by side, centred over the door,
-        # and shrink together only where the front is too narrow for them.
+        # and the sign shrinks where the front is too narrow for both.
         netScale = signOrigin.getScale(render)
         squeeze = netScale[0] / netScale[2] if netScale[2] > 0.001 else 1.0
         if squeeze < 0.001:
             return
         half = self.FieldOfficeSignHalfWidth
         radius = self.FieldOfficeStarSize / 2.0
-        width = 2 * half + self.FieldOfficeStarGap + 2 * radius
-        fit = min(1.0, 2 * self.FieldOfficeStarRightLimit * squeeze / width)
-        left = -width * fit / 2.0
+        starWidth = self.FieldOfficeStarGap + 2 * radius
+        room = 2 * self.FieldOfficeStarRightLimit * squeeze
+        # The star is always full size; only the sign shrinks to make room.
+        fit = max(0.4, min(1.0, (room - starWidth) / (2 * half)))
+        left = -(2 * half * fit + starWidth) / 2.0
         signScale = signNP.getScale(signOrigin)
         signNP.setScale(signOrigin, signScale[0] * fit / squeeze, signScale[1], signScale[2] * fit)
         signNP.setX(signOrigin, (left + half * fit) / squeeze)
-        starX = left + (2 * half + self.FieldOfficeStarGap + radius) * fit
+        starX = left + 2 * half * fit + self.FieldOfficeStarGap + radius
         signZ = signNP.getZ(signOrigin)
-        starNP.setScale(fit / squeeze, 1.0, fit)
+        starNP.setScale(1.0 / squeeze, 1.0, 1.0)
         starNP.setX(starX / squeeze)
-        starNP.setZ(signZ + self.FieldOfficeStarZ * fit)
+        starNP.setZ(signZ + self.FieldOfficeStarZ)
         starNP.setPythonTag('foSignLayout', (round(squeeze, 3), round(fit, 3)))
 
     @classmethod
