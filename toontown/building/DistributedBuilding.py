@@ -619,6 +619,7 @@ class DistributedBuilding(DistributedObject.DistributedObject):
     FieldOfficeStarRightLimit = 8.0
     FieldOfficeNarrowStarScale = 0.85
     FieldOfficeNarrowStarZ = -0.3
+    FieldOfficeNarrowShift = 0.6
 
     def layOutFieldOfficeSign(self, signOrigin, signNP, starNP):
         # Street lots stretch or squeeze the whole field office sideways, by a
@@ -651,6 +652,10 @@ class DistributedBuilding(DistributedObject.DistributedObject):
             starNP.setScale(small / squeeze, 1.0, small)
             starNP.setX((starX - radius * (1 - small)) / squeeze)
             starNP.setZ(signZ + self.FieldOfficeNarrowStarZ)
+            # ...and the sign and star sit a little further right.
+            shift = self.FieldOfficeNarrowShift / squeeze
+            starNP.setX(starNP.getX() + shift)
+            signNP.setX(signOrigin, signNP.getX(signOrigin) + shift)
         starNP.setPythonTag('foSignLayout', (round(squeeze, 3), round(fit, 3)))
 
     @classmethod
