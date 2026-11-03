@@ -1208,7 +1208,7 @@ def scenarioFieldOfficeStars():
         shotFrom('fo-star-%s-level%d-close.png' % (track, level), render.getRelativePoint(sign, Point3(4, -20, -4)),
                  render.getRelativePoint(sign, Point3(3, 0, 0)))
         base.aspect2d.show()
-        log('field office %s level %d on block %d, office scale %s, star scale %s' % (track, level, block, office.getScale(render), star.getScale(render)))
+        log('field office %s level %d on block %d, lot squeeze and sign shift %s' % (track, level, block, star.getPythonTag('foSignLayout')))
 
 
 def playMoleField(field, beaten, timeout=900):
