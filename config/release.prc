@@ -3,8 +3,9 @@
 # game's files and mounts the phase multifiles. Keep it in step with dev.prc.
 
 # Client settings
-window-title Toontown
-server-version TT-OFFEXP-1.0
+window-title Toontown - The Offline Experience
+server-version TT-OFFEXP-dev
+# A build sets the real version (config/version.prc, from tools/offline/version.py).
 sync-video #f
 want-dev #f
 preload-avatars #t
