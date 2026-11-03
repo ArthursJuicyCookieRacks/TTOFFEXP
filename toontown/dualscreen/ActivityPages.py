@@ -459,7 +459,7 @@ class ActivityPages:
             self.borrow(card.jpSign, holder)
         self.fitInto(holder, card, z=-0.06, height=1.5)
         # The X on the card's top right corner.
-        self.closeX(overlay, (0.52, 0, 0.52), self.closeBingo, scale=0.9)
+        self.closeX(overlay, (0.62, 0, 0.64), self.closeBingo, scale=1.5)
         for cell in card.cellGuiList:
             self.tap(cell, pressButton, cell)
         self.tap(card.bingo, pressButton, card.bingo)
