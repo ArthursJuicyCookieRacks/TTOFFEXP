@@ -105,6 +105,9 @@ def canOpen():
     place = currentPlace()
     if place is None or not hasattr(place, 'fsm') or getattr(localAvatar, 'isDisguised', 0):
         return False
+    # A game that wants no buttons (the Bossbot field office's) says so.
+    if getattr(localAvatar, 'gameUiLocked', False):
+        return False
     state = place.fsm.getCurrentState()
     return state is not None and state.getName() == 'walk' and state.isTransitionDefined('stopped')
 

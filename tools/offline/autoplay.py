@@ -965,6 +965,24 @@ def playCogdoCrane(dist):
     base.screenshot(os.path.join(shots, 'cash-90-finish.png'), defaultFilename=0)
 
 
+def startVideoGrab():
+    # Frames for a video (AUTOPLAY_VIDEO), about ten a second; once only.
+    video = os.environ.get('AUTOPLAY_VIDEO')
+    if not video or taskMgr.hasTaskNamed('autoplayVideo'):
+        return
+    os.makedirs(video, exist_ok=True)
+    frames = [0, 0.0]
+
+    def grab(task):
+        now = time.time()
+        if now - frames[1] >= 0.1:
+            frames[1] = now
+            base.screenshot(os.path.join(video, 'f%05d.jpg' % frames[0]), defaultFilename=0)
+            frames[0] += 1
+        return task.cont
+    taskMgr.add(grab, 'autoplayVideo', priority=60)
+
+
 def playCogdoBoardroom(dist):
     # The Bossbot field office: slides the length of the table as a player
     # would, steering round piles to the memos, hopping the pencils, with
@@ -973,19 +991,8 @@ def playCogdoBoardroom(dist):
     from toontown.cogdominium import CogdoBoardroomLayout as Layout
     shots = os.environ.get('AUTOPLAY_SHOTS', '/tmp')
     os.makedirs(shots, exist_ok=True)
+    startVideoGrab()
     video = os.environ.get('AUTOPLAY_VIDEO')
-    if video:
-        os.makedirs(video, exist_ok=True)
-        frames = [0, 0.0]
-
-        def grab(task):
-            now = time.time()
-            if now - frames[1] >= 0.1:
-                frames[1] = now
-                base.screenshot(os.path.join(video, 'f%05d.jpg' % frames[0]), defaultFilename=0)
-                frames[0] += 1
-            return task.cont
-        taskMgr.add(grab, 'autoplayVideo', priority=60)
     base.screenshot(os.path.join(shots, 'boss-10-start.png'), defaultFilename=0)
     layout = dist.layout
     tokens = {}
@@ -1001,6 +1008,27 @@ def playCogdoBoardroom(dist):
     lastLog = 0
     while cogdoGameState(dist) == 'Game':
         pos = localAvatar.getPos(render)
+        if not idle and getattr(dist, 'golfLeaving', False) and dist.golf is not None:
+            # Time is up: walk into the elevator in the back wall.
+            if localAvatar.doId in dist.leftGolf:
+                for name in list(tokens):
+                    press(name, False)
+            else:
+                door = render.getRelativePoint(dist.golf.toonElevator, Point3(0, 1.0, 0))
+                d = door - pos
+                want = -math.degrees(math.atan2(d[0], d[1]))
+                diff = (want - localAvatar.getH(render) + 180) % 360 - 180
+                press('turnLeft', diff > 8)
+                press('turnRight', diff < -8)
+                press('forward', abs(diff) < 30)
+            yield sleep(0.03)
+            continue
+        if not idle and getattr(dist, 'phase', None) == 'golf' and dist.golf is not None and dist.golfTime() < 0:
+            # Riding over and the golf office's intro.
+            for name in list(tokens):
+                press(name, False)
+            yield sleep(0.05)
+            continue
         if not idle and getattr(dist, 'phase', None) == 'golf' and dist.golf is not None:
             # The golf office: aim (Left/Right) where a cog will be, hold
             # Jump to the power wanted and let go, as a player does.
@@ -1061,7 +1089,10 @@ def playCogdoBoardroom(dist):
                     goal = min(free, key=lambda g: abs(g - pos[0])) if free else goal
             press('turnLeft', goal < pos[0] - 0.6)
             press('turnRight', goal > pos[0] + 0.6)
-            hop = any(ob.kind == Layout.PENCIL and 0.8 < ob.y - pos[1] < 2.6 for ob in layout.obstacles)
+            # Off the table early enough to be over the pencil when there
+            # (running into one is a hit).
+            lead = 1.6 + max(0.0, dist.slideSpeed) * 0.22
+            hop = any(ob.kind == Layout.PENCIL and 0.5 < ob.y - pos[1] < lead for ob in layout.obstacles)
             press('jump', hop)
             press('forward', not ahead)
         else:
@@ -1082,7 +1113,9 @@ def playCogdoBoardroom(dist):
     log('boardroom over: banked %d memos, laff %d/%d' % (dist.banked, localAvatar.getHp(), localAvatar.getMaxHp()))
     yield sleep(4 if video else 1)
     base.screenshot(os.path.join(shots, 'boss-90-finish.png'), defaultFilename=0)
-    taskMgr.remove('autoplayVideo')
+    if not os.environ.get('AUTOPLAY_VIDEO_INTRO'):
+        # (With the intro wanted, the video goes on through the battle.)
+        taskMgr.remove('autoplayVideo')
 
 
 def scenarioCogdo(track='s'):
@@ -1167,6 +1200,9 @@ def scenarioCogdo(track='s'):
             nextReport = time.time() + 15
             log('field office state %s, floor %d, place %s, game %s' % (
                 state, interior.currentFloor, placeState(), game and cogdoGameState(game)))
+        if game and game.__class__.__name__ == 'DistCogdoBoardroomGame' and os.environ.get('AUTOPLAY_VIDEO_INTRO'):
+            # The video from the ride up and the intro on.
+            startVideoGrab()
         if os.environ.get('AUTOPLAY_INTRO_SHOTS') and not played and (game is None or cogdoGameState(game) in ('Loaded', 'Visible', 'Intro')) \
                 and time.time() > introShot[1] and introShot[0] < 16:
             # The way in and the intro, every couple of seconds.

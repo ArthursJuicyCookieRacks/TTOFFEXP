@@ -288,9 +288,14 @@ class CogdoBoardroomRoom:
         self.entranceElevator.reparentTo(self.root)
         self.entranceElevator.setPosHpr(*Consts.ElevatorPosHpr)
         self.entranceElevator.stash()
-        # The exit's doors stand open: the way out is past the chairman.
-        for name in ('**/left_door', '**/left-door', '**/right_door', '**/right-door'):
-            self.exitElevator.findAllMatches(name).stash()
+        # The exit's doors stand open (the way out is past the chairman) and
+        # close on the toons when they all are in, for the ride to the golf
+        # office.
+        self.exitLeftDoor = self.exitElevator.find('**/left_door')
+        self.exitRightDoor = self.exitElevator.find('**/right_door')
+        for door in (self.exitLeftDoor, self.exitRightDoor):
+            if not door.isEmpty():
+                door.setPos(0, 0, 0)
 
     def _loadCollisions(self):
         walls = CollisionNode('tableWalls')

@@ -45,9 +45,10 @@ class DistCogdoBoardroomGameAI(DistCogdoGameAI):
         self.barrelsHome = Consts.NumBarrels
         self.barrelsLost = 0
         self.lastSwing = {}
+        self.leftGolf = set()
 
     def delete(self):
-        for name in ('game-over', 'boss', 'minion', 'oil', 'golf-over', 'golf-spawn'):
+        for name in ('game-over', 'boss', 'minion', 'oil', 'golf-over', 'golf-spawn', 'golf-leave'):
             taskMgr.remove(self.uniqueName(name))
         taskMgr.removeTasksMatching(self.uniqueName('land') + '*')
         taskMgr.removeTasksMatching(self.uniqueName('golfcog') + '*')
@@ -86,7 +87,7 @@ class DistCogdoBoardroomGameAI(DistCogdoGameAI):
         return task.done
 
     def endGame(self):
-        for name in ('game-over', 'boss', 'minion', 'oil', 'golf-over', 'golf-spawn'):
+        for name in ('game-over', 'boss', 'minion', 'oil', 'golf-over', 'golf-spawn', 'golf-leave'):
             taskMgr.remove(self.uniqueName(name))
         taskMgr.removeTasksMatching(self.uniqueName('golfcog') + '*')
         taskMgr.removeTasksMatching(self.uniqueName('golfball') + '*')
@@ -105,13 +106,42 @@ class DistCogdoBoardroomGameAI(DistCogdoGameAI):
             taskMgr.remove(self.uniqueName(name))
         for avId in self.stillRunning():
             self.carried.pop(avId, None)
-        self.golfStart = globalClock.getRealTime()
+        # The elevator ride over and the golf office's intro come first; the
+        # golf's clock starts after them.
+        self.golfStart = globalClock.getRealTime() + Consts.GolfLeadIn
         self.sendUpdate('startGolf', [self.getNetworkTime()])
-        taskMgr.doMethodLater(Consts.GolfDuration, self.__golfOver, self.uniqueName('golf-over'))
-        taskMgr.doMethodLater(4.0, self.__golfSpawn, self.uniqueName('golf-spawn'))
+        taskMgr.doMethodLater(Consts.GolfLeadIn + Consts.GolfDuration, self.__golfOver, self.uniqueName('golf-over'))
+        taskMgr.doMethodLater(Consts.GolfLeadIn + 4.0, self.__golfSpawn, self.uniqueName('golf-spawn'))
 
     def __golfOver(self, task):
-        self.finishGame()
+        # Time is up: the cogs still about go, the toons' elevator opens,
+        # and the toons walk into it themselves (as into the other field
+        # offices' exits) to ride on up to the executive suite.
+        if self.finished or self.phase != 'golf':
+            return task.done
+        self.phase = 'leave'
+        self.leftGolf = set()
+        taskMgr.remove(self.uniqueName('golf-spawn'))
+        taskMgr.removeTasksMatching(self.uniqueName('golfcog') + '*')
+        taskMgr.removeTasksMatching(self.uniqueName('golfball') + '*')
+        self.sendUpdate('golfOver', [self.getNetworkTime()])
+        taskMgr.doMethodLater(Consts.GolfLeaveTime, self.__leaveOver, self.uniqueName('golf-leave'))
+        return task.done
+
+    def requestGolfLeave(self):
+        avId = self.getSenderToon() if hasattr(self, 'getSenderToon') else self.air.getAvatarIdFromSender()
+        if self.phase != 'leave' or self.finished or avId not in self.toons or avId in self.leftGolf:
+            return
+        self.leftGolf.add(avId)
+        self.sendUpdate('toonLeftGolf', [avId])
+        if not [t for t in self.getActiveToons() if t not in self.leftGolf]:
+            # All in: the doors close on them, and up they go.
+            taskMgr.remove(self.uniqueName('golf-leave'))
+            taskMgr.doMethodLater(Consts.GolfDoorTime + 0.5, self.__leaveOver, self.uniqueName('golf-leave'))
+
+    def __leaveOver(self, task):
+        if not self.finished:
+            self.finishGame()
         return task.done
 
     def golfTime(self):
@@ -170,6 +200,8 @@ class DistCogdoBoardroomGameAI(DistCogdoGameAI):
         if self.phase != 'golf' or self.finished or avId not in self.toons or avId in self.sadToons:
             return
         now = self.golfTime()
+        if now < 0:
+            return
         if now - self.lastSwing.get(avId, -99) < Consts.SwingCooldown:
             return
         self.lastSwing[avId] = now

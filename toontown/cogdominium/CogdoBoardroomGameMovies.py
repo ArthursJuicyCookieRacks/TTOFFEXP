@@ -68,6 +68,10 @@ class CogdoBoardroomGameIntro(CogdoGameMovie):
 
     def load(self, root):
         CogdoGameMovie.load(self)
+        self._loadHeads()
+        self._makeIval()
+
+    def _loadHeads(self):
         self.toonDNA = ToonDNA.ToonDNA()
         self.toonDNA.newToonFromProperties('dss', 'ss', 'm', 'm', 2, 0, 2, 2, 1, 8, 1, 8, 1, 14)
         self.toonHead = Toon.Toon()
@@ -100,6 +104,18 @@ class CogdoBoardroomGameIntro(CogdoGameMovie):
         # no cogdo audio manager of its own).
         self._cogDialogueSfx = loader.loadSfx('phase_3.5/audio/dial/COG_VO_statement.ogg')
         self._toonDialogueSfx = loader.loadSfx('phase_3.5/audio/dial/AV_dog_long.ogg')
+
+    def _shot(self, duration, pos, target, startPos=None, startTarget=None):
+        pos = Point3(*pos)
+        target = Point3(*target)
+        ival = LerpPosHprInterval(camera, duration, pos, _lookHpr(pos, target), blendType='easeInOut')
+        if startPos is None:
+            return ival
+        startPos = Point3(*startPos)
+        startHpr = _lookHpr(startPos, Point3(*startTarget))
+        return Sequence(Func(camera.setPosHpr, startPos, startHpr), ival)
+
+    def _makeIval(self):
         dialogue = TTLocalizer.BoardroomIntroMovieDialogue
         page = IntroDurationSeconds / len(dialogue)
         chairman = self._game.chairman if self._game else None
@@ -158,3 +174,63 @@ class CogdoBoardroomGameIntro(CogdoGameMovie):
         self.cogHead.delete()
         del self.cogHead
         self.cogClipPlane.removeNode()
+
+
+class CogdoBoardroomGolfIntro(CogdoBoardroomGameIntro):
+    """The golf office's intro, after the ride over: the Big Cheese on the
+    intercom, then the Toon Resistance shows the barrels, the cogs'
+    elevators and the tee, a page at a time, with the game's panel up as in
+    the other field offices' intros."""
+
+    def load(self, root):
+        CogdoGameMovie.load(self)
+        self._loadHeads()
+        from .CogdoGameRulesPanel import CogdoGameRulesPanel
+        self._panel = CogdoGameRulesPanel('BoardroomGolfPanel', TTLocalizer.BoardroomGolfTitle, '',
+                                          'boardroomGolfPanelDone', timeout=Consts.GolfIntroDuration + 2)
+        self._panel.load()
+        self._panel.playButton.hide()
+        self._root = root
+        self._makeIval()
+
+    def play(self, elapsedTime=0.0):
+        self._panel.enter()
+        CogdoGameMovie.play(self, elapsedTime)
+
+    def _makeIval(self):
+        dialogue = TTLocalizer.BoardroomGolfIntroDialogue
+        page = Consts.GolfIntroDuration / len(dialogue)
+        ox, oy, oz = Consts.GolfOrigin
+        game = self._game
+        index = game.startIndex(base.localAvatar.doId) if game else 0
+        tx, ty = Consts.GolfTees[index % len(Consts.GolfTees)]
+
+        def at(x, y, z):
+            return (ox + x, oy + y, oz + z)
+
+        px, py = Consts.BarrelPile
+        fx, fy, fh = Consts.GolfElevators[0]
+        lx, ly, lh = Consts.GolfElevators[1]
+        rx, ry, rh = Consts.GolfElevators[2]
+        self._ival = Sequence(
+            Func(camera.wrtReparentTo, render),
+            # The laff barrels, piled where the aisles cross.
+            Func(self.displayLine, 'cog', self._getRandomLine(dialogue[0])),
+            self._shot(page, at(px + 9, py - 14, 9), at(px, py, 2), at(px - 12, py - 22, 14), at(px, py, 2)),
+            # The cogs' three elevators: in front, left and right.
+            Func(self.displayLine, 'toon', self._getRandomLine(dialogue[1])),
+            Sequence(self._shot(page / 3.0, at(fx, py, 9), at(fx, fy, 5), at(px + 8, py - 6, 9), at(fx, fy, 5)),
+                     self._shot(page / 3.0, at(lx + 22, ly - 4, 9), at(lx, ly, 5)),
+                     self._shot(page / 3.0, at(rx - 22, ry - 4, 9), at(rx, ry, 5))),
+            # Back to the tee.
+            Func(self.displayLine, 'toon', self._getRandomLine(dialogue[2])),
+            self._shot(page, at(tx + 5, ty + 6, 5), at(tx, ty, 2), at(rx - 30, ry - 18, 14), at(tx, ty, 2)),
+            # And off it goes: the golf camera's view from behind the tee.
+            Func(self.displayLine, 'cog', self._getRandomLine(dialogue[3])),
+            self._shot(page, at(tx, ty - Consts.GolfCamBack, Consts.GolfCamUp), at(tx, ty + Consts.GolfCamLook, 1)))
+
+    def unload(self):
+        self._panel.exit()
+        self._panel.unload()
+        self._panel = None
+        CogdoBoardroomGameIntro.unload(self)

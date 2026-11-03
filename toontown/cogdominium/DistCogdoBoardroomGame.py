@@ -19,6 +19,8 @@ from toontown.cogdominium.CogdoBoardroomGolf import CogdoBoardroomGolf
 from toontown.cogdominium.CogdoBoardroomDecor import CogdoBoardroomDecor
 from otp.nametag.NametagConstants import CFSpeech, CFTimeout
 from toontown.cogdominium import CogdoUtil
+from toontown.building.ElevatorConstants import ElevatorPoints, ELEVATOR_NORMAL
+from toontown.building import ElevatorUtils
 from toontown.suit import Suit, SuitDNA
 from toontown.toonbase import ToontownTimer
 from toontown.toonbase import TTLocalizer as TTL
@@ -61,6 +63,14 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         self.golfStartTime = None
         self.barrelsHome = Consts.NumBarrels
         self.clubs = {}
+        self._elevatorTracks = {}
+        self._golfArrival = None
+        self._golfIntro = None
+        self._camInElevator = False
+        self.golfLeaving = False
+        self.leftGolf = set()
+        self.leftOrder = []
+        self._leaveLabel = None
 
     def getTitle(self):
         return TTL.BoardroomGameTitle
@@ -113,11 +123,18 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         self.landSfx = loader.loadSfx('phase_5/audio/sfx/AA_drop_sandbag.ogg')
         self.oilSfx = loader.loadSfx('phase_9/audio/sfx/CHQ_FACT_stomper_small.ogg')
         self.exitSfx = loader.loadSfx('phase_5/audio/sfx/elevator_door_open.ogg')
+        # The ride to the golf office, as between the other field offices'
+        # floors.
+        self.openSfx = loader.loadSfx('phase_5/audio/sfx/elevator_door_open.ogg')
+        self.closeSfx = loader.loadSfx('phase_5/audio/sfx/elevator_door_close.ogg')
+        self.elevatorMusic = loader.loadMusic('phase_7/audio/bgm/tt_elevator.ogg')
 
     def exitLoaded(self):
         for ival in self.ivals:
             ival.pause()
         self.ivals = []
+        self._stopGolfArrival()
+        self.elevatorMusic.stop()
         if self._introMovie:
             self._introMovie.end()
             self._introMovie.unload()
@@ -259,8 +276,16 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         DistCogdoGame.enterIntro(self, CogdoBoardroomGameMovies.IntroDurationSeconds)
         self._introMovie = CogdoBoardroomGameMovies.CogdoBoardroomGameIntro(self.doId, self)
         self._introMovie.load(self.sceneRoot)
+        self._farView()
         self._introMovie.play()
         base.playMusic(self.music, looping=1, volume=0.7)
+
+    def _farView(self):
+        # The table is longer than the usual 400 feet the camera sees: the
+        # far end showed as a grey wall (in the intro's long shots too).
+        if not getattr(self, '_defaultFar', None):
+            self._defaultFar = base.camLens.getFar()
+        base.camLens.setFar(Consts.TableEnd + 150)
 
     def exitIntro(self):
         if self._introMovie:
@@ -286,8 +311,7 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         self.launched = set()
         self._task = taskMgr.add(self._update, self.uniqueName('update'), priority=35)
         place = base.cr.playGame.getPlace()
-        if place and place.fsm.getCurrentState().getName() != 'walk':
-            place.fsm.request('walk')
+        self._toWalk(place)
         # The walk controls stay on for the jump, the floors and the walls;
         # the slide below does the moving.
         base.localAvatar.stopTrackAnimToSpeed()
@@ -297,8 +321,7 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         taskMgr.add(self._cameraTask, self.uniqueName('camera'), sort=40)
         # The table is longer than the usual 400 feet the camera sees: the
         # far end showed as a grey wall.
-        self._defaultFar = base.camLens.getFar()
-        base.camLens.setFar(Consts.TableEnd + 150)
+        self._farView()
         base.localAvatar.setSystemMessage(0, TTL.BoardroomSlideHint)
 
     def startIndex(self, avId):
@@ -316,6 +339,44 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         toon = base.localAvatar
         toon.setPosHpr(render, self.startPos(toon.doId), PM.VBase3(0, 0, 0))
         toon.sendCurrentPosition()
+
+    def _lockUi(self):
+        # No Shticker Book, map, gags, friends, My Looks or off-screen
+        # nametags while on the slide or in the golf office, as in the
+        # other field offices' games. The walk state (which the slide needs
+        # for its jump and collisions) turns them all back on whenever it
+        # is entered, so this runs after each time it is.
+        toon = base.localAvatar
+        if not getattr(self, '_uiLocked', False):
+            self._uiLocked = True
+            toon.book.obscureButton(1)
+            toon.obscureFriendsListButton(1)
+            base.setCellsAvailable(base.bottomCells + base.leftCells + base.rightCells, 0)
+        toon.gameUiLocked = True
+        toon.book.hideButton()
+        for page in (toon.questPage, toon.invPage):
+            page.ignoreOnscreenHooks()
+        toon.questPage.hideQuestsOnscreen()
+        toon.invPage.hideInventoryOnscreen()
+        # (Hiding the map shows its button again: hide it, then the button.)
+        toon.questMap.hide()
+        toon.questMap.ignoreOnscreenHooks()
+        toon.endAllowPies()
+
+    def _unlockUi(self):
+        if not getattr(self, '_uiLocked', False):
+            return
+        self._uiLocked = False
+        toon = base.localAvatar
+        toon.gameUiLocked = False
+        toon.book.obscureButton(0)
+        toon.obscureFriendsListButton(-1)
+        base.setCellsAvailable(base.bottomCells + base.leftCells + base.rightCells, 1)
+
+    def _toWalk(self, place):
+        if place and place.fsm.getCurrentState().getName() != 'walk':
+            place.fsm.request('walk')
+        self._lockUi()
 
     def _holdControls(self, jump=None):
         # No walking or turning: only the jump.
@@ -335,7 +396,25 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         self.timer.countdown(timeLeft, self.timerExpired)
         self.timer.unstash()
 
+    def _stopGolfArrival(self):
+        if getattr(self, '_leaveLabel', None):
+            self._leaveLabel.destroy()
+            self._leaveLabel = None
+        if self._golfArrival is not None:
+            self._golfArrival.pause()
+            self._golfArrival = None
+        self._endGolfIntro()
+        for track in self._elevatorTracks.values():
+            track.pause()
+        self._elevatorTracks = {}
+        if self._camInElevator:
+            self._camInElevator = False
+            camera.wrtReparentTo(render)
+            self._fixFov()
+
     def exitGame(self):
+        self._stopGolfArrival()
+        self.elevatorMusic.stop()
         taskMgr.remove(self.uniqueName('update'))
         taskMgr.remove(self.uniqueName('golf'))
         if self.golf is not None:
@@ -360,6 +439,7 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         if getattr(self, '_defaultFar', None):
             base.camLens.setFar(self._defaultFar)
             self._defaultFar = None
+        self._unlockUi()
         DistCogdoGame.exitGame(self)
 
     def enterFinish(self):
@@ -448,14 +528,14 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
 
     def _cameraTask(self, task):
         toon = base.localAvatar
+        if getattr(self, '_camInElevator', False):
+            # The elevator ride and the golf intro move the camera.
+            return Task.cont
         if self.phase == 'golf':
             if not toon.isEmpty():
                 self._golfCamera(toon, min(globalClock.getDt(), 0.1))
         elif not toon.isEmpty() and toon.doId not in self.exited:
             self._followCamera(toon, min(globalClock.getDt(), 0.1))
-        elif not toon.isEmpty() and getattr(self, '_exitCam', None):
-            camera.setPos(render, self._exitCam[0])
-            camera.lookAt(self._exitCam[1])
         return Task.cont
 
     def _followCamera(self, toon, dt):
@@ -548,6 +628,14 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
             # Never off the table: whatever pushed it over the edge, it is
             # back on top.
             new.setZ(Consts.TableTop)
+        if now >= self.crashUntil:
+            back = self._pencilInWay(new)
+            if back is not None:
+                # Into a pencil without hopping it: as good as a pile. Stopped
+                # dead short of it, hurt, and it still has to be hopped.
+                new.setY(back)
+                toon.setFluidPos(render, new)
+                self._crash(toon, now)
         toon.setFluidPos(render, new)
         self._launchRamps(toon, new)
         lean = -self.steerVel / Consts.SteerSpeed * 18.0
@@ -594,8 +682,7 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
 
         def landed():
             self.slideState = 'off'
-            if place and place.fsm.getCurrentState().getName() != 'walk':
-                place.fsm.request('walk')
+            self._toWalk(place)
             toon.stopTrackAnimToSpeed()
             toon.controlManager.setSpeeds(OTPGlobals.ToonForwardSpeed, OTPGlobals.ToonJumpForce,
                                           OTPGlobals.ToonReverseSpeed, OTPGlobals.ToonRotateSpeed)
@@ -621,7 +708,7 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         geom = toon.getGeomNode()
         if getattr(toon, '_slideMode', None) == 'slide':
             geom.setR(-self.steerVel / Consts.SteerSpeed * 14.0)
-            geom.setZ(0.05 * math.sin(now * 9.0))
+            geom.setZ(Consts.SlideLift + 0.05 * math.sin(now * 9.0))
             try:
                 toon.setPlayRate(Consts.PaddleRate[0] + (Consts.PaddleRate[1] - Consts.PaddleRate[0]) * boost, 'swim', partName='torso')
                 if 'head' in toon.getPartNames():
@@ -681,12 +768,26 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         self.ivals.append(ival)
 
     def _slidePose(self, toon):
+        # On its belly: the legs lie out behind (slip-forward), the arms
+        # paddle (swim). In the water the stroke goes down below the body,
+        # into the table: the chest is lifted (as a belly slider holds its
+        # head up), the stroke is mixed a little with the lying arms to keep
+        # it shallow, and the toon rides a touch above the cloth, so the
+        # hands brush the table and never go into it.
         toon._slideMode = 'slide'
         toon.stop()
         toon.pose('slip-forward', Consts.SlideLieFrame, partName='legs')
-        for part in ('torso', 'head'):
-            if part in toon.getPartNames() and toon.getAnimControl('swim', part) is not None:
-                toon.loop('swim', partName=part)
+        for torso in toon.findAllMatches('**/__Actor_torso'):
+            torso.setP(Consts.SlideChestUp)
+        if 'torso' in toon.getPartNames() and toon.getAnimControl('swim', 'torso') is not None:
+            toon.enableBlend(partName='torso')
+            toon.setControlEffect('swim', Consts.SlideStroke, partName='torso')
+            toon.setControlEffect('slip-forward', 1.0 - Consts.SlideStroke, partName='torso')
+            toon.pose('slip-forward', Consts.SlideLieFrame, partName='torso')
+            toon.loop('swim', partName='torso')
+        if 'head' in toon.getPartNames() and toon.getAnimControl('swim', 'head') is not None:
+            toon.loop('swim', partName='head')
+        toon.getGeomNode().setZ(Consts.SlideLift)
 
     def _isSliding(self, toon):
         return (getattr(toon, '_slideMode', None) == 'slide' and toon.getCurrentAnim(partName='legs') is None
@@ -709,6 +810,25 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         geom = toon.getGeomNode()
         geom.setHpr(0, 0, 0)
         geom.setZ(0)
+        for torso in toon.findAllMatches('**/__Actor_torso'):
+            torso.setP(0)
+
+    def _pencilInWay(self, pos):
+        # Where to put a toon that has run into a pencil lying across the
+        # table (low enough to touch it: not hopping over), or None.
+        r = Consts.PencilHeight / 2.0
+        if pos[2] > Consts.TableTop + Consts.PencilHeight * 0.8:
+            return None
+        for ob in self._pencils():
+            line = ob.y + (pos[0] - ob.x) * math.tan(math.radians(ob.angle))
+            if line - r - 0.9 <= pos[1] <= line + r * 0.5:
+                return line - r - 1.0
+        return None
+
+    def _pencils(self):
+        if getattr(self, '_pencilList', None) is None:
+            self._pencilList = [ob for ob in self.layout.obstacles if ob.kind == Layout.PENCIL]
+        return self._pencilList
 
     def _crash(self, toon, now):
         # Ran into a pile (or a pencil it didn't hop): stopped dead, hurt,
@@ -818,7 +938,8 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         self.invulnerableUntil = 0
 
     def _localExited(self):
-        # Into the exit elevator, to wait there for the others.
+        # Into the exit elevator, to wait there for the others, seen from
+        # inside it as in the other field offices' elevators.
         toon = base.localAvatar
         self._endPowerUps()
         base.playSfx(self.exitSfx)
@@ -826,17 +947,47 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         if place and place.fsm.getCurrentState().getName() == 'walk':
             place.fsm.request('stopped')
         self._toElevator(toon)
-        x, y, z = Consts.ExitPosHpr[:3]
-        self._exitCam = (PM.Point3(x + 8, y - 26, 12), PM.Point3(x, y, 4))
+        self._cameraInElevator(self.room.exitElevator)
 
-    def _toElevator(self, toon):
-        n = len(self.exited)
-        x, y, z = Consts.ExitPosHpr[:3]
-        spot = PM.Point3(x + ((n - 1) % 4 - 1.5) * 2.2, y + 3.0 + ((n - 1) // 4) * 2.0, 0)
-        toon.setPos(render, spot)
-        toon.setH(render, 180)
+    def _elevatorSpot(self, toon):
+        # A toon's spot in the exit elevator: in the order they got there.
+        order = [avId for avId in self.getToonIds() if avId in self.exited]
+        i = order.index(toon.doId) if toon.doId in order else len(order)
+        p = ElevatorPoints[i % len(ElevatorPoints)]
+        return render.getRelativePoint(self.room.exitElevator, PM.Point3(p[0], p[1], 0))
+
+    def _toElevator(self, toon, run=True):
+        # The toon runs in through the doors to its spot, and turns round
+        # to face out.
+        spot = self._elevatorSpot(toon)
+        old = self._elevatorTracks.pop(toon.doId, None)
+        if old is not None:
+            old.finish()
+        if not run or toon.isEmpty():
+            toon.setPos(render, spot)
+            toon.setH(render, 180)
+            toon.loop('neutral')
+            if toon.isLocal():
+                toon.sendCurrentPosition()
+            return
+        here = toon.getPos(render)
+        d = (spot - here).length()
+        toon.headsUp(render, spot)
+        track = Sequence(Func(toon.loop, 'run'),
+                         LerpPosInterval(toon, max(0.3, min(1.2, d / 14.0)), spot, other=render),
+                         LerpHprInterval(toon, 0.35, PM.VBase3(180, 0, 0), other=render),
+                         Func(toon.loop, 'neutral'))
         if toon.isLocal():
-            toon.sendCurrentPosition()
+            track.append(Func(toon.sendCurrentPosition))
+        self._elevatorTracks[toon.doId] = track
+        track.start()
+
+    def _cameraInElevator(self, elevator):
+        # Inside the elevator behind the toons, looking out of its doors,
+        # where the cog building elevators put it for the ride.
+        self._camInElevator = True
+        camera.reparentTo(elevator)
+        camera.setPosHpr(0, 14, 4, 180, 0, 0)
 
     # --- From the AI ---
 
@@ -869,8 +1020,9 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
             # The Boss Cog half stands to swing or throw, then sits again.
             anim = self._throwAnim(suit, kind)
             if anim:
-                swing = Sequence(Func(suit.headsUp, target), ActorInterval(suit, anim, duration=1.2), Func(suit.setH, 0),
-                                 Func(suit.loop, 'sit'))
+                swing = Sequence(Func(suit.headsUp, target), Func(self._standUpFromSeat, suit),
+                                 ActorInterval(suit, anim, duration=1.2), Func(suit.setH, 0),
+                                 Func(self._sitBackDown, suit), Func(suit.loop, 'sit'))
                 swing.start()
                 self.ivals.append(swing)
             if kind == Consts.GolfBall:
@@ -940,11 +1092,12 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         anim = self._throwAnim(suit, Consts.GolfBall) or 'sit'
         track = Sequence(
             Func(suit.headsUp, PM.Point3(x - side * 4, y, z)),
+            Func(self._standUpFromSeat, suit),
             Parallel(ActorInterval(suit, anim, duration=Consts.SwipeTime + 0.6),
                      Sequence(Wait(Consts.SwipeTime * 0.7), Func(base.playSfx, self.swingSfx, volume=1.0, node=suit)),
                      Sequence(LerpColorScaleInterval(strip, Consts.SwipeTime, PM.VBase4(1, 1, 1, 1), startColorScale=PM.VBase4(1, 1, 1, 0.3)),
                               Func(strip.removeNode))),
-            Func(club.removeNode), Func(suit.setH, 0), Func(suit.loop, 'sit'))
+            Func(club.removeNode), Func(suit.setH, 0), Func(self._sitBackDown, suit), Func(suit.loop, 'sit'))
         track.start(elapsed)
         self.ivals.append(track)
 
@@ -1078,22 +1231,138 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         if self.golf is None or self.phase == 'golf':
             return
         self.phase = 'golf'
-        self.golfStartTime = globalClock.getFrameTime() - globalClockDelta.localElapsedTime(timestamp, bits=16)
+        elapsed = globalClockDelta.localElapsedTime(timestamp, bits=16)
+        # The golf's clock starts after the ride over and the intro.
+        self.golfStartTime = globalClock.getFrameTime() - elapsed + Consts.GolfLeadIn
         for ival in self.ivals:
             ival.finish()
         self.ivals = []
         self.landings = []
         self._endPowerUps()
-        # Off the table (anyone still on it when time was up drops the
-        # memos they carried) and into the office next door.
+        # Anyone still on the table when time was up drops the memos they
+        # carried, and is in the elevator with the others for the ride.
         self.carried = 0
-        self.room.root.stash()
-        for suit in self.minions:
-            suit.stash()
-        self.golf.show()
-        self.golf.setBarrelsHome(Consts.NumBarrels)
         self.memoLabel.hide()
         self.statusLabel['text'] = ''
+        if self.timer is not None:
+            self.timer.stop()
+            self.timer.stash()
+        toon = base.localAvatar
+        place = base.cr.playGame.getPlace()
+        if place and place.fsm.getCurrentState().getName() == 'walk':
+            place.fsm.request('stopped')
+        if getattr(toon, '_smartCamEnabled', False):
+            toon.stopUpdateSmartCamera()
+            self._stoppedSmartCam = True
+        toon.setSystemMessage(0, '')
+        self._golfArrival = self._makeGolfArrival()
+        self._golfArrival.start(min(elapsed, Consts.GolfLeadIn - 0.1))
+
+    def _makeGolfArrival(self):
+        from toontown.building import ElevatorUtils
+        from toontown.building.ElevatorConstants import ELEVATOR_NORMAL
+        from toontown.cogdominium import CogdoBoardroomGameMovies
+        room = self.room
+
+        def intoElevator():
+            # Everyone into the exit elevator (those still on the table too).
+            for avId in self.getToonIds():
+                toon = self.getToon(avId)
+                if toon is None or toon.isEmpty():
+                    continue
+                self.exited.add(avId)
+                self._standUp(toon)
+                if not toon.isLocal():
+                    toon.stopSmooth()
+                self._toElevator(toon, run=False)
+            self._cameraInElevator(room.exitElevator)
+            base.playMusic(self.elevatorMusic, looping=1, volume=0.8)
+
+        def arrive():
+            # The elevator is the golf office's now: the boardroom goes, the
+            # golf office comes, the toons stand in its elevator.
+            room.root.stash()
+            for suit in self.minions:
+                suit.stash()
+            self.golf.show()
+            self.golf.setBarrelsHome(Consts.NumBarrels)
+            self.golf.closeToonDoors()
+            base.camLens.setFar(600)
+            for k, avId in enumerate(self.getToonIds()):
+                toon = self.getToon(avId)
+                if toon is None or toon.isEmpty():
+                    continue
+                toon._boardroomAnim = None
+                track = self._elevatorTracks.pop(avId, None)
+                if track is not None:
+                    track.finish()
+                toon.setPos(render, self.golf.toonElevatorSpot(k))
+                toon.setH(render, self.golf.toonElevator.getH(render) + 180)
+                toon.loop('neutral')
+            self._cameraInElevator(self.golf.toonElevator)
+
+        def walkOut():
+            # Out of the doors and over to the tees.
+            for avId in self.getToonIds():
+                toon = self.getToon(avId)
+                if toon is None or toon.isEmpty():
+                    continue
+                tee = self.golf.teePos(self.startIndex(avId))
+                spot = tee + PM.Vec3(-1.6, -0.4, 0)
+                toon.headsUp(render, spot)
+                track = Sequence(Func(toon.loop, 'run'),
+                                 LerpPosInterval(toon, Consts.GolfWalkOutTime * 0.8, spot, other=render),
+                                 LerpHprInterval(toon, Consts.GolfWalkOutTime * 0.2, PM.VBase3(-90, 0, 0), other=render),
+                                 Func(toon.loop, 'neutral'))
+                self._elevatorTracks[avId] = track
+                track.start()
+
+        def intro():
+            self.elevatorMusic.stop()
+            base.playMusic(self.music, looping=1, volume=0.7)
+            self._camInElevator = True
+            camera.wrtReparentTo(render)
+            self._fixFov()
+            self._golfIntro = CogdoBoardroomGameMovies.CogdoBoardroomGolfIntro(self.doId + 1, self)
+            self._golfIntro.load(self.golf.root)
+            self._golfIntro.play()
+
+        doors = Consts.GolfDoorTime
+        return Sequence(
+            Func(intoElevator),
+            ElevatorUtils.getCloseInterval(self, room.exitLeftDoor, room.exitRightDoor, self.closeSfx, None,
+                                           type=ELEVATOR_NORMAL),
+            ElevatorUtils.getRideElevatorInterval(ELEVATOR_NORMAL),
+            Func(arrive),
+            ElevatorUtils.getOpenInterval(self, self.golf.toonLeftDoor, self.golf.toonRightDoor, self.openSfx, None,
+                                          type=ELEVATOR_NORMAL),
+            Func(walkOut),
+            Wait(Consts.GolfWalkOutTime),
+            Func(intro),
+            Wait(Consts.GolfIntroDuration),
+            Func(self._beginGolf),
+            name=self.uniqueName('golfArrival'))
+
+    def _fixFov(self):
+        # The elevator ride sets its own field of view; back to the game's.
+        toon = base.localAvatar
+        base.camLens.setMinFov(getattr(toon, 'fov', ToontownGlobals.DefaultCameraFov) / (4.0 / 3.0))
+
+    def _endGolfIntro(self):
+        intro = getattr(self, '_golfIntro', None)
+        if intro is not None:
+            intro.end()
+            intro.unload()
+            self._golfIntro = None
+
+    def _beginGolf(self):
+        self._endGolfIntro()
+        self._camInElevator = False
+        self._fixFov()
+        for track in self._elevatorTracks.values():
+            track.finish()
+        self._elevatorTracks = {}
+        self.golf.closeToonDoors()
         self.barrelLabel.show()
         self.barrelIcon.show()
         self.memoIcon.hide()
@@ -1101,9 +1370,9 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
             toon = self.getToon(avId)
             if toon is None or toon.isEmpty():
                 continue
-            toon._boardroomAnim = None
-            self._standUp(toon)
             self._placeAtTee(toon, avId)
+            if not toon.isLocal():
+                toon.startSmooth()
             if avId not in self.clubs:
                 club = self.golf.attachPutter(toon)
                 if club is not None:
@@ -1116,8 +1385,7 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         self.lastSwing = -99
         self._golfCamPos = None
         place = base.cr.playGame.getPlace()
-        if place and place.fsm.getCurrentState().getName() != 'walk':
-            place.fsm.request('walk')
+        self._toWalk(place)
         toon.stopTrackAnimToSpeed()
         toon.controlManager.setSpeeds(0, 0, 0, 0)
         # The golf camera is ours alone: the walk's smart camera would put
@@ -1153,6 +1421,9 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
             self.sendUpdate('requestGolfHit', [cogId])
         toon = base.localAvatar
         if toon.isEmpty() or toon.doId not in self.getToonIds():
+            return Task.cont
+        if self.golfLeaving:
+            self._checkGolfLeave(toon)
             return Task.cont
         from direct.showbase.InputStateGlobal import inputState
         turn = 0
@@ -1195,12 +1466,12 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         fwd = PM.Vec3(-math.sin(a), math.cos(a), 0)
         # Behind the toon and well up, looking down over its shoulder at
         # the cubicles, as in the QA screenshot; kept inside the walls.
-        want = tee - fwd * 8.5 + PM.Vec3(0, 0, 9.5)
+        want = tee - fwd * Consts.GolfCamBack + PM.Vec3(0, 0, Consts.GolfCamUp)
         local = self.golf.toLocal(want)
         local.setX(max(-Consts.GolfHalfX + 1.5, min(Consts.GolfHalfX - 1.5, local[0])))
         local.setY(max(-Consts.GolfHalfY + 0.6, local[1]))
         want = local + self.golf.root.getPos(render)
-        look = tee + fwd * 15 + PM.Vec3(0, 0, 1.0)
+        look = tee + fwd * Consts.GolfCamLook + PM.Vec3(0, 0, 1.0)
         cur = self._golfCamPos or want
         cur = cur + (want - cur) * min(1.0, dt * 5.0)
         self._golfCamPos = PM.Point3(cur)
@@ -1234,6 +1505,96 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         if carrying:
             base.localAvatar.setSystemMessage(0, TTL.BoardroomBarrelStolen)
 
+    def golfOver(self, timestamp):
+        # Time is up in the golf office: the toons' elevator opens and the
+        # toons walk into it themselves, to ride up to the executive suite.
+        if self.golf is None or self.golfLeaving:
+            return
+        self.golfLeaving = True
+        self.charging = False
+        self.golf.hideAim()
+        if self.timer is not None:
+            self.timer.stop()
+            self.timer.stash()
+        for club in self.clubs.values():
+            club.stash()
+        doors = ElevatorUtils.getOpenInterval(self, self.golf.toonLeftDoor, self.golf.toonRightDoor, self.openSfx, None,
+                                              type=ELEVATOR_NORMAL)
+        doors.start()
+        self.ivals.append(doors)
+        toon = base.localAvatar
+        if toon.isEmpty() or toon.doId in self.leftGolf:
+            return
+        for avId in self.getToonIds():
+            other = self.getToon(avId)
+            if other is not None and not other.isEmpty() and not other.isLocal():
+                other.loop('neutral')
+        # Free to walk, with the usual camera, for the walk to the doors.
+        place = base.cr.playGame.getPlace()
+        self._toWalk(place)
+        toon.controlManager.setSpeeds(OTPGlobals.ToonForwardSpeed, OTPGlobals.ToonJumpForce,
+                                      OTPGlobals.ToonReverseSpeed, OTPGlobals.ToonRotateSpeed)
+        toon.startTrackAnimToSpeed()
+        if getattr(self, '_stoppedSmartCam', False):
+            self._stoppedSmartCam = False
+            camera.reparentTo(toon)
+            toon.startUpdateSmartCamera()
+        self._camInElevator = True
+        toon.setSystemMessage(0, TTL.BoardroomGolfLeave)
+        self._leaveLabel = DirectLabel(relief=None, text=TTL.BoardroomGolfLeave, text_scale=0.07,
+                                       text_fg=(1, 1, 0.6, 1), text_shadow=(0, 0, 0, 1),
+                                       text_font=ToontownGlobals.getSignFont(), pos=(0, 0, 0.75))
+
+    def _checkGolfLeave(self, toon):
+        # Walked in through the doors?
+        local = self.golf.toonElevator.getRelativePoint(render, toon.getPos(render))
+        if abs(local[0]) < 3.6 and local[1] > -1.5 and toon.doId not in self.leftGolf:
+            self.leftGolf.add(toon.doId)
+            self.leftOrder.append(toon.doId)
+            self.sendUpdate('requestGolfLeave', [])
+            place = base.cr.playGame.getPlace()
+            if place and place.fsm.getCurrentState().getName() == 'walk':
+                place.fsm.request('stopped')
+            if getattr(self, '_leaveLabel', None):
+                self._leaveLabel.destroy()
+                self._leaveLabel = None
+            toon.setSystemMessage(0, TTL.CogdoMazeGameWaitingForToons if self._golfWaiting() else '')
+            self._intoGolfElevator(toon)
+            self._cameraInElevator(self.golf.toonElevator)
+
+    def _golfWaiting(self):
+        return [avId for avId in self.getToonIds() if avId not in self.leftGolf]
+
+    def _intoGolfElevator(self, toon):
+        k = self.leftOrder.index(toon.doId) if toon.doId in self.leftOrder else len(self.leftOrder)
+        spot = self.golf.toonElevatorSpot(k)
+        old = self._elevatorTracks.pop(toon.doId, None)
+        if old is not None:
+            old.finish()
+        here = toon.getPos(render)
+        toon.headsUp(render, spot)
+        heading = self.golf.toonElevator.getH(render) + 180
+        track = Sequence(Func(toon.loop, 'run'),
+                         LerpPosInterval(toon, max(0.3, min(1.2, (spot - here).length() / 14.0)), spot, other=render),
+                         LerpHprInterval(toon, 0.35, PM.VBase3(heading, 0, 0), other=render),
+                         Func(toon.loop, 'neutral'))
+        if toon.isLocal():
+            track.append(Func(toon.sendCurrentPosition))
+        self._elevatorTracks[toon.doId] = track
+        track.start()
+
+    def toonLeftGolf(self, avId):
+        self.leftGolf.add(avId)
+        if avId not in self.leftOrder:
+            self.leftOrder.append(avId)
+        if not self._golfWaiting() and self.golf is not None:
+            # All in: the doors close for the ride up.
+            base.localAvatar.setSystemMessage(0, '')
+            doors = ElevatorUtils.getCloseInterval(self, self.golf.toonLeftDoor, self.golf.toonRightDoor,
+                                                   self.closeSfx, None, type=ELEVATOR_NORMAL)
+            doors.start()
+            self.ivals.append(doors)
+
     def golfCogHit(self, cogId, avId, barrelsHome):
         if self.golf is None:
             return
@@ -1265,6 +1626,37 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
     ChatterKeys = ('Synergy', 'BuzzWord', 'Jargon', 'ParadigmShift', 'ReOrg', 'Rolodex', 'Watercooler', 'RedTape',
                    'Schmooze', 'Filibuster', 'MumboJumbo', 'PowerTie', 'Tabulate', 'GuiltTrip')
 
+    def _standUpFromSeat(self, suit):
+        # A seated cog's place is set for its sit animation, which lifts the
+        # big (C) bodies up into the chair: on its feet for a swing or a
+        # throw, it stood sunk in the floor. Up on the floor, then.
+        if suit.isEmpty() or getattr(suit, '_seatZ', None) is not None:
+            return
+        suit._seatZ = suit.getZ()
+        floor = 0.0 if suit.getParent().getName() == 'sitLocator' else suit.getZ(render)
+        suit.setZ(render, floor)
+
+    def _sitBackDown(self, suit):
+        if suit.isEmpty() or getattr(suit, '_seatZ', None) is None:
+            return
+        suit.setZ(suit._seatZ)
+        suit._seatZ = None
+
+    def _placeChat(self, suit):
+        # The speech bubble just over the cog's head, as it sits or stands
+        # (from the cog's place, a seated cog's bubble came up through the
+        # table, or the floor).
+        head = getattr(suit, '_chatHead', None)
+        if head is None:
+            try:
+                head = suit.exposeJoint(None, 'modelRoot', 'joint_head')
+            except Exception:
+                head = None
+            suit._chatHead = head or False
+        if head:
+            z = suit.getRelativePoint(head, PM.Point3(0, 0, 0))[2]
+            suit.nametag3d.setZ(z + 2.2)
+
     def _say(self, suit, keys, extra=()):
         # A line from what the cog would say in battle, in a speech bubble
         # (the name shows while it talks, as on the streets).
@@ -1282,6 +1674,7 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         suit._lastSaid = now
         self._lastSaid = now
         suit.nametag3d.unstash()
+        self._placeChat(suit)
         suit.setChatAbsolute(random.choice(lines), CFSpeech | CFTimeout)
         name = self.uniqueName('hush-%d' % id(suit))
         taskMgr.remove(name)

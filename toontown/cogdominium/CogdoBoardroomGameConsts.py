@@ -50,7 +50,10 @@ RampLength = 14.0
 # Where the toons come in, and the way out: the hall's own entry corridor
 # and the far wall, past the chairman's chair.
 ElevatorPosHpr = (0, 46, 0, 180, 0, 0)
-ExitPosHpr = (0, 385 + (NumHalls - 1) * HallLength, 0, 0, 0, 0)
+# The exit stands on the 2 ft step at the head of the room (it sat sunk in
+# it, on the floor below).
+ExitFloor = 2.05
+ExitPosHpr = (0, 385 + (NumHalls - 1) * HallLength, ExitFloor, 0, 0, 0)
 ExitRadius = 6.0
 ChairmanPos = (0, TableEnd + 5.5, 0)
 
@@ -158,6 +161,12 @@ CrashBounce = 1.4
 # PaddleRate (at cruising speed, and flat out).
 SlideLieFrame = 20
 DiveTime = 0.35
+# The belly slide's stroke (see DistCogdoBoardroomGame._slidePose): how far
+# the chest is lifted, how much of the swimming stroke is mixed in, and how
+# far the toon rides above the cloth, so the hands never go into the table.
+SlideChestUp = 18.0
+SlideStroke = 0.6
+SlideLift = 0.15
 DiveHop = 0.9
 PaddleRate = (1.0, 1.7)
 SpinTime = 0.8
@@ -264,7 +273,7 @@ GolfNamePlate = (-28.0 + 1.9, -16.0 + 6.1, 4.3)
 # Low cubicle partitions (x0, y0, x1, y1) along the aisles: the tee lane
 # up the middle, the edges of the aisle across, and the front aisle (with
 # gaps, as cubicles have). The balls bank off them.
-GolfPartitionHeight = 4.2
+GolfPartitionHeight = 3.0
 GolfPartitions = ((-9.6, -39.5, -9.0, -18.0), (9.0, -39.5, 9.6, -18.0),
                   (-22.0, -2.6, -9.0, -2.0), (9.0, -2.6, 22.0, -2.0),
                   (-44.0, -2.6, -30.0, -2.0), (30.0, -2.6, 44.0, -2.0),
@@ -278,7 +287,27 @@ GolfOrigin = (0.0, 2400.0, 0.0)
 GolfHalfX = 58.0
 GolfHalfY = 40.0
 # Where the toons tee off, at the near end of the tee lane.
-GolfTees = ((-4.5, -30.0), (-1.5, -30.0), (1.5, -30.0), (4.5, -30.0))
+GolfTees = ((-4.5, -26.0), (-1.5, -26.0), (1.5, -26.0), (4.5, -26.0))
+# The elevator the toons ride in by, in the back wall behind the tees
+# (x, y of its doors, heading): the same cog building elevator as the
+# boardroom's exit, with the camera inside it for the ride as between the
+# other field offices' floors.
+GolfToonElevator = (0.0, -GolfHalfY, 180.0)
+# The ride from the boardroom: the doors close on the toons, the elevator
+# rides, its doors open on the golf office, the toons come out to the
+# tees, and the golf office's intro tells them what to do. Then the golf.
+GolfDoorTime = 2.0
+GolfRideTime = 4.5
+GolfWalkOutTime = 1.8
+GolfIntroDuration = 20.0
+GolfLeadIn = 2 * GolfDoorTime + GolfRideTime + GolfWalkOutTime + GolfIntroDuration
+# The golf camera, behind the toon at its tee and up.
+GolfCamBack = 12.5
+GolfCamUp = 11.0
+GolfCamLook = 20.0
+# After the golf, the toons walk into their elevator; the ride goes on
+# without anyone who hasn't in this long.
+GolfLeaveTime = 40.0
 # Where the barrels are piled: where the aisles cross.
 BarrelPile = (0.0, 6.0)
 # The three elevators the cogs come and go by: in the front wall and the

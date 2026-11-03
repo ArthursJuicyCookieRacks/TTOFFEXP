@@ -4,6 +4,7 @@ import random
 from panda3d import core as PM
 from toontown.cogdominium import CogdoBoardroomGameConsts as Consts
 from toontown.suit import Suit, SuitDNA
+from toontown.cogdominium.CogdoBoardroomRoom import CogdoBoardroomRoom
 
 # What each cog does when it stands about (its own animations; not every
 # cog has every one).
@@ -58,16 +59,14 @@ class CogdoBoardroomDecor:
                     if chair.isEmpty():
                         continue
                     suit = self.makeSuit(rng.choice(DinerNames))
-                    turn = chair.attachNewNode('correctHeading')
+                    # Seated as the meeting's cogs are (CogdoBoardroomRoom):
+                    # the heading is the table's, not the chair's own (the
+                    # chair nodes are turned and scaled, which sat the cogs
+                    # behind their chairs, or sunk in the table).
+                    turn = t.attachNewNode('correctHeading')
+                    turn.setPos(chair.getPos(t))
                     turn.setH(heading)
-                    sit = turn.attachNewNode('sitLocator')
-                    if suit.style.body == 'c':
-                        sit.setPos(0.5, 3.65, -3.75)
-                    else:
-                        sit.setPos(0.5, 2.5, -2.4)
-                    scale = chair.getNetTransform().getScale()[0] or 1.0
-                    suit.setScale(1.0 / scale)
-                    suit.reparentTo(sit)
+                    CogdoBoardroomRoom.sitCog(suit, turn, suit.style.body)
                     suit.decorAnim = 'sit-eat-loop' if suit.style.body != 'b' else 'neutral'
                     self.diners.append(suit)
                 # A golf cart parked against the wall, and now and then a

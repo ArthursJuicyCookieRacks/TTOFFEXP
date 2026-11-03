@@ -530,16 +530,27 @@ class DistributedCogdoInteriorAI(DistributedObjectAI):
         pass
 
     def __giveSingleSummons(self, toon):
+        # Arthur: small summons (one cog each, never a building or an
+        # invasion), 1 for a level 1-2 office, 2 for level 3 and 3 for level
+        # 4-5; random cogs of any department, each one different.
         from toontown.suit import SuitDNA
         import random
-        top = max(0, min(SuitDNA.suitsPerDept - 1, int(self.bldg.difficulty)))
-        levels = list(range(max(0, top - 2), top + 1))
-        dept = SuitDNA.suitDepts.index('c')
-        # One the toon doesn't have yet, if there is one.
-        fresh = [lvl for lvl in levels if not toon.hasParticularCogSummons(dept, lvl, 'single')]
-        level = random.choice(fresh or levels)
-        toon.assignNewCogSummons(level, 'single', dept)
-        self.notify.info('%s gets a single summons for %s' % (toon.doId, SuitDNA.suitHeadTypes[dept * SuitDNA.suitsPerDept + level]))
+        level = int(self.bldg.difficulty) // 2 + 1
+        count = 1 if level <= 2 else 2 if level == 3 else 3
+        cogs = [(dept, lvl) for dept in range(len(SuitDNA.suitDepts)) for lvl in range(SuitDNA.suitsPerDept)]
+        # Ones the toon doesn't have yet first, if there are enough.
+        fresh = [c for c in cogs if not toon.hasParticularCogSummons(c[0], c[1], 'single')]
+        picks = random.sample(fresh, min(count, len(fresh)))
+        if len(picks) < count:
+            rest = [c for c in cogs if c not in picks]
+            picks += random.sample(rest, count - len(picks))
+        names = []
+        for dept, lvl in picks:
+            toon.assignNewCogSummons(lvl, 'single', dept)
+            names.append(SuitDNA.suitHeadTypes[dept * SuitDNA.suitsPerDept + lvl])
+        self.rewardSummons = getattr(self, 'rewardSummons', {})
+        self.rewardSummons[toon.doId] = picks
+        self.notify.info('%s gets %d single summons (level %d office): %s' % (toon.doId, count, level, ', '.join(names)))
 
     def enterFailed(self):
         # A game made for a ride nobody finished.

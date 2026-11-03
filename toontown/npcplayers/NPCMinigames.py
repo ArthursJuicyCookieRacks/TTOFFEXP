@@ -1718,12 +1718,35 @@ class CogdoBoardroomPlayer(CogdoPlayer):
 
     def play(self, now):
         game = self.game
-        if game.finished or self.npc.doId in game.exited and game.phase != 'golf':
+        if game.finished or self.npc.doId in game.exited and game.phase not in ('golf', 'leave'):
             return
         if game.phase == 'golf':
             self.golf(now)
             return
+        if game.phase == 'leave':
+            self.leaveGolf(now)
+            return
         self.slide(now)
+
+    def leaveGolf(self, now):
+        # Time is up: walk into the toons' elevator in the back wall.
+        game = self.game
+        if self.npc.doId in game.leftGolf or self.memo.get('leaving'):
+            return
+        ox, oy, oz = BoardroomConsts.GolfOrigin
+        x, y, h = BoardroomConsts.GolfToonElevator
+        if 'leaveAt' not in self.memo:
+            self.memo['leaveAt'] = now + random.uniform(0.8, 3.0)
+        if now < self.memo['leaveAt']:
+            return
+        if self.moveTo(Point3(ox + x, oy + y + 1.0, 0), speed=RUN_SPEED * 0.6):
+            self.memo['leaving'] = True
+            from toontown.building.ElevatorConstants import ElevatorPoints
+            p = ElevatorPoints[len(game.leftGolf) % len(ElevatorPoints)]
+            # The elevator faces into the room (heading 180): its inside is
+            # behind the doors, away from the room.
+            self.npc.placeAt(ox + x - p[0], oy + y - p[1], 0, 0)
+            self.send('requestGolfLeave')
 
     def index(self):
         toons = list(self.game.toons)
@@ -1756,8 +1779,10 @@ class CogdoBoardroomPlayer(CogdoPlayer):
             ex, ey = BoardroomConsts.ExitPosHpr[:2]
             if self.moveTo(Point3(ex, ey - 1.0, 0), speed=RUN_SPEED * 0.6):
                 self.send('requestExit')
-                k = len(game.exited)
-                self.npc.placeAt(ex + ((k - 1) % 4 - 1.5) * 2.2, ey + 3.0 + ((k - 1) // 4) * 2.0, 0, 180)
+                # In the exit elevator, at its spot, facing out.
+                from toontown.building.ElevatorConstants import ElevatorPoints
+                p = ElevatorPoints[(len(game.exited) - 1) % len(ElevatorPoints)]
+                self.npc.placeAt(ex + p[0], ey + p[1], BoardroomConsts.ExitFloor, 180)
                 self.memo['off'] = False
             return
         if t < BoardroomConsts.StartDelay + i * BoardroomConsts.StartStagger:
@@ -1830,6 +1855,10 @@ class CogdoBoardroomPlayer(CogdoPlayer):
         i = self.index()
         tx, ty = BoardroomConsts.GolfTees[i % len(BoardroomConsts.GolfTees)]
         ox, oy, oz = BoardroomConsts.GolfOrigin
+        if game.golfTime() < 0:
+            # Still riding over and hearing the golf office's intro (the
+            # player's client walks everyone out to the tees).
+            return
         if not self.memo.get('teed'):
             self.memo['teed'] = True
             self.memo['nextSwing'] = now + random.uniform(2.0, 4.0)

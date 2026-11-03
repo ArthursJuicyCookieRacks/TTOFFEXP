@@ -190,6 +190,18 @@ class CogdoBoardroomGolf:
             self.elevators.append({'left': left, 'right': right, 'open': 0.0})
             self._setDoors(self.elevators[-1], 0.0)
         model.removeNode()
+        # The toons' elevator, in the back wall behind the tees: they ride
+        # in from the boardroom in it.
+        from toontown.cogdominium import CogdoUtil
+        x, y, h = Consts.GolfToonElevator
+        self.toonElevator = CogdoUtil.loadElevatorModel()
+        self.toonElevator.reparentTo(self.root)
+        self.toonElevator.setPosHpr(x, y, 0, h, 0, 0)
+        for coll in self.toonElevator.findAllMatches('**/+CollisionNode'):
+            coll.removeNode()
+        self.toonLeftDoor = self.toonElevator.find('**/left_door')
+        self.toonRightDoor = self.toonElevator.find('**/right_door')
+        self.closeToonDoors()
         # A name plate on the far cubicle, as on the screenshot's.
         plate = PM.TextNode('namePlate')
         plate.setText('Mr. Hollywood\nVP of Hijinks')
@@ -279,6 +291,17 @@ class CogdoBoardroomGolf:
 
     def show(self):
         self.root.unstash()
+
+    def closeToonDoors(self):
+        self.toonLeftDoor.setPos(3.5, 0, 0)
+        self.toonRightDoor.setPos(-3.5, 0, 0)
+
+    def toonElevatorSpot(self, index):
+        # Where toon `index` stands in the toons' elevator (as in the cog
+        # building elevators), in render.
+        from toontown.building.ElevatorConstants import ElevatorPoints
+        p = ElevatorPoints[index % len(ElevatorPoints)]
+        return render.getRelativePoint(self.toonElevator, PM.Point3(p[0], p[1], 0))
 
     def teePos(self, index):
         x, y = Consts.GolfTees[index % len(Consts.GolfTees)]
