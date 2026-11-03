@@ -595,6 +595,8 @@ class DistributedBuilding(DistributedObject.DistributedObject):
         suitBuildingNP.setPosHprScale(nodePath, 15.463, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0)
         if chr(self.track) == 'm':
             self.retextureCashbotFieldOffice(suitBuildingNP)
+        elif chr(self.track) == 'c':
+            self.retextureBossbotFieldOffice(suitBuildingNP)
         suitBuildingNP.flattenMedium()
         suitBuildingNP.setColorScale(0.6, 0.6, 0.6, 1.0)
         self.loadElevator(suitBuildingNP, cogdo=True)
@@ -607,6 +609,19 @@ class DistributedBuilding(DistributedObject.DistributedObject):
 
     def retextureCashbotFieldOffice(self, np):
         for name, path in self.CashbotFieldOfficeTextures.items():
+            old = np.findTexture(name)
+            new = loader.loadTexture(path)
+            if old and new:
+                np.replaceTexture(old, new)
+
+    # A Bossbot field office shares the Mover & Shaker building too: it gets
+    # Arthur's Big Cheese poster and brown trim (his texture pack, added
+    # under new names: the shared textures themselves are left alone).
+    BossbotFieldOfficeTextures = {'cogdominium_palette_3cmla_4': 'phase_5/maps/ttoff_cogdominium_palette_bossbot_4.jpg',
+                                  'cogdominium_palette_3cmla_5': 'phase_5/maps/ttoff_cogdominium_palette_bossbot_5.jpg'}
+
+    def retextureBossbotFieldOffice(self, np):
+        for name, path in self.BossbotFieldOfficeTextures.items():
             old = np.findTexture(name)
             new = loader.loadTexture(path)
             if old and new:

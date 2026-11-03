@@ -45,11 +45,11 @@ class DistCogdoBoardroomGameAI(DistCogdoGameAI):
         self.golfCogs = {}
         self.nextGolfCog = 1
         # Barrels knocked out of cogs' hands, lying on the office floor
-        # (dropId: (x, y)): they only count once they're back, carried into
-        # the toons' elevator after the golf (or a cog takes them after all).
+        # (dropId: (x, y)): another cog will come for them. A barrel is only
+        # lost once a cog carries it into an elevator; those still on the
+        # floor when time is up are the toons'.
         self.drops = {}
         self.nextDrop = 1
-        self.carriedBarrels = {}
         self.barrelsHome = Consts.NumBarrels
         self.barrelsLost = 0
         self.lastSwing = {}
@@ -101,8 +101,10 @@ class DistCogdoBoardroomGameAI(DistCogdoGameAI):
         taskMgr.removeTasksMatching(self.uniqueName('golfball') + '*')
         # Only the memos brought out count (the ones still on the table when
         # time was up are lost, as in the Sellbot maze), and the laff
-        # barrels the cogs didn't get away with.
-        self.interior.setGameMemos(self.banked + self.barrelsHome * Consts.LaffPerBarrel)
+        # barrels the cogs didn't get away with: a barrel is only lost once
+        # a cog has carried it all the way into an elevator.
+        saved = max(0, Consts.NumBarrels - self.barrelsLost)
+        self.interior.setGameMemos(self.banked + saved * Consts.LaffPerBarrel)
 
     # --- The golf office ---
 
@@ -132,18 +134,20 @@ class DistCogdoBoardroomGameAI(DistCogdoGameAI):
         taskMgr.remove(self.uniqueName('golf-spawn'))
         taskMgr.removeTasksMatching(self.uniqueName('golfcog') + '*')
         taskMgr.removeTasksMatching(self.uniqueName('golfball') + '*')
-        # Every cog still about blows up where it stands; any barrel it had
-        # falls to the floor there, for the toons to carry back.
-        now = self.golfTime()
+        # Every cog still about blows up where it stands, dropping any
+        # barrel it had: no cog got those (or the ones on the floor) into
+        # an elevator, so they're all the toons'.
         for cogId, cog in self.golfCogs.items():
             if not cog['alive']:
                 continue
             cog['alive'] = False
             if cog['carrying']:
-                x, y, h, leg = Consts.golfCogPos(cog['path'], now - cog['start'])
-                self.__dropBarrel(x, y, send=False)
+                self.barrelsHome += 1
                 cog['carrying'] = False
+        self.barrelsHome = min(Consts.NumBarrels, self.barrelsHome + len(self.drops))
+        self.drops = {}
         self.__sendDrops()
+        self.sendUpdate('golfBarrelsHome', [self.barrelsHome])
         self.sendUpdate('golfOver', [self.getNetworkTime()])
         taskMgr.doMethodLater(Consts.GolfLeaveTime, self.__leaveOver, self.uniqueName('golf-leave'))
         return task.done
@@ -153,11 +157,6 @@ class DistCogdoBoardroomGameAI(DistCogdoGameAI):
         if self.phase != 'leave' or self.finished or avId not in self.toons or avId in self.leftGolf:
             return
         self.leftGolf.add(avId)
-        brought = self.carriedBarrels.pop(avId, 0)
-        if brought:
-            # The barrels a toon carries in count now.
-            self.barrelsHome = min(Consts.NumBarrels, self.barrelsHome + brought)
-            self.sendUpdate('golfBarrelsHome', [self.barrelsHome])
         self.sendUpdate('toonLeftGolf', [avId])
         if not [t for t in self.getActiveToons() if t not in self.leftGolf]:
             # All in: the doors close on them, and up they go.
@@ -291,8 +290,8 @@ class DistCogdoBoardroomGameAI(DistCogdoGameAI):
         taskMgr.remove(self.uniqueName('golfcog-pick-%d' % cogId))
         taskMgr.remove(self.uniqueName('golfcog-out-%d' % cogId))
         if cog['carrying']:
-            # It drops the barrel where it's hit: lying there, it isn't
-            # saved until it's brought back.
+            # It drops the barrel where it's hit, for the next cog to come
+            # and take.
             x, y, h, leg = Consts.golfCogPos(cog['path'], self.golfTime() - cog['start'])
             self.__dropBarrel(x, y)
             cog['carrying'] = False
@@ -317,18 +316,6 @@ class DistCogdoBoardroomGameAI(DistCogdoGameAI):
     def __sendDrops(self):
         ids = sorted(self.drops)
         self.sendUpdate('golfDrops', [ids, [self.drops[i][0] for i in ids], [self.drops[i][1] for i in ids]])
-
-    def requestDropPickup(self, dropId):
-        # A toon walking about after the golf picks up a barrel off the
-        # floor, to carry into the elevator.
-        avId = self.getSenderToon() if hasattr(self, 'getSenderToon') else self.air.getAvatarIdFromSender()
-        if self.phase != 'leave' or self.finished or avId not in self.toons or avId in self.leftGolf:
-            return
-        if self.drops.pop(dropId, None) is None:
-            return
-        self.carriedBarrels[avId] = self.carriedBarrels.get(avId, 0) + 1
-        self.__sendDrops()
-        self.sendUpdate('golfBarrelCarried', [avId, self.carriedBarrels[avId]])
 
     def stillRunning(self):
         return [avId for avId in self.getActiveToons() if avId not in self.exited]

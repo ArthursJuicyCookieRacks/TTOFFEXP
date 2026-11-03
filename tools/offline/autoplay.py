@@ -1015,13 +1015,6 @@ def playCogdoBoardroom(dist):
                     press(name, False)
             else:
                 door = render.getRelativePoint(dist.golf.toonElevator, Point3(0, 1.0, 0))
-                if dist.golf.drops and not getattr(dist, '_autoDropGiveUp', 0):
-                    # The barrels on the floor first: walk into the nearest.
-                    dist._autoDropStart = getattr(dist, '_autoDropStart', None) or time.time()
-                    if time.time() - dist._autoDropStart > 25:
-                        dist._autoDropGiveUp = 1
-                    near = min(dist.golf.drops.values(), key=lambda b: (b.getPos(render) - pos).length())
-                    door = near.getPos(render)
                 d = door - pos
                 want = -math.degrees(math.atan2(d[0], d[1]))
                 diff = (want - localAvatar.getH(render) + 180) % 360 - 180
@@ -1076,7 +1069,7 @@ def playCogdoBoardroom(dist):
                           for t in [dist.getToon(a) for a in dist.getToonIds()] if t is not None and not t.isLocal()]
                 cam = golf.toLocal(camera.getPos(render))
                 log('boardroom golf: aim %.0f, barrels %d, cogs %d, me (%.1f, %.1f), cam (%.1f, %.1f, %.1f), others %s' % (
-                    dist.aimH, dist.barrelsHome, len(golf.cogs), here[0], here[1], cam[0], cam[1], cam[2], ', '.join(others)))
+                    dist.aimH, 10 - getattr(dist, "barrelsLost", 0), len(golf.cogs), here[0], here[1], cam[0], cam[1], cam[2], ', '.join(others)))
             if time.time() > nextShot and n < 20:
                 nextShot = time.time() + 3.0
                 base.screenshot(os.path.join(shots, 'boss-%02d-golf.png' % (50 + n)), defaultFilename=0)
@@ -1192,6 +1185,13 @@ def scenarioCogdo(track='s'):
         for i, y in enumerate((-55, 55)):
             shotFrom('fo-exterior-%s-%d.png' % (track, i), render.getRelativePoint(door, Point3(0, y, 14)),
                      render.getRelativePoint(door, Point3(0, 0, 20)))
+    if door and not door.isEmpty():
+        # The field office from the street, as a player walking up sees it.
+        for i, (x, y, z) in enumerate(((0, -32, 6), (-18, -30, 5), (18, -30, 5), (0, -20, 4))):
+            shotFrom('fo-street-%s-%d.png' % (track, i), render.getRelativePoint(door, Point3(x, y, z)),
+                     render.getRelativePoint(door, Point3(0, 0, 12)))
+    if os.environ.get('AUTOPLAY_FO_EXTERIOR_ONLY'):
+        return
     yield from boardElevator('DistributedCogdoElevatorExt', ours)
     yield until(lambda: placeName() == 'CogdoInterior', 120, 'inside the field office')
     interior = findObject('DistributedCogdoInterior')
@@ -1521,7 +1521,9 @@ def shotFrom(name, pos, lookAt):
     camera.lookAt(render, lookAt)
     base.graphicsEngine.renderFrame()
     base.graphicsEngine.renderFrame()
-    base.screenshot(os.path.join(os.environ.get('AUTOPLAY_SHOTS', '/tmp'), name), defaultFilename=0)
+    folder = os.environ.get('AUTOPLAY_SHOTS', '/tmp')
+    os.makedirs(folder, exist_ok=True)
+    base.screenshot(os.path.join(folder, name), defaultFilename=0)
     camera.reparentTo(oldParent)
     camera.setPos(oldPos)
     camera.setHpr(oldHpr)

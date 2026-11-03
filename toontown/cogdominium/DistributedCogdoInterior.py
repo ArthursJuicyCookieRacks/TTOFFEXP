@@ -433,6 +433,10 @@ class DistributedCogdoInterior(DistributedObject.DistributedObject):
                         # give it the Loan Shark poster from the building.
                         from toontown.building.DistributedBuilding import DistributedBuilding
                         DistributedBuilding.retextureCashbotFieldOffice(DistributedBuilding, paintingModel)
+                    elif self.FOType == 'c':
+                        # Bossbot offices too: the Big Cheese poster.
+                        from toontown.building.DistributedBuilding import DistributedBuilding
+                        DistributedBuilding.retextureBossbotFieldOffice(DistributedBuilding, paintingModel)
 
             SuitHs = self.BossOffice_SuitHs
             SuitPositions = self.BossOffice_SuitPositions

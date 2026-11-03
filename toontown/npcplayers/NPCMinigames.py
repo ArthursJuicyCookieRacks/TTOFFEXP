@@ -1739,16 +1739,6 @@ class CogdoBoardroomPlayer(CogdoPlayer):
             self.memo['leaveAt'] = now + random.uniform(0.8, 3.0)
         if now < self.memo['leaveAt']:
             return
-        # First the barrels lying on the floor (they only count carried in),
-        # the nearest first, while the others are still about.
-        drops = getattr(game, 'drops', {})
-        if drops and now - self.memo['leaveAt'] < BoardroomConsts.GolfLeaveTime - 12.0:
-            pos = self.npc.getPos()
-            dropId = min(drops, key=lambda i: (drops[i][0] + ox - pos[0]) ** 2 + (drops[i][1] + oy - pos[1]) ** 2)
-            dx, dy = drops[dropId]
-            if self.moveTo(Point3(ox + dx, oy + dy, 0), speed=RUN_SPEED * 0.6):
-                self.send('requestDropPickup', dropId)
-            return
         if self.moveTo(Point3(ox + x, oy + y + 1.0, 0), speed=RUN_SPEED * 0.6):
             self.memo['leaving'] = True
             from toontown.building.ElevatorConstants import ElevatorPoints

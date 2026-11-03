@@ -64,7 +64,7 @@ SeatSpacing = 22.0
 SeatSideX = TableHalfWidth + 3.4
 # Only the cogs this near the toon are shown (and move), for the frame
 # rate on phones: the table is long.
-ShowCogsWithin = 170.0
+ShowCogsWithin = 240.0
 # Seats filled, per side, from the easiest office to the hardest.
 # Per hall: the table is NumHalls halls long.
 SeatsPerSideRange = (6 * NumHalls, 9 * NumHalls)
@@ -339,8 +339,6 @@ LaffPerBarrel = 3
 GolfCogNames = ('f', 'p', 'ym', 'mm', 'ds', 'hh', 'cr')
 GolfMaxCogsRange = (6, 12)
 GolfSpawnPeriodRange = (1.8, 0.7)
-# How close a toon walks to a barrel on the floor to pick it up.
-DropPickupRadius = 2.6
 GolfCogSpeedRange = (5.5, 8.5)
 GolfPickupTime = 1.2
 GolfCogRadius = 2.4

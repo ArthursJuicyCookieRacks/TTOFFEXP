@@ -16,7 +16,7 @@ WalkerNames = ('f', 'p', 'ym', 'mm', 'ds', 'hh', 'cr')
 DinerNames = ('ym', 'mm', 'hh', 'cr', 'tbc', 'f')
 # The round banquet table's chairs, and which way each faces (as the CEO
 # battle seats its diners).
-DinerSeats = ((0, 90), (2, 0), (4, -90), (6, 180))
+DinerSeats = ((0, 90), (1, 90), (2, 0), (3, 0), (4, -90), (5, -90), (6, 180), (7, 180))
 
 
 class CogdoBoardroomDecor:
@@ -54,7 +54,8 @@ class CogdoBoardroomDecor:
                     f = food.copyTo(t)
                     f.setPos(rng.uniform(-3, 3), rng.uniform(-3, 3), 3.62)
                     f.setScale(0.6)
-                for index, heading in rng.sample(DinerSeats, 2):
+                # A cog in every chair round the table (no empty chairs).
+                for index, heading in DinerSeats:
                     chair = t.find('**/chair_%d' % (index + 1))
                     if chair.isEmpty():
                         continue

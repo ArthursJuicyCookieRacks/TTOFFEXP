@@ -64,6 +64,9 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         self.phase = 'slide'
         self.golfStartTime = None
         self.barrelsHome = Consts.NumBarrels
+        # Barrels the cogs got all the way into an elevator with: only those
+        # are lost (the count shows the rest as the toons').
+        self.barrelsLost = 0
         self.clubs = {}
         self._elevatorTracks = {}
         self._golfArrival = None
@@ -257,10 +260,7 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
             return
         self.memoLabel['text'] = TTL.BoardroomMemoCount % (self.carried, self.banked)
         if self.phase == 'golf':
-            text = TTL.BoardroomBarrelCount % (self.barrelsHome, Consts.NumBarrels)
-            if getattr(self, 'dropCount', 0):
-                text += TTL.BoardroomBarrelsOnFloor % self.dropCount
-            self.barrelLabel['text'] = text
+            self.barrelLabel['text'] = TTL.BoardroomBarrelCount % (Consts.NumBarrels - self.barrelsLost, Consts.NumBarrels)
             return
         now = self.gameTime()
         status = []
@@ -467,7 +467,7 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         self.gui.hide()
         text = TTL.BoardroomGameFinish % self.banked if self.banked else TTL.BoardroomGameNoMemos
         if self.phase == 'golf':
-            text += '\n' + TTL.BoardroomGolfFinish % (self.barrelsHome, Consts.NumBarrels)
+            text += '\n' + TTL.BoardroomGolfFinish % (Consts.NumBarrels - self.barrelsLost, Consts.NumBarrels)
         self.finishLabel = DirectLabel(relief=None, text=text, text_scale=0.09, text_fg=(1, 1, 0.6, 1),
                                        text_shadow=(0, 0, 0, 1), text_font=ToontownGlobals.getSignFont(),
                                        text_wordwrap=18, pos=(0, 0, 0.45))
@@ -1492,7 +1492,6 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         if toon.isEmpty() or toon.doId not in self.getToonIds():
             return Task.cont
         if self.golfLeaving:
-            self._checkDropPickup(toon)
             self._checkGolfLeave(toon)
             return Task.cont
         from direct.showbase.InputStateGlobal import inputState
@@ -1563,13 +1562,6 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         self.dropCount = len(dropIds)
         self._updateGui()
 
-    def golfBarrelCarried(self, avId, count):
-        toon = self.getToon(avId)
-        if self.golf is None or toon is None or toon.isEmpty():
-            return
-        self.golf.setCarried(toon, count)
-        base.playSfx(self.pickupSfx, node=toon) if getattr(self, 'pickupSfx', None) else None
-
     def golfBarrelsHome(self, barrelsHome):
         if self.golf is None:
             return
@@ -1592,6 +1584,8 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         if self.golf is None:
             return
         self.golf.cogEscaped(cogId, carrying)
+        if carrying:
+            self.barrelsLost += 1
         self.barrelsHome = barrelsHome
         self.golf.setBarrelsHome(barrelsHome)
         self._updateGui()
@@ -1658,18 +1652,6 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
             toon.setSystemMessage(0, TTL.CogdoMazeGameWaitingForToons if self._golfWaiting() else '')
             self._intoGolfElevator(toon)
             self._cameraInElevator(self.golf.toonElevator)
-
-    def _checkDropPickup(self, toon):
-        # Walking about after the golf: a barrel lying on the floor is
-        # picked up by walking into it, to carry into the elevator.
-        if toon.doId in self.leftGolf or not self.golf.drops:
-            return
-        dropId = self.golf.dropNear(toon.getPos(render), Consts.DropPickupRadius)
-        now = globalClock.getFrameTime()
-        if dropId is not None and (dropId != getattr(self, '_askedDrop', None) or now - self._askedDropAt > 1.0):
-            self._askedDrop = dropId
-            self._askedDropAt = now
-            self.sendUpdate('requestDropPickup', [dropId])
 
     def _golfWaiting(self):
         return [avId for avId in self.getToonIds() if avId not in self.leftGolf]

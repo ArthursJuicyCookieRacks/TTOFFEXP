@@ -184,14 +184,14 @@ class BoardroomLayout:
             chairs.append(y)
             y += Consts.SeatSpacing
         for side in (-1, 1):
-            # The seats taken, spread along the table; the others stand
-            # empty.
+            # Every chair down both sides has a Boss Cog in it (Arthur: no
+            # empty chairs). perSide still draws from the rng, so the rest
+            # of the layout stays as it was for a seed.
             ys = list(chairs)
             rng.shuffle(ys)
-            taken = sorted(ys[:perSide])
             for cy in chairs:
                 offset = side * 0.5 * Consts.SeatSpacing / 2.0
-                self.seats.append((side, cy + offset, cy in taken))
+                self.seats.append((side, cy + offset, True))
         # The oil cans stand at the table's edges; the minions overhead
         # each fly their own loop up and down the table.
         count = int(round(Consts.lerpDifficulty(Consts.OilCansRange, d)))

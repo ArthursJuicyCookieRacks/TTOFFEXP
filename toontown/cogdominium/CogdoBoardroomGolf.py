@@ -118,7 +118,6 @@ class CogdoBoardroomGolf:
         self.barrelModels = []
         self.barrelsHome = Consts.NumBarrels
         self.drops = {}
-        self.carried = {}
 
     # --- Loading ---
 
@@ -287,10 +286,6 @@ class CogdoBoardroomGolf:
         for b in self.drops.values():
             b.removeNode()
         self.drops = {}
-        for held in self.carried.values():
-            for b in held:
-                b.removeNode()
-        self.carried = {}
         for ball in self.balls:
             ball['np'].removeNode()
         self.balls = []
@@ -449,27 +444,6 @@ class CogdoBoardroomGolf:
             Sequence(LerpPosInterval(b, 0.25, PM.Point3(x, y, -mn[2] * self.barrelScale + 0.6), blendType='easeOut'),
                      LerpPosInterval(b, 0.25, PM.Point3(x, y, -mn[2] * self.barrelScale), blendType='easeIn')).start()
             self.drops[dropId] = b
-
-    def dropNear(self, pos, radius):
-        local = self.toLocal(pos)
-        for dropId, b in self.drops.items():
-            if math.hypot(b.getX() - local[0], b.getY() - local[1]) < radius:
-                return dropId
-        return None
-
-    def setCarried(self, toon, count):
-        # A toon after the golf with the barrels it picked up, held in
-        # front of it, stacked.
-        old = self.carried.pop(toon.doId, [])
-        for b in old:
-            b.removeNode()
-        held = []
-        for i in range(count):
-            b = self.carryModel.copyTo(toon)
-            b.setScale(self.barrelScale * 0.7)
-            b.setPos(0, 1.3, 2.0 + i * 1.5)
-            held.append(b)
-        self.carried[toon.doId] = held
 
     def _removeCog(self, cog):
         if cog.get('ival'):

@@ -1,0 +1,75 @@
+BOSSBOT FIELD OFFICE — SOURCE ASSETS AND ADAPTATION
+
+All visual source assets come from:
+https://github.com/RegDogg/TTR-Offline-resources
+
+Source commit:
+b912a6cdb3a1f400b37eba02ba5356de9ac2d4a5
+
+CLASSIC EXTERIOR SOURCES
+
+phase_5/maps/cogdominium_palette_3cmla_1.jpg
+  Legal Eagle exterior atlas, including its original poster tile.
+
+phase_5/maps/cogdominium_palette_3cmla_4.jpg
+  Mover Shaker exterior atlas, including its original poster tile.
+
+phase_5/maps/cogdominium_palette_3cmla_5.jpg
+  Shared details and brim shade tiles. Recolored to display brown on the
+  original models, including compensation for the Mover Shaker material tint.
+
+Other original facade, sign, elevator, and alpha-mask dependencies are retained
+where included. Their repository filenames identify the corresponding source
+assets; unchanged support files are supplied for the original model mappings.
+
+BIG CHEESE PORTRAIT SOURCES
+
+phase_3.5/models/char/suitA-heads.bam — bigcheese head geometry
+phase_3.5/models/char/suitA-mod.bam — native Cog body
+phase_4/models/char/suitA-neutral.bam — native neutral pose
+phase_4/maps/suit-heads_rerigged_palette_3cmla_1.jpg — head texture atlas
+phase_3.5/maps/c_blazer.jpg — corporate jacket
+phase_3.5/maps/c_sleeve.jpg — corporate sleeves
+phase_3.5/maps/c_arm.jpg — corporate arm details
+phase_3.5/maps/c_leg.jpg — corporate trousers
+phase_3.5/maps/phase_3.5_palette_1lmla_1.jpg — body support atlas
+phase_3/maps/hand.jpg — native hand texture
+
+BOSSBOT LOGO SOURCES
+
+phase_3/models/gui/cog_icons.bam — native CorpIcon medallion geometry
+phase_3/maps/ttr_t_gui_gen_corpIcon.jpg — Bossbot medallion color
+phase_3/maps/ttr_t_gui_gen_corpIcon_a.rgb — Bossbot medallion alpha
+
+OPTIONAL MODERN-TOWER SOURCES
+
+phase_5/maps/ttr_t_ara_cbe_cogdoSell.jpg — modern exterior atlas
+phase_5/maps/ttr_t_ara_csa_elevatorSellbot.jpg — modern elevator atlas
+phase_5/maps/ttr_t_ara_csa_annexSign.jpg — annex-sign atlas
+phase_3/maps/square_drop_shadow.jpg — native annex shadow
+phase_3/maps/square_drop_shadow_a.rgb — native annex shadow alpha
+
+ADAPTATION
+
+Big Cheese was rendered from the repository's native meshes, textures, and
+pose. The original poster artwork supplied the layout and ray backdrop. A
+source-based image-edit pass restored/recolored that backdrop for the brown
+Bossbot theme. Final compositing preserves the source atlas slots, dimensions,
+and model texture coordinates. Bossbot logos use the repository's own artwork.
+For modern atlas recolors, the image edit establishes the brown color direction;
+the final hue change is applied to the original pixels to retain exact UV edges.
+
+No external visual assets were introduced. The package is a texture adaptation
+of the credited source resources; it does not claim authorship of those source
+assets. Original geometry and model files are not modified by this pack.
+
+Assembly reference only:
+https://github.com/RegDogg/TTR-Offline/blob/master/toontown/suit/Suit.py
+This code was consulted for native Cog head/body assembly and medallion
+placement. No visual assets were taken from that separate repository.
+
+THIN-BORDER CORRECTION
+The native Lawbot and Sellbot poster artwork boundaries were re-measured from
+the original 3cmla_1 and 3cmla_4 atlases at the same source commit. The existing
+Bossbot poster artwork is cropped and resampled into these native rectangles
+without its redundant inset matte. No new character artwork is substituted.
