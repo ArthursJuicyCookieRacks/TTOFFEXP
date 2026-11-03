@@ -27,6 +27,7 @@ from toontown.npcplayers.NPCSettings import wantsTrolleyCompany, wantsHelp, forg
 from toontown.npcplayers.NPCBattleCrew import isNPC
 from toontown.suit.DistributedBossCogAI import DistributedBossCogAI
 from toontown.npcplayers.NPCNav import getNav
+from toontown.npcplayers.NPCPathfinder import getPathfinder, WALK, JUMP, DROP, BOARD, RIDE
 from toontown.minigame.DistributedMinigameAI import DistributedMinigameAI
 from toontown.safezone.DistributedGolfKartAI import DistributedGolfKartAI
 from toontown.racing.DistributedRaceAI import DistributedRaceAI
@@ -44,6 +45,21 @@ WALK_ON_DELAY = (0.4, 1.5)
 TELEPORT_IN_DISTANCE = (9.0, 14.0)
 # How long the run out of a won building's elevator takes on the clients.
 WALK_OUT_TIME = 6.0
+# Inside a place (a factory, a mint, an office, a golf course, a cog
+# building) each toon finds its own way (NPCPathfinder): to a spot of its own
+# near the player, or to the player's battle, which it joins once it is this
+# close.
+JOIN_REACH = 20.0
+SPREAD = (5.0, 9.0)
+# A new route when the player has gone this far from where the old one ends.
+REROUTE = 12.0
+# Only a toon with no way at all to the player for this long (it fell
+# somewhere it can't get out of) is brought back by teleport.
+LAST_RESORT = 60.0
+# How long a toon waits for a platform to come, and to ride it across.
+BOARD_PATIENCE = 30.0
+RIDE_PATIENCE = 40.0
+CELL_JUMP = 4.0
 
 # For each place that waits on every toon in it: the state it waits in, and
 # what the toon's client sends there. A place is matched by its class or the
@@ -389,9 +405,17 @@ class NPCParty:
                 # race puts each toon where it wants them.
                 npc.walk = None
                 continue
+            if getAreaId(player.zoneId) is None and getattr(npc, 'route', None) is not None \
+                    and getattr(npc, 'onMover', None) is None and not self.routeStillGood(npc, player):
+                # The player went another way: a new route after this leg.
+                npc.route = None
             if npc.walk is not None:
                 continue
             if [e for e in self.getElevators() if player.doId in seatsOf(e)]:
+                continue
+            if getAreaId(player.zoneId) is None:
+                # Inside a place: its own way there, like a player.
+                self.goOwnWay(npc, player)
                 continue
             playerPos = self.manager.getPlayerPos(player)
             distance = (npc.getPos() - playerPos).length()
@@ -409,6 +433,170 @@ class NPCParty:
                 # Left too far behind to walk: it teleports to the player,
                 # the way a friend would.
                 self.manager.teleportTo(npc, None, target, npc.getH())
+
+    # --- Finding its own way inside ---
+
+    def ownSpot(self, npc, player, playerPos):
+        """Where this toon likes to stand near the player: its own side of
+        the player (from its doId), so a group spreads out instead of
+        queueing behind."""
+        nav = getNav()
+        h = math.radians(player.getH())
+        for tries in range(4):
+            angle = h + (npc.doId % 7) * (2 * math.pi / 7) + tries * 0.9
+            radius = SPREAD[0] + (npc.doId % 5) * (SPREAD[1] - SPREAD[0]) / 4.0
+            spot = Point3(playerPos[0] - radius * math.sin(angle), playerPos[1] + radius * math.cos(angle), playerPos[2])
+            ground = nav.groundZ(spot[0], spot[1], spot[2])
+            if ground is not None and nav.clearLine(Point3(playerPos), Point3(spot[0], spot[1], ground)):
+                return Point3(spot[0], spot[1], ground)
+        return Point3(playerPos)
+
+    def battlePos(self, battle):
+        """Where the battle is in the world. (A facility's battles keep
+        their spot relative to the room; the client has the battle placed.)"""
+        base = getClientBuiltin('base')
+        client = base.cr.doId2do.get(battle.doId) if base is not None and hasattr(base, 'cr') else None
+        if client is not None and hasattr(client, 'getPos') and not client.isEmpty():
+            return Point3(client.getPos(base.render))
+        return Point3(battle.pos)
+
+    def goalFor(self, npc, player):
+        battle = getattr(npc, 'battleGoal', None)
+        if battle is not None:
+            if battle.isDeleted() or battle.fsm is None or npc.doId in battle.toons or not battle.toonCanJoin():
+                npc.battleGoal = None
+            else:
+                return self.battlePos(battle), JOIN_REACH * 0.6
+        return Point3(self.manager.getPlayerPos(player)), FOLLOW_DISTANCE
+
+    def routeStillGood(self, npc, player):
+        goal, reach = self.goalFor(npc, player)
+        end = getattr(npc, 'routeGoal', None)
+        return end is not None and (end - goal).length() < REROUTE
+
+    def headToBattle(self, npc, battle):
+        if getattr(npc, 'battleGoal', None) is not battle:
+            npc.battleGoal = battle
+            npc.route = None
+            npc.nextSearch = 0
+            getPathfinder().cancel(npc)
+
+    def goOwnWay(self, npc, player):
+        finder = getPathfinder()
+        now = globalClock.getFrameTime()
+        if getattr(npc, 'route', None):
+            self.nextLeg(npc)
+            return
+        npc.route = None
+        goal, reach = self.goalFor(npc, player)
+        pos = npc.getPos()
+        if (pos - goal).length() <= reach:
+            npc.stuckSince = None
+            finder.cancel(npc)
+            return
+        if finder.pending(npc):
+            return
+        result = finder.result(npc)
+        if result is not None:
+            if result.path:
+                npc.route = finder.legs(pos, result.path, result.grid)
+                npc.routeGoal = goal
+                npc.stuckSince = None
+                self.count('routes')
+                self.nextLeg(npc)
+                return
+            # No way over the floors (the way on is a moving platform, or
+            # the toon fell): how the floors carry toons over (the
+            # player's crossing) is the way.
+            if self.manager.facilities.trailWalk(npc, player, self.manager.getPlayerPos(player)):
+                self.count('trail')
+                return
+            if getattr(npc, 'stuckSince', None) is None:
+                npc.stuckSince = now
+            if now - npc.stuckSince > LAST_RESORT:
+                self.notify.info('NPC %s found no way to %s for %d s: teleporting' % (npc.doId, goal, LAST_RESORT))
+                self.count('teleport')
+                npc.stuckSince = None
+                self.manager.teleportTo(npc, None, self.spotNear(goal, 5.0), npc.getH())
+                return
+            npc.nextSearch = now + 2.0
+            return
+        if now < getattr(npc, 'nextSearch', 0):
+            return
+        target = goal if getattr(npc, 'battleGoal', None) is not None else self.ownSpot(npc, player, goal)
+        trail = self.manager.facilities.trails.get(player.doId)
+        way = list(trail['points']) if trail and trail['zoneId'] == player.zoneId else None
+        finder.request(npc, target, way)
+        npc.nextSearch = now + 1.0
+
+    def nextLeg(self, npc):
+        route = npc.route
+        if not route:
+            npc.route = None
+            return
+        kind, data = route[0]
+        if kind == WALK:
+            if any(self.manager.facilities.stomperBlocks(npc.zoneId, p) for p in data[:4]):
+                # A stomper is down in the way: wait for it to go up.
+                return
+            route.pop(0)
+            npc.walk = [list(data), RUN_SPEED, None, None]
+        elif kind == BOARD:
+            # Wait at the edge for the platform to be here, then get on.
+            now = globalClock.getFrameTime()
+            if getattr(npc, 'boardSince', None) is None:
+                npc.boardSince = now
+            if now - npc.boardSince > BOARD_PATIENCE:
+                npc.boardSince = None
+                npc.route = None
+                return
+            if not data.present():
+                return
+            npc.boardSince = None
+            route.pop(0)
+            self.count('boards')
+            spot = data.center()
+            if (npc.getPos() - spot).length() > CELL_JUMP:
+                self.manager.facilities.jumpTo(npc, spot)
+            else:
+                npc.walk = [[spot], RUN_SPEED, None, None]
+            if data.mover.liftDoId:
+                lift = self.air.doId2do.get(data.mover.liftDoId)
+                if lift is not None:
+                    npc.asSender(lift.setAvatarEnter)
+            npc.onMover = data.mover
+        elif kind == RIDE:
+            # Carried along (NPCFacilities.ride) until the platform stops at
+            # the other end.
+            now = globalClock.getFrameTime()
+            if getattr(npc, 'rideSince', None) is None:
+                npc.rideSince = now
+            if not data.present() or now - npc.rideSince < 0.5:
+                if now - npc.rideSince > RIDE_PATIENCE:
+                    npc.rideSince = None
+                    npc.route = None
+                return
+            npc.rideSince = None
+            route.pop(0)
+            self.count('rides')
+            if data.mover.liftDoId:
+                lift = self.air.doId2do.get(data.mover.liftDoId)
+                if lift is not None:
+                    npc.asSender(lift.setAvatarLeave)
+            npc.onMover = None
+        elif kind == JUMP:
+            route.pop(0)
+            self.count('jumps')
+            self.manager.facilities.jumpTo(npc, data)
+        else:
+            route.pop(0)
+            npc.walk = [list(data), RUN_SPEED, None, None]
+        if not route:
+            npc.route = []
+
+    def count(self, key):
+        stats = self.__dict__.setdefault('stats', {})
+        stats[key] = stats.get(key, 0) + 1
 
     def answerHandshakes(self, zoneIndex):
         for npc in self.members:

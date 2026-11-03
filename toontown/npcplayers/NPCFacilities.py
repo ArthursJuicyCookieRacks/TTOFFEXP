@@ -40,7 +40,7 @@ JUMP_HEIGHT = 3.0
 JUMP_TIME = 0.9
 # The player's footsteps are kept this far apart, this many of them.
 TRAIL_STEP = 0.8
-TRAIL_LENGTH = 500
+TRAIL_LENGTH = 2000
 # Above the ground by this much the player is in the air.
 AIR_HEIGHT = 0.8
 # How long an NPC waits for missing ground (a platform away) before it gives
@@ -784,6 +784,25 @@ class NPCFacilities:
         if not nav.available():
             return
         pos = npc.getPos()
+        mover = getattr(npc, 'onMover', None)
+        if mover is not None and hasattr(mover, 'lift'):
+            # On a lift as the district runs it (NPCPathfinder.GhostLift):
+            # carried with it, whether or not the player's client has it.
+            base = getClientBuiltin('base')
+            mover.update()
+            held = getattr(npc, 'liftRide', None)
+            if held is None or held[0] is not mover:
+                npc.liftRide = (mover, mover.moving.getRelativePoint(base.render, pos))
+                return
+            world = base.render.getRelativePoint(mover.moving, held[1])
+            if (world - pos).length() > 0.02:
+                npc.moveTo(world[0], world[1], world[2], npc.getH())
+                npc.riding = True
+            elif getattr(npc, 'riding', False):
+                npc.riding = False
+                npc.stopMoving()
+            return
+        npc.liftRide = None
         ground, into = nav.groundHit(pos[0], pos[1], pos[2])
         rideState = getattr(npc, 'ride', None)
         if self.debug:

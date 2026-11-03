@@ -32,6 +32,7 @@ class NPCNav:
     def __init__(self):
         # A place the client has loaded but not shown yet (see NPCPreload).
         self.sceneOverride = None
+        self.levelRoots = {}
         self.traverser = CollisionTraverser('npcNav')
         self.queue = CollisionHandlerQueue()
         self.root = NodePath('npcNavRays')
@@ -66,6 +67,56 @@ class NPCNav:
             self.root.detachNode()
         self.queue.sortEntries()
 
+    def hits(self, scene):
+        """Every hit of the ray or segment set up now, as (point, into
+        NodePath, tangible), in the scene's coordinates: the scene itself,
+        and the parts of a factory, mint or office its client has put away
+        for now (the rooms the player can't see; see hiddenRooms)."""
+        out = []
+        roots = [scene]
+        if scene is not self.sceneOverride:
+            roots += self.hiddenRooms()
+        for root in roots:
+            self.traverse(root)
+            for i in range(self.queue.getNumEntries()):
+                entry = self.queue.getEntry(i)
+                out.append((entry.getSurfacePoint(root), entry.getIntoNodePath(), entry.getInto().isTangible()))
+        return out
+
+    def hiddenRooms(self):
+        """A factory or mint hides (stashes) the rooms out of the player's
+        sight, and a stashed node can't be hit; the NPCs elsewhere in the
+        place still need its floors and walls. Each such level gets a copy
+        of its rooms (instances, never drawn) at their place in the world."""
+        base = getClientBuiltin('base')
+        if base is None or not hasattr(base, 'cr'):
+            return []
+        roots = []
+        live = set()
+        for obj in list(base.cr.doId2do.values()):
+            zones = getattr(obj, 'zoneNum2node', None)
+            geom = getattr(obj, 'geom', None)
+            if not zones or geom is None or geom.isEmpty():
+                continue
+            live.add(obj.doId)
+            root = self.levelRoots.get(obj.doId)
+            if root is None or root[1] is not geom:
+                if root is not None:
+                    root[0].removeNode()
+                holder = NodePath('npcNavRooms-%d' % obj.doId)
+                for zoneNum, zone in zones.items():
+                    if zone is geom or zone.isEmpty() or zone == geom:
+                        continue
+                    parent = holder.attachNewNode('room-%s' % zoneNum)
+                    parent.setMat(zone.getParent().getMat(base.render))
+                    zone.instanceTo(parent)
+                root = self.levelRoots[obj.doId] = (holder, geom)
+            roots.append(root[0])
+        for doId in list(self.levelRoots):
+            if doId not in live:
+                self.levelRoots.pop(doId)[0].removeNode()
+        return roots
+
     def available(self):
         return self.getScene() is not None
 
@@ -78,10 +129,9 @@ class NPCNav:
         self.ray.setDirection(0, 0, -1)
         self.traverser.clearColliders()
         self.traverser.addCollider(self.rayPath, self.queue)
-        self.traverse(scene)
         best = None
-        for i in range(self.queue.getNumEntries()):
-            hitZ = self.queue.getEntry(i).getSurfacePoint(scene).getZ()
+        for point, into, tangible in self.hits(scene):
+            hitZ = point.getZ()
             if hitZ <= z + STEP_UP and (best is None or hitZ > best):
                 best = hitZ
         if best is None or best < z - MAX_DROP:
@@ -98,15 +148,13 @@ class NPCNav:
         self.ray.setDirection(0, 0, -1)
         self.traverser.clearColliders()
         self.traverser.addCollider(self.rayPath, self.queue)
-        self.traverse(scene)
         best = None
         into = None
-        for i in range(self.queue.getNumEntries()):
-            entry = self.queue.getEntry(i)
-            hitZ = entry.getSurfacePoint(scene).getZ()
+        for point, hitInto, tangible in self.hits(scene):
+            hitZ = point.getZ()
             if hitZ <= z + STEP_UP and (best is None or hitZ > best):
                 best = hitZ
-                into = entry.getIntoNodePath()
+                into = hitInto
         if best is None or best < z - MAX_DROP:
             return None, None
         return best, into
@@ -120,9 +168,8 @@ class NPCNav:
         self.ray.setDirection(0, 0, -1)
         self.traverser.clearColliders()
         self.traverser.addCollider(self.rayPath, self.queue)
-        self.traverse(scene)
-        for i in range(self.queue.getNumEntries()):
-            hitZ = self.queue.getEntry(i).getSurfacePoint(scene).getZ()
+        for point, into, tangible in self.hits(scene):
+            hitZ = point.getZ()
             if z + STEP_UP < hitZ <= z + HEADROOM:
                 return True
         return False
@@ -181,13 +228,10 @@ class NPCNav:
         self.segment.setPointB(b[0], b[1], b[2] + CHEST)
         self.traverser.clearColliders()
         self.traverser.addCollider(self.segmentPath, self.queue)
-        self.traverse(scene)
-        for i in range(self.queue.getNumEntries()):
-            entry = self.queue.getEntry(i)
-            into = entry.getIntoNodePath()
+        for point, into, tangible in self.hits(scene):
             # Other toons and the cogs walk about, and trigger spheres stop
             # nobody; only the scenery counts.
-            if not entry.getInto().isTangible():
+            if not tangible:
                 continue
             if into.findNetTag('avatarDoId').isEmpty() and into.findNetPythonTag('avatar').isEmpty():
                 return False

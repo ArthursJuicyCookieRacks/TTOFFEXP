@@ -24,6 +24,8 @@ from toontown.npcplayers import NPCChatReplies, NPCProfiles
 from toontown.npcplayers.NPCSettings import preloadNPCs, keepAreas, npcsPerArea, helpMode, wantsHelp, setHelpAnswer, HELP_SOLO, \
     forceHelp, helpForced, canAskHelp
 from toontown.npcplayers.NPCBattleCrew import NPCBattleCrew, isNPC
+from toontown.npcplayers.NPCPathfinder import getPathfinder
+from toontown.npcplayers.NPCParty import JOIN_REACH
 from toontown.npcplayers.NPCNav import getNav
 from toontown.npcplayers.NPCGolf import NPCGolf
 from toontown.npcplayers.NPCFacilities import NPCFacilities
@@ -274,6 +276,11 @@ class NPCPlayerManagerAI:
 
     def __init__(self, air):
         self.air = air
+        # The NPCs' maps take the lifts from the district (see GhostLift).
+        from toontown.npcplayers import NPCPathfinder
+        from toontown.coghq.DistributedLiftAI import DistributedLiftAI
+        NPCPathfinder.aiLiftSource = lambda: [obj for obj in list(air.doId2do.values())
+                                              if isinstance(obj, DistributedLiftAI)]
         self.areas = {}
         self.npcsPerArea = npcsPerArea()
         self.keepAreas = keepAreas()
@@ -730,6 +737,7 @@ class NPCPlayerManagerAI:
                         if npc.walk is not None and not npc.isDeleted():
                             self.bump(area, npc, suits)
             self.facilities.tick(now, dt)
+            getPathfinder().tick()
             self.party.follow()
             for npc in self.party.members[:]:
                 if npc.crew is None and not npc.busy and not npc.isDeleted():
@@ -1084,9 +1092,20 @@ class NPCPlayerManagerAI:
             party = [npc for p in players for npc in self.party.partyOf(p)
                      if npc.crew is None and not npc.busy and npc.zoneId == p.zoneId]
             if party:
-                npc = party[0]
-                pos = npc.getPos()
-                crew.join(npc, pos[0], pos[1], pos[2])
+                # Inside a place each runs to the battle its own way and
+                # joins when it gets there, as players do; on the streets
+                # the party is right there with the player.
+                battlePos = self.party.battlePos(battle)
+                for npc in party:
+                    if len(battle.toons) >= 4:
+                        break
+                    pos = npc.getPos()
+                    if getAreaId(npc.zoneId) is None and (pos - battlePos).length() > JOIN_REACH:
+                        self.party.headToBattle(npc, battle)
+                        continue
+                    npc.battleGoal = None
+                    npc.route = None
+                    crew.join(npc, pos[0], pos[1], pos[2])
                 continue
             if battle.__class__.__name__ not in STREET_BATTLES:
                 continue
