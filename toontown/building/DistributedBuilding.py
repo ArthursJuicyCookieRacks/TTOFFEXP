@@ -596,7 +596,7 @@ class DistributedBuilding(DistributedObject.DistributedObject):
         starNP = self.makeFieldOfficeLevelStar(signOrigin, level, backgroundNP.getZ(signOrigin))
         suitBuildingNP.setName('cb' + str(self.block) + ':_landmark__DNARoot')
         suitBuildingNP.setPosHprScale(nodePath, 15.463, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0)
-        self.layOutFieldOfficeSign(signOrigin, backgroundNP, starNP, signTextNodePath, textNode.getWidth())
+        self.layOutFieldOfficeSign(signOrigin, backgroundNP, starNP)
         if chr(self.track) == 'm':
             self.retextureCashbotFieldOffice(suitBuildingNP)
         suitBuildingNP.flattenMedium()
@@ -617,17 +617,12 @@ class DistributedBuilding(DistributedObject.DistributedObject):
     FieldOfficeSignHalfWidth = 20.0 * 0.266667
     FieldOfficeStarGap = 0.17
     FieldOfficeStarRightLimit = 8.0
-    FieldOfficeSignPadding = 1.6
-    # The eyebrow beam's tip reaches 7.2 ft out from the wall at sign height.
-    FieldOfficeNarrowStarY = -6.0
-    FieldOfficeNarrowStarZ = -0.1
 
-    def layOutFieldOfficeSign(self, signOrigin, signNP, starNP, textNP=None, textWidth=0.0):
+    def layOutFieldOfficeSign(self, signOrigin, signNP, starNP):
         # Street lots stretch or squeeze the whole field office sideways, by a
         # different amount on each lot. The sign and the star keep their true
-        # shape on every lot: they sit side by side, centred over the door.
-        # Where the front is too narrow for both, the sign plate first loses
-        # its empty ends (the writing keeps its size), and only then shrinks.
+        # shape on every lot: they sit side by side, centred over the door,
+        # and the sign shrinks where the front is too narrow for both.
         netScale = signOrigin.getScale(render)
         squeeze = netScale[0] / netScale[2] if netScale[2] > 0.001 else 1.0
         if squeeze < 0.001:
@@ -636,32 +631,18 @@ class DistributedBuilding(DistributedObject.DistributedObject):
         radius = self.FieldOfficeStarSize / 2.0
         starWidth = self.FieldOfficeStarGap + 2 * radius
         room = 2 * self.FieldOfficeStarRightLimit * squeeze
-        # A narrow front (the sign would shrink below 70%): the plate first
-        # loses its empty ends, and the star stands out past the eyebrow beam
-        # so it can sit higher, clear of the elevator's door frame.
-        narrow = (room - starWidth) / (2 * half) < 0.7
-        plate = 2 * half
-        if narrow:
-            # The writing is 0.8 ft per text unit; leave room for the screws.
-            plateMin = min(plate, textWidth * 0.8 + self.FieldOfficeSignPadding)
-            plate = max(plateMin, room - starWidth)
-        fit = max(0.4, min(1.0, (room - starWidth) / plate))
-        left = -(plate * fit + starWidth) / 2.0
+        # The star is always full size; only the sign shrinks to make room.
+        fit = max(0.4, min(1.0, (room - starWidth) / (2 * half)))
+        left = -(2 * half * fit + starWidth) / 2.0
         signScale = signNP.getScale(signOrigin)
-        signNP.setScale(signOrigin, signScale[0] * fit * plate / (2 * half) / squeeze, signScale[1], signScale[2] * fit)
-        if textNP is not None and plate < 2 * half:
-            textNP.setSx(textNP.getSx() * 2 * half / plate)
-        signNP.setX(signOrigin, (left + plate * fit / 2.0) / squeeze)
-        starX = left + plate * fit + self.FieldOfficeStarGap + radius
+        signNP.setScale(signOrigin, signScale[0] * fit / squeeze, signScale[1], signScale[2] * fit)
+        signNP.setX(signOrigin, (left + half * fit) / squeeze)
+        starX = left + 2 * half * fit + self.FieldOfficeStarGap + radius
         signZ = signNP.getZ(signOrigin)
         starNP.setScale(1.0 / squeeze, 1.0, 1.0)
         starNP.setX(starX / squeeze)
-        if narrow:
-            starNP.setY(self.FieldOfficeNarrowStarY)
-            starNP.setZ(signZ + self.FieldOfficeNarrowStarZ)
-        else:
-            starNP.setZ(signZ + self.FieldOfficeStarZ)
-        starNP.setPythonTag('foSignLayout', (round(squeeze, 3), round(fit, 3), round(plate, 2)))
+        starNP.setZ(signZ + self.FieldOfficeStarZ)
+        starNP.setPythonTag('foSignLayout', (round(squeeze, 3), round(fit, 3)))
 
     @classmethod
     def makeFieldOfficeLevelStar(cls, signOrigin, level, z=0.0):
