@@ -56,6 +56,10 @@ PET_HEIGHT = 0.46
 # The pages: their middle, help line and the middle of their rows.
 PAGE_Z = -0.04
 TAB_Z = 0.74
+# How much smaller the right board's tabs and pages are drawn, and the
+# height they shrink toward.
+INSIDE_SCALE = 0.95
+INSIDE_PIVOT_Z = 0.5
 HELP_Z = 0.58
 ROWS_MID = -0.06
 # The columns of every row.
@@ -239,7 +243,12 @@ class PetCreatorGUI(DirectFrame):
         # The board of choices on the right.
         self.board = DirectFrame(parent=self, relief=None, image=self.dialogGeom, image_color=BOARD_GREEN,
                                  image_scale=(BOARD_WIDTH, 1, BOARD_HEIGHT), pos=(BOARD_X, 0, BOARD_Z))
-        DirectFrame(parent=self.board, relief=None, image=self.dialogGeom, image_color=PALE_TEAL,
+        # Everything on the board is drawn a little smaller, shrunk toward a
+        # point near its top, so the tabs sit just clear of the top border.
+        inside = self.board.attachNewNode('inside')
+        inside.setScale(INSIDE_SCALE)
+        inside.setZ(INSIDE_PIVOT_Z * (1 - INSIDE_SCALE))
+        DirectFrame(parent=inside, relief=None, image=self.dialogGeom, image_color=PALE_TEAL,
                     image_scale=(BOARD_WIDTH - 0.1, 1, 1.36), pos=(0, 0, PAGE_Z))
         tabs = (TAB_NAME, TAB_WEAR) if self.restyle else (TAB_LOOKS, TAB_TRAITS, TAB_NAME, TAB_WEAR)
         tabArt = tuple(self.__centered(self.nameArt, name, 0.27) for name in
@@ -250,12 +259,12 @@ class PetCreatorGUI(DirectFrame):
             self.tabPages.append(None)
             self.tabButtons.append(None)
         for n, tab in enumerate(tabs):
-            button = DirectButton(parent=self.board, relief=None, image=tabArt,
+            button = DirectButton(parent=inside, relief=None, image=tabArt,
                                   text=TTLocalizer.PetCreatorTabs[tab], text_scale=0.05, text_pos=(0, -0.015),
                                   text_fg=PURPLE, pos=(left + n * width, 0, TAB_Z), pressEffect=False,
                                   command=self.__showTab, extraArgs=[tab])
             self.tabButtons[tab] = button
-            page = DirectFrame(parent=self.board, relief=None, pos=(0, 0, PAGE_Z))
+            page = DirectFrame(parent=inside, relief=None, pos=(0, 0, PAGE_Z))
             page.hide()
             self.tabPages[tab] = page
         if not self.restyle:
