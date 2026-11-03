@@ -23,13 +23,14 @@ import math
 import random
 
 from direct.directnotify import DirectNotifyGlobal
-from panda3d.core import Point3, Vec3
+from panda3d.core import Point3, Vec3, Mat4
 
 from otp.local.ExecutionContext import getClientBuiltin
 from toontown.coghq import MoleFieldBase
 from toontown.coghq.DistributedGolfGreenGameAI import DistributedGolfGreenGameAI
 from toontown.coghq.DistributedMazeAI import DistributedMazeAI
 from toontown.coghq.DistributedMoleFieldAI import DistributedMoleFieldAI
+from toontown.npcplayers.NPCPathfinder import getPathfinder
 from toontown.npcplayers.NPCNav import getNav
 from toontown.toonbase import ToontownGlobals
 
@@ -55,6 +56,11 @@ BOARD_TIME = (24.0, 50.0)
 # A stomper this close to the floor is down; the NPC keeps clear until it
 # rises.
 STOMPER_CLEARANCE = 3.0
+# A crate push (CrateGlobals).
+CRATE_PUSH_TIME = 1.5
+# A button this near (walking) is stepped on, as players do in passing.
+BUTTON_REACH = 45.0
+CRATE_PUSH_PAUSE = 0.3
 
 
 def clientObject(doId):
@@ -99,6 +105,36 @@ class Job:
             path = [Point3(point)]
         npc.walk = [path, speed, None, done]
 
+    def routeTo(self, spot, now, near=1.0):
+        """Takes its own way (the pathfinder's, as NPCParty.goOwnWay) to
+        spot; True once there."""
+        npc = self.npc
+        if flat(npc.getPos(), spot) < near and abs(npc.getPos()[2] - spot[2]) < 3.0:
+            npc.walk = None
+            npc.route = None
+            return True
+        if npc.walk is not None:
+            return False
+        party = self.manager.party
+        if getattr(npc, 'route', None):
+            party.nextLeg(npc)
+            return False
+        finder = getPathfinder()
+        result = finder.result(npc)
+        if result is not None and result.path:
+            npc.route = finder.legs(npc.getPos(), result.path, result.grid)
+            npc.routeGrid = result.grid
+            party.nextLeg(npc)
+            return False
+        if result is not None and flat(npc.getPos(), spot) < 6.0:
+            # Right there (the search wants a floor square): step up to it.
+            npc.walk = [[Point3(spot)], RUN_SPEED, None, None]
+            return False
+        if not finder.pending(npc) and now >= getattr(self, 'searchAt', 0):
+            finder.request(npc, spot)
+            self.searchAt = now + 1.0
+        return False
+
     def send(self, func, *args):
         try:
             self.npc.asSender(func, *args)
@@ -106,6 +142,118 @@ class Job:
             self.facilities.notify.warning('%s failed for NPC %s' % (getattr(func, '__name__', func), self.npc.doId))
             import traceback
             traceback.print_exc()
+
+
+class CrateJob(Job):
+    """Pushes a mint crate against the crate wall it is the step up over,
+    the way a player does when there is no other way on: walks round behind
+    it, then pushes it a cell at a time (DistributedCrateAI's own grid)."""
+    anyZone = True
+    PATIENCE = 120.0
+
+    def __init__(self, facilities, npc, player, crate, side, pushes):
+        Job.__init__(self, facilities, npc, player)
+        self.crate = crate
+        self.side = side
+        self.pushes = pushes
+        self.state = 'goto'
+        self.started = globalClock.getFrameTime()
+        self.due = 0
+        self.searchAt = 0
+        facilities.notify.info('NPC %s pushes crate %s %d cells (side %d)' % (npc.doId, crate.doId, pushes, side))
+
+    def tick(self, now, dt):
+        npc = self.npc
+        crate = self.crate
+        if crate.isDeleted() or now - self.started > self.PATIENCE or self.pushes <= 0:
+            self.finish()
+            return
+        client = clientObject(crate.doId)
+        if client is None or client.isEmpty():
+            self.finish()
+            return
+        if self.state == 'goto':
+            spot = self.facilities.crateSpot(crate, client, self.side)
+            if self.routeTo(spot, now):
+                self.state = 'push'
+            return
+        # Pushing.
+        if now < self.due:
+            return
+        if crate.avId and crate.avId != npc.doId:
+            return
+        grid = crate.grid
+        old = grid.getObjPos(crate.entId)
+        if not grid.doPush(crate.entId, self.side):
+            self.finish()
+            return
+        new = grid.getObjPos(crate.entId)
+        crate.sendUpdate('setMoveTo', [npc.doId, old[0], old[1], old[2], new[0], new[1], new[2]])
+        render = getClientBuiltin('base').render
+        delta = render.getRelativeVector(client.getParent(), Vec3(new[0] - old[0], new[1] - old[1], 0))
+        pos = npc.getPos()
+        h = math.degrees(math.atan2(-delta[0], delta[1]))
+        npc.b_setAnimState('Push', 1.0)
+        npc.walk = [[Point3(pos[0] + delta[0], pos[1] + delta[1], pos[2])], delta.length() / CRATE_PUSH_TIME, None, None]
+        npc.setH(h)
+        self.pushes -= 1
+        self.due = now + CRATE_PUSH_TIME + CRATE_PUSH_PAUSE
+        self.facilities.notify.info('NPC %s pushed crate %s from %s to %s' % (npc.doId, crate.doId, old, new))
+        if self.pushes <= 0:
+            self.facilities.count('crate pushed')
+
+    def finish(self):
+        if self.pushes > 0:
+            self.facilities.notify.info('NPC %s stopped pushing crate %s (%s, %d pushes left, %.0f s)' % (
+                self.npc.doId, self.crate.doId, self.state, self.pushes, globalClock.getFrameTime() - self.started))
+        if not self.npc.isDeleted():
+            self.npc.b_setAnimState('neutral', 1.0)
+        self.facilities.puzzleDoneAt = globalClock.getFrameTime()
+        Job.finish(self)
+
+
+class ButtonJob(Job):
+    """Goes and stands on a factory button, as players do: a button that
+    stays on (a door's lock) is stepped on once; the warehouse's timed
+    buttons, that open only with a toon on each at once, are held while the
+    player holds one too."""
+    anyZone = True
+    PATIENCE = 90.0
+
+    def __init__(self, facilities, npc, player, button, spot):
+        Job.__init__(self, facilities, npc, player)
+        self.button = button
+        self.spot = spot
+        self.started = globalClock.getFrameTime()
+        self.onSince = None
+        facilities.claimedButtons[button.doId] = npc.doId
+
+    def tick(self, now, dt):
+        button = self.button
+        if button.isDeleted() or now - self.started > self.PATIENCE:
+            self.finish()
+            return
+        if self.onSince is None:
+            if button.isOn and button.secondsOn < 0:
+                # Someone else got there first.
+                self.finish()
+                return
+            if self.routeTo(self.spot, now, near=1.2):
+                self.send(button.requestInteract)
+                self.onSince = now
+                self.facilities.notify.info('NPC %s steps on button %s' % (self.npc.doId, button.entId))
+                self.facilities.count('buttons')
+            return
+        held = button.secondsOn >= 0 and self.facilities.playerOnButton(self.player, button)
+        if now - self.onSince > (2.0 if not held else 60.0) or (button.secondsOn >= 0 and now - self.onSince > 2.0 and not held):
+            self.finish()
+
+    def finish(self):
+        if self.onSince is not None and not self.button.isDeleted():
+            self.send(self.button.requestExit)
+        self.facilities.claimedButtons.pop(self.button.doId, None)
+        self.facilities.puzzleDoneAt = globalClock.getFrameTime()
+        Job.finish(self)
 
 
 class MoleJob(Job):
@@ -510,6 +658,7 @@ class NPCFacilities:
         self.air = manager.air
         self.trails = {}
         self.claimedMoles = {}
+        self.claimedButtons = {}
         self.solvers = {}
         self.animDue = {}
         self.stats = {}
@@ -529,7 +678,8 @@ class NPCFacilities:
             job = getattr(npc, 'job', None)
             if job is not None:
                 player = self.air.doId2do.get(npc.party)
-                if npc.crew is not None or npc.busy or player is None or player.zoneId != npc.zoneId:
+                if npc.crew is not None or npc.busy or player is None or \
+                        (player.zoneId != npc.zoneId and not getattr(job, 'anyZone', False)):
                     job.finish()
                 if job.done:
                     npc.job = None
@@ -543,7 +693,12 @@ class NPCFacilities:
                     job.finish()
                     npc.job = None
                 continue
-            if npc.crew is None and not npc.busy and npc.walk is None:
+            mover = getattr(npc, 'onMover', None)
+            onPlatform = mover is not None and not hasattr(mover, 'lift')
+            if npc.crew is None and not npc.busy and (npc.walk is None or onPlatform):
+                # (Walking about on a moving platform, the toon still goes
+                # along with it, or it would hang in the air as the
+                # platform drops away under it.)
                 if self.manager.party.isPlaying(npc):
                     # A field office game (or a trolley game, a race, golf)
                     # moves the toon itself; riding the floor it stands on
@@ -592,7 +747,11 @@ class NPCFacilities:
 
     def findJob(self, npc):
         player = self.air.doId2do.get(npc.party)
-        if player is None or player.zoneId != npc.zoneId or not getNav().available():
+        if player is None or not getNav().available():
+            return
+        if npc.walk is None and getattr(npc, 'onMover', None) is None and self.buttonJob(npc, player):
+            return
+        if player.zoneId != npc.zoneId:
             return
         playerPos = self.manager.getPlayerPos(player)
         if flat(npc.getPos(), playerPos) > 45:
@@ -633,6 +792,177 @@ class NPCFacilities:
                     npc.job = MazeJob(self, npc, player, obj)
                     npc.walk = None
                     return
+
+    # --- Buttons ---
+
+    def buttons(self, player):
+        from toontown.coghq.DistributedButtonAI import DistributedButtonAI
+        for obj in self.manager.party._objectsOfType((DistributedButtonAI,)):
+            level = getattr(obj, 'level', None)
+            if obj.isDeleted() or level is None:
+                continue
+            if player.doId in getattr(level, 'presentAvIds', ()) or player.doId in getattr(level, 'avIdList', ()):
+                yield obj
+
+    def buttonSpot(self, button):
+        """Where the button is (the client's copy of the level places it,
+        whether or not the button itself is on the client)."""
+        base = getClientBuiltin('base')
+        level = base.cr.doId2do.get(button.level.doId) if base is not None else None
+        if level is None:
+            return None
+        parent = None
+        try:
+            ent = level.getEntity(button.parentEntId)
+            if ent is not None and hasattr(ent, 'getMat'):
+                parent = ent
+            else:
+                parent = level.getZoneNode(button.parentEntId)
+        except Exception:
+            parent = None
+        if parent is None or parent.isEmpty():
+            return None
+        pos = parent.getMat(base.render).xformPoint(Point3(*button.pos))
+        ground = getNav().groundZ(pos[0], pos[1], pos[2] + 2.0)
+        return Point3(pos[0], pos[1], ground if ground is not None else pos[2])
+
+    def playerOnButton(self, player, button):
+        for other in self.buttons(player):
+            if other.parentEntId == button.parentEntId and other.avatarId == player.doId and other.isOn:
+                return True
+        return False
+
+    def buttonJob(self, npc, player, stuck=False):
+        """A button for the NPC to go and stand on: one that unlocks
+        something and nobody has pressed, near it (or anywhere in the level
+        when it has no other way on); or one of the timed buttons beside the
+        one the player holds."""
+        pos = npc.getPos()
+        best = None
+        for button in self.buttons(player):
+            if button.doId in self.claimedButtons or button.isOn:
+                continue
+            if button.secondsOn >= 0 and not self.playerOnButton(player, button):
+                continue
+            spot = self.buttonSpot(button)
+            if spot is None:
+                continue
+            d = flat(pos, spot) + abs(pos[2] - spot[2])
+            if d > (BUTTON_REACH if not stuck else 1000.0):
+                continue
+            if best is None or d < best[0]:
+                best = (d, button, spot)
+        if best is None:
+            return False
+        npc.job = ButtonJob(self, npc, player, best[1], best[2])
+        npc.walk = None
+        npc.route = None
+        return True
+
+    # --- Crates ---
+
+    def crateSpot(self, crate, client, side):
+        """Where a toon stands to push the crate towards side."""
+        render = getClientBuiltin('base').render
+        d = self.crateDir(client, side)
+        reach = 2.75 * getattr(client, 'scale', 1.0) + 1.5 + 0.8
+        mid = client.getPos(render)
+        spot = mid - d * reach
+        ground = getNav().groundZ(spot[0], spot[1], mid[2] + 2.0)
+        return Point3(spot[0], spot[1], ground if ground is not None else mid[2])
+
+    def crateDir(self, client, side):
+        render = getClientBuiltin('base').render
+        dx, dy = ((-1, 0), (1, 0), (0, -1), (0, 1))[side]
+        d = render.getRelativeVector(client.getParent(), Vec3(dx, dy, 0))
+        d.setZ(0)
+        d.normalize()
+        return d
+
+    def planCrate(self, npc, player):
+        """A crate in the NPC's room that, pushed straight on until it
+        stops, lands against a wall a crate's height lower than its top: the
+        step up over it. Starts a CrateJob for it."""
+        from toontown.coghq.DistributedCrateAI import DistributedCrateAI
+        grid = getPathfinder().gridFor()
+        if grid is None or not grid.ready:
+            return False
+        render = getClientBuiltin('base').render
+        crates = list(self.manager.party._objectsOfType((DistributedCrateAI,)))
+        self.notify.info('NPC %s stuck: crates %s' % (npc.doId, [(c.doId, c.grid is not None, c.avId, clientObject(c.doId) is not None) for c in crates]))
+        # Nearest first; a crate far off is still the one when the way
+        # there is open (the job walks there by the pathfinder).
+        def away(c):
+            client = clientObject(c.doId)
+            return flat(client.getPos(render), npc.getPos()) if client is not None and not client.isEmpty() else 1e9
+        crates.sort(key=away)
+        for crate in crates:
+            if crate.isDeleted() or crate.grid is None or crate.avId:
+                continue
+            client = clientObject(crate.doId)
+            if client is None or client.isEmpty():
+                continue
+            g = crate.grid
+            pos = g.objPos.get(crate.entId)
+            if not pos:
+                continue
+            row, col = pos
+            empty = g._DistributedGridAI__isEmpty
+            size = g.cellSize
+            base = client.getPos(render)[2]
+            from toontown.npcplayers.NPCPathfinder import cellOf
+            for side in range(4):
+                dRow, dCol = ((0, -1), (0, 1), (-1, 0), (1, 0))[side]
+                r, c, n = row, col, 0
+                spots = []
+                while n <= 20:
+                    if dRow < 0:
+                        ok = empty(r - 1, c) and empty(r - 1, c + 1)
+                    elif dRow > 0:
+                        ok = empty(r + 2, c) and empty(r + 2, c + 1)
+                    elif dCol < 0:
+                        ok = empty(r, c - 1) and empty(r + 1, c - 1)
+                    else:
+                        ok = empty(r, c + 2) and empty(r + 1, c + 2)
+                    if not ok:
+                        break
+                    r += dRow
+                    c += dCol
+                    n += 1
+                    spots.append((n, r, c))
+                # Each place the crate can be pushed to: the step up is a
+                # ledge beside it (on any side) a crate's height above its top.
+                for n, r, c in spots:
+                    mid = render.getRelativePoint(client.getParent(), Point3((c + 1) * size, (r + 1) * size, client.getZ()))
+                    found = None
+                    for look in range(4):
+                        d = self.crateDir(client, look)
+                        for reach in (size + 1.5, size + 3.0, size + 4.5, size + 5.5):
+                            ahead = mid + d * reach
+                            tops = grid.floors.get(cellOf(ahead[0], ahead[1]), ())
+                            if [t for t in tops if 7.0 <= t - base <= 11.5]:
+                                found = (look, ahead)
+                                break
+                        if found:
+                            break
+                    if not found and not getattr(self, 'crateLogged', {}).get((crate.doId, side, n)):
+                        self.__dict__.setdefault('crateLogged', {})[(crate.doId, side, n)] = True
+                        looks = []
+                        for look in range(4):
+                            d = self.crateDir(client, look)
+                            for reach in (size + 1.5, size + 3.0, size + 4.5, size + 5.5):
+                                a = mid + d * reach
+                                looks.append((look, reach, [round(t - base, 1) for t in grid.floors.get(cellOf(a[0], a[1]), ())]))
+                        self.notify.info('crate %s at %s (base %.1f): %d pushes side %d to %s: around %s' % (
+                            crate.doId, client.getPos(render), base, n, side, mid, looks))
+                    if found:
+                        self.notify.info('crate %s: %d pushes towards side %d puts it under a ledge at %s' % (
+                            crate.doId, n, side, found[1]))
+                        npc.job = CrateJob(self, npc, player, crate, side, n)
+                        npc.walk = None
+                        npc.route = None
+                        return True
+        return False
 
     def mazeSolver(self, maze):
         solver = self.solvers.get(maze.doId)
@@ -803,6 +1133,43 @@ class NPCFacilities:
                 npc.stopMoving()
             return
         npc.liftRide = None
+        if mover is not None and getattr(mover, 'moving', None) is not None and not mover.moving.isEmpty():
+            # On a moving platform the pathfinder knows: carried along by
+            # how its moving node moved since the last tick (walking on it
+            # still works), while the NPC is over it.
+            base = getClientBuiltin('base')
+            mat = Mat4(mover.moving.getMat(base.render))
+            last = getattr(npc, 'moverMat', None)
+            npc.moverMat = (mover, mat)
+            stop = mover.stops[0]
+            c = stop.center()
+            reach = math.sqrt(max(1, len(stop.cells))) * 2.5 / 2.0 + 1.5
+            if math.hypot(pos[0] - c[0], pos[1] - c[1]) > reach or abs(pos[2] - c[2]) > 6.0:
+                npc.moverMat = None
+                if last is not None:
+                    # Walked off it.
+                    npc.onMover = None
+                return
+            if last is None or last[0] is not mover:
+                return
+            inv = Mat4(last[1])
+            inv.invertInPlace()
+            delta = inv * mat
+            moved = delta.xformPoint(Point3(pos))
+            if npc.walk is not None:
+                # Walking on it: the steps still to take move with it too.
+                if (moved - pos).length() > 0.0001:
+                    npc.walk[0] = [delta.xformPoint(Point3(w)) for w in npc.walk[0]]
+                    npc.moveTo(moved[0], moved[1], moved[2], npc.getH())
+                return
+            if (moved - pos).length() > 0.02:
+                npc.moveTo(moved[0], moved[1], moved[2], npc.getH())
+                npc.riding = True
+            elif getattr(npc, 'riding', False):
+                npc.riding = False
+                npc.stopMoving()
+            return
+        npc.moverMat = None
         ground, into = nav.groundHit(pos[0], pos[1], pos[2])
         rideState = getattr(npc, 'ride', None)
         if self.debug:

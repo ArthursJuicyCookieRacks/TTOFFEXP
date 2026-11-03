@@ -37,9 +37,20 @@ STEP_DOWN = 4.0
 # A toon walks off a ledge this high and lands unhurt.
 DROP_MAX = 16.0
 # A running jump: this many cells (flat) and up to this much higher.
-JUMP_CELLS = (2, 3, 4, 5, 6)
-JUMP_UP = 3.0
-JUMP_DOWN = 8.0
+JUMP_CELLS = (1, 2, 3, 4, 5, 6)
+# A toon's jump (OTPGlobals.ToonJumpForce 24, gravity 64.3) tops out 4.47;
+# with its wall sphere it lands on a ledge up to about 4.6 (GravityWalker run
+# headless against boxes of each height)
+# up: a box or ledge up to this high is jumped onto.
+JUMP_UP = 4.55
+# Up onto a box: the jump takes the feet (and the wall sphere's bottom) this
+# high, over a side that ends below it; the box top may stand a little
+# higher still (the floor ray lifts the toon onto it): up to CLIMB_UP.
+CLIMB_WALL = 4.5
+CLIMB_UP = 6.0
+# A running jump across a gap may land well below: the boiler room's crate
+# stack is 8.2 above the catwalk players jump over to.
+JUMP_DOWN = 12.0
 JUMP_COST = 6.0
 DROP_COST = 2.0
 # Squares near where the player has walked cost this much less: where the
@@ -67,12 +78,14 @@ BOARD = 'board'
 RIDE = 'ride'
 # A platform this close to a stop is there (they wait at each end).
 AT_STOP = 0.35
-BOARD_REACH = 2
+BOARD_REACH = 3
 RIDE_COST = 18.0
 # The player's own steps joined into links: samples this close together
 # (in trail samples, and in distance; further apart the player rode or
 # teleported).
 TRAIL_LINK_SAMPLES = 12
+# How much a toon's own taste in squares changes their cost (0..TASTE).
+TASTE = 0.35
 TRAIL_LINK_REACH = 14.0
 
 FLOOR = ToontownGlobals.FloorBitmask.getWord()
@@ -111,6 +124,16 @@ def newellNormal(points):
 
 
 DOOR_LEAVES = ('doorLeft', 'doorRight', 'doorTop', 'doorBottom')
+
+
+def isStomperHead(np):
+    while not np.isEmpty():
+        # The head and the shaft above it move up and down: where they
+        # happen to be when the grid is made is no wall.
+        if np.getName() in ('head_collisions', 'shaft_collisions'):
+            return True
+        np = np.getParent()
+    return False
 
 
 def isDoorLeaf(np):
@@ -299,7 +322,7 @@ class GhostLift(Mover):
 
 
 class Wall:
-    __slots__ = ('kind', 'points', 'normal', 'd', 'lo', 'hi', 'a', 'b', 'radius')
+    __slots__ = ('kind', 'points', 'normal', 'd', 'lo', 'hi', 'a', 'b', 'radius', 'name')
 
     def __init__(self, kind):
         self.kind = kind
@@ -349,13 +372,22 @@ class Grid:
                     continue
                 if self.moverRoots and under(np, self.moverRoots):
                     continue
+                if np.getName().startswith('goonColl'):
+                    # A goon walks its beat: no wall on the map.
+                    continue
+                if isStomperHead(np):
+                    # A stomper's head goes up and down: the way under it
+                    # is walked while it is up (NPCParty.nextLeg waits).
+                    continue
                 if isDoorLeaf(np):
                     # A facility door slides open as toons come up to it:
                     # its leaves are no wall on the map.
                     continue
-                if isMoving(np) and not (self.gearRoots and under(np, self.gearRoots)):
-                    continue
+                # (Other moving floors - gears turning in place, conveyor
+                # treads, a room's own turning floor - stay where they are
+                # and carry a toon standing on them: floor like any other.)
                 mat = np.getMat(render)
+                self.curName = '/'.join(str(np).split('/')[-4:])
                 # A mirrored node turns its polygons' winding around.
                 flipped = mat.getUpper3().determinant() < 0
                 for i in range(node.getNumSolids()):
@@ -498,6 +530,7 @@ class Grid:
 
     def addWallPolygon(self, points, normal):
         wall = Wall('poly')
+        wall.name = getattr(self, 'curName', '')
         wall.points = points
         wall.normal = normal
         wall.d = normal.dot(Vec3(points[0]))
@@ -507,6 +540,7 @@ class Grid:
 
     def addCapsule(self, a, b, radius):
         wall = Wall('capsule')
+        wall.name = getattr(self, 'curName', '')
         wall.a = Point3(a)
         wall.b = Point3(b)
         wall.radius = radius
@@ -535,6 +569,17 @@ class Grid:
                     elif self.nearCapsule(wall, p, q):
                         return True
         return False
+
+    def blockers(self, p, q):
+        """The walls between p and q (for finding why there is no way)."""
+        out = []
+        for wall in set(w for ws in self.walls.values() for w in ws):
+            if wall.hi < min(p[2], q[2]) - 0.5 or wall.lo > max(p[2], q[2]) + 0.5:
+                continue
+            if (wall.kind == 'poly' and self.crossesPolygon(wall, p, q)) or \
+                    (wall.kind != 'poly' and self.nearCapsule(wall, p, q)):
+                out.append(wall.name)
+        return out
 
     def crossesPolygon(self, wall, p, q):
         n = wall.normal
@@ -585,6 +630,7 @@ class Grid:
                 out.append((stop.node, BOARD, CELL * 2 + 2.0))
         here = Point3(ix * CELL, iy * CELL, z + CHEST)
         gaps = []
+        climbs = []
         for dx, dy in DIRS:
             nx, ny = ix + dx, iy + dy
             h = self.heightNear(nx, ny, z)
@@ -592,6 +638,10 @@ class Grid:
             if h is not None:
                 if not self.blocked(here, Point3(nx * CELL, ny * CELL, h + CHEST)):
                     out.append(((nx, ny, h), WALK, length))
+                else:
+                    # Something stands on the floor there (a crate, a
+                    # gear): a toon jumps up onto it.
+                    climbs.append((dx, dy))
                 continue
             low = self.heightNear(nx, ny, z, up=0, down=DROP_MAX)
             if low is not None and not self.blocked(here, Point3(nx * CELL, ny * CELL, z + CHEST)):
@@ -604,7 +654,29 @@ class Grid:
                 if h is None:
                     continue
                 top = max(z, h) + CHEST + 1.0
-                if not self.blocked(Point3(here[0], here[1], top), Point3(lx * CELL, ly * CELL, top)):
+                if self.blocked(Point3(here[0], here[1], top), Point3(lx * CELL, ly * CELL, top)):
+                    break
+                out.append(((lx, ly, h), JUMP, CELL * k * math.hypot(dx, dy) + JUMP_COST))
+                if h >= z - STEP_DOWN:
+                    break
+                # Landing well below: a farther ledge nearer this height
+                # may be the one to make for.
+        for dx, dy in climbs + gaps:
+            # (Up to three squares off: a running jump's top comes about
+            # seven along, as off a pushed crate to the crate wall.)
+            for k in (1, 2, 3):
+                lx, ly = ix + dx * k, iy + dy * k
+                ups = [f for f in self.floors.get((lx, ly), ()) if STEP_UP < f - z <= CLIMB_UP]
+                if not ups:
+                    continue
+                h = max(ups)
+                # The toon's feet clear the side at the top of the jump,
+                # and it lands on the top above it.
+                clear = z + CLIMB_WALL
+                top = h + CHEST + 1.0
+                there = Point3(lx * CELL, ly * CELL, clear)
+                if not self.blocked(Point3(here[0], here[1], clear), there) and \
+                        not self.blocked(Point3(here[0], here[1], top), Point3(there[0], there[1], top)):
                     out.append(((lx, ly, h), JUMP, CELL * k * math.hypot(dx, dy) + JUMP_COST))
                 break
         self.links[node] = out
@@ -614,6 +686,7 @@ class Grid:
         stop = self.stops[node]
         out = [(stop.other.node, RIDE, RIDE_COST + (stop.other.z - stop.z) * 0.1)]
         seen = set()
+        hops = set()
         for (ix, iy) in stop.cells:
             for dx in range(-BOARD_REACH, BOARD_REACH + 1):
                 for dy in range(-BOARD_REACH, BOARD_REACH + 1):
@@ -623,9 +696,25 @@ class Grid:
                     seen.add(c)
                     h = self.heightNear(c[0], c[1], stop.z, up=JUMP_UP, down=STEP_DOWN + 2.0)
                     if h is not None:
-                        out.append(((c[0], c[1], h), WALK, CELL * 2 + 2.0))
+                        # Off the edge: a step, or a running jump over the gap.
+                        far = min(max(abs(c[0] - x), abs(c[1] - y)) for (x, y) in stop.cells) > 1
+                        out.append(((c[0], c[1], h), JUMP if far else WALK, CELL * 2 + 2.0))
+                    # Over to the next platform when it waits beside this
+                    # one (the paint mixers take toons across in turn).
+                    for other in self.stopAdj.get(c, ()):
+                        if other.mover is not stop.mover and other.node not in hops and \
+                                -(STEP_DOWN + 2.0) <= other.z - stop.z <= JUMP_UP:
+                            hops.add(other.node)
+                            out.append((other.node, BOARD, CELL * 2 + 2.0))
         self.links[node] = out
         return out
+
+    def stopAt(self, point):
+        cell = cellOf(point[0], point[1])
+        for stop in self.stops.values():
+            if cell in stop.cells and abs(point[2] - stop.z) < 1.5 and stop.present():
+                return stop.node
+        return None
 
     def nodeAt(self, point, up=STEP_UP, down=6.0):
         ix, iy = cellOf(point[0], point[1])
@@ -677,11 +766,17 @@ class Search:
         self.path = None
         self.visits = 0
         self.began = False
+        self.open = []
+        self.why = ''
+        self.taste = 0
 
     def begin(self):
         self.began = True
         grid = self.grid
         sNode = grid.nodeAt(self.start)
+        if sNode is None:
+            # Standing on a moving platform that waits at a stop.
+            sNode = grid.stopAt(self.start)
         gNode = grid.nodeAt(self.goalPoint, up=4.0, down=8.0)
         if sNode is None or gNode is None:
             self.done = True
@@ -751,6 +846,10 @@ class Search:
             for nNode, kind, step in list(self.grid.linksFrom(node)) + list(extra):
                 if way and (nNode[0], nNode[1]) in way:
                     step *= PLAYER_WAY
+                if self.taste:
+                    # A toon's own liking for some squares over others, so
+                    # toons going the same way take different lines.
+                    step *= 1.0 + TASTE * ((((nNode[0] // 4) * 73856093) ^ ((nNode[1] // 4) * 19349663) ^ self.taste) % 1000) / 1000.0
                 c = base + step
                 if c < self.cost.get(nNode, 1e18):
                     self.cost[nNode] = c
@@ -804,7 +903,23 @@ class NPCPathfinder:
         except Exception:
             pass
         self.levels = [base.cr.doId2do[doId] for doId in levels]
-        return roots, (id(place), tuple(sorted(levels)))
+        return roots, (id(place), tuple(sorted(levels)), self.movedCrates(base))
+
+    def movedCrates(self, base):
+        """The crates players have pushed off their first places (a crate
+        pushed against the crate wall is the step up over it): the map is
+        drawn again with them where they are now."""
+        firsts = self.__dict__.setdefault('crateFirsts', {})
+        moved = []
+        for obj in list(base.cr.doId2do.values()):
+            if obj.__class__.__name__ != 'DistributedCrate' or obj.isEmpty():
+                continue
+            pos = obj.getPos(base.render)
+            spot = (int(round(pos[0] / 2.0)), int(round(pos[1] / 2.0)))
+            first = firsts.setdefault(obj.doId, spot)
+            if spot != first:
+                moved.append((obj.doId,) + spot)
+        return tuple(sorted(moved))
 
     def gridFor(self):
         roots, key = self.sceneRoots()

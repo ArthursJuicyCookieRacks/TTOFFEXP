@@ -1440,9 +1440,18 @@ def findObject(className, test=lambda do: True):
 def boardElevator(className, test=lambda do: True):
     yield until(lambda: findObject(className, test), 120, 'a %s' % className)
     yield until(walking, 60, 'walking by the elevator')
-    yield sleep(2)
-    log('boarding', className)
-    messenger.send(findObject(className, test).uniqueName('enterelevatorSphere'), [None])
+    for attempt in range(4):
+        yield sleep(2)
+        if placeState() == 'battle':
+            # A cog walked into the toon on the way (cog HQ courtyards).
+            yield from fightBattle()
+            yield until(walking, 60, 'walking after the battle')
+            continue
+        log('boarding', className)
+        messenger.send(findObject(className, test).uniqueName('enterelevatorSphere'), [None])
+        yield sleep(3)
+        if placeState() != 'battle':
+            return
 
 
 def clearFacility(interior, suitClass, levelClass=None, timeout=1800):
@@ -1661,6 +1670,21 @@ def clearRooms(interior, facilityClass, timeout=3600):
 
 def scenarioMint():
     yield from teleport(ToontownGlobals.CashbotHQ)
+    floor = os.environ.get('AUTOPLAY_MINTFLOOR')
+    if floor:
+        def post(air, avId, f):
+            from toontown.coghq import MintManagerAI
+            board = MintManagerAI.__dict__.get('bboard') or __import__('builtins').__dict__.get('bboard')
+            board.post('mintFloor-%s' % avId, f)
+            return board
+        log('mint floor %s posted on %s' % (floor, onDistrict(post, localAvatar.doId, int(floor))))
+    room = os.environ.get('AUTOPLAY_MINTROOM')
+    if room:
+        # A floor of the Coin Mint with this room in it (the game's own
+        # bulletin board switch for picking one).
+        import builtins
+        for board in {id(b): b for b in (getattr(builtins, 'bboard', None), getattr(getattr(builtins, 'simbase', None), 'bboard', None)) if b}.values():
+            board.post('mintRoom-%s' % localAvatar.doId, int(room))
     yield from boardElevator('DistributedMintElevatorExt',
                              lambda do: getattr(do, 'mintId', None) == ToontownGlobals.CashbotMintIntA)
     yield from clearRooms('MintInterior', 'DistributedMint')
@@ -2257,6 +2281,8 @@ def aimCast(spot):
 
 def scenarioFishing(casts=5):
     watchFishingTargets()
+    # Each cast costs a jellybean (a new toon has hardly any).
+    onDistrict(lambda air, avId: air.doId2do[avId].b_setMoney(air.doId2do[avId].getMaxMoney()), localAvatar.doId)
     yield from teleport(ToontownGlobals.ToontownCentral)
     yield until(lambda: findObject('DistributedFishingSpot', lambda do: do.avId == 0), 60, 'a free fishing spot')
     spot = findObject('DistributedFishingSpot', lambda do: do.avId == 0)
@@ -2267,24 +2293,9 @@ def scenarioFishing(casts=5):
     for cast in range(casts):
         yield sleep(2)
         # What dragging the cast button and letting go does, aimed at the
-        # middle of where a fish swims.
-        spot.fsm.request('localAdjusting')
-        aimCast(spot)
-        spot.fsm.request('localCasting')
-        yield until(lambda: fishingState(spot) == 'fishing' or spot.avId != localAvatar.doId, 20, 'the bob landing')
-        if fishingState(spot) == 'fishing':
-            targets = [do for do in base.cr.doId2do.values() if do.__class__.__name__ == 'DistributedFishingTarget'
-                       and do.pondDoId == spot.pondDoId]
-            bob = spot.bob.getPos(render)
-            log('bob landed at %s, nearest fish %.1f away' % (
-                bob, min([(target.getPos(render) - bob).length() for target in targets] or [-1])))
-        yield until(lambda: fishingState(spot) in ('reward', 'waiting', 'localAdjusting') or
-                    spot.avId != localAvatar.doId, 60, 'a bite')
-        if spot.avId != localAvatar.doId:
-            raise AssertionError('the fishing spot sent the toon away after %d casts' % cast)
-        if fishingState(spot) == 'reward':
+        # middle of where a fish swims (see castOnce).
+        if (yield from castOnce(spot)):
             caught += 1
-        yield until(lambda: spot.track is None or not spot.track.isPlaying(), 30, 'reeling in')
     log('caught %d things in %d casts' % (caught, casts))
     spot._DistributedFishingSpot__userExit()
     yield until(walking, 60, 'walking after fishing')
@@ -4137,6 +4148,68 @@ def scenarioFactory():
     yield from clearFacility('FactoryInterior', 'DistributedFactorySuit', 'DistributedFactory')
 
 
+def scenarioNPCButtons():
+    # The factory's buttons with an NPC party: the player goes by the Oil
+    # Room's and the Warehouse's door buttons and leaves them; the NPCs step
+    # on them as players do in passing. Then the player holds one of the four
+    # timed Warehouse buttons and the NPCs hold the others.
+    shots = os.environ.get('AUTOPLAY_SHOTS', '/tmp')
+    yield from teleport(ToontownGlobals.SellbotHQ, ToontownGlobals.SellbotFactoryExt)
+    yield from boardElevator('DistributedFactoryElevatorExt')
+    yield until(lambda: placeName() == 'FactoryInterior', 180, 'inside the factory')
+    yield until(walking, 120, 'walking in the factory')
+    factory = findObject('DistributedFactory')
+    info = onDistrict(lambda air: {b.entId: (b.parentEntId, tuple(b.pos), b.doId) for b in air.doId2do.values()
+                                   if b.__class__.__name__ == 'DistributedButtonAI'})
+    log('factory buttons: %s' % sorted(info))
+
+    def where(entId):
+        parentEntId, pos, doId = info[entId]
+        parent = factory.getEntity(parentEntId)
+        if parent is None or not hasattr(parent, 'getMat'):
+            parent = factory.getZoneNode(parentEntId)
+        return parent.getMat(render).xformPoint(Point3(*pos))
+
+    def isOn(entId):
+        return onDistrict(lambda air, doId: getattr(air.doId2do.get(doId), 'isOn', None), info[entId][2])
+
+    def pressed():
+        return onDistrict(lambda air: air.npcPlayerManager.facilities.stats.get('buttons', 0))
+
+    def shoot(name, at):
+        shotFrom(name, at + Point3(-12, -18, 11), at + Point3(0, 0, 1.5))
+
+    for entId in (10039, 60103):
+        spot = where(entId)
+        before = pressed()
+        # A warp skips the zone floors that switch the factory's visible
+        # rooms (and their collisions) over: show the button's room.
+        factory.lockVisibility(factory.getEntityZoneEntId(entId))
+        localAvatar.setPos(render, spot + Point3(8, 0, 0.5))
+        yield sleep(1)
+        log('player by button %s at %s (on: %s)' % (entId, spot, isOn(entId)))
+        end = time.time() + 240
+        while not isOn(entId):
+            if time.time() > end:
+                raise StepFailed('no NPC stepped on button %s' % entId)
+            if placeState() == 'battle':
+                yield from fightBattle()
+                factory.lockVisibility(factory.getEntityZoneEntId(entId))
+            yield sleep(1)
+        yield sleep(1)
+        shoot('button-%s.png' % entId, spot)
+        log('button %s on: %s, NPC presses %s' % (entId, isOn(entId), pressed()))
+    timed = [20033, 20034, 20035, 20036]
+    spot = where(timed[0])
+    factory.lockVisibility(factory.getEntityZoneEntId(timed[0]))
+    localAvatar.setPos(render, spot + Point3(0, 0, 0.3))
+    yield sleep(1)
+    yield until(lambda: sum(1 for e in timed if isOn(e)) >= 4, 150, 'a toon on each timed button')
+    shoot('buttons-timed.png', where(timed[1]))
+    log('timed buttons on: %s' % [isOn(e) for e in timed])
+    factory.unlockVisibility()
+
+
 SOLO_MINIGAMES = ['cannon', 'maze', 'tug', 'ring', 'vine', 'thief', '2d', 'diving', 'pairing', 'catch',
                   'target', 'photo']
 
@@ -4718,6 +4791,166 @@ def scenarioNPCStreets():
     yield from npcBattleWatch(ToontownGlobals.SellbotHQ, 'Sellbot HQ')
 
 
+
+def watchSpacing(name, seconds=60, shoot=None, every=15):
+    """Samples the NPC toons around for seconds: stacked pairs (closer than
+    1.5) and single file (two walking the same way, one right behind the
+    other, for 3 s or more)."""
+    import math
+    shots = os.environ.get('AUTOPLAY_SHOTS', '/tmp')
+    trail = {}
+    stacked = set()
+    files = set()
+    closest = 99.0
+    behind = {}
+    speeds = {}
+    aiTrail = {}
+    aiSpeeds = {}
+    samples = 0
+    t0 = globalClock.getRealTime()
+    shotAt = 0
+    lastAt = None
+    while globalClock.getRealTime() - t0 < seconds:
+        now = globalClock.getRealTime()
+        toons = []
+        for do in list(base.cr.doId2do.values()):
+            if do.__class__.__name__ == 'DistributedToon' and do is not localAvatar and not do.isEmpty():
+                pos = do.getPos(render)
+                last = trail.get(do.doId)
+                trail[do.doId] = pos
+                vel = (pos - last) / max(0.05, now - lastAt) if last is not None and lastAt else Vec3(0)
+                flatSpeed = Vec3(vel[0], vel[1], 0).length()
+                if 4.0 < flatSpeed < 40.0:
+                    speeds.setdefault(do.doId, []).append(flatSpeed)
+                toons.append((do.doId, pos, vel))
+        samples += 1
+        for i, (a, pa, va) in enumerate(toons):
+            for b, pb, vb in toons[i + 1:]:
+                d = (pa - pb).length()
+                if abs(pa[2] - pb[2]) < 3:
+                    closest = min(closest, Vec3(pa[0] - pb[0], pa[1] - pb[1], 0).length())
+                if Vec3(pa[0] - pb[0], pa[1] - pb[1], 0).length() < 1.5 and abs(pa[2] - pb[2]) < 3:
+                    if (a, b) not in stacked:
+                        def state(air, doIds):
+                            out = []
+                            for doId in doIds:
+                                n = air.doId2do.get(doId)
+                                out.append(n and (doId, tuple(round(c, 1) for c in n.getPos()), 'busy=%s' % (n.busy,),
+                                                  'crew=%s' % (n.crew is not None,), 'walk=%s' % (n.walk is not None,),
+                                                  getattr(n, 'activity', None), getattr(n, 'social', None)))
+                            return out
+                        log('%s: stacked %s' % (name, onDistrict(state, (a, b))))
+                    stacked.add((a, b))
+                key = (a, b)
+                sa, sb = va.length(), vb.length()
+                inLine = False
+                if sa > 3 and sb > 3:
+                    cosv = va.dot(vb) / (sa * sb)
+                    rel = pb - pa
+                    hd = Vec3(va[0], va[1], 0) / sa
+                    along = rel.dot(hd)
+                    side = abs(rel[0] * hd[1] - rel[1] * hd[0])
+                    inLine = cosv > 0.94 and 0.5 < abs(along) < 6.0 and side < 1.0
+                if inLine:
+                    behind[key] = behind.get(key, 0) + 1
+                    if behind[key] >= 6:
+                        files.add(key)
+                else:
+                    behind[key] = 0
+        aiNow = onDistrict(lambda air: [(n.doId, tuple(n.getPos()), getattr(n, 'walk', None) is not None,
+                                         getattr(n, 'jumping', False), getattr(n, 'riding', False))
+                                        for n in air.npcPlayerManager.party.members if not n.isDeleted()])
+        if samples == 3:
+            log('%s: district party %s' % (name, aiNow))
+        for doId, p, walking_, jumping_, riding_ in aiNow:
+            lastAi = aiTrail.get(doId)
+            aiTrail[doId] = (now, p)
+            if lastAi is not None and walking_ and not jumping_:
+                d = math.hypot(p[0] - lastAi[1][0], p[1] - lastAi[1][1]) / max(0.05, now - lastAi[0])
+                if d > 4.0:
+                    aiSpeeds.setdefault(doId, []).append(d)
+        lastAt = now
+        if globalClock.getRealTime() - shotAt > every:
+            shotAt = globalClock.getRealTime()
+            shotName = 'spacing-%s-%02d.png' % (name, int(shotAt - t0))
+            if shoot is not None and toons:
+                shoot(shotName, [p for d, p, v in toons])
+            else:
+                base.screenshot(os.path.join(shots, shotName), defaultFilename=0)
+        yield sleep(0.5)
+    log('%s: %d toons, %d samples, closest %.2f apart, %d stacked pairs %s, %d single file pairs %s'
+        % (name, len(trail), samples, closest, len(stacked), sorted(stacked)[:4], len(files), sorted(files)[:4]))
+    if speeds:
+        log('%s: running speeds %s' % (name, ', '.join('%.1f' % (sum(v) / len(v)) for k, v in sorted(speeds.items()) if v)))
+    if aiSpeeds:
+        log('%s: district running speeds (avg/max) %s; player runs %.1f' % (name, ', '.join(
+            '%.1f/%.1f' % (sum(v) / len(v), max(v)) for k, v in sorted(aiSpeeds.items()) if v), ToontownGlobals.ToonForwardSpeed))
+    return stacked, files
+
+
+def scenarioNPCSpacing():
+    # Playground, street and Cog HQ courtyard: NPC toons never stack on
+    # each other or walk in single file.
+    bad = []
+    places = [('ttc', ToontownGlobals.ToontownCentral, ToontownGlobals.ToontownCentral),
+              ('silly', ToontownGlobals.ToontownCentral, firstVisgroup(ToontownGlobals.SillyStreet)),
+              ('dg', ToontownGlobals.DaisyGardens, ToontownGlobals.DaisyGardens),
+              ('sbhq', ToontownGlobals.SellbotHQ, ToontownGlobals.SellbotHQ)]
+    only = os.environ.get('AUTOPLAY_SPACING', '').split()
+    for name, hood, zone in places:
+        if only and name not in only:
+            continue
+        yield from teleport(hood, zone)
+        if name == 'silly':
+            street = ToontownGlobals.SillyStreet
+            spot = onDistrict(lambda air: tuple(air.npcPlayerManager.areas[street].sidewalks[0][0]))
+            base.localAvatar.setPos(*spot)
+        yield sleep(15)
+        stacked, files = yield from watchSpacing(name, 60)
+        if stacked or files:
+            bad.append(name)
+    if bad:
+        raise StepFailed('toons stack or walk in single file in %s' % ', '.join(bad))
+
+
+
+def scenarioNPCGroupMove():
+    # In the factory: the player steps across the lobby and the party comes
+    # after: each its own pace and way, side by side, never on each other.
+    yield from teleport(ToontownGlobals.SellbotHQ, ToontownGlobals.SellbotFactoryExt)
+    yield from boardElevator('DistributedFactoryElevatorExt')
+    yield until(lambda: placeName() == 'FactoryInterior', 180, 'inside the factory')
+    yield until(walking, 120, 'walking in the factory')
+    yield sleep(8)
+    bad = []
+    factory = findObject('DistributedFactory')
+    lobby = factory.lastCamZone
+    factory.lockVisibility(lobby)
+    start = localAvatar.getPos(render)
+
+    def shoot(shotName, points):
+        mid = Point3(sum(p[0] for p in points) / len(points), sum(p[1] for p in points) / len(points),
+                     sum(p[2] for p in points) / len(points))
+        me = localAvatar.getPos(render)
+        away = Vec3(mid - me)
+        away.setZ(0)
+        if away.length() < 1:
+            away = Vec3(0, -1, 0)
+        away.normalize()
+        shotFrom(shotName, mid + away * 22 + Point3(0, 0, 24), mid)
+    for i, offset in enumerate((Point3(0, 30, 0), Point3(-30, 0, 0), Point3(25, -30, 0))):
+        spot = start + offset
+        from toontown.npcplayers.NPCNav import getNav
+        z = getNav().groundZ(spot[0], spot[1], spot[2] + 5)
+        localAvatar.setPos(render, spot[0], spot[1], z if z is not None else spot[2])
+        stacked, files = yield from watchSpacing('factory-%d' % i, 20, shoot, 2.5)
+        if stacked or files:
+            bad.append(i)
+    factory.unlockVisibility()
+    if bad:
+        raise StepFailed('the party stacked or went single file in moves %s' % bad)
+
+
 def scenarioNPCFriends():
     # The NPC toons around are on the friends list; a whisper brings one
     # over; one invited to a boarding group says yes at once.
@@ -5273,11 +5506,14 @@ SCENARIOS = [
     ('npcclubpuzzles', scenarioNPCClubPuzzles),
     ('needhelp', scenarioNeedHelp),
     ('npcstreets', scenarioNPCStreets),
+    ('npcspacing', scenarioNPCSpacing),
+    ('npcgroupmove', scenarioNPCGroupMove),
     ('npcfriends', scenarioNPCFriends),
     ('npcchat', scenarioNPCChat),
     ('npcemote', scenarioNPCEmote),
     ('npcbuilding', withNPCs(scenarioBuilding, ['DistributedBattleBldgAI'])),
     ('npcfactory', withNPCs(scenarioFactory, ['DistributedBattleFactoryAI'])),
+    ('npcbuttons', scenarioNPCButtons),
     ('npcmint', withNPCs(scenarioMint, ['DistributedMintBattleAI'])),
     ('npcoffice', withNPCs(scenarioOffice, ['DistributedStageBattleAI'])),
     ('npccountryclub', withNPCs(scenarioCountryClub, ['DistributedCountryClubBattleAI'])),
@@ -5439,6 +5675,10 @@ def stepFrame():
 
 def run(names):
     selected = [s for s in SCENARIOS if not names or s[0] in names or s[0] == 'login']
+    if os.environ.get('AUTOPLAY_MAXFIRST') and 'maxtoon' in names:
+        # Max the toon right after login, before the scenarios listed earlier.
+        first = [s for s in selected if s[0] == 'maxtoon']
+        selected = [s for s in selected if s[0] == 'login'] + first + [s for s in selected if s[0] not in ('login', 'maxtoon')]
     for name, scenario in selected:
         log('=== %s ===' % name)
         start = time.time()

@@ -13,7 +13,7 @@ import random
 
 from direct.directnotify import DirectNotifyGlobal
 from direct.task import Task
-from panda3d.core import Point3
+from panda3d.core import Point3, Vec3
 
 from toontown.building.DistributedElevatorAI import DistributedElevatorAI
 from toontown.building.DistributedElevatorExtAI import DistributedElevatorExtAI
@@ -58,8 +58,19 @@ REROUTE = 12.0
 LAST_RESORT = 60.0
 # How long a toon waits for a platform to come, and to ride it across.
 BOARD_PATIENCE = 30.0
+# A hop from one moving platform to the next: when its middle is this near
+# (a paint mixer is 10 across: its edge is then a short jump away).
+HOP_REACH = 11.0
+# The widest gap between two platforms' edges a toon jumps (a running
+# jump carries about 15).
+HOP_GAP = 13.5
+LEG_DEBUG = True
+# Stuck this long, a toon looks for a crate to push (NPCFacilities.planCrate).
+CRATE_AFTER = 6.0
 RIDE_PATIENCE = 40.0
 CELL_JUMP = 4.0
+# How far apart toons on one route run.
+LANE_WIDTH = 1.6
 
 # For each place that waits on every toon in it: the state it waits in, and
 # what the toon's client sends there. A place is matched by its class or the
@@ -327,6 +338,22 @@ class NPCParty:
 
         taskMgr.doMethodLater(delay, getOn, 'npcBoard-%d' % npc.doId)
 
+    def sameFacility(self, npc, player):
+        """Whether the NPC is in the same facility as the player, only in
+        another of its rooms (one scene, walkable between)."""
+        from toontown.toonbase import ToontownGlobals
+        if npc.zoneId < ToontownGlobals.DynamicZonesBegin or player.zoneId < ToontownGlobals.DynamicZonesBegin:
+            return False
+        # (Its rooms, its battles: zones of their own, all in one scene.)
+        from otp.level.DistributedLevelAI import DistributedLevelAI
+        inLevel = False
+        for obj in list(self.air.doId2do.values()):
+            if isinstance(obj, DistributedLevelAI) and player.doId in getattr(obj, 'avIdList', ()) \
+                    and npc.doId in getattr(obj, 'avIdList', ()):
+                inLevel = True
+                break
+        return inLevel and (npc.getPos() - self.manager.getPlayerPos(player)).length() < 1500.0
+
     def spotNear(self, pos, distance, avoid=None):
         nav = getNav()
         for i in range(8):
@@ -345,7 +372,11 @@ class NPCParty:
                 if ground is not None:
                     return Point3(spot[0], spot[1], ground)
             return Point3(pos[0] + distance, pos[1], pos[2])
-        return Point3(pos)
+        # No floor found round about (it is not drawn yet): still not right
+        # on top of the player or of another toon sent here.
+        angle = random.uniform(0, 2 * math.pi)
+        r = random.uniform(1.6, 2.6)
+        return Point3(pos[0] + r * math.cos(angle), pos[1] + r * math.sin(angle), pos[2])
 
     # --- Going along ---
 
@@ -377,6 +408,11 @@ class NPCParty:
                     self.disband(npc)
                     continue
                 if npc.busy:
+                    continue
+                if self.sameFacility(npc, player):
+                    # From room to room of a factory, mint or office (each
+                    # its own zone): it goes on on foot, from where it is.
+                    npc.b_setLocation(self.air.districtId, player.zoneId)
                     continue
                 self.notify.info('NPC %s follows %d to zone %d' % (npc.doId, player.doId, player.zoneId))
                 spot = self.spotNear(self.manager.getPlayerPos(player), 5.0)
@@ -424,7 +460,7 @@ class NPCParty:
             target = self.spotNear(playerPos, 4.0 + random.uniform(0, 3))
             path = getNav().walkable(npc.getPos(), target) if distance < CATCH_UP_DISTANCE else None
             if path:
-                npc.walk = [path, RUN_SPEED, None, None]
+                npc.walk = [path, self.paceOf(npc), None, None]
             elif self.manager.facilities.trailWalk(npc, player, playerPos):
                 # No straight way there (a gap, a platform): it goes the way
                 # the player went, jumps and all.
@@ -451,6 +487,64 @@ class NPCParty:
                 return Point3(spot[0], spot[1], ground)
         return Point3(playerPos)
 
+    def spotAround(self, npc, center, radius=None):
+        nav = getNav()
+        for tries in range(4):
+            angle = (npc.doId % 7) * (2 * math.pi / 7) + tries * 0.9
+            r = radius if radius is not None else SPREAD[0] + (npc.doId % 5) * (SPREAD[1] - SPREAD[0]) / 4.0
+            spot = Point3(center[0] - r * math.sin(angle), center[1] + r * math.cos(angle), center[2])
+            ground = nav.groundZ(spot[0], spot[1], spot[2] + 2)
+            if ground is not None and abs(ground - center[2]) < 3 and \
+                    nav.clearLine(Point3(center), Point3(spot[0], spot[1], ground)):
+                return Point3(spot[0], spot[1], ground)
+        return Point3(center)
+
+    def lane(self, npc, points, grid):
+        """The route's points moved a little to the NPC's own side of the
+        way (from its doId), where there is floor and no wall: toons on the
+        same route run side by side, not inside each other."""
+        if not points:
+            return points
+        from toontown.npcplayers.NPCPathfinder import cellOf, CHEST
+        nav = getNav() if grid is None else None
+        if grid is None and not nav.available():
+            return points
+        # Each member of the party its own lane (by its place in the party,
+        # so no two share one): right, left, further right, further left...
+        mates = sorted(m.doId for m in self.members if getattr(m, 'party', None) == getattr(npc, 'party', None))
+        index = mates.index(npc.doId) if npc.doId in mates else npc.doId % 5
+        side = ((index // 2) + 1) * LANE_WIDTH * (1 if index % 2 == 0 else -1)
+        out = []
+        prev = npc.getPos()
+        for p in points:
+            d = Vec3(p - prev)
+            d.setZ(0)
+            if d.length() < 0.5:
+                out.append(p)
+                prev = p
+                continue
+            d.normalize()
+            q = Point3(p[0] - d[1] * side, p[1] + d[0] * side, p[2])
+            if grid is None:
+                # (Streets and playgrounds: the scene's own floor.)
+                h = nav.groundZ(q[0], q[1], p[2] + 1.0)
+                if h is not None and (abs(h - p[2]) > 0.8 or not nav.clearLine(Point3(p), Point3(q[0], q[1], h))):
+                    h = None
+                if h is not None:
+                    out.append(Point3(q[0], q[1], h))
+                else:
+                    out.append(p)
+                prev = p
+                continue
+            ix, iy = cellOf(q[0], q[1])
+            h = grid.heightNear(ix, iy, p[2], 0.8, 0.8)
+            if h is not None and not grid.blocked(Point3(p[0], p[1], p[2] + CHEST), Point3(q[0], q[1], h + CHEST)):
+                out.append(Point3(q[0], q[1], h))
+            else:
+                out.append(p)
+            prev = p
+        return out
+
     def battlePos(self, battle):
         """Where the battle is in the world. (A facility's battles keep
         their spot relative to the room; the client has the battle placed.)"""
@@ -466,7 +560,9 @@ class NPCParty:
             if battle.isDeleted() or battle.fsm is None or npc.doId in battle.toons or not battle.toonCanJoin():
                 npc.battleGoal = None
             else:
-                return self.battlePos(battle), JOIN_REACH * 0.6
+                # Its own spot around the battle, so the toons coming to
+                # it don't run in on top of each other.
+                return self.spotAround(npc, self.battlePos(battle)), JOIN_REACH * 0.6
         return Point3(self.manager.getPlayerPos(player)), FOLLOW_DISTANCE
 
     def routeStillGood(self, npc, player):
@@ -500,6 +596,7 @@ class NPCParty:
         if result is not None:
             if result.path:
                 npc.route = finder.legs(pos, result.path, result.grid)
+                npc.routeGrid = result.grid
                 npc.routeGoal = goal
                 npc.stuckSince = None
                 self.count('routes')
@@ -511,7 +608,34 @@ class NPCParty:
             if self.manager.facilities.trailWalk(npc, player, self.manager.getPlayerPos(player)):
                 self.count('trail')
                 return
+            if getattr(npc, 'onMover', None) is not None and 'start' in getattr(result, 'why', ''):
+                # Carried along on a platform: a way is found once it stops.
+                npc.nextSearch = now + 1.0
+                return
+            why = getattr(result, 'why', '')
+            if getattr(npc, 'onMover', None) is None and npc.walk is None and \
+                    ('start' in why or getattr(result, 'visits', 1000) < 400) and self.stepOut(npc):
+                # On a lip or in a corner the floors don't join up from:
+                # a step off it, and look again.
+                npc.nextSearch = now + 1.0
+                return
+            if getattr(npc, 'stuckSince', None) is not None and now - npc.stuckSince > CRATE_AFTER and \
+                    not [m for m in self.members if getattr(m, 'job', None) is not None and
+                         m.job.__class__.__name__ == 'CrateJob'] and (self.manager.facilities.buttonJob(npc, player, stuck=True) or
+                                                                        self.manager.facilities.planCrate(npc, player)):
+                # No way on but over a crate wall: it pushes the crate up
+                # against it, as a player would.
+                npc.stuckSince = None
+                return
             if getattr(npc, 'stuckSince', None) is None:
+                npc.stuckSince = now
+                self.notify.info('NPC %s has no way from %s to %s yet: %s' % (
+                    npc.doId, pos, goal, getattr(result, 'why', '?')))
+            if [m for m in self.members if getattr(m, 'job', None) is not None and
+                    m.job.__class__.__name__ in ('CrateJob', 'ButtonJob')] or \
+                    now - getattr(self.manager.facilities, 'puzzleDoneAt', -100.0) < 20.0:
+                # A mate is pushing the crate or pressing the button that
+                # opens the way (or just did): wait for it, as players do.
                 npc.stuckSince = now
             if now - npc.stuckSince > LAST_RESORT:
                 self.notify.info('NPC %s found no way to %s for %d s: teleporting' % (npc.doId, goal, LAST_RESORT))
@@ -523,10 +647,19 @@ class NPCParty:
             return
         if now < getattr(npc, 'nextSearch', 0):
             return
+        # Each toon takes its own moment to set off, as players do.
+        if getattr(npc, 'setOffAt', None) is None:
+            npc.setOffAt = now + 0.2 + (npc.doId % 7) * 0.22
+        if now < npc.setOffAt:
+            return
+        npc.setOffAt = None
         target = goal if getattr(npc, 'battleGoal', None) is not None else self.ownSpot(npc, player, goal)
         trail = self.manager.facilities.trails.get(player.doId)
         way = list(trail['points']) if trail and trail['zoneId'] == player.zoneId else None
-        finder.request(npc, target, way)
+        search = finder.request(npc, target, way)
+        if search is not None:
+            # Its own taste in lines through a room (see Search.taste).
+            search.taste = npc.doId
         npc.nextSearch = now + 1.0
 
     def nextLeg(self, npc):
@@ -540,26 +673,79 @@ class NPCParty:
                 # A stomper is down in the way: wait for it to go up.
                 return
             route.pop(0)
-            npc.walk = [list(data), RUN_SPEED, None, None]
+            npc.walk = [self.lane(npc, list(data), getattr(npc, 'routeGrid', None)), self.paceOf(npc), None, None]
         elif kind == BOARD:
             # Wait at the edge for the platform to be here, then get on.
             now = globalClock.getFrameTime()
             if getattr(npc, 'boardSince', None) is None:
                 npc.boardSince = now
             if now - npc.boardSince > BOARD_PATIENCE:
+                if LEG_DEBUG:
+                    self.notify.info('NPC %s gave up boarding %s (closest %s, onMover %s)' % (
+                        npc.doId, data.node[:3], getattr(npc, 'hopMin', None), getattr(npc, 'onMover', None) is not None))
+                npc.hopMin = None
                 npc.boardSince = None
                 npc.route = None
                 return
-            if not data.present():
+            hopping = getattr(npc, 'onMover', None) is not None
+            if hopping:
+                # Over from one platform to the next once it swings close,
+                # as players time it.
+                c = data.center()
+                p = npc.getPos()
+                here = getattr(npc, 'atStop', None)
+                # Over when it swings close, or when both wait at the ends
+                # the map put side by side.
+                bothWaiting = data.present() and here is not None and here.mover is npc.onMover and here.present()
+                gap = (math.hypot(c[0] - p[0], c[1] - p[1]), abs(c[2] - p[2]))
+                if getattr(npc, 'hopMin', None) is None or gap[0] < npc.hopMin[0]:
+                    npc.hopMin = gap
+                if LEG_DEBUG and now - getattr(npc, 'hopLogAt', 0) > 1.5:
+                    npc.hopLogAt = now
+                    hc = here.center() if here is not None else None
+                    self.notify.info('NPC %s hop wait: at %s, own platform %s (stop %s present %s), next %s (present %s) walk %s carried %s cells %s/%s' % (
+                        npc.doId, p, hc, here and here.node[:3], here and here.present(), c, data.present(),
+                        npc.walk is not None, getattr(npc, 'moverMat', None) is not None,
+                        here and len(here.cells), len(data.cells)))
+                # The paint mixers pass each other going opposite ways: a
+                # player waits at the near edge of its own and jumps the gap
+                # as the other comes level.
+                close = False
+                if here is not None and here.mover is npc.onMover:
+                    a = here.center()
+                    rA = math.sqrt(max(1, len(here.cells))) * 2.5 / 2.0
+                    rB = math.sqrt(max(1, len(data.cells))) * 2.5 / 2.0
+                    between = math.hypot(c[0] - a[0], c[1] - a[1])
+                    edgeGap = between - rA - rB
+                    if edgeGap <= HOP_GAP and abs(c[2] - p[2]) <= 2.5:
+                        close = True
+                    elif npc.walk is None and between > 0.5 and not getattr(npc, 'atHopEdge', False):
+                        # To the near edge (its own place along it), to wait.
+                        d = Vec3(c[0] - a[0], c[1] - a[1], 0)
+                        d.normalize()
+                        mates = sorted(m.doId for m in self.members if getattr(m, 'party', None) == getattr(npc, 'party', None))
+                        index = mates.index(npc.doId) if npc.doId in mates else npc.doId % 5
+                        side = Vec3(-d[1], d[0], 0) * (((index // 2) + 1) * 1.4 * (1 if index % 2 == 0 else -1))
+                        edge = Point3(a[0], a[1], p[2]) + d * max(0.0, rA - 2.0) + side
+                        npc.walk = [[edge], self.paceOf(npc) * 0.5, None, None]
+                        npc.atHopEdge = True
+                if not bothWaiting and not close and (math.hypot(c[0] - p[0], c[1] - p[1]) > HOP_REACH or abs(c[2] - p[2]) > 3.0):
+                    return
+                npc.atHopEdge = False
+            elif not data.present():
                 return
             npc.boardSince = None
             route.pop(0)
-            self.count('boards')
-            spot = data.center()
+            self.count('hops' if hopping else 'boards')
+            if LEG_DEBUG:
+                self.notify.info('NPC %s %s onto %s at %s; next %s' % (npc.doId, 'hops' if hopping else 'boards', data.node[:3], npc.getPos(),
+                                                                     [(k, getattr(d, 'node', d) if k in (BOARD, RIDE) else None) for k, d in route[:3]]))
+            npc.atStop = data
+            spot = self.spotOn(npc, data)
             if (npc.getPos() - spot).length() > CELL_JUMP:
                 self.manager.facilities.jumpTo(npc, spot)
             else:
-                npc.walk = [[spot], RUN_SPEED, None, None]
+                npc.walk = [[spot], self.paceOf(npc), None, None]
             if data.mover.liftDoId:
                 lift = self.air.doId2do.get(data.mover.liftDoId)
                 if lift is not None:
@@ -579,6 +765,14 @@ class NPCParty:
             npc.rideSince = None
             route.pop(0)
             self.count('rides')
+            if LEG_DEBUG:
+                self.notify.info('NPC %s rode to %s at %s; next %s' % (npc.doId, data.node[:3], npc.getPos(),
+                                                                     [(k, getattr(d, 'node', d) if k in (BOARD, RIDE) else d) for k, d in route[:2]]))
+            npc.atStop = data
+            if route and route[0][0] == BOARD:
+                # Straight over to the next platform: still carried by this
+                # one while it waits for it.
+                return
             if data.mover.liftDoId:
                 lift = self.air.doId2do.get(data.mover.liftDoId)
                 if lift is not None:
@@ -590,9 +784,65 @@ class NPCParty:
             self.manager.facilities.jumpTo(npc, data)
         else:
             route.pop(0)
-            npc.walk = [list(data), RUN_SPEED, None, None]
+            npc.walk = [list(data), self.paceOf(npc), None, None]
         if not route:
             npc.route = []
+
+    def paceOf(self, npc):
+        """Each toon's own running pace (a little slower or quicker)."""
+        # Never quicker than a player (they keep up, not run ahead) and
+        # never much slower: 86% to 100% of a player's run, spread by a
+        # hash so toons of one party differ, and a little different each
+        # leg so they never hold one gap (a train).
+        own = 0.88 + ((npc.doId * 7919) % 11) * 0.011
+        wobble = 1.0 + 0.02 * math.sin(globalClock.getFrameTime() * 0.7 + npc.doId)
+        return RUN_SPEED * min(1.0, own * wobble)
+
+    def stepOut(self, npc):
+        """A short step to open floor nearby (off a crate's lip, out of a
+        corner), at most once in a while."""
+        now = globalClock.getFrameTime()
+        if now - getattr(npc, 'steppedOutAt', -100.0) < 8.0:
+            return False
+        npc.steppedOutAt = now
+        nav = getNav()
+        if not nav.available():
+            return False
+        pos = npc.getPos()
+        start = (npc.doId % 8) * math.pi / 4
+        for r in (2.5, 4.0, 5.5):
+            for k in range(8):
+                a = start + k * math.pi / 4
+                x, y = pos[0] + r * math.cos(a), pos[1] + r * math.sin(a)
+                z = nav.groundZ(x, y, pos[2] + 1.5)
+                if z is None or z > pos[2] + 1.0 or z < pos[2] - 2.5:
+                    continue
+                spot = Point3(x, y, z)
+                if nav.clearLine(Point3(pos[0], pos[1], pos[2]), spot):
+                    npc.walk = [[spot], self.paceOf(npc) * 0.6, None, None]
+                    return True
+        return False
+
+    def spotOn(self, npc, stop):
+        """The NPC's own place on a platform or lift (from its doId), so
+        riders stand apart."""
+        from toontown.npcplayers.NPCPathfinder import cellOf
+        center = stop.center()
+        # Each rider takes the next free place round the middle.
+        aboard = [m for m in self.members if m is not npc and getattr(m, 'onMover', None) is stop.mover]
+        slot = len(aboard)
+        angle = slot * (2 * math.pi / 5) + (npc.doId % 3) * 0.2
+        # (The cells are where the floor is with the platform at this stop;
+        # one swinging past is somewhere else just now.)
+        home = stop.worldOf(stop.mover.centerLocal)
+        for r in (3.0, 2.4, 1.8, 1.3):
+            dx, dy = r * math.cos(angle), r * math.sin(angle)
+            if cellOf(home[0] + dx, home[1] + dy) in stop.cells:
+                return Point3(center[0] + dx, center[1] + dy, center[2])
+        # A small lift: still each on its own side of the middle (a toon
+        # is about two wide), never all on the one spot.
+        r = 1.1
+        return Point3(center[0] + r * math.cos(angle), center[1] + r * math.sin(angle), center[2])
 
     def count(self, key):
         stats = self.__dict__.setdefault('stats', {})
