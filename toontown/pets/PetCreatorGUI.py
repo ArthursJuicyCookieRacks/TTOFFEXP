@@ -55,7 +55,7 @@ PET_WINDOW_Z = 0.215
 PET_HEIGHT = 0.46
 # The pages: their middle, help line and the middle of their rows.
 PAGE_Z = -0.04
-TAB_Z = 0.74
+TAB_Z = 0.772
 # How much smaller the right board's tabs and pages are drawn, and how far
 # they are moved down so the green above the tabs and below the page box
 # is the same.
