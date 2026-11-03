@@ -379,7 +379,8 @@ class NPCParty:
             angle = random.uniform(0, 2 * math.pi)
             spot = Point3(pos[0] + distance * math.cos(angle), pos[1] + distance * math.sin(angle), pos[2])
             ground = nav.groundZ(spot[0], spot[1], spot[2])
-            if ground is not None and nav.clearLine(Point3(pos), Point3(spot[0], spot[1], ground)):
+            if ground is not None and nav.clearLine(Point3(pos), Point3(spot[0], spot[1], ground)) and \
+                    not self.covered(spot[0], spot[1], ground):
                 return Point3(spot[0], spot[1], ground)
         if avoid is not None:
             # From inside an elevator every line out hits its walls: a spot
@@ -390,7 +391,7 @@ class NPCParty:
                 angle = random.uniform(0, 2 * math.pi)
                 spot = Point3(pos[0] + distance * math.cos(angle), pos[1] + distance * math.sin(angle), pos[2])
                 ground = nav.groundZ(spot[0], spot[1], spot[2])
-                if ground is not None:
+                if ground is not None and not self.covered(spot[0], spot[1], ground):
                     spot = Point3(spot[0], spot[1], ground)
                     if self.inTheOpen(spot):
                         return spot
@@ -398,6 +399,15 @@ class NPCParty:
             if fallback is not None:
                 return fallback
             return Point3(pos[0] + distance, pos[1], pos[2])
+        # Somewhere lower round about (the player on a post's cap: the
+        # crate tops or the floor beside it), never inside a crate.
+        for r in (3.0, 4.5, 6.0):
+            for k in range(8):
+                angle = random.uniform(0, 2 * math.pi)
+                x, y = pos[0] + r * math.cos(angle), pos[1] + r * math.sin(angle)
+                ground = nav.groundZ(x, y, pos[2])
+                if ground is not None and ground <= pos[2] + 1.0 and not self.covered(x, y, ground):
+                    return Point3(x, y, ground)
         # No floor found round about (it is not drawn yet): still not right
         # on top of the player or of another toon sent here.
         angle = random.uniform(0, 2 * math.pi)
@@ -482,6 +492,9 @@ class NPCParty:
                     and getattr(npc, 'onMover', None) is None and not self.routeStillGood(npc, player):
                 # The player went another way: a new route after this leg.
                 npc.route = None
+            if npc.walk is None and getattr(npc, 'onMover', None) is None and self.outOfSweep(npc):
+                # Never stands where a stomper slams across.
+                continue
             if npc.walk is not None:
                 continue
             if [e for e in self.getElevators() if player.doId in seatsOf(e)]:
@@ -515,14 +528,77 @@ class NPCParty:
         queueing behind."""
         nav = getNav()
         h = math.radians(player.getH())
+        small = self.smallTop(playerPos)
+        if small:
+            # The player is on something with room for one more (a post's
+            # cap, a gear's top): the first of the party to get there joins
+            # the player, the rest wait their turn round it.
+            if self.turnOnTop(npc, player, playerPos):
+                for k in range(8):
+                    angle = h + math.pi + k * (math.pi / 4)
+                    spot = Point3(playerPos[0] - 1.4 * math.sin(angle), playerPos[1] + 1.4 * math.cos(angle), playerPos[2])
+                    ground = nav.groundZ(spot[0], spot[1], spot[2])
+                    if ground is not None and abs(ground - playerPos[2]) < 0.8 and not self.covered(spot[0], spot[1], ground):
+                        return Point3(spot[0], spot[1], ground)
+            return self.spotBelow(npc, playerPos) or Point3(playerPos)
         for tries in range(4):
             angle = h + (npc.doId % 7) * (2 * math.pi / 7) + tries * 0.9
             radius = SPREAD[0] + (npc.doId % 5) * (SPREAD[1] - SPREAD[0]) / 4.0
             spot = Point3(playerPos[0] - radius * math.sin(angle), playerPos[1] + radius * math.cos(angle), playerPos[2])
             ground = nav.groundZ(spot[0], spot[1], spot[2])
-            if ground is not None and nav.clearLine(Point3(playerPos), Point3(spot[0], spot[1], ground)):
+            if ground is not None and nav.clearLine(Point3(playerPos), Point3(spot[0], spot[1], ground)) and \
+                    not self.covered(spot[0], spot[1], ground):
                 return Point3(spot[0], spot[1], ground)
-        return Point3(playerPos)
+        return self.spotBelow(npc, playerPos) or Point3(playerPos)
+
+    def covered(self, x, y, z):
+        """Whether there is something to stand on just over (x, y, z): the
+        spot is inside a crate or a post (whose walls only face out), or
+        under a table, not where a toon can stand."""
+        ground = getNav().groundZ(x, y, z + 5.0)
+        return ground is not None and ground > z + 1.0
+
+    def smallTop(self, pos):
+        """Whether pos is on a top with room for about two (a post's cap):
+        floor at its height only close round it."""
+        nav = getNav()
+        if not nav.available():
+            return False
+        level = 0
+        for k in range(8):
+            angle = k * (math.pi / 4)
+            x, y = pos[0] + 3.2 * math.cos(angle), pos[1] + 3.2 * math.sin(angle)
+            ground = nav.groundZ(x, y, pos[2])
+            # (A step up or down a stair counts as more of the same floor.)
+            if ground is not None and abs(ground - pos[2]) < 1.3 and not self.covered(x, y, ground):
+                level += 1
+        return level <= 2
+
+    def turnOnTop(self, npc, player, playerPos):
+        """One of the party at a time on a small top with the player: the
+        one already up there, else the nearest."""
+        mates = [m for m in self.members if getattr(m, 'party', None) == player.doId and not m.isDeleted()]
+        def up(m):
+            p = m.getPos()
+            return math.hypot(p[0] - playerPos[0], p[1] - playerPos[1]) < 3.0 and abs(p[2] - playerPos[2]) < 1.0
+        already = [m for m in mates if up(m)]
+        if already:
+            return npc is min(already, key=lambda m: m.doId)
+        return npc is min(mates, key=lambda m: ((m.getPos() - playerPos).length(), m.doId))
+
+    def spotBelow(self, npc, playerPos):
+        """A place to wait near the player when there is no room beside it:
+        the floor or the crate tops round about, each toon its own side."""
+        nav = getNav()
+        for r in (3.5, 5.0, 6.5):
+            for k in range(8):
+                angle = (npc.doId % 7) * (2 * math.pi / 7) + k * (math.pi / 4)
+                x, y = playerPos[0] + r * math.cos(angle), playerPos[1] + r * math.sin(angle)
+                ground = nav.groundZ(x, y, playerPos[2])
+                if ground is None or ground > playerPos[2] + 1.0 or self.covered(x, y, ground):
+                    continue
+                return Point3(x, y, ground)
+        return None
 
     def spotAround(self, npc, center, radius=None):
         nav = getNav()
@@ -706,8 +782,10 @@ class NPCParty:
             return
         kind, data = route[0]
         if kind == WALK:
-            if any(self.manager.facilities.stomperBlocks(npc.zoneId, p) for p in data[:4]):
-                # A stomper is down in the way: wait for it to go up.
+            if any(self.manager.facilities.stomperBlocks(npc.zoneId, p) for p in data[:4]) and \
+                    not self.manager.facilities.inAnySweep(npc.zoneId, npc.getPos()):
+                # A stomper is down in the way: wait for it to go up. (Not
+                # standing where one slams across, though: on out of it.)
                 return
             if self.manager.facilities.moverWallBlocks(npc.getPos(), data[:3]):
                 # A sliding wall is across the way: wait for it to open
@@ -778,7 +856,12 @@ class NPCParty:
                 if not bothWaiting and not close and (math.hypot(c[0] - p[0], c[1] - p[1]) > HOP_REACH or abs(c[2] - p[2]) > 3.0):
                     return
                 npc.atHopEdge = False
-            elif not data.present():
+            elif not data.present() or len(self.aboard(npc, data)) >= data.mover.capacity:
+                # Not here yet, or full (a paint mixer's top holds two:
+                # players take it in turns): waits beside it, clear of where
+                # it comes down (its post is no wall on the NPCs' map).
+                self.clearOfPlatform(npc, data)
+                npc.boardSince = now if data.present() else npc.boardSince
                 return
             npc.boardSince = None
             route.pop(0)
@@ -882,15 +965,104 @@ class NPCParty:
                     return True
         return False
 
+    def outOfSweep(self, npc):
+        """An NPC standing where a stomper slams across (the conveyor past
+        the paint mixers) steps out of its way, to the nearer side."""
+        facilities = self.manager.facilities
+        pos = npc.getPos()
+        base = getClientBuiltin('base')
+        if base is None:
+            return False
+        for obj in list(base.cr.doId2do.values()):
+            if obj.__class__.__name__ != 'DistributedStomper' or getattr(obj, 'style', None) != 'horizontal' or \
+                    getattr(obj, 'model', None) is None or obj.model.isEmpty() or \
+                    not facilities.inStomperSweep(obj, pos):
+                continue
+            lo, hi = facilities.stomperSweep(obj)
+            nav = getNav()
+            # Out sideways to the way it slams (the way a toon crosses it).
+            motion = base.render.getRelativeVector(obj.model.getParent(), Vec3(0, -1, 0))
+            if abs(motion[1]) > abs(motion[0]):
+                outs = [Point3(lo[0] - 1.8, pos[1], pos[2]), Point3(hi[0] + 1.8, pos[1], pos[2])]
+            else:
+                outs = [Point3(pos[0], lo[1] - 1.8, pos[2]), Point3(pos[0], hi[1] + 1.8, pos[2])]
+            outs.sort(key=lambda o: (o - pos).length())
+            for out in outs:
+                ground = nav.groundZ(out[0], out[1], pos[2])
+                if ground is not None and abs(ground - pos[2]) < 1.5:
+                    npc.walk = [[Point3(out[0], out[1], ground)], self.paceOf(npc), None, None]
+                    npc.route = None
+                    if LEG_DEBUG:
+                        self.notify.info('NPC %s steps out of stomper %s to %s' % (npc.doId, obj.doId, out))
+                    return True
+        return False
+
+    def clearOfPlatform(self, npc, stop):
+        if npc.walk is not None:
+            return
+        c = stop.center()
+        p = npc.getPos()
+        d = Vec3(p[0] - c[0], p[1] - c[1], 0)
+        keep = stop.mover.halfSize + 1.8
+        if d.length() >= keep - 0.2:
+            return
+        if d.length() < 0.1:
+            d = Vec3(1, 0, 0)
+        d.normalize()
+        nav = getNav()
+        for turn in (0, 40, -40, 80, -80):
+            a = math.atan2(d[1], d[0]) + math.radians(turn)
+            x, y = c[0] + keep * math.cos(a), c[1] + keep * math.sin(a)
+            ground = nav.groundZ(x, y, p[2])
+            if ground is not None and abs(ground - p[2]) < 1.5:
+                npc.walk = [[Point3(x, y, ground)], self.paceOf(npc) * 0.6, None, None]
+                return
+
+    def aboard(self, npc, stop):
+        """Who else is on a platform now: the party's NPCs riding it, and
+        the player when standing on it."""
+        riders = [m for m in self.members if m is not npc and getattr(m, 'onMover', None) is stop.mover]
+        player = self.air.doId2do.get(getattr(npc, 'party', None))
+        if player is not None:
+            pos = self.manager.getPlayerPos(player)
+            c = stop.center()
+            if math.hypot(pos[0] - c[0], pos[1] - c[1]) <= stop.mover.halfSize + 0.5 and abs(pos[2] - c[2]) < 2.5:
+                riders.append(player)
+        return riders
+
     def spotOn(self, npc, stop):
         """The NPC's own place on a platform or lift (from its doId), so
         riders stand apart."""
         from toontown.npcplayers.NPCPathfinder import cellOf
         center = stop.center()
         # Each rider takes the next free place round the middle.
-        aboard = [m for m in self.members if m is not npc and getattr(m, 'onMover', None) is stop.mover]
+        aboard = self.aboard(npc, stop)
         slot = len(aboard)
         angle = slot * (2 * math.pi / 5) + (npc.doId % 3) * 0.2
+        if stop.mover.capacity <= 3:
+            # A small top: across from whoever is on it already, well
+            # inside its edge.
+            others = [(o.getPos() if o in self.members else self.manager.getPlayerPos(o)) for o in aboard]
+            if others:
+                p = others[0]
+                angle = math.atan2(p[1] - center[1], p[0] - center[0]) + math.pi
+            r = max(0.6, min(2.0, stop.mover.halfSize - 1.6))
+            # Its side away from the crates and walls it passes, so the
+            # toon stands on it, not half in a crate beside it.
+            nav = getNav()
+            best = None
+            for turn in (0, 45, -45, 90, -90, 135, -135, 180):
+                a = angle + math.radians(turn)
+                spot = Point3(center[0] + r * math.cos(a), center[1] + r * math.sin(a), center[2])
+                reach = Point3(center[0] + (r + 1.6) * math.cos(a), center[1] + (r + 1.6) * math.sin(a), center[2] + 1.5)
+                clear = not nav.available() or nav.clearLine(Point3(center[0], center[1], center[2] + 1.5), reach)
+                apart = min([math.hypot(spot[0] - o[0], spot[1] - o[1]) for o in others] or [9.0])
+                score = (clear, apart >= 2.2, apart)
+                if best is None or score > best[0]:
+                    best = (score, spot)
+                if clear and apart >= 2.8:
+                    break
+            return best[1]
         # (The cells are where the floor is with the platform at this stop;
         # one swinging past is somewhere else just now.)
         home = stop.worldOf(stop.mover.centerLocal)

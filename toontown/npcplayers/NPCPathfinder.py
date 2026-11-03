@@ -208,6 +208,10 @@ class Mover:
         self.base = moving
         self.liftDoId = liftDoId
         self.centerLocal = Point3(0, 0, 0)
+        # How many toons stand on it at once (a lift takes the whole party),
+        # and how far its floor reaches from the middle.
+        self.capacity = 8
+        self.halfSize = 2.0
         self.stops = [Stop(self, i, local) for i, local in enumerate(stops)]
         self.stops[0].other = self.stops[1]
         self.stops[1].other = self.stops[0]
@@ -487,6 +491,14 @@ class Grid:
             allPts = [p for poly in pts for p in poly]
             mover.centerLocal = Point3(sum(p[0] for p in allPts) / len(allPts), sum(p[1] for p in allPts) / len(allPts),
                                        max(p[2] for p in allPts))
+            if mover.liftDoId is None:
+                # A platform: a toon takes about 5 by 5 of it, so a paint
+                # mixer's top holds two (players take it in turns).
+                wpts = [render.getRelativePoint(mover.moving, p) for p in allPts]
+                sx = max(p[0] for p in wpts) - min(p[0] for p in wpts)
+                sy = max(p[1] for p in wpts) - min(p[1] for p in wpts)
+                mover.halfSize = min(sx, sy) / 2.0
+                mover.capacity = max(1, min(8, int(sx * sy / 25.0)))
             parentMat = mover.moving.getParent().getMat(render)
             for stop in mover.stops:
                 world = parentMat.xformPoint(stop.local + Vec3(mover.centerLocal))
@@ -529,6 +541,37 @@ class Grid:
             # No room to stand under a floor just overhead (under stairs).
             self.floors[key] = [z for i, z in enumerate(merged)
                                 if i + 1 >= len(merged) or merged[i + 1] - z > HEADROOM]
+        self.blockPosts()
+
+    def blockPosts(self):
+        """A platform that goes up and down on a post (the mints' paint
+        mixers): the post is no wall on the map (it moves with the top), so
+        the floor round its foot, under the top, is taken off the map: no
+        toon walks or waits inside it or under the top."""
+        for mover in self.movers:
+            if mover.liftDoId is not None or len(mover.stops) < 2:
+                continue
+            low = min(mover.stops, key=lambda st: st.z)
+            high = max(mover.stops, key=lambda st: st.z)
+            if high.z - low.z < 3.0 or not low.cells:
+                continue
+            cx = sum(c[0] for c in low.cells) / float(len(low.cells))
+            cy = sum(c[1] for c in low.cells) / float(len(low.cells))
+            # (All under its top, and a toon's width round it: the top comes
+            # down onto whoever stands under it.)
+            reach = (mover.halfSize + 1.0) / CELL
+            r = int(math.ceil(reach))
+            cells = [(int(round(cx)) + dx, int(round(cy)) + dy) for dx in range(-r, r + 1) for dy in range(-r, r + 1)]
+            for cell in cells:
+                if math.hypot(cell[0] - cx, cell[1] - cy) > reach:
+                    continue
+                heights = self.floors.get(cell)
+                if heights:
+                    kept = [z for z in heights if z >= low.z - 1.0]
+                    if kept:
+                        self.floors[cell] = kept
+                    else:
+                        del self.floors[cell]
 
     def heightNear(self, ix, iy, z, up=STEP_UP, down=STEP_DOWN):
         best = None

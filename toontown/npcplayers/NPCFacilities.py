@@ -1226,10 +1226,88 @@ class NPCFacilities:
         return False
 
     def stomperBlocks(self, zoneId, point):
-        """Whether a stomper is down (or coming down) over the spot."""
+        """Whether a stomper is down (or coming down) over the spot, or a
+        stomper that slams across (the mints' conveyor alley) is out, or
+        coming out, over it."""
         base = getClientBuiltin('base')
         if base is None:
             return False
+        for obj in list(base.cr.doId2do.values()):
+            if obj.__class__.__name__ != 'DistributedStomper' or getattr(obj, 'zoneId', None) not in (zoneId, None):
+                continue
+            model = getattr(obj, 'model', None)
+            if model is None or model.isEmpty():
+                continue
+            if getattr(obj, 'style', None) == 'horizontal':
+                if self.inStomperSweep(obj, point, 1.0) and self.stomperOut(obj) > 0.2:
+                    return True
+                continue
+            head = model.find('**/head')
+            if head.isEmpty():
+                continue
+            bounds = head.getTightBounds(base.render)
+            if bounds is None:
+                continue
+            lo, hi = bounds
+            if lo[0] - 2.5 <= point[0] <= hi[0] + 2.5 and lo[1] - 2.5 <= point[1] <= hi[1] + 2.5:
+                # Its head is at toon height over the spot (down, or
+                # slamming across the alley).
+                if lo[2] < point[2] + STOMPER_CLEARANCE + 1.0:
+                    return True
+        return False
+
+    def stomperOut(self, obj):
+        """How far out a stomper's head is: 1 all the way out (where it
+        slams to), 0 drawn back."""
+        rng = max(0.1, abs(getattr(obj, 'range', 0) or 0.1))
+        return max(0.0, min(1.0, 1.0 - abs(obj.model.getY()) / rng))
+
+    def stomperSweep(self, obj):
+        """The box (in render) a stomper's head sweeps through, from drawn
+        back to all the way out."""
+        sweeps = self.__dict__.setdefault('sweeps', {})
+        if obj.doId in sweeps:
+            return sweeps[obj.doId]
+        base = getClientBuiltin('base')
+        model = obj.model
+        head = model.find('**/head')
+        if head.isEmpty():
+            sweeps[obj.doId] = None
+            return None
+        bounds = head.getTightBounds(model)
+        if bounds is None:
+            return None
+        lo, hi = bounds
+        parentMat = model.getParent().getMat(base.render)
+        pts = []
+        for y in (0.0, -abs(obj.range)):
+            for cx in (lo[0], hi[0]):
+                for cy in (lo[1], hi[1]):
+                    for cz in (lo[2], hi[2]):
+                        pts.append(parentMat.xformPoint(Point3(cx, cy + y, cz)))
+        box = (Point3(min(p[0] for p in pts), min(p[1] for p in pts), min(p[2] for p in pts)),
+               Point3(max(p[0] for p in pts), max(p[1] for p in pts), max(p[2] for p in pts)))
+        sweeps[obj.doId] = box
+        return box
+
+    def inStomperSweep(self, obj, point, margin=0.0):
+        box = self.stomperSweep(obj)
+        if box is None:
+            return False
+        lo, hi = box
+        return lo[0] - margin <= point[0] <= hi[0] + margin and lo[1] - margin <= point[1] <= hi[1] + margin and \
+            lo[2] - 1.0 <= point[2] + 1.0 <= hi[2] + 0.5
+
+    def inAnySweep(self, zoneId, point):
+        base = getClientBuiltin('base')
+        if base is None:
+            return False
+        for obj in list(base.cr.doId2do.values()):
+            if obj.__class__.__name__ == 'DistributedStomper' and getattr(obj, 'style', None) == 'horizontal' and \
+                    getattr(obj, 'model', None) is not None and not obj.model.isEmpty() and \
+                    getattr(obj, 'zoneId', None) in (zoneId, None) and self.inStomperSweep(obj, point):
+                return True
+        return False
         for obj in list(base.cr.doId2do.values()):
             if obj.__class__.__name__ != 'DistributedStomper' or getattr(obj, 'zoneId', None) not in (zoneId, None):
                 continue

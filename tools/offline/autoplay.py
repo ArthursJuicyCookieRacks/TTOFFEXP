@@ -766,7 +766,11 @@ def scenarioBuilding():
         manager = air.buildingManagers[street]
         block = manager.getToonBlocks()[0]
         building = manager.getBuilding(block)
-        building.suitTakeOver('s', 0, 0)
+        # AUTOPLAY_BLDG_FLOORS 1-5 and AUTOPLAY_BLDG_TRACK s/m/l/c: a building
+        # of that many floors (each height needs its own difficulty).
+        floors = int(os.environ.get('AUTOPLAY_BLDG_FLOORS', 1))
+        difficulty = {1: 0, 2: 1, 3: 2, 4: 4, 5: 8}.get(floors, 0)
+        building.suitTakeOver(os.environ.get('AUTOPLAY_BLDG_TRACK', 's'), difficulty, floors - 1)
         return block, building.getExteriorAndInteriorZoneId()[0]
 
     block, zoneId = onDistrict(takeOver)
@@ -780,11 +784,22 @@ def scenarioBuilding():
                 return do
 
     yield until(elevator, 120, 'the cog building elevator')
-    yield sleep(2)
-    log('boarding the elevator')
-    messenger.send(elevator().uniqueName('enterelevatorSphere'), [None])
+    # Its doors open once the cogs have finished taking the building over;
+    # on again until the toon is aboard.
+    started = time.time()
+    while time.time() - started < 120 and place().__class__.__name__ != 'SuitInterior':
+        fsm = getattr(elevator(), 'fsm', None)
+        state = fsm.getCurrentState().getName() if fsm else None
+        if walking() and state in ('waitEmpty', 'waitCountdown'):
+            log('boarding the elevator (%s)' % state)
+            messenger.send(elevator().uniqueName('enterelevatorSphere'), [None])
+            yield sleep(4)
+        elif placeState() == 'battle':
+            yield from fightBattle()
+        else:
+            yield sleep(1)
     yield until(lambda: place().__class__.__name__ == 'SuitInterior', 120, 'inside the cog building')
-    deadline = time.time() + 1200
+    deadline = time.time() + 1200 * int(os.environ.get('AUTOPLAY_BLDG_FLOORS', 1))
     while place().__class__.__name__ == 'SuitInterior':
         if time.time() > deadline:
             raise StepFailed('still inside the cog building after 20 minutes (place state %s)' % placeState())
@@ -798,7 +813,7 @@ def scenarioBuilding():
     def isToonBlock(air):
         return air.buildingManagers[street].getBuilding(block).isToonBlock()
 
-    yield until(lambda: onDistrict(isToonBlock), 120, 'the building to turn back into a toon building')
+    yield until(lambda: onDistrict(isToonBlock), 300, 'the building to turn back into a toon building')
 
 
 def cogdoGameState(game):
@@ -1889,6 +1904,13 @@ def scenarioNPCMintRide():
     # riding it (see NPCFacilities.trailWalk / ride).
     shots = os.environ.get('AUTOPLAY_SHOTS', '/tmp')
     yield from teleport(ToontownGlobals.CashbotHQ)
+    floor = os.environ.get('AUTOPLAY_MINTFLOOR')
+    if floor:
+        def post(air, avId, f):
+            from toontown.coghq import MintManagerAI
+            board = MintManagerAI.__dict__.get('bboard') or __import__('builtins').__dict__.get('bboard')
+            board.post('mintFloor-%s' % avId, f)
+        onDistrict(post, localAvatar.doId, int(floor))
     yield from boardElevator('DistributedMintElevatorExt',
                              lambda do: getattr(do, 'mintId', None) == ToontownGlobals.CashbotMintIntA)
     yield until(lambda: placeName() == 'MintInterior', 180, 'inside the mint')
@@ -1943,7 +1965,18 @@ def scenarioNPCMintRide():
 
     # Onto the nearest mixer when it comes by.
     first = min(mixers, key=lambda m: (top(m) - localAvatar.getPos(render)).length())
-    yield until(lambda: (Point3(top(first)[0], top(first)[1], 0) - Point3(localAvatar.getX(render), localAvatar.getY(render), 0)).length() < 9, 30, 'the mixer to come near')
+    nearMixer = lambda: (Point3(top(first)[0], top(first)[1], 0) - Point3(localAvatar.getX(render), localAvatar.getY(render), 0)).length() < 9
+    waited = time.time()
+    while not nearMixer() and time.time() - waited < 30:
+        yield sleep(0.2)
+    if not nearMixer():
+        # (A mixer that goes up and down, never by the door: the player
+        # goes to stand beside where it comes down.)
+        log('walking up to mixer %s (it goes up and down)' % first.entId)
+        while top(first)[2] > localAvatar.getZ(render) + 3.0 and time.time() - waited < 60:
+            yield sleep(0.1)
+        p = top(first)
+        localAvatar.setPos(render, p[0] + 6.0, p[1], localAvatar.getZ(render))
     log('jumping onto mixer %s' % first.entId)
     topZ = top(first)[2]
     yield from arc(Point3(localAvatar.getPos(render)), top(first))
@@ -1998,6 +2031,147 @@ def scenarioNPCMintRide():
     rode = [doId for doId, z in heights.items() if z > topZ - 1.0]
     if not rode:
         raise StepFailed('no NPC got up onto a mixer')
+
+
+def scenarioNPCGearHop():
+    # The Coin Mint's gear room (room 20): the player stands on a gear on
+    # its post beside the crates. The NPCs stand on the gear with the player
+    # (two at most, taking turns), or wait on the floor or the crates: never
+    # inside the crates or the post.
+    room = int(os.environ.get('AUTOPLAY_MINTROOM', '20'))
+    yield from teleport(ToontownGlobals.CashbotHQ)
+    from toontown.coghq import MintLayout
+    mintId = ToontownGlobals.CashbotMintIntA
+    floor = [i for i in range(ToontownGlobals.MintNumFloors[mintId]) if room in MintLayout.MintLayout(mintId, i).getRoomIds()][-1]
+    def post(air, avId, f):
+        from toontown.coghq import MintManagerAI
+        board = MintManagerAI.__dict__.get('bboard') or __import__('builtins').__dict__.get('bboard')
+        board.post('mintFloor-%s' % avId, f)
+    onDistrict(post, localAvatar.doId, floor)
+    log('mint floor %d has room %s' % (floor, room))
+    yield from boardElevator('DistributedMintElevatorExt',
+                             lambda do: getattr(do, 'mintId', None) == mintId)
+    yield until(lambda: placeName() == 'MintInterior', 180, 'inside the mint')
+    yield until(lambda: findObject('DistributedMint', lambda do: do.rooms), 180, 'the rooms')
+    mint = findObject('DistributedMint', lambda do: do.rooms)
+    def theRoom():
+        for r in mint.rooms:
+            if getattr(r, 'roomId', None) == room and getattr(r, 'entities', None):
+                return r
+    yield until(theRoom, 120, 'room %d to load' % room)
+    roomObj = theRoom()
+    partyIds = lambda: onDistrict(lambda air, avId: [npc.doId for npc in air.npcPlayerManager.party.partyOf(air.doId2do[avId])], localAvatar.doId)
+    if not partyIds():
+        raise StepFailed('no NPC party came along')
+    yield until(walking, 120, 'walking')
+    mint.warpToRoom(roomObj.roomId)
+    yield sleep(4)
+    npcToons = lambda: [t for t in (base.cr.doId2do.get(i) for i in partyIds()) if t is not None and not t.isEmpty()]
+    def floorOf(np, part):
+        pts = []
+        for c in np.findAllMatches('**/+CollisionNode;+s'):
+            if part and part not in str(c):
+                continue
+            mat = c.getMat(render)
+            node = c.node()
+            for i in range(node.getNumSolids()):
+                so = node.getSolid(i)
+                if hasattr(so, 'getNumPoints'):
+                    pts += [mat.xformPoint(so.getPoint(j)) for j in range(so.getNumPoints())]
+        return pts
+    gears = []
+    for e in roomObj.entities.values():
+        if e.__class__.__name__ == 'GearEntity' and getattr(e, 'orientation', None) == 'horizontal':
+            pts = floorOf(e.model, 'MovingPlatform')
+            if pts:
+                c = Point3(sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts), max(p[2] for p in pts))
+                r = max(math.hypot(p[0] - c[0], p[1] - c[1]) for p in pts)
+                gears.append((e, c, r))
+    log('room %s entities %s' % (roomObj.roomId, sorted(set(e.__class__.__name__ for e in roomObj.entities.values()))))
+    for e in roomObj.entities.values():
+        if e.__class__.__name__ == 'GearEntity':
+            log('gear %s orientation %s model %s colls %s' % (e.entId, getattr(e, 'orientation', None), getattr(e, 'model', None), [str(c).split('/')[-1] for c in e.model.findAllMatches('**/+CollisionNode;+s')][:8]))
+        if e.__class__.__name__ == 'ModelEntity':
+            log('model %s %s' % (e.entId, getattr(e, 'modelPath', None)))
+    log('gears %s' % [(g[0].entId, g[1], round(g[2], 1)) for g in gears])
+    from toontown.npcplayers.NPCPathfinder import getPathfinder, cellOf
+    finder = getPathfinder()
+    def onFloor(p):
+        # Standing on a floor of the NPCs' map (a crate top, the gear, the
+        # room's floor), not partway into something.
+        for grid in list(finder.grids.values()):
+            heights = grid.floors.get(cellOf(p[0], p[1]))
+            if heights is None:
+                continue
+            return any(abs(p[2] - h) < 0.8 for h in heights)
+        return True
+    badSince = {}
+    if not gears:
+        raise StepFailed('no gear in room %d' % room)
+    shot = [0]
+    def snap(tag, focus):
+        shot[0] += 1
+        shotFrom('gear-%02d-%s.png' % (shot[0], tag), focus + Point3(-14, -18, 11), focus + Point3(0, 0, 1))
+    gear, top, radius = max(gears, key=lambda g: g[1][2])
+    # On top of the post the gears turn round, if it stands above them (the
+    # lava room foyer): its cap has room for about two.
+    from toontown.npcplayers.NPCNav import getNav
+    posts = [e for e in roomObj.entities.values() if 'MintGearPost' in str(getattr(e, 'modelPath', ''))]
+    for e in posts:
+        b = e.getTightBounds(render)
+        c = Point3((b[0][0] + b[1][0]) / 2, (b[0][1] + b[1][1]) / 2, b[1][2])
+        cap = onDistrict(lambda air, x, y, z: getNav().groundZ(x, y, z), c[0], c[1], c[2] + 0.5)
+        log('post %s bounds %s; cap floor %s (top gear %.1f)' % (e.entId, b, cap, top[2]))
+        if cap is not None and cap > top[2] + 2:
+            top = Point3(c[0], c[1], cap)
+            radius = max(1.0, min(b[1][0] - b[0][0], b[1][1] - b[0][1]) / 2)
+    localAvatar.setPos(render, top + Point3(0, 0, 0.2))
+    snap('player-on', top)
+    started = time.time()
+    most = [0]
+    inside = []
+    seen = {}
+    allNear = None
+    riding = lambda: onDistrict(lambda air: [n.doId for n in air.npcPlayerManager.party.members if getattr(n, 'onMover', None) is not None]) or []
+    while time.time() - started < 420:
+        localAvatar.setPos(render, top + Point3(0, 0, 0.1))
+        onGear = 0
+        ridingNow = riding()
+        toons = npcToons()
+        near = [t for t in toons if (t.getPos(render) - top).length() < 35]
+        if len(near) == len(toons):
+            allNear = allNear or time.time()
+            if time.time() - allNear > 60:
+                break
+        for t in near:
+            p = t.getPos(render)
+            d = math.hypot(p[0] - top[0], p[1] - top[1])
+            if t.doId in ridingNow:
+                continue
+            if d < radius + 0.3 and abs(p[2] - top[2]) < 1.0:
+                onGear += 1
+            onAGear = any(math.hypot(p[0] - c[0], p[1] - c[1]) < r + 0.5 and abs(p[2] - c[2]) < 1.0 for (g, c, r) in gears)
+            if not onAGear and not onFloor(p):
+                first = badSince.setdefault(t.doId, time.time())
+                if time.time() - first > 2.0:
+                    inside.append((t.doId, tuple(round(v, 1) for v in p)))
+                    if len(inside) in (1, 20):
+                        snap('inside-%d' % t.doId, p)
+            else:
+                badSince.pop(t.doId, None)
+            seen[t.doId] = (tuple(round(v, 1) for v in p), round(d, 1))
+        most[0] = max(most[0], onGear)
+        if shot[0] < 10 and int((time.time() - started) * 10) % 120 == 0:
+            snap('npcs-%d-on' % onGear, top)
+        yield sleep(0.1)
+    log('NPCs at the end: %s; most on the gear with the player %d; gear radius %.1f' % (seen, most[0], radius))
+    if inside:
+        log('NPCs inside: %s' % inside[:12])
+        raise StepFailed('an NPC stood off any floor (inside a crate or the post)')
+    if most[0] > 2:
+        raise StepFailed('%d NPCs on the gear at once' % most[0])
+    if most[0] == 0:
+        raise StepFailed('no NPC came onto the gear')
 
 
 def scenarioCountryClub():
@@ -5505,6 +5679,7 @@ SCENARIOS = [
     ('npcstairs', scenarioNPCStairs),
     ('npcs', scenarioNPCs),
     ('npcmintride', scenarioNPCMintRide),
+    ('npcgearhop', scenarioNPCGearHop),
     ('npcclubpuzzles', scenarioNPCClubPuzzles),
     ('needhelp', scenarioNeedHelp),
     ('npcstreets', scenarioNPCStreets),
@@ -5532,6 +5707,7 @@ SCENARIOS = [
     ('npccogdo', withNPCs(scenarioCogdo, ['DistributedCogdoBattleBldgAI'])),
     ('npccogdolaw', withNPCs(lambda: scenarioCogdo('l'), ['DistributedCogdoBattleBldgAI'])),
     ('npccogdoboss', withNPCs(lambda: scenarioCogdo('c'), ['DistributedCogdoBattleBldgAI'])),
+    ('npccogdocash', withNPCs(lambda: scenarioCogdo('m'), ['DistributedCogdoBattleBldgAI'])),
     ('tutorial', scenarioTutorial),
     ('touch', scenarioTouchControls),
     ('maxtoon', scenarioMaxToon),
