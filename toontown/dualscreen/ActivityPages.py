@@ -457,12 +457,31 @@ class ActivityPages:
         self.borrow(card, holder)
         if not card.jpSign.isEmpty():
             self.borrow(card.jpSign, holder)
-        self.fitInto(holder, card, z=-0.06, height=1.5)
+        # Centered on the blue card itself: the card's GUI frame is not
+        # where its picture is, which put it off to one side.
+        holder.setPos(0, 0, 0)
+        holder.setScale(1)
+        low, high = self.pictureBounds(card, holder)
+        size = min(2 * 0.66 / max(0.001, high[0] - low[0]), 1.45 / max(0.001, high[2] - low[2]))
+        holder.setScale(size)
+        holder.setPos(-(low[0] + high[0]) / 2.0 * size, 0, -0.08 - (low[2] + high[2]) / 2.0 * size)
+        low, high = self.pictureBounds(card, overlay)
         # The X on the card's top right corner.
-        self.closeX(overlay, (0.62, 0, 0.64), self.closeBingo, scale=1.5)
+        self.closeX(overlay, (high[0] - 0.02, 0, high[2] - 0.02), self.closeBingo, scale=1.5)
         for cell in card.cellGuiList:
             self.tap(cell, pressButton, cell)
         self.tap(card.bingo, pressButton, card.bingo)
+
+    def pictureBounds(self, card, other):
+        # A DirectFrame's picture hangs under its state node, which is not
+        # in the scene graph: measure it there (the card's own space) and
+        # move it over by the card's place by hand.
+        picture = card.component('image0')
+        low, high = picture.getTightBounds(picture.getTop()) or (Point3(-0.5), Point3(0.5))
+        matrix = card.getMat(other)
+        corners = [matrix.xformPoint(Point3(x, y, z)) for x in (low[0], high[0]) for y in (low[1], high[1]) for z in (low[2], high[2])]
+        return (Point3(min(c[0] for c in corners), 0, min(c[2] for c in corners)),
+                Point3(max(c[0] for c in corners), 0, max(c[2] for c in corners)))
 
     def closeBingo(self):
         if self.overlayKind == 'bingo':
