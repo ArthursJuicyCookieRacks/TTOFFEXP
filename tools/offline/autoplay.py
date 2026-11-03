@@ -1092,7 +1092,12 @@ def playCogdoBoardroom(dist):
             # Off the table early enough to be over the pencil when there
             # (running into one is a hit).
             lead = 1.6 + max(0.0, dist.slideSpeed) * 0.22
-            hop = any(ob.kind == Layout.PENCIL and 0.5 < ob.y - pos[1] < lead for ob in layout.obstacles)
+            # (Along the pencil where the toon is: they lie crooked, so at
+            # the table's side the pencil is a foot or more off its middle,
+            # and a toon stopped against one never hopped again.)
+            hop = any(ob.kind == Layout.PENCIL and
+                      -1.6 < ob.y + (pos[0] - ob.x) * math.tan(math.radians(ob.angle)) - pos[1] < lead
+                      for ob in layout.obstacles)
             press('jump', hop)
             press('forward', not ahead)
         else:
@@ -1104,7 +1109,7 @@ def playCogdoBoardroom(dist):
             n += 1
         if time.time() > lastLog:
             lastLog = time.time() + 2
-            others = ['%.0f' % t.getY(render) for t in [dist.getToon(a) for a in dist.getToonIds()] if t is not None and not t.isLocal()]
+            others = ['%.0f%s' % (t.getY(render), '(sad)' if t.getHp() <= 0 else '') for t in [dist.getToon(a) for a in dist.getToonIds()] if t is not None and not t.isLocal()]
             log('boardroom: %s at (%.1f, %.1f, %.1f), carried %d, banked %d, laff %d, others at y %s' % (
                 dist.slideState, pos[0], pos[1], pos[2], dist.carried, dist.banked, localAvatar.getHp(), ' '.join(others)))
             if os.environ.get('AUTOPLAY_SEAT_DEBUG') and not getattr(dist, '_seatsChecked', False):

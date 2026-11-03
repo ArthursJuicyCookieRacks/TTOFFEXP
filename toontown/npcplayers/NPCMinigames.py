@@ -10,6 +10,7 @@ client, which offline runs in the same process and holds the same game.
 """
 
 import math
+import os
 import random
 
 from direct.directnotify import DirectNotifyGlobal
@@ -1813,7 +1814,11 @@ class CogdoBoardroomPlayer(CogdoPlayer):
         speed += max(-BoardroomConsts.SlideAccel * dt, min(BoardroomConsts.SlideAccel * dt, want - speed))
         if game.lastHit.get(self.npc.doId, -99) > t - BoardroomConsts.SpinTime:
             speed = min(speed, BoardroomConsts.SlideSlowSpeed)
-        nx = x + steer * BoardroomConsts.SteerSpeed * dt
+        # Never past the goal in one step: on a slow tick the full steer
+        # carried an NPC beside a pile across into it, every tick, so it sat
+        # there for minutes (root cause of the NPCs falling far behind).
+        step = steer * BoardroomConsts.SteerSpeed * dt
+        nx = x + (max(-abs(goal - x), min(abs(goal - x), step)))
         nx = max(-BoardroomConsts.TableHalfWidth + 1, min(BoardroomConsts.TableHalfWidth - 1, nx))
         ny = y + speed * dt
         here = layout.heightAt(x, y)
@@ -1826,15 +1831,36 @@ class CogdoBoardroomPlayer(CogdoPlayer):
             ob = bumped[0]
             speed = 0.0
             ny = y
-            nx = x
+            # Still free to edge sideways round it (dropping the sideways
+            # move too froze the NPCs behind piles for up to a minute).
+            if ob.contains(nx, y, 0.6):
+                nx = x
             sides = [g for g in (ob.x - ob.w - 2.0, ob.x + ob.w + 2.0) if abs(g) < BoardroomConsts.TableHalfWidth - 1.0]
             if sides:
                 self.memo['dodgeX'] = min(sides, key=lambda g: abs(g - x))
                 self.memo['dodgeUntil'] = t + 1.5
+        # Not moving on for a while (wedged between piles): scoot over to a
+        # clear spot across the table, as a player would wriggle free.
+        if ny > self.memo.get('progressY', -99) + 1.0:
+            self.memo['progressY'] = ny
+            self.memo['progressAt'] = t
+        elif t - self.memo.get('progressAt', t) > 2.5:
+            for g in sorted((k * 1.5 for k in range(-6, 7)), key=lambda g: abs(g - nx)):
+                if not any(ob.kind == BoardroomLayout.PILE and ob.contains(g, ny + 1.0, 0.8) for ob in layout.obstacles):
+                    nx = g
+                    break
+            self.memo['progressAt'] = t
+        if os.environ.get('AUTOPLAY_NPC_DEBUG') and now > self.memo.get('dbgAt', 0):
+            self.memo['dbgAt'] = now + 4.0
+            print('NPCDBG %d t %.1f x %.1f y %.1f speed %.1f want %.1f bumped %s dt %.2f hit %.1f' % (
+                self.npc.doId, t, nx, ny, speed, want, [(b.kind, round(b.x, 1), round(b.y, 1), round(b.w, 1), round(b.h, 1)) for b in bumped],
+                dt, t - game.lastHit.get(self.npc.doId, -99)), flush=True)
         self.memo['speed'] = speed
         self.memo['x'], self.memo['y'] = nx, ny
         z = BoardroomConsts.TableTop
-        hop = any(ob.kind == BoardroomLayout.PENCIL and -0.5 < ob.y - ny < 1.5 and abs(ob.x - nx) < ob.w + 1 for ob in layout.obstacles)
+        # Along the (crooked) pencil where the NPC is, not its middle.
+        hop = any(ob.kind == BoardroomLayout.PENCIL and -0.5 < ob.y + (nx - ob.x) * math.tan(math.radians(ob.angle)) - ny < 1.5
+                  and abs(ob.x - nx) < ob.w + 1 for ob in layout.obstacles)
         if hop:
             z += 2.0
         z = max(z, layout.heightAt(nx, ny))

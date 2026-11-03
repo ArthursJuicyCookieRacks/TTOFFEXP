@@ -37,7 +37,7 @@ TableModel = 'phase_12/models/bossbotHQ/BanquetTableChairs'
 # The table runs up the middle of the hall. The toons run on its top.
 # Three of the banquet halls end to end, the walls between them taken
 # out: each hall is this long from its near wall to its far one.
-NumHalls = 5
+NumHalls = 8
 HallLength = 333.7016
 TableHalfWidth = 13.0
 TableStart = 96.0
@@ -256,8 +256,8 @@ def hazardHits(kind, x, y, z, px, py, pz):
 # barrels. The toons tee off golf balls across a cubicle office at the cogs
 # walking out with them: a cog that is hit drops its barrel back on the
 # pile. Each barrel left at the end is laff for every toon.
-SlideDuration = 165.0
-GolfDuration = 60.0
+SlideDuration = 270.0
+GolfDuration = 120.0
 # The slide's clock, then the golf's: GameDuration above is both.
 GameDuration = SlideDuration + GolfDuration
 # The office is a Sellbot maze quadrant (the same cubicles, filing
