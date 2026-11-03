@@ -162,14 +162,31 @@ class GetFriendsListFSM(FSM):
                         # It's expired, delete and continue.
                         del self.mgr.avBasicInfoCache[friendId]
             # We need to fetch their details
-            fsm = GetToonDataFSM(self.mgr, self.requesterId, friendId, self.__gotAvatarInfo)
-            fsm.start()
+            fsm = GetToonDataFSM(self.mgr, self.requesterId, friendId,
+                                 lambda success, requesterId, fields, friendId=friendId, **kw:
+                                 self.__gotAvatarInfo(success, requesterId, fields, friendId))
             self.getFriendsFieldsFSMs[friendId] = fsm
+            fsm.start()
+        # No friends (a new toon), or all of them known already: done now.
+        # (Waiting for an answer that never comes left the toon's friends
+        # manager busy for good, so no toon or doodle details ever came:
+        # the pet shop's Restyle screen never opened.)
+        # (While entering a state the FSM's state is None: the demand that
+        # follows is queued until this one is in.)
+        if not self.friendsList:
+            self.__testFinished()
 
-    def __gotAvatarInfo(self, success, requesterId, fields):
+    def __gotAvatarInfo(self, success, requesterId, fields, friendId=None):
         # We no longer need the FSM!
-        if fields['ID'] in self.getFriendsFieldsFSMs:
-            del self.getFriendsFieldsFSMs[fields['ID']]
+        if friendId is None and fields:
+            friendId = fields['ID']
+        self.getFriendsFieldsFSMs.pop(friendId, None)
+        if not success or not fields:
+            # Not a toon in the database (an NPC toon friend): left out.
+            if self.state in ('GetFriendsDetails', None):
+                self.iterated += 1
+                self.__testFinished()
+            return
         if self.state != 'GetFriendsDetails':
             self.demand('Failure', '__gotAvatarInfo while not looking for friends details, avId=%d' % self.requesterId)
             return
@@ -187,6 +204,9 @@ class GetFriendsListFSM(FSM):
 
     def enterCheckFriendsOnline(self):
         self.iterated = 0
+        if not self.friendsList:
+            self.demand('Finished')
+            return
         for friendId, tf in self.friendsList:
             self.mgr.air.getActivated(friendId, self.__gotActivatedResp)
 
