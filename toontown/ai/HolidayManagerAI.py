@@ -43,10 +43,11 @@ class HolidayManagerAI:
     # (March 29 - April 11), "Out For Repairs" the rest of the year.
     MonthlyHolidays = []
 
-    # Weekly holidays: (holidayId, weekday), Monday being 0.
-    WeeklyHolidays = [
+    # Weekly holidays: (holidayId, weekday), Monday being 0. Fish Bingo
+    # was a Wednesday event online; offline there is nobody to wait for,
+    # so Arthur wants it at every pond every day.
+    WeeklyHolidays = [(ToontownGlobals.FISH_BINGO_NIGHT, weekday) for weekday in range(7)] + [
         (ToontownGlobals.CIRCUIT_RACING_EVENT, 0),
-        (ToontownGlobals.FISH_BINGO_NIGHT, 2),
         (ToontownGlobals.TROLLEY_HOLIDAY, 3),
         (ToontownGlobals.SILLY_SATURDAY_BINGO, 5),
     ]

@@ -10050,7 +10050,7 @@ HolidayNamesInCalendar = {1: ('Summer Fireworks', 'Celebrate Summer with a firew
  4: ('Winter Holiday', 'Celebrate the Winter Holiday with Toontastic decorations, party and Cattlelog items, and more!'),
  5: ('Skelecog Invasion', 'Stop the Skelecogs from invading Toontown!'),
  6: ('Mr. Hollywood Invasion', 'Stop the Mr. Hollywood Cogs from invading Toontown!'),
- 7: ('Fish Bingo', 'Fish Bingo Wednesday! Everyone at the pond works together to complete the card before time runs out.'),
+ 7: ('Fish Bingo', 'Fish Bingo every day! Everyone at the pond works together to complete the card before time runs out.'),
  8: ('Toon Species Election', 'Vote on the new Toon species! Will it be Goat? Will it be Pig?'),
  9: ('Black Cat Day', 'Happy Halloween! Create a Toontastic Black Cat Toon - Today Only!'),
  13: ('Trick or Treat', 'Happy Halloween! Trick or treat throughout Toontown to get a nifty Halloween pumpkin head reward!'),
