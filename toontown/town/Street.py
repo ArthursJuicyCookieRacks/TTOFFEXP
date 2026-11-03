@@ -25,6 +25,7 @@ ZoneCheckInterval = 0.5
 ZoneCheckStates = ('walk', 'sit', 'push', 'stickerBook', 'WaitForBattle', 'battle',
                    'quest', 'stopped', 'fishing', 'purchase')
 from direct.interval.IntervalGlobal import *
+import random
 from otp.nametag import NametagGlobals
 visualizeZones = config.ConfigVariableBool('visualize-zones', 0).getValue()
 
@@ -300,6 +301,11 @@ class Street(BattlePlace.BattlePlace):
         avId = requestStatus['avId']
         hoodId = requestStatus['hoodId']
         zoneId = requestStatus['zoneId']
+        if avId == -1 or avId not in base.cr.doId2do:
+            # Not going to anyone: the toon lands in the part of the street
+            # it asked for. (Left where it stood on the last street it would
+            # be in no part of this one, with nothing drawn around it.)
+            self._landInZone(zoneId)
         if avId != -1:
             if avId not in base.cr.doId2do:
                 teleportDebug(requestStatus, "couldn't find friend %s" % avId)
@@ -314,6 +320,23 @@ class Street(BattlePlace.BattlePlace):
                 self.fsm.request('final')
                 self.__teleportOutDone(requestStatus)
         return
+
+    def _landInZone(self, zoneId):
+        graph = getattr(base.cr.playGame.dnaData, 'suitGraph', None)
+        if graph is None:
+            return
+        points = []
+        for point in graph.points:
+            try:
+                if point.getPointType() == 0 and ZoneUtil.getTrueZoneId(graph.getPointZone(point), zoneId) == zoneId:
+                    points.append(point)
+            except Exception:
+                continue
+        if not points:
+            return
+        pos = random.choice(points).getPos()
+        base.localAvatar.setPos(render, pos[0], pos[1], pos[2])
+        base.localAvatar.setH(render, random.uniform(0, 360))
 
     def exitTeleportIn(self):
         self.removeSetZoneCompleteCallback(self._ttfToken)
