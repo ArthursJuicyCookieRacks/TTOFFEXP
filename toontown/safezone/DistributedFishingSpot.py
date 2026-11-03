@@ -27,6 +27,13 @@ from direct.fsm import State
 from toontown.hood import ZoneUtil
 from toontown.toontowngui import TeaserPanel
 
+def dualScreenShowsCatch():
+    """True when a dual-screen handheld's bottom screen is up: it shows
+    what was caught, and the top screen keeps only the fishing controls."""
+    from toontown.dualscreen import SecondScreen
+    return SecondScreen.showing()
+
+
 class DistributedFishingSpot(DistributedObject.DistributedObject):
     notify = DirectNotifyGlobal.directNotify.newCategory('DistributedFishingSpot')
     vZeroMax = 25.0
@@ -441,25 +448,51 @@ class DistributedFishingSpot(DistributedObject.DistributedObject):
         if base.wantBingo:
             self.__setBingoCastGui()
 
-        def requestLocalAdjusting(mouseEvent):
-            if self.av.isFishTankFull() and self.__allowSellFish():
-                self.fsm.request('sellFish')
-            else:
-                self.fsm.request('localAdjusting')
-
-        def requestLocalCasting(mouseEvent):
-            if not (self.av.isFishTankFull() and self.__allowSellFish()):
-                self.fsm.request('localCasting')
-
-        self.castButton.bind(DGG.B1PRESS, requestLocalAdjusting)
-        self.castButton.bind(DGG.B3PRESS, requestLocalAdjusting)
-        self.castButton.bind(DGG.B1RELEASE, requestLocalCasting)
-        self.castButton.bind(DGG.B3RELEASE, requestLocalCasting)
+        self.castButton.bind(DGG.B1PRESS, self.requestLocalAdjusting)
+        self.castButton.bind(DGG.B3PRESS, self.requestLocalAdjusting)
+        self.castButton.bind(DGG.B1RELEASE, self.requestLocalCasting)
+        self.castButton.bind(DGG.B3RELEASE, self.requestLocalCasting)
         if self.firstCast and len(self.av.fishCollection) == 0 and len(self.av.fishTank) == 0:
             self.__showHowTo(TTLocalizer.FishingHowToFirstTime)
         elif base.wantBingo and self.pond.hasPondBingoManager() and not self.av.bFishBingoTutorialDone:
             self.__showHowTo(TTLocalizer.FishBingoHelpMain)
             self.av.b_setFishBingoTutorialDone(True)
+
+    def requestLocalAdjusting(self, mouseEvent=None):
+        if self.av.isFishTankFull() and self.__allowSellFish():
+            self.fsm.request('sellFish')
+        else:
+            self.fsm.request('localAdjusting')
+
+    def requestLocalCasting(self, mouseEvent=None):
+        if not (self.av.isFishTankFull() and self.__allowSellFish()):
+            self.fsm.request('localCasting')
+
+    # The bottom screen of a dual-screen handheld has its own cast pad
+    # (BottomScreenPages): touching it is pressing the Cast button, and
+    # dragging on it is dragging the mouse.
+
+    def canCast(self):
+        return bool(self.localToonFishing and self.madeGui and self.castGui.hasParent() and not self.castButton.isHidden()
+                    and self.castButton['state'] == DGG.NORMAL and self.fsm.getCurrentState().getName() in ('waiting', 'reward', 'fishing'))
+
+    def dualScreenCastPress(self, mouse):
+        if not self.canCast():
+            return False
+        self.dualScreenMouse = mouse
+        self.requestLocalAdjusting()
+        return True
+
+    def dualScreenCastDrag(self, mouse):
+        self.dualScreenMouse = mouse
+
+    def dualScreenCastRelease(self, mouse):
+        self.dualScreenMouse = mouse
+        if self.fsm.getCurrentState().getName() == 'localAdjusting':
+            # The last drag sets the power and the aim.
+            self.getMouse()
+            self.requestLocalCasting()
+        self.dualScreenMouse = None
 
     def __moneyChange(self, money):
         self.jar['text'] = str(money)
@@ -507,7 +540,11 @@ class DistributedFishingSpot(DistributedObject.DistributedObject):
         self.fishPanel.setSwimBounds(-0.3, 0.3, -0.235, 0.25)
         self.fishPanel.setSwimColor(1.0, 1.0, 0.74901, 1.0)
         self.fishPanel.load()
-        self.fishPanel.show(code)
+        if dualScreenShowsCatch():
+            # The bottom screen shows the catch instead (with its X).
+            DirectFrame.hide(self.fishPanel)
+        else:
+            self.fishPanel.show(code)
         self.__updateFishTankGui()
 
     def __setFishItemPos(self):
@@ -775,7 +812,9 @@ class DistributedFishingSpot(DistributedObject.DistributedObject):
         return Task.cont
 
     def getMouse(self):
-        if base.mouseWatcherNode.hasMouse():
+        if getattr(self, 'dualScreenMouse', None) is not None:
+            self.mouseX, self.mouseY = self.dualScreenMouse
+        elif base.mouseWatcherNode.hasMouse():
             self.mouseX = base.mouseWatcherNode.getMouseX()
             self.mouseY = base.mouseWatcherNode.getMouseY()
         else:
@@ -998,6 +1037,12 @@ class DistributedFishingSpot(DistributedObject.DistributedObject):
                 self.__hideCastGui()
             else:
                 self.__showFailureReason(code)
+            if code in (FishGlobals.QuestItem, FishGlobals.FishItem, FishGlobals.FishItemNewEntry, FishGlobals.FishItemNewRecord,
+                        FishGlobals.BootItem, FishGlobals.JellybeanItem):
+                fish = None
+                if code in (FishGlobals.FishItem, FishGlobals.FishItemNewEntry, FishGlobals.FishItemNewRecord):
+                    fish = FishBase.FishBase(itemDesc1, itemDesc2, itemDesc3)
+                messenger.send('dualScreenCatch', [self, code, fish])
         self.track = Sequence(Parallel(ActorInterval(self.av, 'reel'), ActorInterval(self.pole, 'cast', startFrame=63, endFrame=127)), ActorInterval(self.av, 'reel-neutral'), Func(self.__hideLine), Func(self.__hideBob), ActorInterval(self.av, 'fish-again'), Func(self.av.loop, 'pole-neutral'))
         self.track.start()
 
@@ -1014,6 +1059,7 @@ class DistributedFishingSpot(DistributedObject.DistributedObject):
 
     def exitReward(self):
         if self.localToonFishing:
+            messenger.send('dualScreenCatchGone', [self])
             self.itemGui.detachNode()
             self.cleanupFishPanel()
         self.track.finish()

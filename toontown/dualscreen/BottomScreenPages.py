@@ -20,6 +20,7 @@ from direct.gui.DirectGui import DirectFrame, DirectLabel
 from direct.showbase.DirectObject import DirectObject
 from panda3d.core import CardMaker, NodePath, PNMImage, Point3, TextNode, Texture, TransparencyAttrib
 
+from toontown.dualscreen.ActivityPages import ActivityPages, currentActivity
 from toontown.hood import ZoneUtil
 from toontown.toonbase import ToontownBattleGlobals
 from toontown.toonbase import ToontownGlobals
@@ -84,10 +85,12 @@ MAP_CLOUDS = (((0.575, 0.0, -0.04), (0.45, 0.0, -0.25)), (), ((0.375, 0.0, 0.4),
 class Tap:
     """Something on the bottom screen that does something when touched."""
 
-    def __init__(self, node, command, args=()):
+    def __init__(self, node, command, args=(), hold=None):
         self.node = node
         self.command = command
         self.args = args
+        # hold(kind, point): told 'down', each 'move' and 'up' while touched.
+        self.hold = hold
         self.scale = node.getScale()
 
 
@@ -169,7 +172,7 @@ def currentBattle():
     return None
 
 
-class BottomScreen(DirectObject):
+class BottomScreen(DirectObject, ActivityPages):
 
     def __init__(self, screen, aspect, aspectRatio):
         DirectObject.__init__(self)
@@ -198,6 +201,7 @@ class BottomScreen(DirectObject):
         self.slotToon = None
         self.slotNode = None
         self.leaving = False
+        self.initActivity()
         self.loadArt()
 
     def loadArt(self):
@@ -217,6 +221,7 @@ class BottomScreen(DirectObject):
 
     def destroy(self):
         self.clear()
+        self.destroyActivity()
         self.ignoreAll()
         for model in self.models.values():
             model.removeNode()
@@ -230,6 +235,7 @@ class BottomScreen(DirectObject):
             self.laffMeter.destroy()
             self.laffMeter = None
         self.ignore('toonLookChanged')
+        self.clearActivity()
         self.clearSlot()
         self.screen.setSmooth(False)
         if self.page is not None:
@@ -246,6 +252,22 @@ class BottomScreen(DirectObject):
         self.lastRefresh = globalClock.getRealTime()
 
     def update(self):
+        # Fishing and golf have pages of their own (ActivityPages), and
+        # leaving them brings back the page for where the toon is.
+        activity = currentActivity()
+        if activity != self.activity:
+            self.activity = activity
+            if activity is not None:
+                self.show(activity)
+                return
+            self.stage = None
+            self.street = None
+        if activity is not None:
+            self.updateActivity()
+            now = globalClock.getRealTime()
+            if self.message is not None and now >= self.messageUntil and not self.message.isEmpty():
+                self.message.hide()
+            return
         stage = 'survival' if survivalGame() is not None else currentStage()
         if stage != self.stage:
             self.stage = stage
@@ -318,6 +340,16 @@ class BottomScreen(DirectObject):
                         Point3(max(c[0] for c in corners), 0, max(c[2] for c in corners)))
         return node.getTightBounds(self.aspect)
 
+    def hold(self, tap, kind, point):
+        if kind == 'down':
+            messenger.send('wakeup')
+        try:
+            tap.hold(kind, point)
+        except Exception:
+            notify.warning('bottom screen button failed')
+            import traceback
+            traceback.print_exc()
+
     def fire(self, tap):
         messenger.send('wakeup')
         try:
@@ -340,6 +372,10 @@ class BottomScreen(DirectObject):
 
     def tap(self, node, command, *args):
         self.taps.append(Tap(node, command, args))
+        return node
+
+    def holdTap(self, node, handler):
+        self.taps.append(Tap(node, None, (), hold=handler))
         return node
 
     def paper(self):

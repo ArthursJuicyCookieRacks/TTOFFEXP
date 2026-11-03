@@ -47,6 +47,11 @@ def get():
     return _instance
 
 
+def showing():
+    """True while there is a bottom screen and it is being drawn."""
+    return _instance is not None and _instance.buffer is not None and _instance.pages is not None
+
+
 def isAndroid():
     return sys.platform == 'android'
 
@@ -60,6 +65,7 @@ class SecondScreen(DirectObject):
         self.pages = None
         self.touches = []
         self.pressed = None
+        self.holding = None
         self.armed = False
         self.lastFrame = 0
         self.lastPicture = None
@@ -222,8 +228,26 @@ class SecondScreen(DirectObject):
 
     def handleTouch(self, kind, x, y):
         point = self.toAspect(x, y)
+        # Something held down (the fishing cast pad, the golf swing button)
+        # gets every move and the letting go, wherever the finger goes.
+        holding = getattr(self, 'holding', None)
+        if holding is not None:
+            if kind == 'move':
+                self.pages.hold(holding, 'move', point)
+                return
+            self.holding = None
+            self.press(None)
+            self.pages.hold(holding, 'up', point)
+            if kind != 'down':
+                return
         if kind == 'down':
-            self.press(self.pages.tapAt(point))
+            tap = self.pages.tapAt(point)
+            if tap is not None and tap.hold is not None:
+                self.holding = tap
+                self.press(tap)
+                self.pages.hold(tap, 'down', point)
+                return
+            self.press(tap)
         elif kind == 'move':
             if self.pressed is not None and self.pages.tapAt(point) is not self.pressed:
                 self.press(None)

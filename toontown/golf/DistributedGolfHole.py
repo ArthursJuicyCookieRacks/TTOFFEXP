@@ -1522,7 +1522,9 @@ class DistributedGolfHole(DistributedPhysicsWorld.DistributedPhysicsWorld, FSM, 
         bamFile = self.holeInfo['terrainModel']
         fileName = bamFile.split('/')[-1]
         dotIndex = fileName.find('.')
-        baseName = fileName[0:dotIndex]
+        # The hole models are named without '.bam' here: find() gives -1,
+        # which used to cut the last letter off (hole1 -> hole_cammodel).
+        baseName = fileName[0:dotIndex] if dotIndex >= 0 else fileName
         camModelName = baseName + '_cammodel'
         cameraName = baseName + '_camera'
         path = bamFile[0:bamFile.find(fileName)]
@@ -1533,6 +1535,9 @@ class DistributedGolfHole(DistributedPhysicsWorld.DistributedPhysicsWorld, FSM, 
             self.flyOverActor.setBlend(frameBlend = config.ConfigVariableBool('want-smooth-animations', False).getValue())
         except Exception:
             self.notify.debug("Couldn't find flyover %s" % camModelFullPath)
+            # The hole was set up behind a black iris for the fly-over:
+            # without one, lift it, or the whole hole is played in black.
+            base.transitions.noIris()
             return False
 
         base.transitions.noIris()
