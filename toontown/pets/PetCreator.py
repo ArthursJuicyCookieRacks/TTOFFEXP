@@ -2,32 +2,39 @@
 The rules for a doodle built in the pet shop, shared by the shop screen and
 the pet clerk on the AI.
 
-A built doodle is priced with the same formula as the pet shop's daily
-doodles (PetUtil.getPetCostFromSeed): its body's rarity, made cheaper or
-dearer by how good its traits are, spread over the playground's price range
-(PetConstants.ZoneToCostRange). A doodle that matches a daily doodle costs
-the same jellybeans.
+A built doodle's traits are exactly what that playground's daily doodles
+could have, as before: each trait only comes in the levels (from "Always
+Forgets" to "Rarely Forgets") that its daily doodles could reach there
+(PetTraits.Sz2MinMax), at a value they could have. Each playground's traits
+are a level of their own, Toontown Central's level 1 up to Donald's
+Dreamland's level 6, since the better the playground, the better its
+doodles' traits.
 
-What a shop can sell follows the playground, as before: a playground only
-sells the bodies its daily doodles could have (PetDNA.PetRarities), and each
-trait only comes in the levels that its daily doodles could reach
-(PetTraits.Sz2MinMax), so Toontown Central has the weakest traits and
-Donald's Dreamland the best.
+A built doodle costs jellybeans from the playground's own price range
+(PetConstants.ZoneToCostRange), so no doodle costs more than the shop's
+doodles there ever did. Its body takes most of the range, by rarity as in
+PetUtil.getPetCostFromSeed, and the traits the rest: each better choice of
+a trait adds jellybeans.
 """
 
 from toontown.pets import PetConstants, PetDNA, PetTraits
 from toontown.pets import PetAccessories
 
 TraitQuality = PetTraits.TraitDistribution.TraitQuality
-Levels = (TraitQuality.VERY_BAD, TraitQuality.BAD, TraitQuality.AVERAGE,
-          TraitQuality.GOOD, TraitQuality.VERY_GOOD)
 
 MaxNameLength = 16
 NameCharacters = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 '-.&")
 
+Levels = (TraitQuality.VERY_BAD, TraitQuality.BAD, TraitQuality.AVERAGE,
+          TraitQuality.GOOD, TraitQuality.VERY_GOOD)
+# How much of a playground's price range the traits can add, all at their
+# best; the body takes the rest.
+TraitShare = 0.4
+
 
 def getZones():
-    return list(PetConstants.ZoneToCostRange.keys())
+    # The playgrounds with a pet shop, cheapest first.
+    return sorted(PetConstants.ZoneToCostRange.keys(), key=lambda zoneId: PetConstants.ZoneToCostRange[zoneId])
 
 
 def getBodies(zoneId):
@@ -44,6 +51,11 @@ def getColors(body):
     # shown that place in AllPetColors (Pet.setDNA), so these are the first
     # colors of AllPetColors.
     return list(range(len(PetDNA.getColors(body))))
+
+
+def getShopLevel(zoneId):
+    # This playground's trait level: 1 for Toontown Central up to 6.
+    return getZones().index(zoneId) + 1
 
 
 def _band(distrib, level):
@@ -127,18 +139,31 @@ def getTraitDescription(traitIndex, level):
     return TTLocalizer.PetTrait2descriptions[name][index]
 
 
-def getCost(body, traitLevels, zoneId):
-    # The same sum as PetUtil.getPetCostFromSeed.
-    traits = PetTraits.PetTraits(0, zoneId, traitValueList=getTraitValues(traitLevels, zoneId))
-    traitValue = traits.getOverallValue()
-    traitValue -= 0.3
-    traitValue = max(0, traitValue)
-    rarity = PetDNA.getBodyRarity(body)
-    rarity *= 1.0 - traitValue
-    rarity = pow(0.001, rarity) - 0.001
+def getBodyCost(body, zoneId):
+    # The body on its own, with the lowest trait levels the playground
+    # sells: the rarer the body, the dearer, as PetUtil.getPetCostFromSeed.
+    rarity = pow(0.001, PetDNA.getBodyRarity(body)) - 0.001
     minCost, maxCost = PetConstants.ZoneToCostRange[zoneId]
-    cost = rarity * (maxCost - minCost) + minCost
-    return int(cost)
+    return int(minCost + rarity * (1.0 - TraitShare) * (maxCost - minCost))
+
+
+def getTraitCost(traitIndex, level, zoneId):
+    # What this trait's level adds to the body's cost: nothing for the worst
+    # one sold here, its full share of the traits' part of the price range
+    # for the best, and evenly between.
+    levels = sorted(getTraitLevels(traitIndex, zoneId).keys())
+    if len(levels) < 2:
+        return 0
+    minCost, maxCost = PetConstants.ZoneToCostRange[zoneId]
+    share = TraitShare * (maxCost - minCost) / float(PetTraits.PetTraits.NumTraits)
+    return int(share * levels.index(level) / float(len(levels) - 1))
+
+
+def getCost(body, traitLevels, zoneId):
+    cost = getBodyCost(body, zoneId)
+    for i, level in enumerate(traitLevels):
+        cost += getTraitCost(i, level, zoneId)
+    return cost
 
 
 def cleanName(name):
