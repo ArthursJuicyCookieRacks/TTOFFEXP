@@ -195,7 +195,7 @@ class PetCreatorGUI(DirectFrame):
                                       text_fg=Vec4(0.36, 0.94, 0.93, 1), text_shadow=(0, 0, 0, 1),
                                       text_font=ToontownGlobals.getSignFont(), pos=(0, 0, 0.708))
         self.nameLabel = DirectLabel(parent=self.stage, relief=None, text='', text_scale=0.065,
-                                     text_fg=PURPLE, text_shadow=(1, 1, 1, 1), pos=(0, 0, 0.612))
+                                     text_fg=PURPLE, text_shadow=(1, 1, 1, 1), pos=(0, 0, 0.624))
         # The doodle's window.
         DirectFrame(parent=self.stage, relief=None, image=self.dialogGeom, image_color=PALE_TEAL,
                     image_scale=(PANEL_WIDTH, 1, 0.64), pos=(0, 0, PET_WINDOW_Z))
