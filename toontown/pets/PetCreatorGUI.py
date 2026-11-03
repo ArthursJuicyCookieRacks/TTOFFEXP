@@ -361,7 +361,7 @@ class PetCreatorGUI(DirectFrame):
                           ('RandomUpButton', 'RandomDownButton', 'RandomRolloverButton'))
         DirectButton(parent=page, relief=None, image=randomArt,
                      text=TTLocalizer.PetCreatorRandomName, text_scale=0.05, text_pos=(0, -0.015),
-                     text_fg=GOLD, pos=(0, 0, -0.573), pressEffect=False, command=self.__randomName)
+                     text_fg=GOLD, pos=(0, 0, -0.58), pressEffect=False, command=self.__randomName)
         self.nameWarning = DirectLabel(parent=page, relief=None, text='', text_scale=0.04, text_fg=Vec4(0.8, 0, 0, 1),
                                        text_wordwrap=28, pos=(0, 0, 0.283))
 
