@@ -47,7 +47,9 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         self.banked = 0
         self.exited = set()
         self.landings = []
+        self.thrownSlicks = []
         self.slicks = {}
+        self.thrownSlicks = []
         self.ivals = []
         self.invulnerableUntil = 0
         self.hopUntil = 0
@@ -135,6 +137,9 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         self.ivals = []
         self._stopGolfArrival()
         self.elevatorMusic.stop()
+        if getattr(self, '_defaultFar', None):
+            base.camLens.setFar(self._defaultFar)
+            self._defaultFar = None
         if self._introMovie:
             self._introMovie.end()
             self._introMovie.unload()
@@ -209,8 +214,11 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
             Consts.Pencil: loader.loadModel('phase_5/models/props/pencil'),
             Consts.Anvil: BattleProps.globalPropPool.getProp('anvil'),
             Consts.Paperwork: loader.loadModel('phase_11/models/lawbotHQ/LB_paper_big_stacks3'),
+            Consts.Oil: loader.loadModel('phase_6/models/props/small_round_barrel'),
         }
-        self.propScales = {Consts.GolfBall: 1.4, Consts.Paper: 2.2, Consts.Pencil: 2.6, Consts.Anvil: 1.0, Consts.Paperwork: 0.16}
+        self.props[Consts.Oil].setColorScale(0.32, 0.3, 0.26, 1)
+        self.propScales = {Consts.GolfBall: 1.4, Consts.Paper: 2.2, Consts.Pencil: 2.6, Consts.Anvil: 1.0, Consts.Paperwork: 0.16,
+                           Consts.Oil: 0.35}
         self.marker = loader.loadModel('phase_3/models/props/drop_shadow')
 
     def _loadGui(self):
@@ -249,7 +257,10 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
             return
         self.memoLabel['text'] = TTL.BoardroomMemoCount % (self.carried, self.banked)
         if self.phase == 'golf':
-            self.barrelLabel['text'] = TTL.BoardroomBarrelCount % (self.barrelsHome, Consts.NumBarrels)
+            text = TTL.BoardroomBarrelCount % (self.barrelsHome, Consts.NumBarrels)
+            if getattr(self, 'dropCount', 0):
+                text += TTL.BoardroomBarrelsOnFloor % self.dropCount
+            self.barrelLabel['text'] = text
             return
         now = self.gameTime()
         status = []
@@ -264,16 +275,21 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
 
     def placeEntranceElev(self, elev):
         elev.setPosHpr(*Consts.ElevatorPosHpr)
+        CogdoUtil.addElevatorShell(elev)
 
     # --- States ---
 
     def enterVisible(self):
         DistCogdoGame.enterVisible(self)
         self.geomRoot.reparentTo(render)
+        # Far enough to see the whole hall from the first frame: with the
+        # stock 400 ft the far end was the grey background on arrival.
+        self._farView()
 
     def enterIntro(self):
         from toontown.cogdominium import CogdoBoardroomGameMovies
         DistCogdoGame.enterIntro(self, CogdoBoardroomGameMovies.IntroDurationSeconds)
+        CogdoBoardroomGameMovies.centerTitle(self._rulesPanel)
         self._introMovie = CogdoBoardroomGameMovies.CogdoBoardroomGameIntro(self.doId, self)
         self._introMovie.load(self.sceneRoot)
         self._farView()
@@ -439,6 +455,7 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         if getattr(self, '_defaultFar', None):
             base.camLens.setFar(self._defaultFar)
             self._defaultFar = None
+        self._holdStill(base.localAvatar, False)
         self._unlockUi()
         DistCogdoGame.exitGame(self)
 
@@ -909,7 +926,28 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
                     self.sendUpdate('requestHit', [kind])
         self.landings = keep
 
+    def _spreadThrownSlick(self, x, y, z):
+        if self.room is None:
+            return
+        base.playSfx(self.oilSfx, volume=0.8)
+        slick = loader.loadModel('phase_3/models/props/drop_shadow')
+        slick.reparentTo(self.sceneRoot)
+        slick.setPos(x, y, z + 0.03)
+        slick.setColor(0.08, 0.07, 0.05, 0.85)
+        slick.setTransparency(PM.TransparencyAttrib.MAlpha)
+        slick.setDepthOffset(2)
+        scale = Consts.ThrownSlickRadius * 2.0 / 2.2
+        track = Sequence(LerpScaleInterval(slick, 0.6, scale, startScale=0.3),
+                         Wait(Consts.ThrownSlickDuration - 0.6 - 1.5),
+                         LerpColorScaleInterval(slick, 1.5, PM.VBase4(1, 1, 1, 0)), Func(slick.removeNode))
+        track.start()
+        self.ivals.append(track)
+
     def _onSlick(self, pos, now):
+        for start, end, sx, sy, r in self.thrownSlicks:
+            if start <= now < end and math.hypot(pos[0] - sx, pos[1] - sy) < r \
+                    and abs(pos[2] - Consts.TableTop) < 0.8:
+                return True
         for can, (start, end) in self.slicks.items():
             if start <= now < end:
                 sx, sy, r = self.layout.slickAt(can)
@@ -1029,7 +1067,12 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
                 base.playSfx(self.swingSfx, node=suit)
             if random.random() < 0.45:
                 self._say(suit, ('TeeOff', 'PlayHardball') if kind == Consts.GolfBall else ('Synergy', 'PinkSlip', 'RedTape', 'WriteOff'))
-        self.landings.append((self.gameTime() - elapsed + flight, kind, x, y, z))
+        if kind == Consts.Oil:
+            # A jug of oil: no hit where it lands, but a slick spreads there.
+            lands = self.gameTime() - elapsed + flight
+            self.thrownSlicks.append((lands, lands + Consts.ThrownSlickDuration, x, y, Consts.ThrownSlickRadius))
+        else:
+            self.landings.append((self.gameTime() - elapsed + flight, kind, x, y, z))
         prop = self.props[kind].copyTo(self.sceneRoot)
         prop.setScale(self.propScales[kind])
         marker = self.marker.copyTo(self.sceneRoot)
@@ -1037,7 +1080,7 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         marker.setColor(1, 0.1, 0.05, 0.7)
         marker.setTransparency(PM.TransparencyAttrib.MAlpha)
         marker.setDepthOffset(3)
-        radius = Consts.Hazards[kind][3]
+        radius = Consts.ThrownSlickRadius if kind == Consts.Oil else Consts.Hazards[kind][3]
         markerIval = LerpScaleInterval(marker, flight, radius / 1.1, startScale=0.2)
         if source >= 100:
             fly = LerpPosInterval(prop, flight, target, startPos=start, blendType='easeIn')
@@ -1050,6 +1093,8 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
                           LerpColorScaleInterval(prop, 0.4, PM.VBase4(1, 1, 1, 0)), Func(prop.removeNode))
         prop.setTransparency(PM.TransparencyAttrib.MAlpha)
         track = Sequence(Parallel(fly, spin, markerIval), Func(marker.removeNode), impact)
+        if kind == Consts.Oil:
+            track = Parallel(track, Sequence(Wait(flight), Func(self._spreadThrownSlick, x, y, z)))
         track.start(elapsed)
         self.ivals.append(track)
         self.ivals = [ival for ival in self.ivals if ival.isPlaying()]
@@ -1238,6 +1283,7 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
             ival.finish()
         self.ivals = []
         self.landings = []
+        self.thrownSlicks = []
         self._endPowerUps()
         # Anyone still on the table when time was up drops the memos they
         # carried, and is in the elevator with the others for the ride.
@@ -1388,6 +1434,9 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         self._toWalk(place)
         toon.stopTrackAnimToSpeed()
         toon.controlManager.setSpeeds(0, 0, 0, 0)
+        self._holdStill(toon, True)
+        if toon.getAnimControls('loop-putt'):
+            toon.loop('loop-putt')
         # The golf camera is ours alone: the walk's smart camera would put
         # it back behind the toon's head every frame.
         if getattr(toon, '_smartCamEnabled', False):
@@ -1400,6 +1449,26 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         self._updateGui()
         taskMgr.add(self._golfUpdate, self.uniqueName('golf'), priority=36)
         toon.setSystemMessage(0, TTL.BoardroomGolfHint)
+
+    def _holdStill(self, toon, still):
+        # Stood at the tee, the toon is in the walk state only for its keys.
+        # Holding Control to wind up a swing is also the walk's jump key: the
+        # walker kept hopping the toon (with no force) and flipping it into
+        # its jump and land animations, fighting the putting stance every
+        # frame (the twitching), and its gravity tugged at the toon we place
+        # by hand. No jumps, and no walker physics, while it putts.
+        if toon is None or toon.isEmpty() or getattr(self, '_heldStill', False) == still:
+            return
+        self._heldStill = still
+        controls = getattr(toon.controlManager, 'currentControls', None)
+        if still:
+            toon.ignoreAnimationEvents()
+            if controls is not None and hasattr(controls, 'setCollisionsActive'):
+                controls.setCollisionsActive(0)
+        else:
+            toon.setupAnimationEvents()
+            if controls is not None and hasattr(controls, 'setCollisionsActive'):
+                controls.setCollisionsActive(1)
 
     def _placeAtTee(self, toon, avId):
         # Beside the tee, side on to the shot, as on the golf course.
@@ -1423,6 +1492,7 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         if toon.isEmpty() or toon.doId not in self.getToonIds():
             return Task.cont
         if self.golfLeaving:
+            self._checkDropPickup(toon)
             self._checkGolfLeave(toon)
             return Task.cont
         from direct.showbase.InputStateGlobal import inputState
@@ -1464,25 +1534,48 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         h = getattr(self, 'aimH', 0.0)
         a = math.radians(h)
         fwd = PM.Vec3(-math.sin(a), math.cos(a), 0)
-        # Behind the toon and well up, looking down over its shoulder at
-        # the cubicles, as in the QA screenshot; kept inside the walls.
+        # Behind the ball down the line of the shot, as at the CEO battle's
+        # golf spots; kept inside the walls.
         want = tee - fwd * Consts.GolfCamBack + PM.Vec3(0, 0, Consts.GolfCamUp)
         local = self.golf.toLocal(want)
         local.setX(max(-Consts.GolfHalfX + 1.5, min(Consts.GolfHalfX - 1.5, local[0])))
         local.setY(max(-Consts.GolfHalfY + 0.6, local[1]))
         want = local + self.golf.root.getPos(render)
-        look = tee + fwd * Consts.GolfCamLook + PM.Vec3(0, 0, 1.0)
+        look = tee + fwd * Consts.GolfCamLook + PM.Vec3(0, 0, Consts.GolfCamLookUp)
         cur = self._golfCamPos or want
-        cur = cur + (want - cur) * min(1.0, dt * 5.0)
+        # Turning with the aim, as the CEO battle's camera does, with just a
+        # little easing.
+        cur = cur + (want - cur) * min(1.0, dt * 12.0)
         self._golfCamPos = PM.Point3(cur)
         camera.setPos(render, cur)
         camera.lookAt(look)
 
-    def golfCog(self, cogId, name, px, side, exitY, speed, timestamp):
+    def golfCog(self, cogId, name, px, side, exitY, speed, timestamp, toDrop=False, tx=0.0, ty=0.0):
         if self.golf is None:
             return
         elapsed = globalClockDelta.localElapsedTime(timestamp, bits=16)
-        self.golf.addCog(cogId, name, px, side, exitY, speed, self.golfTime() - elapsed)
+        self.golf.addCog(cogId, name, px, side, exitY, speed, self.golfTime() - elapsed, (tx, ty) if toDrop else None)
+
+    def golfDrops(self, dropIds, xs, ys):
+        if self.golf is None:
+            return
+        self.golf.setDrops(dict(zip(dropIds, zip(xs, ys))))
+        self.dropCount = len(dropIds)
+        self._updateGui()
+
+    def golfBarrelCarried(self, avId, count):
+        toon = self.getToon(avId)
+        if self.golf is None or toon is None or toon.isEmpty():
+            return
+        self.golf.setCarried(toon, count)
+        base.playSfx(self.pickupSfx, node=toon) if getattr(self, 'pickupSfx', None) else None
+
+    def golfBarrelsHome(self, barrelsHome):
+        if self.golf is None:
+            return
+        self.barrelsHome = barrelsHome
+        self.golf.setBarrelsHome(barrelsHome)
+        self._updateGui()
 
     def golfCogPickup(self, cogId, carrying, barrelsHome):
         if self.golf is None:
@@ -1513,6 +1606,9 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         self.golfLeaving = True
         self.charging = False
         self.golf.hideAim()
+        # Every cog left in the office blows up: no more barrels taken.
+        for cogId in list(self.golf.cogs):
+            self.golf.cogExplode(cogId)
         if self.timer is not None:
             self.timer.stop()
             self.timer.stash()
@@ -1530,6 +1626,7 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
             if other is not None and not other.isEmpty() and not other.isLocal():
                 other.loop('neutral')
         # Free to walk, with the usual camera, for the walk to the doors.
+        self._holdStill(toon, False)
         place = base.cr.playGame.getPlace()
         self._toWalk(place)
         toon.controlManager.setSpeeds(OTPGlobals.ToonForwardSpeed, OTPGlobals.ToonJumpForce,
@@ -1543,7 +1640,7 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         toon.setSystemMessage(0, TTL.BoardroomGolfLeave)
         self._leaveLabel = DirectLabel(relief=None, text=TTL.BoardroomGolfLeave, text_scale=0.07,
                                        text_fg=(1, 1, 0.6, 1), text_shadow=(0, 0, 0, 1),
-                                       text_font=ToontownGlobals.getSignFont(), pos=(0, 0, 0.75))
+                                       text_font=ToontownGlobals.getSignFont(), text_wordwrap=24, pos=(0, 0, 0.72))
 
     def _checkGolfLeave(self, toon):
         # Walked in through the doors?
@@ -1561,6 +1658,18 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
             toon.setSystemMessage(0, TTL.CogdoMazeGameWaitingForToons if self._golfWaiting() else '')
             self._intoGolfElevator(toon)
             self._cameraInElevator(self.golf.toonElevator)
+
+    def _checkDropPickup(self, toon):
+        # Walking about after the golf: a barrel lying on the floor is
+        # picked up by walking into it, to carry into the elevator.
+        if toon.doId in self.leftGolf or not self.golf.drops:
+            return
+        dropId = self.golf.dropNear(toon.getPos(render), Consts.DropPickupRadius)
+        now = globalClock.getFrameTime()
+        if dropId is not None and (dropId != getattr(self, '_askedDrop', None) or now - self._askedDropAt > 1.0):
+            self._askedDrop = dropId
+            self._askedDropAt = now
+            self.sendUpdate('requestDropPickup', [dropId])
 
     def _golfWaiting(self):
         return [avId for avId in self.getToonIds() if avId not in self.leftGolf]
@@ -1627,20 +1736,25 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
                    'Schmooze', 'Filibuster', 'MumboJumbo', 'PowerTie', 'Tabulate', 'GuiltTrip')
 
     def _standUpFromSeat(self, suit):
-        # A seated cog's place is set for its sit animation, which lifts the
-        # big (C) bodies up into the chair: on its feet for a swing or a
-        # throw, it stood sunk in the floor. Up on the floor, then.
-        if suit.isEmpty() or getattr(suit, '_seatZ', None) is not None:
+        # A seated cog gets up onto its chair's seat to swing or throw, up
+        # over the table where it can see the toons (its sit place puts the
+        # big bodies under the floor if it just stood where it sat).
+        if suit.isEmpty() or getattr(suit, '_seatPos', None) is not None:
             return
-        suit._seatZ = suit.getZ()
-        floor = 0.0 if suit.getParent().getName() == 'sitLocator' else suit.getZ(render)
-        suit.setZ(render, floor)
+        suit._seatPos = suit.getPos()
+        parent = suit.getParent()
+        chair = parent.getParent() if parent.getName() == 'sitLocator' else None
+        if chair is not None and chair.getName() == 'correctHeading':
+            # The chair's locator sits at its seat's height, in its middle.
+            suit.setPos(chair, 0, 0, Consts.ChairSeatLift)
+        else:
+            suit.setZ(render, suit.getZ(render))
 
     def _sitBackDown(self, suit):
-        if suit.isEmpty() or getattr(suit, '_seatZ', None) is None:
+        if suit.isEmpty() or getattr(suit, '_seatPos', None) is None:
             return
-        suit.setZ(suit._seatZ)
-        suit._seatZ = None
+        suit.setPos(suit._seatPos)
+        suit._seatPos = None
 
     def _placeChat(self, suit):
         # The speech bubble just over the cog's head, as it sits or stands
@@ -1689,9 +1803,12 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         # Now and then a cog in view says something.
         if now < getattr(self, '_nextChatter', 3.0):
             return
-        self._nextChatter = now + random.uniform(2.0, 4.0)
+        self._nextChatter = now + random.uniform(1.0, 2.2)
         y = base.localAvatar.getY(render)
-        near = [s for s in list(self.bosses.values()) + (self.decor.allSuits() if self.decor else [])
-                if not s.isStashed() and 5 < s.getY(render) - y < 70]
+        decor = [s for s in (self.decor.allSuits() if self.decor else [])
+                 if not s.isStashed() and 5 < s.getY(render) - y < 90]
+        bosses = [s for s in self.bosses.values() if not s.isStashed() and 5 < s.getY(render) - y < 70]
+        # Mostly the cogs about the hall, chatting among themselves.
+        near = decor if decor and (not bosses or random.random() < 0.7) else bosses
         if near:
             self._say(random.choice(near), self.ChatterKeys)

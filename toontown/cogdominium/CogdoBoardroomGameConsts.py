@@ -43,6 +43,8 @@ TableHalfWidth = 13.0
 TableStart = 96.0
 TableEnd = 366.0 + (NumHalls - 1) * HallLength
 TableTop = 3.6
+# How far above its chair locator a Boss Cog stands on the seat to swing.
+ChairSeatLift = -0.03
 TableLegSpacing = 24.0
 # The ramp up from the floor at the near end (the toons come in at the
 # floor) and the drop down at the far end to the exit.
@@ -113,6 +115,14 @@ VolleyChanceRange = (0.15, 0.6)
 # table), give or take.
 AttackLead = 24.0
 AttackSpread = 5.0
+# How far off a Boss Cog's aimed throw lands from where the toon will be
+# when it comes down (easiest, hardest): they lead the toon by its speed.
+AimSpreadRange = (2.2, 0.9)
+# A Boss Cog can throw a jug of oil down onto the table ahead of a toon:
+# it spills a slick there (a smaller one than a knocked-over drum's).
+ThrownSlickRadius = 4.5
+ThrownSlickDuration = 10.0
+OilThrowChanceRange = (0.15, 0.3)
 
 # The swing at a toon sliding past a Boss Cog's chair: it reaches this far
 # in over the table, this long after the warning.
@@ -270,16 +280,16 @@ GolfPieces = (
 )
 # Where the VP's name plate goes: on the desk of the third near-left piece.
 GolfNamePlate = (-28.0 + 1.9, -16.0 + 6.1, 4.3)
-# Low cubicle partitions (x0, y0, x1, y1) along the aisles: the tee lane
-# up the middle, the edges of the aisle across, and the front aisle (with
-# gaps, as cubicles have). The balls bank off them.
+# Low cubicle partitions (x0, y0, x1, y1) along the aisles: a short
+# stretch either side of the tee lane, and one solid run (no gaps, which
+# read as holes in the wall) along each edge of the aisle across, with an
+# L round the far corners. Their height stays; they're short end to end
+# to leave room to putt at the cogs. The balls bank off them.
 GolfPartitionHeight = 3.0
-GolfPartitions = ((-9.6, -39.5, -9.0, -18.0), (9.0, -39.5, 9.6, -18.0),
-                  (-22.0, -2.6, -9.0, -2.0), (9.0, -2.6, 22.0, -2.0),
-                  (-44.0, -2.6, -30.0, -2.0), (30.0, -2.6, 44.0, -2.0),
-                  (-22.0, 14.0, -9.0, 14.6), (9.0, 14.0, 22.0, 14.6),
-                  (-44.0, 14.0, -30.0, 14.6), (30.0, 14.0, 44.0, 14.6),
-                  (-9.6, 14.6, -9.0, 26.0), (9.0, 14.6, 9.6, 26.0))
+GolfPartitions = ((-9.6, -39.5, -9.0, -31.0), (9.0, -39.5, 9.6, -31.0),
+                  (-21.0, -2.6, -10.0, -2.0), (10.0, -2.6, 21.0, -2.0),
+                  (-21.0, 14.0, -10.0, 14.6), (10.0, 14.0, 21.0, 14.6),
+                  (-10.6, 14.0, -10.0, 22.0), (10.0, 14.0, 10.6, 22.0))
 # The office is lit brighter than the maze, as in the screenshot.
 GolfOfficeBrightness = (1.25, 1.25, 1.25, 1)
 # The golf office is away from the boardroom, out of its sight.
@@ -301,10 +311,14 @@ GolfRideTime = 4.5
 GolfWalkOutTime = 1.8
 GolfIntroDuration = 20.0
 GolfLeadIn = 2 * GolfDoorTime + GolfRideTime + GolfWalkOutTime + GolfIntroDuration
-# The golf camera, behind the toon at its tee and up.
-GolfCamBack = 12.5
-GolfCamUp = 11.0
-GolfCamLook = 20.0
+# The golf camera, as at the CEO battle's golf spots: straight behind the
+# ball down the line of the shot, turning with the aim (there 10 ft back
+# and 3 up, looking level). A little further back and up here, looking a
+# touch down, so the cubicle partitions don't hide the floor past them.
+GolfCamBack = 13.0
+GolfCamUp = 7.5
+GolfCamLook = 30.0
+GolfCamLookUp = 0.0
 # After the golf, the toons walk into their elevator; the ride goes on
 # without anyone who hasn't in this long.
 GolfLeaveTime = 40.0
@@ -314,8 +328,7 @@ BarrelPile = (0.0, 6.0)
 # left and right walls, each built out from its wall in a boxed-in shaft.
 # (x, y, heading of its doors' front.) A cog comes out of one, takes a
 # barrel and leaves by another.
-GolfElevatorModel = 'phase_4/models/modules/elevator'
-GolfElevatorDepth = 7.3
+GolfElevatorDepth = 6.2
 GolfElevators = ((0.0, GolfHalfY - GolfElevatorDepth, 0.0),
                  (-GolfHalfX + GolfElevatorDepth, BarrelPile[1], 90.0),
                  (GolfHalfX - GolfElevatorDepth, BarrelPile[1], -90.0))
@@ -324,8 +337,10 @@ GolfElevatorStep = 2.5
 NumBarrels = 10
 LaffPerBarrel = 3
 GolfCogNames = ('f', 'p', 'ym', 'mm', 'ds', 'hh', 'cr')
-GolfMaxCogsRange = (3, 8)
-GolfSpawnPeriodRange = (3.2, 1.1)
+GolfMaxCogsRange = (6, 12)
+GolfSpawnPeriodRange = (1.8, 0.7)
+# How close a toon walks to a barrel on the floor to pick it up.
+DropPickupRadius = 2.6
 GolfCogSpeedRange = (5.5, 8.5)
 GolfPickupTime = 1.2
 GolfCogRadius = 2.4
@@ -357,10 +372,11 @@ def golfCogRoute(side):
     return (side // 4) % len(GolfElevators), (side % 4) % len(GolfElevators)
 
 
-def golfCogPath(px, side, exitY, speed):
+def golfCogPath(px, side, exitY, speed, target=None):
     """The legs of a golf cog's walk: out of its elevator to the barrel
-    pile (to the side of the pile it comes from, px along it), a moment to
-    pick one up, then away into another elevator."""
+    pile (to the side of the pile it comes from, px along it), or to a
+    barrel lying on the floor (target), a moment to pick one up, then away
+    into another elevator."""
     import math
     entry, exit = golfCogRoute(side)
     door = golfElevatorDoor(entry)
@@ -368,7 +384,14 @@ def golfCogPath(px, side, exitY, speed):
     dx, dy = door[0] - BarrelPile[0], door[1] - BarrelPile[1]
     d = math.hypot(dx, dy) or 1.0
     ux, uy = dx / d, dy / d
-    pile = (BarrelPile[0] + ux * 3.2 - uy * px, BarrelPile[1] + uy * 3.2 + ux * px)
+    if target is not None:
+        # Stop just short of the barrel, on the side it walks up from.
+        tx, ty = target
+        ddx, ddy = door[0] - tx, door[1] - ty
+        dd = math.hypot(ddx, ddy) or 1.0
+        pile = (tx + ddx / dd * 1.2, ty + ddy / dd * 1.2)
+    else:
+        pile = (BarrelPile[0] + ux * 3.2 - uy * px, BarrelPile[1] + uy * 3.2 + ux * px)
     t1 = math.hypot(pile[0] - door[0], pile[1] - door[1]) / speed
     t2 = t1 + GolfPickupTime
     t3 = t2 + math.hypot(out[0] - pile[0], out[1] - pile[1]) / speed
@@ -406,9 +429,9 @@ def golfBlocked(x, y):
         return True
     for ex, ey, eh in GolfElevators:
         # Each elevator's shaft, boxed out from its wall.
-        if eh == 0.0 and abs(x - ex) < 8.2 and y > ey + 0.3:
+        if eh == 0.0 and abs(x - ex) < 9.4 and y > ey - 0.3:
             return True
-        if eh != 0.0 and abs(y - ey) < 8.2 and abs(x) > abs(ex) - 0.3:
+        if eh != 0.0 and abs(y - ey) < 9.4 and abs(x) > abs(ex) - 0.3:
             return True
     row = int((Grid.HalfY - y) / Grid.Cell)
     col = int((x + Grid.HalfX) / Grid.Cell)

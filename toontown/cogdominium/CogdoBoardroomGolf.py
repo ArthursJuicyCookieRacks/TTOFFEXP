@@ -117,6 +117,8 @@ class CogdoBoardroomGolf:
         self.balls = []
         self.barrelModels = []
         self.barrelsHome = Consts.NumBarrels
+        self.drops = {}
+        self.carried = {}
 
     # --- Loading ---
 
@@ -132,6 +134,7 @@ class CogdoBoardroomGolf:
         self.hitSfx = loader.loadSfx('phase_6/audio/sfx/Golf_Hit_Ball.ogg')
         self.bonkSfx = loader.loadSfx('phase_5/audio/sfx/AA_drop_sandbag.ogg')
         self.stealSfx = loader.loadSfx('phase_5/audio/sfx/ENC_propeller_out.ogg')
+        self.explodeSfx = loader.loadSfx('phase_3.5/audio/sfx/Cog_Death.ogg')
         self._loadAim()
         self.root.stash()
         return self.root
@@ -171,32 +174,33 @@ class CogdoBoardroomGolf:
         # The three elevators the cogs come and go by, each in a shaft
         # boxed out from its wall in the office's grey.
         self.elevators = []
-        model = loader.loadModel(Consts.GolfElevatorModel)
+        from toontown.cogdominium import CogdoUtil
         for x, y, h in Consts.GolfElevators:
             holder = self.root.attachNewNode('elevator')
             holder.setPos(x, y, 0)
             holder.setH(h)
-            e = model.copyTo(holder)
+            # The field offices' own elevator, the one the toons ride.
+            e = CogdoUtil.loadElevatorModel()
+            e.reparentTo(holder)
             for coll in e.findAllMatches('**/+CollisionNode'):
                 coll.removeNode()
             # The shaft: walls each side of the car and a cap above it,
-            # flush with the elevator's frame.
+            # flush with the elevator's frame and back to the room's wall.
             depth = Consts.GolfElevatorDepth + 1.0
-            for x0, x1 in ((-8.6, -8.0), (8.0, 8.6)):
-                _box(holder, x0, 0.5, x1, depth, 0.0, 13.0, (0.5, 0.52, 0.56, 1))
-            _box(holder, -8.6, 0.5, 8.6, depth, 11.0, 13.0, (0.46, 0.48, 0.52, 1))
-            left = e.find('**/left-door')
-            right = e.find('**/right-door')
+            for x0, x1 in ((-9.4, -8.6), (8.6, 9.4)):
+                _box(holder, x0, -0.3, x1, depth, 0.0, 13.6, (0.5, 0.52, 0.56, 1))
+            _box(holder, -9.4, -0.3, 9.4, depth, 12.3, 13.6, (0.46, 0.48, 0.52, 1))
+            left = e.find('**/left_door')
+            right = e.find('**/right_door')
             self.elevators.append({'left': left, 'right': right, 'open': 0.0})
             self._setDoors(self.elevators[-1], 0.0)
-        model.removeNode()
         # The toons' elevator, in the back wall behind the tees: they ride
         # in from the boardroom in it.
-        from toontown.cogdominium import CogdoUtil
         x, y, h = Consts.GolfToonElevator
         self.toonElevator = CogdoUtil.loadElevatorModel()
         self.toonElevator.reparentTo(self.root)
         self.toonElevator.setPosHpr(x, y, 0, h, 0, 0)
+        CogdoUtil.addElevatorShell(self.toonElevator)
         for coll in self.toonElevator.findAllMatches('**/+CollisionNode'):
             coll.removeNode()
         self.toonLeftDoor = self.toonElevator.find('**/left_door')
@@ -280,6 +284,13 @@ class CogdoBoardroomGolf:
         for cog in self.cogs.values():
             self._removeCog(cog)
         self.cogs = {}
+        for b in self.drops.values():
+            b.removeNode()
+        self.drops = {}
+        for held in self.carried.values():
+            for b in held:
+                b.removeNode()
+        self.carried = {}
         for ball in self.balls:
             ball['np'].removeNode()
         self.balls = []
@@ -320,7 +331,7 @@ class CogdoBoardroomGolf:
 
     # --- The cogs ---
 
-    def addCog(self, cogId, nameIndex, px, side, exitY, speed, startTime):
+    def addCog(self, cogId, nameIndex, px, side, exitY, speed, startTime, target=None):
         suit = Suit.Suit()
         dna = SuitDNA.SuitDNA()
         dna.newSuit(Consts.GolfCogNames[nameIndex % len(Consts.GolfCogNames)])
@@ -328,7 +339,7 @@ class CogdoBoardroomGolf:
         suit.nametag3d.stash()
         suit.reparentTo(self.root)
         suit.loop('walk')
-        cog = {'id': cogId, 'suit': suit, 'path': Consts.golfCogPath(px, side, exitY, speed), 'start': startTime,
+        cog = {'id': cogId, 'suit': suit, 'path': Consts.golfCogPath(px, side, exitY, speed, target), 'start': startTime,
                'alive': True, 'carry': None, 'ival': None}
         self.cogs[cogId] = cog
         self.updateCog(cog, self.game.golfTime())
@@ -376,12 +387,9 @@ class CogdoBoardroomGolf:
         suit = cog['suit']
         base.playSfx(self.bonkSfx, node=suit)
         if cog['carry'] is not None:
-            # The barrel tumbles back onto the pile.
-            barrel = cog['carry']
-            barrel.wrtReparentTo(self.root)
-            pile = PM.Point3(Consts.BarrelPile[0], Consts.BarrelPile[1], 0.5)
-            Sequence(LerpPosInterval(barrel, 0.7, pile, blendType='easeIn'), Func(barrel.removeNode)).start()
-            cog['carry'] = None
+            # The barrel falls to the floor (the AI puts it down there: see
+            # setDrops); this one just tumbles out of the cog's hands.
+            self._dropCarry(cog)
         anim = 'slip-backward' if suit.getAnimControl('slip-backward') else 'flail'
         track = Sequence(ActorInterval(suit, anim, duration=1.0),
                          LerpColorScaleInterval(suit, 0.6, PM.VBase4(1, 1, 1, 0), startColorScale=PM.VBase4(1, 1, 1, 1)),
@@ -389,6 +397,79 @@ class CogdoBoardroomGolf:
         suit.setTransparency(1)
         cog['ival'] = track
         track.start()
+
+    def _dropCarry(self, cog):
+        barrel = cog['carry']
+        cog['carry'] = None
+        if barrel is None or barrel.isEmpty():
+            return
+        barrel.wrtReparentTo(self.root)
+        floor = PM.Point3(barrel.getX(), barrel.getY(), 0.0)
+        Sequence(LerpPosInterval(barrel, 0.35, floor, blendType='easeIn'), Func(barrel.removeNode)).start()
+
+    def cogExplode(self, cogId):
+        # Time's up: the cog blows apart, as cogs do in the field offices.
+        cog = self.cogs.pop(cogId, None)
+        if cog is None:
+            return
+        cog['alive'] = False
+        suit = cog['suit']
+        if cog['carry'] is not None:
+            self._dropCarry(cog)
+        from toontown.battle import BattleParticles, MovieUtil
+        from direct.interval.IntervalGlobal import ParticleInterval
+        BattleParticles.loadParticles()
+        gearPoint = PM.Point3(0, 0, suit.height / 2.0 + 2.0)
+        gears = BattleParticles.createParticleEffect('GearExplosion', numParticles=12)
+        gears.setPos(gearPoint)
+        gears.setDepthWrite(False)
+        anim = 'lose' if suit.getAnimControl('lose') else 'flail'
+        track = Sequence(Parallel(ActorInterval(suit, anim, startFrame=80, endFrame=140) if anim == 'lose'
+                                  else ActorInterval(suit, anim, duration=1.5),
+                                  Sequence(Wait(1.0), MovieUtil.createKapowExplosionTrack(suit, explosionPoint=gearPoint)),
+                                  Sequence(Wait(1.6), ParticleInterval(gears, suit, worldRelative=0, duration=1.0, cleanup=True))),
+                         Func(self._removeCog, cog))
+        cog['ival'] = track
+        track.start()
+        base.playSfx(self.explodeSfx, node=suit)
+
+    def setDrops(self, drops):
+        # The barrels lying on the floor (dropId: (x, y)), as the AI has them.
+        for dropId in list(self.drops):
+            if dropId not in drops:
+                self.drops.pop(dropId).removeNode()
+        for dropId, (x, y) in drops.items():
+            if dropId in self.drops:
+                continue
+            b = self.carryModel.copyTo(self.root)
+            b.setScale(self.barrelScale)
+            mn, mx = b.getTightBounds(b)
+            b.setPos(x, y, -mn[2] * self.barrelScale)
+            b.setH(random.uniform(0, 360))
+            Sequence(LerpPosInterval(b, 0.25, PM.Point3(x, y, -mn[2] * self.barrelScale + 0.6), blendType='easeOut'),
+                     LerpPosInterval(b, 0.25, PM.Point3(x, y, -mn[2] * self.barrelScale), blendType='easeIn')).start()
+            self.drops[dropId] = b
+
+    def dropNear(self, pos, radius):
+        local = self.toLocal(pos)
+        for dropId, b in self.drops.items():
+            if math.hypot(b.getX() - local[0], b.getY() - local[1]) < radius:
+                return dropId
+        return None
+
+    def setCarried(self, toon, count):
+        # A toon after the golf with the barrels it picked up, held in
+        # front of it, stacked.
+        old = self.carried.pop(toon.doId, [])
+        for b in old:
+            b.removeNode()
+        held = []
+        for i in range(count):
+            b = self.carryModel.copyTo(toon)
+            b.setScale(self.barrelScale * 0.7)
+            b.setPos(0, 1.3, 2.0 + i * 1.5)
+            held.append(b)
+        self.carried[toon.doId] = held
 
     def _removeCog(self, cog):
         if cog.get('ival'):

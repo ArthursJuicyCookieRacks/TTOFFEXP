@@ -84,10 +84,10 @@ class CogdoBoardroomDecor:
                     fl.setScale(0.45)
                 # Cogs walking up and down the floor on business, and some
                 # standing at their work.
-                for k in range(2):
+                for k in range(4):
                     suit = self.makeSuit(rng.choice(WalkerNames))
                     suit.reparentTo(self.root)
-                    a = y0 + rng.uniform(10, 160)
+                    a = y0 + rng.uniform(10, 200)
                     b = a + rng.uniform(60, 140)
                     x = side * rng.uniform(22, 36)
                     self.walkers.append({'suit': suit, 'x': x, 'a': a, 'b': b, 'speed': rng.uniform(4.0, 5.5),
@@ -100,6 +100,15 @@ class CogdoBoardroomDecor:
                 anims = IdleAnims.get(suit.style.name, ('neutral',))
                 suit.decorAnim = rng.choice(anims)
                 self.standers.append(suit)
+                # Two cogs stopped to talk shop, face to face.
+                px, py = side * rng.uniform(24, 38), y0 + rng.uniform(60, 320)
+                for k, dx in enumerate((-1.6, 1.6)):
+                    suit = self.makeSuit(rng.choice(WalkerNames))
+                    suit.reparentTo(self.root)
+                    suit.setPos(px + dx, py, 0)
+                    suit.setH(90 if dx < 0 else -90)
+                    suit.decorAnim = 'neutral'
+                    self.standers.append(suit)
         for model in (table, cart, flag, green, food):
             model.removeNode()
         for suit in self.diners + self.standers + [w['suit'] for w in self.walkers]:

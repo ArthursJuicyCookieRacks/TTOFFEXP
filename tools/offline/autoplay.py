@@ -1015,6 +1015,13 @@ def playCogdoBoardroom(dist):
                     press(name, False)
             else:
                 door = render.getRelativePoint(dist.golf.toonElevator, Point3(0, 1.0, 0))
+                if dist.golf.drops and not getattr(dist, '_autoDropGiveUp', 0):
+                    # The barrels on the floor first: walk into the nearest.
+                    dist._autoDropStart = getattr(dist, '_autoDropStart', None) or time.time()
+                    if time.time() - dist._autoDropStart > 25:
+                        dist._autoDropGiveUp = 1
+                    near = min(dist.golf.drops.values(), key=lambda b: (b.getPos(render) - pos).length())
+                    door = near.getPos(render)
                 d = door - pos
                 want = -math.degrees(math.atan2(d[0], d[1]))
                 diff = (want - localAvatar.getH(render) + 180) % 360 - 180

@@ -33,6 +33,8 @@ class DistCogdoBoardroomGameAI(DistCogdoGameAI):
         self.banked = 0
         self.exited = set()
         self.progress = {}
+        self._lastPos = {}
+        self._velocity = {}
         self.invulnerableUntil = {}
         self.lastHit = {}
         self.spilled = {}
@@ -42,6 +44,12 @@ class DistCogdoBoardroomGameAI(DistCogdoGameAI):
         self.golfStart = 0
         self.golfCogs = {}
         self.nextGolfCog = 1
+        # Barrels knocked out of cogs' hands, lying on the office floor
+        # (dropId: (x, y)): they only count once they're back, carried into
+        # the toons' elevator after the golf (or a cog takes them after all).
+        self.drops = {}
+        self.nextDrop = 1
+        self.carriedBarrels = {}
         self.barrelsHome = Consts.NumBarrels
         self.barrelsLost = 0
         self.lastSwing = {}
@@ -124,6 +132,18 @@ class DistCogdoBoardroomGameAI(DistCogdoGameAI):
         taskMgr.remove(self.uniqueName('golf-spawn'))
         taskMgr.removeTasksMatching(self.uniqueName('golfcog') + '*')
         taskMgr.removeTasksMatching(self.uniqueName('golfball') + '*')
+        # Every cog still about blows up where it stands; any barrel it had
+        # falls to the floor there, for the toons to carry back.
+        now = self.golfTime()
+        for cogId, cog in self.golfCogs.items():
+            if not cog['alive']:
+                continue
+            cog['alive'] = False
+            if cog['carrying']:
+                x, y, h, leg = Consts.golfCogPos(cog['path'], now - cog['start'])
+                self.__dropBarrel(x, y, send=False)
+                cog['carrying'] = False
+        self.__sendDrops()
         self.sendUpdate('golfOver', [self.getNetworkTime()])
         taskMgr.doMethodLater(Consts.GolfLeaveTime, self.__leaveOver, self.uniqueName('golf-leave'))
         return task.done
@@ -133,6 +153,11 @@ class DistCogdoBoardroomGameAI(DistCogdoGameAI):
         if self.phase != 'leave' or self.finished or avId not in self.toons or avId in self.leftGolf:
             return
         self.leftGolf.add(avId)
+        brought = self.carriedBarrels.pop(avId, 0)
+        if brought:
+            # The barrels a toon carries in count now.
+            self.barrelsHome = min(Consts.NumBarrels, self.barrelsHome + brought)
+            self.sendUpdate('golfBarrelsHome', [self.barrelsHome])
         self.sendUpdate('toonLeftGolf', [avId])
         if not [t for t in self.getActiveToons() if t not in self.leftGolf]:
             # All in: the doors close on them, and up they go.
@@ -169,10 +194,16 @@ class DistCogdoBoardroomGameAI(DistCogdoGameAI):
         px = random.uniform(-2.5, 2.5)
         exitY = 0.0
         speed = Consts.lerpDifficulty(Consts.GolfCogSpeedRange, d) * random.uniform(0.9, 1.1)
-        path = Consts.golfCogPath(px, side, exitY, speed)
-        cog = {'id': cogId, 'path': path, 'start': self.golfTime(), 'alive': True, 'carrying': False}
+        # A barrel lying on the floor is easier pickings than the pile.
+        wanted = set(c.get('drop') for c in self.golfCogs.values() if c['alive'])
+        free = [i for i in self.drops if i not in wanted]
+        drop = random.choice(free) if free and random.random() < 0.75 else None
+        target = self.drops[drop] if drop is not None else None
+        path = Consts.golfCogPath(px, side, exitY, speed, target)
+        cog = {'id': cogId, 'path': path, 'start': self.golfTime(), 'alive': True, 'carrying': False, 'drop': drop}
         self.golfCogs[cogId] = cog
-        self.sendUpdate('golfCog', [cogId, name, px, side, exitY, speed, self.getNetworkTime()])
+        tx, ty = target if target else (0.0, 0.0)
+        self.sendUpdate('golfCog', [cogId, name, px, side, exitY, speed, self.getNetworkTime(), target is not None, tx, ty])
         taskMgr.doMethodLater(path[3], self.__golfPickup, self.uniqueName('golfcog-pick-%d' % cogId), extraArgs=[cogId])
         taskMgr.doMethodLater(path[5], self.__golfEscape, self.uniqueName('golfcog-out-%d' % cogId), extraArgs=[cogId])
 
@@ -180,7 +211,11 @@ class DistCogdoBoardroomGameAI(DistCogdoGameAI):
         cog = self.golfCogs.get(cogId)
         if not cog or not cog['alive'] or self.finished:
             return
-        if self.barrelsHome > 0:
+        if cog.get('drop') is not None:
+            if self.drops.pop(cog['drop'], None) is not None:
+                cog['carrying'] = True
+                self.__sendDrops()
+        elif self.barrelsHome > 0:
             self.barrelsHome -= 1
             cog['carrying'] = True
         self.sendUpdate('golfCogPickup', [cogId, cog['carrying'], self.barrelsHome])
@@ -256,24 +291,80 @@ class DistCogdoBoardroomGameAI(DistCogdoGameAI):
         taskMgr.remove(self.uniqueName('golfcog-pick-%d' % cogId))
         taskMgr.remove(self.uniqueName('golfcog-out-%d' % cogId))
         if cog['carrying']:
-            # The barrel goes back on the pile.
-            self.barrelsHome += 1
+            # It drops the barrel where it's hit: lying there, it isn't
+            # saved until it's brought back.
+            x, y, h, leg = Consts.golfCogPos(cog['path'], self.golfTime() - cog['start'])
+            self.__dropBarrel(x, y)
             cog['carrying'] = False
         self.sendUpdate('golfCogHit', [cogId, avId, self.barrelsHome])
+
+    def __dropBarrel(self, x, y, send=True):
+        # On a clear bit of floor, nudged in toward the pile if needed.
+        px, py = Consts.BarrelPile
+        for i in range(12):
+            f = i / 12.0
+            cx, cy = x + (px - x) * f, y + (py - y) * f
+            if not Consts.golfBlocked(cx, cy):
+                x, y = cx, cy
+                break
+        dropId = self.nextDrop
+        self.nextDrop += 1
+        self.drops[dropId] = (x, y)
+        if send:
+            self.__sendDrops()
+        return dropId
+
+    def __sendDrops(self):
+        ids = sorted(self.drops)
+        self.sendUpdate('golfDrops', [ids, [self.drops[i][0] for i in ids], [self.drops[i][1] for i in ids]])
+
+    def requestDropPickup(self, dropId):
+        # A toon walking about after the golf picks up a barrel off the
+        # floor, to carry into the elevator.
+        avId = self.getSenderToon() if hasattr(self, 'getSenderToon') else self.air.getAvatarIdFromSender()
+        if self.phase != 'leave' or self.finished or avId not in self.toons or avId in self.leftGolf:
+            return
+        if self.drops.pop(dropId, None) is None:
+            return
+        self.carriedBarrels[avId] = self.carriedBarrels.get(avId, 0) + 1
+        self.__sendDrops()
+        self.sendUpdate('golfBarrelCarried', [avId, self.carriedBarrels[avId]])
 
     def stillRunning(self):
         return [avId for avId in self.getActiveToons() if avId not in self.exited]
 
-    def __target(self, full=False):
-        # A toon still on the table, and a spot just ahead of it (it is
-        # sliding up the table).
+    def __track(self, avId, x, y):
+        # How fast each toon is going up and across the table, from where
+        # it says it is, so the Boss Cogs can lead it with a throw.
+        t = self.now()
+        last = self._lastPos.get(avId)
+        if last is None or t - last[0] > 1.5:
+            self._lastPos[avId] = (t, x, y)
+            return
+        dt = t - last[0]
+        if dt < 0.2:
+            return
+        vx, vy = (x - last[1]) / dt, (y - last[2]) / dt
+        ox, oy = self._velocity.get(avId, (vx, vy))
+        self._velocity[avId] = (ox * 0.4 + vx * 0.6, oy * 0.4 + vy * 0.6)
+        self._lastPos[avId] = (t, x, y)
+
+    def __target(self, full=False, flight=None):
+        # A toon still on the table, and the spot it will be at when the
+        # throw comes down (it is sliding up the table), give or take.
         avIds = self.stillRunning()
         if not avIds:
             return None
         avId = random.choice(avIds)
         x, y, z = self.__toonPos(avId)
-        tx = x + random.uniform(-Consts.AttackSpread, Consts.AttackSpread)
-        ty = y + Consts.AttackLead * random.uniform(0.75, 1.3) + random.uniform(-Consts.AttackSpread, Consts.AttackSpread)
+        if flight is not None and avId in self._velocity:
+            vx, vy = self._velocity[avId]
+            spread = Consts.lerpDifficulty(Consts.AimSpreadRange, self.layout.difficulty)
+            tx = x + vx * flight + random.uniform(-spread, spread)
+            ty = y + vy * flight + random.uniform(-spread, spread)
+        else:
+            tx = x + random.uniform(-Consts.AttackSpread, Consts.AttackSpread)
+            ty = y + Consts.AttackLead * random.uniform(0.75, 1.3) + random.uniform(-Consts.AttackSpread, Consts.AttackSpread)
         tx = max(-Consts.TableHalfWidth + 1, min(Consts.TableHalfWidth - 1, tx))
         ty = max(Consts.TableStart + 2, min(Consts.TableEnd - 2, ty))
         if full:
@@ -284,6 +375,7 @@ class DistCogdoBoardroomGameAI(DistCogdoGameAI):
         av = self.air.doId2do.get(avId)
         if _isNPC(av):
             pos = av.getPos()
+            self.__track(avId, pos[0], pos[1])
             return (pos[0], pos[1], pos[2])
         return self.progress.get(avId, (0, Consts.TableStart, Consts.TableTop))
 
@@ -298,7 +390,7 @@ class DistCogdoBoardroomGameAI(DistCogdoGameAI):
         return task.again
 
     def __bossThrow(self):
-        target = self.__target(full=True)
+        target = self.__target(full=True, flight=Consts.ThrowFlightTime)
         seats = self.layout.bossSeats()
         if target and seats:
             avId, tx, ty, px, py = target
@@ -314,7 +406,10 @@ class DistCogdoBoardroomGameAI(DistCogdoGameAI):
                 self.__launch(Consts.Swipe, seat, (side * Consts.TableHalfWidth, self.layout.seats[seat][1]), Consts.SwipeTime)
             else:
                 seat = min(seats, key=lambda i: abs(self.layout.seats[i][1] - ty) + random.uniform(0, 12))
-                kind = random.choice((Consts.GolfBall, Consts.GolfBall, Consts.Paper))
+                if random.random() < Consts.lerpDifficulty(Consts.OilThrowChanceRange, self.layout.difficulty):
+                    kind = Consts.Oil
+                else:
+                    kind = random.choice((Consts.GolfBall, Consts.GolfBall, Consts.Paper))
                 self.__launch(kind, seat, (tx, ty), Consts.ThrowFlightTime)
 
     def __minionDrop(self, task):
@@ -359,7 +454,7 @@ class DistCogdoBoardroomGameAI(DistCogdoGameAI):
                               extraArgs=[kind, x, y])
 
     def __landed(self, kind, x, y):
-        if self.finished or self.phase != 'slide':
+        if self.finished or self.phase != 'slide' or kind == Consts.Oil:
             return
         z = self.layout.heightAt(x, y) if kind != Consts.Swipe else Consts.TableTop
         for avId in self.stillRunning():
@@ -376,6 +471,7 @@ class DistCogdoBoardroomGameAI(DistCogdoGameAI):
         avId = self.getSenderToon()
         if avId:
             self.progress[avId] = (x, y, z)
+            self.__track(avId, x, y)
 
     def requestHit(self, kind):
         avId = self.getSenderToon()

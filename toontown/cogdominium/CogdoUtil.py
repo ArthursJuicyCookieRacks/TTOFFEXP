@@ -52,6 +52,23 @@ def loadElevatorModel():
     return model
 
 
+def addElevatorShell(model):
+    # The car is only 6 ft deep, so the ride camera (14 ft back, as in the
+    # cog buildings) sits behind its back wall and sees the room past its
+    # sides. Stretch a second copy of the car's walls back past the camera,
+    # so from inside you only see the elevator and what's out its doors.
+    car = model.find('**/elevator')
+    if car.isEmpty() or not model.find('**/elevatorShell').isEmpty():
+        return None
+    shell = car.copyTo(car.getParent())
+    shell.setName('elevatorShell')
+    for coll in shell.findAllMatches('**/+CollisionNode'):
+        coll.removeNode()
+    shell.setY(car, 5.9)
+    shell.setSy(car, 1.75)
+    return shell
+
+
 def getRandomDialogueLine(lineList, rng):
     return lineList[rng.randint(0, len(lineList) - 1)]
 

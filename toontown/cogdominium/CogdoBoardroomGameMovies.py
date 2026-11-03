@@ -1,4 +1,4 @@
-from panda3d.core import NodePath, PlaneNode, Plane, Point3, VBase3
+from panda3d.core import NodePath, PlaneNode, Plane, Point3, VBase3, ScissorEffect
 from direct.showbase.RandomNumGen import RandomNumGen
 from direct.interval.IntervalGlobal import Func, LerpPosHprInterval, Parallel, Sequence, Wait
 from toontown.toonbase import TTLocalizer
@@ -20,6 +20,24 @@ def _lookHpr(pos, target):
     hpr = np.getHpr()
     np.removeNode()
     return hpr
+
+
+# The head box's inner sides on screen (aspect2d x).
+BoxLeft = -0.92
+BoxRight = -0.555
+# Where the intro panels' titles are centred on screen (aspect2d x).
+TitleX = 0.26
+TitleDrop = 0.058
+
+
+def centerTitle(panel):
+    # Centre the panel's title over the speech bubble below it (the stock
+    # spot is left of the bubble's middle), a touch smaller so it clears
+    # the play button.
+    panel.gameTitleText.setX(aspect2d, TitleX)
+    # Level with the middle of the green play button.
+    panel.gameTitleText.setZ(panel.gameTitleText, -TitleDrop / panel.gameTitleText.getSz(aspect2d))
+    panel.gameTitleText.setScale(panel.gameTitleText.getScale() * 0.9)
 
 
 class CogdoBoardroomGameIntro(CogdoGameMovie):
@@ -48,8 +66,11 @@ class CogdoBoardroomGameIntro(CogdoGameMovie):
             self.toonHead.reparentTo(hidden)
             self.cogHead.reparentTo(aspect2d)
             self._cogDialogueSfx.play()
-            self.cogHead.setClipPlane(self.cogClipPlane, 100)
-            CogdoUtil.clipToBox(self.cogHead, -0.8)
+            self.cogHead.setClipPlane(self.clipPlane)
+            # The stock clip only cuts at the box's bottom: the Big Cheese's
+            # wide shoulders stuck out of its sides. Cut at the sides too.
+            self.cogHead.getGeomNode().setEffect(ScissorEffect.makeNode(Point3(BoxLeft, 0, CogdoUtil.BOX_CLIP_Z),
+                                                            Point3(BoxRight, 0, 10), aspect2d))
 
     def makeSuit(self, suitType):
         # The Toon Resistance's toon, in a cog suit.
@@ -76,7 +97,7 @@ class CogdoBoardroomGameIntro(CogdoGameMovie):
         self.toonDNA.newToonFromProperties('dss', 'ss', 'm', 'm', 2, 0, 2, 2, 1, 8, 1, 8, 1, 14)
         self.toonHead = Toon.Toon()
         self.toonHead.setDNA(self.toonDNA)
-        self.makeSuit('f')
+        self.makeSuit('sc')
         self.toonHead.getGeomNode().setDepthWrite(1)
         self.toonHead.getGeomNode().setDepthTest(1)
         self.toonHead.loop('neutral')
@@ -90,13 +111,11 @@ class CogdoBoardroomGameIntro(CogdoGameMovie):
         self.cogHead.getGeomNode().setDepthWrite(1)
         self.cogHead.getGeomNode().setDepthTest(1)
         self.cogHead.loop('neutral')
-        # The Big Cheese is a big cog: small in the box, so his head and
-        # shoulders fill it, cut off at its bottom edge.
-        self.cogHead.setPosHprScale(-0.73, 0, -1.52, 180, 0, 0, 0.115, 0.115, 0.115)
+        # The Big Cheese is an A-body cog, taller than the maze's B-body
+        # Mover & Shaker: smaller and lower, so his head sits in the box
+        # the way the other field offices' cogs do.
+        self.cogHead.setPosHprScale(-0.737, 0, -1.22, 180, 0, 0, 0.082, 0.082, 0.082)
         self.cogHead.reparentTo(hidden)
-        self.cogClipPlane = NodePath(PlaneNode('cogClip', Plane(0, 0, 1, 0)))
-        self.cogClipPlane.reparentTo(aspect2d)
-        self.cogClipPlane.setZ(-0.8)
         self.clipPlane = self.toonHead.attachNewNode(PlaneNode('clip'))
         self.clipPlane.node().setPlane(Plane(0, 0, 1, 0))
         self.clipPlane.setPos(0, 0, 2.45)
@@ -173,7 +192,6 @@ class CogdoBoardroomGameIntro(CogdoGameMovie):
         self.cogHead.removeNode()
         self.cogHead.delete()
         del self.cogHead
-        self.cogClipPlane.removeNode()
 
 
 class CogdoBoardroomGolfIntro(CogdoBoardroomGameIntro):
@@ -190,6 +208,7 @@ class CogdoBoardroomGolfIntro(CogdoBoardroomGameIntro):
                                           'boardroomGolfPanelDone', timeout=Consts.GolfIntroDuration + 2)
         self._panel.load()
         self._panel.playButton.hide()
+        centerTitle(self._panel)
         self._root = root
         self._makeIval()
 
@@ -227,7 +246,7 @@ class CogdoBoardroomGolfIntro(CogdoBoardroomGameIntro):
             self._shot(page, at(tx + 5, ty + 6, 5), at(tx, ty, 2), at(rx - 30, ry - 18, 14), at(tx, ty, 2)),
             # And off it goes: the golf camera's view from behind the tee.
             Func(self.displayLine, 'cog', self._getRandomLine(dialogue[3])),
-            self._shot(page, at(tx, ty - Consts.GolfCamBack, Consts.GolfCamUp), at(tx, ty + Consts.GolfCamLook, 1)))
+            self._shot(page, at(tx, ty - Consts.GolfCamBack, Consts.GolfCamUp), at(tx, ty + Consts.GolfCamLook, Consts.GolfCamLookUp)))
 
     def unload(self):
         self._panel.exit()

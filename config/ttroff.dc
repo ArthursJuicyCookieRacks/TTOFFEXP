@@ -2376,7 +2376,11 @@ dclass DistCogdoBoardroomGame : DistCogdoGame {
   requestExit() airecv clsend;
   toonExited(uint32 avId) broadcast;
   startGolf(int16 timestamp) broadcast;
-  golfCog(uint16 cogId, uint8 name, int16/100 px, int8 side, int16/100 exitY, uint16/100 speed, int16 timestamp) broadcast;
+  golfCog(uint16 cogId, uint8 name, int16/100 px, int8 side, int16/100 exitY, uint16/100 speed, int16 timestamp, bool toDrop, int16/10 tx, int16/10 ty) broadcast;
+  golfDrops(uint16 dropIds[], int16/10 xs[], int16/10 ys[]) broadcast;
+  requestDropPickup(uint16 dropId) airecv clsend;
+  golfBarrelCarried(uint32 avId, uint8 count) broadcast;
+  golfBarrelsHome(uint8 barrelsHome) broadcast;
   golfCogPickup(uint16 cogId, bool carrying, uint8 barrelsHome) broadcast;
   golfCogEscaped(uint16 cogId, bool carrying, uint8 barrelsHome) broadcast;
   requestGolfSwing(int16/10 h, uint8/100 power) airecv clsend;
