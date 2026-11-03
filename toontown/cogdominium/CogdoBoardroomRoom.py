@@ -183,12 +183,31 @@ class CogdoBoardroomRoom:
     def sitCog(suit, locator, bodyType):
         # As the CEO battle seats its diners.
         sit = locator.attachNewNode('sitLocator')
+        # (The CEO battle's offsets sat the cogs 2 ft out in front of these
+        # chairs, so from the table the chair looked empty beside its cog:
+        # back by Consts.SitBack, into the seat.)
         if bodyType == 'c':
-            sit.setPos(0.5, 3.65, -3.75)
+            sit.setPos(0.5, 3.65 - Consts.SitBack, -3.75)
         else:
-            sit.setPos(0.5, 2.5, -2.4)
+            sit.setPos(0.5, 2.5 - Consts.SitBack, -2.4)
         suit.reparentTo(sit)
         return sit
+
+    @staticmethod
+    def liftOverTable(suit, anim='sit'):
+        # The little cogs (a Micromanager sits only 2.4 ft tall) sat below
+        # the table's edge, so their chairs looked empty (Arthur). Lift a
+        # short cog up its seat until its head shows over the table, as if
+        # it sat on a cushion.
+        if suit.getAnimControl(anim) is not None:
+            suit.pose(anim, 0)
+        bounds = suit.getTightBounds(render)
+        if not bounds:
+            return
+        short = Consts.TableTop + Consts.SeatedHeadClear - bounds[1][2]
+        if short > 0:
+            sit = suit.getParent()
+            sit.setZ(sit.getZ() + short)
 
     # --- On the table ---
 

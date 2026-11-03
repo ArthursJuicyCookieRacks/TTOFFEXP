@@ -191,6 +191,7 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         for index in self.layout.bossSeats():
             suit = self._makeSuit(rng.choice(names[:top]))
             CogdoBoardroomRoom.sitCog(suit, self.room.seatLocators[index], suit.style.body)
+            CogdoBoardroomRoom.liftOverTable(suit)
             suit.loop('sit', fromFrame=rng.randrange(20))
             self.bosses[index] = suit
         # The chairman at the head of the table.

@@ -621,11 +621,19 @@ class DistributedBuilding(DistributedObject.DistributedObject):
                                   'cogdominium_palette_3cmla_5': 'phase_5/maps/ttoff_cogdominium_palette_bossbot_5.jpg'}
 
     def retextureBossbotFieldOffice(self, np):
-        for name, path in self.BossbotFieldOfficeTextures.items():
-            old = np.findTexture(name)
-            new = loader.loadTexture(path)
-            if old and new:
-                np.replaceTexture(old, new)
+        # Matched by the texture's file as well as its name: the battle
+        # room's painting calls its copy of the atlas after the model
+        # (tt_m_ara_crg_paintingMoverShaker), so a match by name alone left
+        # the Mover & Shaker poster up in there.
+        for tex in np.findAllTextures():
+            key = tex.getName()
+            if key not in self.BossbotFieldOfficeTextures:
+                key = tex.getFilename().getBasenameWoExtension()
+            path = self.BossbotFieldOfficeTextures.get(key)
+            if path:
+                new = loader.loadTexture(path)
+                if new:
+                    np.replaceTexture(tex, new)
 
     def animToToon(self, timeStamp):
         self.stopTransition()

@@ -69,6 +69,7 @@ class CogdoBoardroomDecor:
                     turn.setH(heading)
                     CogdoBoardroomRoom.sitCog(suit, turn, suit.style.body)
                     suit.decorAnim = 'sit-eat-loop' if suit.style.body != 'b' else 'neutral'
+                    CogdoBoardroomRoom.liftOverTable(suit, suit.decorAnim)
                     self.diners.append(suit)
                 # A golf cart parked against the wall, and now and then a
                 # putting green with its flag.

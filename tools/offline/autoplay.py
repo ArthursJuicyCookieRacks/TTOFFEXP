@@ -1107,6 +1107,32 @@ def playCogdoBoardroom(dist):
             others = ['%.0f' % t.getY(render) for t in [dist.getToon(a) for a in dist.getToonIds()] if t is not None and not t.isLocal()]
             log('boardroom: %s at (%.1f, %.1f, %.1f), carried %d, banked %d, laff %d, others at y %s' % (
                 dist.slideState, pos[0], pos[1], pos[2], dist.carried, dist.banked, localAvatar.getHp(), ' '.join(others)))
+            if os.environ.get('AUTOPLAY_SEAT_DEBUG') and not getattr(dist, '_seatsChecked', False):
+                # Every chair: is its cog there, and does its head show over the table?
+                dist._seatsChecked = True
+                seated = [('seat %d' % i, s) for i, s in sorted(dist.bosses.items())]
+                seated += [('diner %d' % i, s) for i, s in enumerate(dist.decor.diners if dist.decor else [])]
+                low = []
+                for label, s in seated:
+                    was = s.isStashed()
+                    if was:
+                        s.unstash()
+                    b = s.getTightBounds(render)
+                    if was:
+                        s.stash()
+                    if not b or b[1][2] < 3.6 + 1.0:
+                        low.append('%s %s top %s' % (label, s.style.name, '%.1f' % b[1][2] if b else None))
+                log('chair check: %d cogs in the meeting chairs, %d at the dining tables, %d meeting chairs empty, %d cogs hidden under the table: %s' % (
+                    len(dist.bosses), len(dist.decor.diners) if dist.decor else 0, len(dist.layout.seats) - len(dist.bosses),
+                    len(low), ', '.join(low[:20])))
+            if False:
+                for idx, s in sorted(dist.bosses.items()):
+                    dy = s.getY(render) - pos[1]
+                    if 0 < dy < 60:
+                        b = s.getTightBounds(render) if not s.isStashed() else None
+                        log('  seat %d %s dy %.0f stashed %s hidden %s z %.1f bounds %s parent %s' % (
+                            idx, s.style.name, dy, s.isStashed(), s.isHidden(), s.getZ(render),
+                            None if not b else '%.1f..%.1f' % (b[0][2], b[1][2]), s.getParent().getName()))
         yield sleep(0.05)
     for name in list(tokens):
         press(name, False)
@@ -2202,6 +2228,12 @@ def restock(air, avId):
     if os.environ.get('AUTOPLAY_LAFF'):
         av.b_setMaxHp(int(os.environ['AUTOPLAY_LAFF']))
     av.b_setHp(av.getMaxHp())
+    if os.environ.get('AUTOPLAY_GAGS'):
+        # A toon with every track and the top gags, for the harder fights.
+        av.b_setTrackAccess([1, 1, 1, 1, 1, 1, 1])
+        av.experience.maxOutExpMinusOne()
+        av.b_setExperience(av.experience.makeNetString())
+        av.inventory.updateGUI = lambda *a: None
     av.inventory.maxOutInv()
     av.b_setInventory(av.inventory.makeNetString())
 

@@ -45,6 +45,10 @@ TableEnd = 366.0 + (NumHalls - 1) * HallLength
 TableTop = 3.6
 # How far above its chair locator a Boss Cog stands on the seat to swing.
 ChairSeatLift = -0.03
+# Every seated Boss Cog's head comes at least this far over the table top.
+SeatedHeadClear = 1.6
+# How far back into its chair a cog sits, from the CEO battle's sit place.
+SitBack = 2.0
 TableLegSpacing = 24.0
 # The ramp up from the floor at the near end (the toons come in at the
 # floor) and the drop down at the far end to the exit.
@@ -286,8 +290,9 @@ GolfNamePlate = (-28.0 + 1.9, -16.0 + 6.1, 4.3)
 # L round the far corners. Their height stays; they're short end to end
 # to leave room to putt at the cogs. The balls bank off them.
 GolfPartitionHeight = 3.0
+# (The two front ones, across the aisle in front of the barrels, are
+# gone: Arthur.)
 GolfPartitions = ((-9.6, -39.5, -9.0, -31.0), (9.0, -39.5, 9.6, -31.0),
-                  (-21.0, -2.6, -10.0, -2.0), (10.0, -2.6, 21.0, -2.0),
                   (-21.0, 14.0, -10.0, 14.6), (10.0, 14.0, 21.0, 14.6),
                   (-10.6, 14.0, -10.0, 22.0), (10.0, 14.0, 10.6, 22.0))
 # The office is lit brighter than the maze, as in the screenshot.
