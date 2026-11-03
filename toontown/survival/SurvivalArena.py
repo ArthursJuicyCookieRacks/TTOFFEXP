@@ -138,6 +138,15 @@ MAPS['farewell_fair'] = {
     'picture': 'phase_4/maps/survival_map_farewell_fair.jpg',
     'preview': 'farewell_fair',
 }
+# Test only (not in MAP_ORDER until Arthur says): pick it with
+# survival-map toybox_terrace in a prc.
+MAPS['toybox_terrace'] = {
+    'title': 'Toybox Terrace',
+    'description': 'A playground built from giant wooden toys round a board-game plaza. Jack pops out of the clock tower, '
+                   'Mickey waits in front of it, Fisherman Freddy by the marble pond, and the trunk in the toy yard.',
+    'picture': 'phase_4/maps/survival_map_farewell_fair.jpg',
+    'preview': 'toybox_terrace',
+}
 # The other playgrounds, straight from their DNA like Toontown Central,
 # and two Cog HQs loaded from their models (toontown/survival/HoodMaps.py
 # has them all). Each names who upgrades the gag there instead of Mickey.
