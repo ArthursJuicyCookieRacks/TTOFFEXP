@@ -34,7 +34,7 @@ COMPLETE = 5
 LEAVING = 6
 Any = 1
 # Departments whose cog buildings can be field offices (DistributedSuitPlannerAI.CogdoTracks).
-FieldOfficeTracks = ('s', 'l')
+FieldOfficeTracks = ('s', 'l', 'm')
 OBSOLETE = 'OBSOLETE'
 Start = 1
 Cont = 0
