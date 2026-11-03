@@ -569,16 +569,18 @@ class DistributedBuildingAI(DistributedObjectAI.DistributedObjectAI):
 # levels 1-3 for a level 1 office, up to 9-11 for a level 5.
 FieldOfficeLevels = {1: 0, 2: 2, 3: 4, 4: 6, 5: 8}
 # 'c' is Cashbot here (Arthur's ~fo c), though cog department 'c' is
-# Bossbot. Cashbot field offices are for testing: only this word makes one.
-FieldOfficeTracks = {'s': 's', 'sellbot': 's', 'l': 'l', 'lawbot': 'l', 'c': 'm', 'm': 'm', 'cashbot': 'm'}
-FieldOfficeNames = {'s': 'Sellbot', 'l': 'Lawbot', 'm': 'Cashbot'}
+# Bossbot: Bossbot is 'b'. Bossbot field offices (Boardroom Hijinks) are a
+# prototype for testing: only this word makes one.
+FieldOfficeTracks = {'s': 's', 'sellbot': 's', 'l': 'l', 'lawbot': 'l', 'c': 'm', 'm': 'm', 'cashbot': 'm',
+                     'b': 'c', 'bossbot': 'c'}
+FieldOfficeNames = {'s': 'Sellbot', 'l': 'Lawbot', 'm': 'Cashbot', 'c': 'Bossbot'}
 
 @magicWord(category=CATEGORY_OVERRIDE, types=[str, int])
 def fo(track='', level=0):
-    """Make a building on this street a field office: ~fo s|l|c [level 1-5]."""
+    """Make a building on this street a field office: ~fo s|l|c|b [level 1-5]."""
     track = FieldOfficeTracks.get(track.lower())
     if track is None:
-        return 'Say which: ~fo s (Sellbot), ~fo l (Lawbot) or ~fo c (Cashbot), then a level 1-5 or nothing for any.'
+        return 'Say which: ~fo s (Sellbot), ~fo l (Lawbot), ~fo c (Cashbot) or ~fo b (Bossbot), then a level 1-5 or nothing for any.'
     if level and level not in FieldOfficeLevels:
         return 'The level is 1 to 5, or leave it out for any level.'
     level = level or random.choice(list(FieldOfficeLevels))

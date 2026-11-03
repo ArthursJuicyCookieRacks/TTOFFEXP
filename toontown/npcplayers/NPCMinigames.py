@@ -23,6 +23,8 @@ from toontown.minigame import CannonGameGlobals, CatchGameGlobals, CogThiefGameG
 from toontown.minigame import PatternGameGlobals, PhotoGameGlobals, RaceGameGlobals, TugOfWarGameGlobals
 from toontown.minigame import VineGameGlobals, ToonBlitzGlobals, TravelGameGlobals
 from toontown.cogdominium import CogdoCraneGameConsts, CogdoFlyingGameGlobals, CogdoMazeGameGlobals
+from toontown.cogdominium import CogdoBoardroomGameConsts as BoardroomConsts
+from toontown.cogdominium import CogdoBoardroomLayout as BoardroomLayout
 from toontown.cogdominium.DistCogdoGameAI import DistCogdoGameAI
 from toontown.minigame.DistributedMinigameAI import DistributedMinigameAI
 from toontown.minigame.CatchGameGlobals import Name2DropObjectType
@@ -1707,7 +1709,152 @@ class CogdoCranePlayer(CogdoPlayer):
         return best[1] if best else None
 
 
+class CogdoBoardroomPlayer(CogdoPlayer):
+    """The Bossbot field office: slide down the table on its belly, as a
+    player does, after its turn in the staggered start, steering round the
+    paper piles to the memos and hopping the pencils; off the far end, run
+    into the exit. Then in the golf office, putt at the cogs walking off
+    with the laff barrels, aiming where they will be, not always well."""
+
+    def play(self, now):
+        game = self.game
+        if game.finished or self.npc.doId in game.exited and game.phase != 'golf':
+            return
+        if game.phase == 'golf':
+            self.golf(now)
+            return
+        self.slide(now)
+
+    def index(self):
+        toons = list(self.game.toons)
+        return toons.index(self.npc.doId) if self.npc.doId in toons else 0
+
+    def slide(self, now):
+        game = self.game
+        layout = game.layout
+        t = game.now()
+        i = self.index()
+        n = len(game.toons)
+        if 'x' not in self.memo:
+            self.memo['x'] = (i - (n - 1) / 2.0) * 3.2
+            self.memo['y'] = BoardroomConsts.TableStart + 2.5
+            self.memo['speed'] = 0.0
+        x, y = self.memo['x'], self.memo['y']
+        if self.memo.get('off'):
+            # Off the table: run into the exit.
+            ex, ey = BoardroomConsts.ExitPosHpr[:2]
+            if self.moveTo(Point3(ex, ey - 1.0, 0), speed=RUN_SPEED * 0.6):
+                self.send('requestExit')
+                k = len(game.exited)
+                self.npc.placeAt(ex + ((k - 1) % 4 - 1.5) * 2.2, ey + 3.0 + ((k - 1) // 4) * 2.0, 0, 180)
+                self.memo['off'] = False
+            return
+        if t < BoardroomConsts.StartDelay + i * BoardroomConsts.StartStagger:
+            self.npc.moveTo(x, y, BoardroomConsts.TableTop, 0)
+            self.memo['lastTick'] = now
+            return
+        # The ticks come less often than TICK when the frame rate is low:
+        # move by the time that really passed (the NPCs slid at half speed).
+        dt = max(0.02, min(0.5, now - self.memo.get('lastTick', now - TICK)))
+        self.memo['lastTick'] = now
+        # Where to be across the table a little way ahead: the nearest memo
+        # in reach, else the middle; and round the piles.
+        ahead = [(j, m) for j, m in enumerate(layout.memos) if j not in game.memosTaken
+                 and 3 < m[1] - y < 22 and m[2] < BoardroomConsts.TableTop + 0.5]
+        goal = min(ahead, key=lambda jm: jm[1][1])[1][0] if ahead else self.memo.get('lane', 0.0)
+        if not ahead and 'lane' not in self.memo:
+            self.memo['lane'] = random.uniform(-6, 6)
+        for ob in layout.obstacles:
+            if ob.kind == BoardroomLayout.PILE and -1 < ob.y - ob.l - y < 12 and ob.x - ob.w - 2 < goal < ob.x + ob.w + 2:
+                left, right = ob.x - ob.w - 2.5, ob.x + ob.w + 2.5
+                free = [g for g in (left, right) if abs(g) < BoardroomConsts.TableHalfWidth - 1.5 and not layout.blockedAt(g, ob.y, 0.5)]
+                goal = min(free, key=lambda g: abs(g - x)) if free else goal
+        if t < self.memo.get('dodgeUntil', 0):
+            goal = self.memo['dodgeX']
+        steer = max(-1.0, min(1.0, (goal - x) / 2.0))
+        want = BoardroomConsts.SlideFastSpeed if not ahead else BoardroomConsts.SlideSpeed
+        speed = self.memo['speed']
+        speed += max(-BoardroomConsts.SlideAccel * dt, min(BoardroomConsts.SlideAccel * dt, want - speed))
+        if game.lastHit.get(self.npc.doId, -99) > t - BoardroomConsts.SpinTime:
+            speed = min(speed, BoardroomConsts.SlideSlowSpeed)
+        nx = x + steer * BoardroomConsts.SteerSpeed * dt
+        nx = max(-BoardroomConsts.TableHalfWidth + 1, min(BoardroomConsts.TableHalfWidth - 1, nx))
+        ny = y + speed * dt
+        here = layout.heightAt(x, y)
+        bumped = [ob for ob in layout.obstacles if ob.kind == BoardroomLayout.PILE and ob.contains(nx, ny, 0.6)
+                  and here < ob.h + BoardroomConsts.TableTop - 0.5]
+        if bumped:
+            # Bumped a pile: stopped, and off round it by its nearer free
+            # side for a moment (steering straight back into it kept the
+            # NPCs stuck behind piles until the time ran out).
+            ob = bumped[0]
+            speed = 0.0
+            ny = y
+            nx = x
+            sides = [g for g in (ob.x - ob.w - 2.0, ob.x + ob.w + 2.0) if abs(g) < BoardroomConsts.TableHalfWidth - 1.0]
+            if sides:
+                self.memo['dodgeX'] = min(sides, key=lambda g: abs(g - x))
+                self.memo['dodgeUntil'] = t + 1.5
+        self.memo['speed'] = speed
+        self.memo['x'], self.memo['y'] = nx, ny
+        z = BoardroomConsts.TableTop
+        hop = any(ob.kind == BoardroomLayout.PENCIL and -0.5 < ob.y - ny < 1.5 and abs(ob.x - nx) < ob.w + 1 for ob in layout.obstacles)
+        if hop:
+            z += 2.0
+        z = max(z, layout.heightAt(nx, ny))
+        self.npc.moveTo(nx, ny, z, 0)
+        for j, (mx, my, mz) in enumerate(layout.memos):
+            if j not in game.memosTaken and abs(mx - nx) < BoardroomConsts.PickupRadius and abs(my - ny) < BoardroomConsts.PickupRadius \
+                    and -1.5 < z - mz < 3.5:
+                self.send('requestMemo', j)
+        for j, (kind, px, py) in enumerate(layout.powerUps):
+            if j not in game.powerUpsTaken and math.hypot(px - nx, py - ny) < BoardroomConsts.PowerUpRadius:
+                self.send('requestPowerUp', j)
+        if ny > BoardroomConsts.TableEnd:
+            self.memo['off'] = True
+            self.npc.moveTo(nx, ny + 3, 0, 0)
+
+    def golf(self, now):
+        game = self.game
+        i = self.index()
+        tx, ty = BoardroomConsts.GolfTees[i % len(BoardroomConsts.GolfTees)]
+        ox, oy, oz = BoardroomConsts.GolfOrigin
+        if not self.memo.get('teed'):
+            self.memo['teed'] = True
+            self.memo['nextSwing'] = now + random.uniform(2.0, 4.0)
+            self.npc.placeAt(ox + tx - 1.6, oy + ty - 0.4, 0, -90)
+            return
+        if now < self.memo['nextSwing']:
+            return
+        cogs = game.golfCogsNow()
+        if not cogs:
+            return
+        # The cog carrying a barrel off first, else the nearest one.
+        def score(c):
+            cogId, cog, t = c
+            x, y, h, leg = BoardroomConsts.golfCogPos(cog['path'], t)
+            return (0 if cog['carrying'] else 1, math.hypot(x - tx, y - ty))
+        cogId, cog, t = min(cogs, key=score)
+        # Where it will be when the ball gets there.
+        lead = 1.0
+        for k in range(3):
+            x, y, h, leg = BoardroomConsts.golfCogPos(cog['path'], t + lead)
+            d = math.hypot(x - tx, y - ty)
+            v = min(BoardroomConsts.BallSpeedRange[1], d * BoardroomConsts.BallFriction + 8.0)
+            lead = d / max(v * 0.7, 1.0)
+        if leg == 3:
+            return
+        aim = -math.degrees(math.atan2(x - tx, y - ty)) + random.uniform(-6, 6)
+        aim = max(-80.0, min(80.0, aim))
+        lo, hi = BoardroomConsts.BallSpeedRange
+        power = max(0.05, min(1.0, (v - lo) / (hi - lo) + random.uniform(-0.08, 0.08)))
+        self.npc.placeAt(ox + tx - 1.6 * math.cos(math.radians(aim)), oy + ty - 1.6 * math.sin(math.radians(aim)), 0, aim - 90)
+        self.send('requestGolfSwing', aim, power)
+        self.memo['nextSwing'] = now + random.uniform(1.6, 3.2)
+
+
 COGDO_PLAYERS = {
+    'DistCogdoBoardroomGameAI': CogdoBoardroomPlayer,
     'DistCogdoMazeGameAI': CogdoMazePlayer,
     'DistCogdoFlyingGameAI': CogdoFlyingPlayer,
     'DistCogdoCraneGameAI': CogdoCranePlayer,

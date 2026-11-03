@@ -12,6 +12,7 @@ from toontown.building.ElevatorConstants import ELEVATOR_NORMAL, ElevatorData, S
 from toontown.cogdominium.DistCogdoCraneGameAI import DistCogdoCraneGameAI
 from toontown.cogdominium.DistCogdoFlyingGameAI import DistCogdoFlyingGameAI
 from toontown.cogdominium.DistCogdoMazeGameAI import DistCogdoMazeGameAI
+from toontown.cogdominium.DistCogdoBoardroomGameAI import DistCogdoBoardroomGameAI
 from toontown.cogdominium.DistributedCogdoBattleBldgAI import DistributedCogdoBattleBldgAI
 from toontown.cogdominium.DistributedCogdoElevatorIntAI import DistributedCogdoElevatorIntAI
 from toontown.hood import ZoneUtil
@@ -21,7 +22,8 @@ from toontown.toonbase.ToontownBattleGlobals import getCreditMultiplier, getInva
 # The game on each floor of a field office, by the department that owns it.
 FloorGames = {'s': DistCogdoMazeGameAI,
               'l': DistCogdoFlyingGameAI,
-              'm': DistCogdoCraneGameAI}
+              'm': DistCogdoCraneGameAI,
+              'c': DistCogdoBoardroomGameAI}
 # Seconds the executive suite intro movie plays before the battle starts.
 BattleIntroTime = 10.5
 # The SOS card the rescued shopkeeper hands out, by how hard the building
@@ -513,6 +515,11 @@ class DistributedCogdoInteriorAI(DistributedObjectAI):
                 tier = next(tier for most, tier in SOSTiers if self.bldg.difficulty <= most)
                 for textId in ResistanceChat.getMiniRewardIds(tier):
                     toon.addResistanceMessage(textId)
+            elif toon and self.FOType == 'c':
+                # A Bossbot office's thank-you: a summons for one cog (never
+                # a building or an invasion), a bigger cog the harder the
+                # office was.
+                self.__giveSingleSummons(toon)
             elif toon:
                 # The shopkeeper's thank-you: their friend's SOS card.
                 toon.attemptAddNPCFriend(self.sosNpcId)
@@ -521,6 +528,18 @@ class DistributedCogdoInteriorAI(DistributedObjectAI):
 
     def exitReward(self):
         pass
+
+    def __giveSingleSummons(self, toon):
+        from toontown.suit import SuitDNA
+        import random
+        top = max(0, min(SuitDNA.suitsPerDept - 1, int(self.bldg.difficulty)))
+        levels = list(range(max(0, top - 2), top + 1))
+        dept = SuitDNA.suitDepts.index('c')
+        # One the toon doesn't have yet, if there is one.
+        fresh = [lvl for lvl in levels if not toon.hasParticularCogSummons(dept, lvl, 'single')]
+        level = random.choice(fresh or levels)
+        toon.assignNewCogSummons(level, 'single', dept)
+        self.notify.info('%s gets a single summons for %s' % (toon.doId, SuitDNA.suitHeadTypes[dept * SuitDNA.suitsPerDept + level]))
 
     def enterFailed(self):
         # A game made for a ride nobody finished.

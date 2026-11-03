@@ -965,10 +965,134 @@ def playCogdoCrane(dist):
     base.screenshot(os.path.join(shots, 'cash-90-finish.png'), defaultFilename=0)
 
 
+def playCogdoBoardroom(dist):
+    # The Bossbot field office: slides the length of the table as a player
+    # would, steering round piles to the memos, hopping the pencils, with
+    # screenshots (and video frames) along the way.
+    from toontown.cogdominium import CogdoBoardroomGameConsts as Consts
+    from toontown.cogdominium import CogdoBoardroomLayout as Layout
+    shots = os.environ.get('AUTOPLAY_SHOTS', '/tmp')
+    os.makedirs(shots, exist_ok=True)
+    video = os.environ.get('AUTOPLAY_VIDEO')
+    if video:
+        os.makedirs(video, exist_ok=True)
+        frames = [0, 0.0]
+
+        def grab(task):
+            now = time.time()
+            if now - frames[1] >= 0.1:
+                frames[1] = now
+                base.screenshot(os.path.join(video, 'f%05d.jpg' % frames[0]), defaultFilename=0)
+                frames[0] += 1
+            return task.cont
+        taskMgr.add(grab, 'autoplayVideo', priority=60)
+    base.screenshot(os.path.join(shots, 'boss-10-start.png'), defaultFilename=0)
+    layout = dist.layout
+    tokens = {}
+
+    def press(name, on):
+        if on and name not in tokens:
+            tokens[name] = inputState.force(name, True, 'autoplay')
+        elif not on and name in tokens:
+            tokens.pop(name).release()
+    idle = os.environ.get('AUTOPLAY_COGDO_IDLE')
+    n = 0
+    nextShot = time.time() + 4
+    lastLog = 0
+    while cogdoGameState(dist) == 'Game':
+        pos = localAvatar.getPos(render)
+        if not idle and getattr(dist, 'phase', None) == 'golf' and dist.golf is not None:
+            # The golf office: aim (Left/Right) where a cog will be, hold
+            # Jump to the power wanted and let go, as a player does.
+            golf = dist.golf
+            tee = golf.toLocal(golf.teePos(dist.startIndex(localAvatar.doId)))
+            now = dist.golfTime()
+            cogs = [c for c in golf.cogs.values() if c['alive'] and c['suit'] is not None]
+            target = None
+            if cogs:
+                cog = min(cogs, key=lambda c: (0 if c['carry'] is not None else 1, c['suit'].getPos().length()))
+                lead = 1.0
+                for k in range(3):
+                    cx, cy, ch, leg = Consts.golfCogPos(cog['path'], now - cog['start'] + lead + 0.6)
+                    d = math.hypot(cx - tee[0], cy - tee[1])
+                    v = min(Consts.BallSpeedRange[1], d * Consts.BallFriction + 8.0)
+                    lead = d / max(v * 0.7, 1.0)
+                if leg < 3:
+                    aim = max(-80.0, min(80.0, -math.degrees(math.atan2(cx - tee[0], cy - tee[1]))))
+                    lo, hi = Consts.BallSpeedRange
+                    target = (aim, max(0.05, min(1.0, (v - lo) / (hi - lo))))
+            if target is None:
+                for name in list(tokens):
+                    press(name, False)
+            else:
+                aim, power = target
+                press('turnLeft', aim > dist.aimH + 2)
+                press('turnRight', aim < dist.aimH - 2)
+                lined = abs(aim - dist.aimH) <= 2
+                if dist.charging:
+                    rising = ((now - dist.chargeStart) / Consts.ChargeTime) % 2.0 <= 1.0
+                    press('jump', not (rising and dist.power >= power - 0.03))
+                else:
+                    press('jump', lined)
+            if time.time() > lastLog:
+                lastLog = time.time() + 2
+                here = golf.toLocal(localAvatar.getPos(render))
+                others = ['%s (%.1f, %.1f)' % (t.getName(), golf.toLocal(t.getPos(render))[0], golf.toLocal(t.getPos(render))[1])
+                          for t in [dist.getToon(a) for a in dist.getToonIds()] if t is not None and not t.isLocal()]
+                cam = golf.toLocal(camera.getPos(render))
+                log('boardroom golf: aim %.0f, barrels %d, cogs %d, me (%.1f, %.1f), cam (%.1f, %.1f, %.1f), others %s' % (
+                    dist.aimH, dist.barrelsHome, len(golf.cogs), here[0], here[1], cam[0], cam[1], cam[2], ', '.join(others)))
+            if time.time() > nextShot and n < 20:
+                nextShot = time.time() + 3.0
+                base.screenshot(os.path.join(shots, 'boss-%02d-golf.png' % (50 + n)), defaultFilename=0)
+                n += 1
+            yield sleep(0.03)
+            continue
+        if not idle and dist.slideState == 'slide':
+            # Where to be across the table a little way ahead: a memo if
+            # one is in reach, else the middle; and out of the piles' way.
+            ahead = [(i, m) for i, m in enumerate(layout.memos) if i not in dist.memosGone
+                     and 3 < m[1] - pos[1] < 22 and m[2] < Consts.TableTop + 0.5]
+            goal = min(ahead, key=lambda im: im[1][1])[1][0] if ahead else 0.0
+            for ob in layout.obstacles:
+                if ob.kind == Layout.PILE and -1 < ob.y - ob.l - pos[1] < 12 and ob.x - ob.w - 2 < goal < ob.x + ob.w + 2:
+                    left, right = ob.x - ob.w - 2.5, ob.x + ob.w + 2.5
+                    free = [g for g in (left, right) if abs(g) < Consts.TableHalfWidth - 1.5 and not layout.blockedAt(g, ob.y, 0.5)]
+                    goal = min(free, key=lambda g: abs(g - pos[0])) if free else goal
+            press('turnLeft', goal < pos[0] - 0.6)
+            press('turnRight', goal > pos[0] + 0.6)
+            hop = any(ob.kind == Layout.PENCIL and 0.8 < ob.y - pos[1] < 2.6 for ob in layout.obstacles)
+            press('jump', hop)
+            press('forward', not ahead)
+        else:
+            for name in list(tokens):
+                press(name, False)
+        if time.time() > nextShot and n < 12:
+            nextShot = time.time() + 3.5
+            base.screenshot(os.path.join(shots, 'boss-%02d-play.png' % (20 + n)), defaultFilename=0)
+            n += 1
+        if time.time() > lastLog:
+            lastLog = time.time() + 2
+            others = ['%.0f' % t.getY(render) for t in [dist.getToon(a) for a in dist.getToonIds()] if t is not None and not t.isLocal()]
+            log('boardroom: %s at (%.1f, %.1f, %.1f), carried %d, banked %d, laff %d, others at y %s' % (
+                dist.slideState, pos[0], pos[1], pos[2], dist.carried, dist.banked, localAvatar.getHp(), ' '.join(others)))
+        yield sleep(0.05)
+    for name in list(tokens):
+        press(name, False)
+    log('boardroom over: banked %d memos, laff %d/%d' % (dist.banked, localAvatar.getHp(), localAvatar.getMaxHp()))
+    yield sleep(4 if video else 1)
+    base.screenshot(os.path.join(shots, 'boss-90-finish.png'), defaultFilename=0)
+    taskMgr.remove('autoplayVideo')
+
+
 def scenarioCogdo(track='s'):
     # A field office: a Sellbot one is a maze, a Lawbot one a flying game,
     # then the executive suite battle that frees the shopkeeper.
     street = ToontownGlobals.SillyStreet
+    if os.environ.get('AUTOPLAY_SLIDE'):
+        # A short slide, to get to the Bossbot office's golf sooner.
+        from toontown.cogdominium import CogdoBoardroomGameConsts as BoardroomConsts
+        BoardroomConsts.SlideDuration = float(os.environ['AUTOPLAY_SLIDE'])
 
     def takeOver(air):
         manager = air.buildingManagers[street]
@@ -1038,7 +1162,7 @@ def scenarioCogdo(track='s'):
         if time.time() > deadline:
             raise StepFailed('still inside the field office after 25 minutes (place state %s)' % placeState())
         state = interior.fsm.getCurrentState().getName() if interior.fsm else None
-        game = findObject('DistCogdoMazeGame') or findObject('DistCogdoFlyingGame') or findObject('DistCogdoCraneGame')
+        game = findObject('DistCogdoMazeGame') or findObject('DistCogdoFlyingGame') or findObject('DistCogdoCraneGame') or findObject('DistCogdoBoardroomGame')
         if time.time() > nextReport:
             nextReport = time.time() + 15
             log('field office state %s, floor %d, place %s, game %s' % (
@@ -1057,6 +1181,8 @@ def scenarioCogdo(track='s'):
                 yield from playCogdoMaze(game)
             elif game.__class__.__name__ == 'DistCogdoCraneGame':
                 yield from playCogdoCrane(game)
+            elif game.__class__.__name__ == 'DistCogdoBoardroomGame':
+                yield from playCogdoBoardroom(game)
             else:
                 yield from playCogdoFlying(game)
         elif state == 'Resting' and walking():
@@ -4775,6 +4901,7 @@ SCENARIOS = [
     ('npcspecials', scenarioNPCSpecials),
     ('npccogdo', withNPCs(scenarioCogdo, ['DistributedCogdoBattleBldgAI'])),
     ('npccogdolaw', withNPCs(lambda: scenarioCogdo('l'), ['DistributedCogdoBattleBldgAI'])),
+    ('npccogdoboss', withNPCs(lambda: scenarioCogdo('c'), ['DistributedCogdoBattleBldgAI'])),
     ('tutorial', scenarioTutorial),
     ('touch', scenarioTouchControls),
     ('maxtoon', scenarioMaxToon),
@@ -4790,6 +4917,7 @@ SCENARIOS = [
     ('cogdo', scenarioCogdo),
     ('cogdolaw', lambda: scenarioCogdo('l')),
     ('cogdocash', lambda: scenarioCogdo('m')),
+    ('cogdoboss', lambda: scenarioCogdo('c')),
     ('minigames', scenarioMinigames),
     ('factory', scenarioFactory),
     ('mint', scenarioMint),
