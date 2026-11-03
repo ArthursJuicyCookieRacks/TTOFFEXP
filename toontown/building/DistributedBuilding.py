@@ -596,7 +596,7 @@ class DistributedBuilding(DistributedObject.DistributedObject):
         starNP = self.makeFieldOfficeLevelStar(signOrigin, level, backgroundNP.getZ(signOrigin))
         suitBuildingNP.setName('cb' + str(self.block) + ':_landmark__DNARoot')
         suitBuildingNP.setPosHprScale(nodePath, 15.463, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0)
-        self.layOutFieldOfficeSign(signOrigin, backgroundNP, starNP)
+        self.layOutFieldOfficeSign(signOrigin, backgroundNP, starNP, signTextNodePath, textNode.getWidth())
         if chr(self.track) == 'm':
             self.retextureCashbotFieldOffice(suitBuildingNP)
         suitBuildingNP.flattenMedium()
@@ -620,8 +620,12 @@ class DistributedBuilding(DistributedObject.DistributedObject):
     FieldOfficeNarrowStarScale = 0.85
     FieldOfficeNarrowStarZ = -0.3
     FieldOfficeNarrowShift = 0.6
+    FieldOfficeNarrowTextScale = 1.3
+    FieldOfficeTextDrop = 0.35
+    FieldOfficeMidStarScale = 0.85
+    FieldOfficeMidStarZ = -0.55
 
-    def layOutFieldOfficeSign(self, signOrigin, signNP, starNP):
+    def layOutFieldOfficeSign(self, signOrigin, signNP, starNP, textNP=None, textWidth=0.0):
         # Street lots stretch or squeeze the whole field office sideways, by a
         # different amount on each lot. The sign and the star keep their true
         # shape on every lot: they sit side by side, centred over the door,
@@ -656,6 +660,21 @@ class DistributedBuilding(DistributedObject.DistributedObject):
             shift = self.FieldOfficeNarrowShift / squeeze
             starNP.setX(starNP.getX() + shift)
             signNP.setX(signOrigin, signNP.getX(signOrigin) + shift)
+            # The sign is small there, so its writing fills more of it.
+            if textNP is not None and textWidth > 0:
+                # Text units are 0.8 ft across the full-size sign; keep the
+                # screws at the ends clear.
+                grow = min(self.FieldOfficeNarrowTextScale, (2 * half - 2.0) / (textWidth * 0.8))
+                if grow > 1.0:
+                    textNP.setSx(textNP.getSx() * grow)
+                    textNP.setSz(textNP.getSz() * grow)
+                    textNP.setZ(textNP.getZ() - self.FieldOfficeTextDrop * (grow - 1.0) * textNP.getSz() / grow)
+        elif fit < 0.95:
+            # Middling fronts: the star a little smaller and a little higher.
+            small = self.FieldOfficeMidStarScale
+            starNP.setScale(small / squeeze, 1.0, small)
+            starNP.setX((starX - radius * (1 - small)) / squeeze)
+            starNP.setZ(signZ + self.FieldOfficeMidStarZ)
         starNP.setPythonTag('foSignLayout', (round(squeeze, 3), round(fit, 3)))
 
     @classmethod
