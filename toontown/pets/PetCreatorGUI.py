@@ -54,7 +54,8 @@ SUM_X = 0.35
 PET_WINDOW_Z = 0.215
 PET_HEIGHT = 0.46
 # The pages: their middle, help line and the middle of their rows.
-PAGE_Z = -0.08
+PAGE_Z = -0.04
+TAB_Z = 0.74
 HELP_Z = 0.58
 ROWS_MID = -0.06
 # The columns of every row.
@@ -251,7 +252,7 @@ class PetCreatorGUI(DirectFrame):
         for n, tab in enumerate(tabs):
             button = DirectButton(parent=self.board, relief=None, image=tabArt,
                                   text=TTLocalizer.PetCreatorTabs[tab], text_scale=0.05, text_pos=(0, -0.015),
-                                  text_fg=PURPLE, pos=(left + n * width, 0, 0.7), pressEffect=False,
+                                  text_fg=PURPLE, pos=(left + n * width, 0, TAB_Z), pressEffect=False,
                                   command=self.__showTab, extraArgs=[tab])
             self.tabButtons[tab] = button
             page = DirectFrame(parent=self.board, relief=None, pos=(0, 0, PAGE_Z))
