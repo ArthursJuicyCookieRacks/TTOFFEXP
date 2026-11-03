@@ -593,9 +593,14 @@ class DistributedBuilding(DistributedObject.DistributedObject):
         frontNP.node().setEffect(DecalEffect.make())
         # A gold star right of the name sign shows the field office's level.
         # It is not a decal: it stands just off the wall instead.
-        self.makeFieldOfficeLevelStar(signOrigin, level, backgroundNP.getZ(signOrigin))
+        starNP = self.makeFieldOfficeLevelStar(signOrigin, level, backgroundNP.getZ(signOrigin))
         suitBuildingNP.setName('cb' + str(self.block) + ':_landmark__DNARoot')
         suitBuildingNP.setPosHprScale(nodePath, 15.463, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0)
+        # A narrow street lot squeezes the whole building sideways; keep the
+        # star (and its number) round instead of squashed.
+        netScale = starNP.getScale(render)
+        if netScale[0] > 0.001:
+            starNP.setSx(starNP.getSx() * netScale[2] / netScale[0])
         if chr(self.track) == 'm':
             self.retextureCashbotFieldOffice(suitBuildingNP)
         suitBuildingNP.flattenMedium()
