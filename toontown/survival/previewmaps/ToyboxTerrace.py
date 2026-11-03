@@ -67,7 +67,9 @@ TOWER = Point3(0, 128, 0)
 HQ = Point3(-118, 62, 0)
 GAG = Point3(66, 126, 0)
 PARTY = Point3(-66, 128, 0)
-TROLLEY = Point3(122, 66, 0)
+# The trolley stands back against the north-east wall, set into a hill as
+# in Toontown Central; this is the middle of its platform's front.
+TROLLEY = Point3(121, 121, 0)
 CLOTHES = Point3(120, -64, 0)
 PETS = Point3(-120, -64, 0)
 POND = Point3(-104, -122, 0)
@@ -140,14 +142,8 @@ class ToyboxTerrace(PreviewMap):
         self.__paths()
         self.__boundary()
         self.__tower()
-        for pos, h, street, theme in TUNNELS:
-            self.__tunnel(pos, h, street, theme)
-        self.__hq()
-        self.__gagShop()
-        self.__clothes()
-        self.__pets()
-        self.__party()
-        self.__trolley()
+        self.__dna()
+        self.__hills()
         self.__pond()
         self.__ducks()
         self.__tops()
@@ -458,7 +454,10 @@ class ToyboxTerrace(PreviewMap):
             for i in range(n):
                 t = (i + 0.5) * step
                 c = a + along * t - inward * 6.0
-                if any((c - g).length() < half + 4 for g, half in gaps):
+                if any((c - g).length() < half + 12 for g, half in gaps):
+                    continue
+                if (c - Vec3(145, 145, 0)).length() < 40:
+                    # The trolley's hill.
                     continue
                 col = BRIGHT[(i + li) % 3] if r.random() < 0.8 else CREAM
                 s = size * r.uniform(0.94, 1.02)
@@ -605,167 +604,6 @@ class ToyboxTerrace(PreviewMap):
 
     # --- Tunnels ---
 
-    def __portal(self, g, W, D, H, archW, spring, tex, color, trim, depth=26.0):
-        """A tunnel portal: a block W wide, D deep and H high, its front at
-        y = 0 looking -y, with an arched opening and a tunnel going in."""
-        hw = W / 2.0
-        ar = archW / 2.0
-        steps = 16
-        arch = []
-        for i in range(steps + 1):
-            a = math.pi * i / steps
-            arch.append((-ar * math.cos(a), spring + ar * math.sin(a)))
-        # The front face round the opening, in strips up to the top.
-        for (x0, z0), (x1, z1) in zip(arch[:-1], arch[1:]):
-            g.quad(tex, [(x0, 0, z0), (x1, 0, z1), (x1, 0, H), (x0, 0, H)],
-                   [(x0 / 8, z0 / 8), (x1 / 8, z1 / 8), (x1 / 8, H / 8), (x0 / 8, H / 8)], color)
-        g.quad(tex, [(-hw, 0, 0), (-ar, 0, 0), (-ar, 0, H), (-hw, 0, H)], [(-hw / 8, 0), (-ar / 8, 0), (-ar / 8, H / 8), (-hw / 8, H / 8)], color)
-        g.quad(tex, [(ar, 0, 0), (hw, 0, 0), (hw, 0, H), (ar, 0, H)], [(ar / 8, 0), (hw / 8, 0), (hw / 8, H / 8), (ar / 8, H / 8)], color)
-        # Sides, top and back.
-        g.box((-hw, 0, 0), (hw, D, H), tex, color, tile=8, faces='ewnt')
-        # Inside: the walls and the vault, getting darker inward.
-        prof = [(-ar, 0)] + arch + [(ar, 0)]
-        for (x0, z0), (x1, z1) in zip(prof[:-1], prof[1:]):
-            n0 = Vec3(-x0, 0, -(z0 - spring) if z0 > spring else 0)
-            g.quad(DARK, [(x0, 0.02, z0), (x0, depth, z0), (x1, depth, z1), (x1, 0.02, z1)],
-                   [(0, 0.5), (1, 0.5), (1, 0.5), (0, 0.5)], (1, 1, 1, 1))
-        g.quad(DARK, [(-ar, depth, 0), (ar, depth, 0), (ar, depth, spring + ar), (-ar, depth, spring + ar)],
-               [(1, 0.5), (1, 0.5), (1, 0.5), (1, 0.5)], (1, 1, 1, 1))
-        g.quad(DARK, [(-ar, 0.02, 0.03), (-ar, depth, 0.03), (ar, depth, 0.03), (ar, 0.02, 0.03)][::-1],
-               [(0, 0.5), (1, 0.5), (1, 0.5), (0, 0.5)][::-1], (0.9, 0.85, 0.8, 1))
-        return arch
-
-    def __tunnel(self, pos, h, street, theme):
-        k = self.kit
-        r = self.r
-        # pos is on the outline; the portal's front sits a little inside it.
-        out = Vec3(pos[0], pos[1], 0)
-        out.normalize()
-        front = Vec3(pos[0], pos[1], 0) - out * 10.0
-        # The mouth looks back into the plaza: heading such that -y faces in.
-        bh = facing(front, (0, 0))
-        g = self.place((front[0], front[1], 0), bh)
-        W, D, H = 54.0, 30.0, 30.0
-        archW, spring = 22.0, 9.0
-        if theme == 'key':
-            arch = self.__portal(g, W, D, H, archW, spring, WOOD, YELLOW, RED)
-            # Tin-toy trim: a red band at the foot and the top, blue edges.
-            g.trimBox((-W / 2, 0, 0), (W / 2, D, 3.0), WOOD, RED, RED_D, t=1.0, faces='sew')
-            g.trimBox((-W / 2, 0, H - 3.0), (W / 2, D, H), WOOD, RED, RED_D, t=1.0, faces='sewt')
-            for sx in (-1, 1):
-                g.box((sx * W / 2 - 1.0, -0.6, 0), (sx * W / 2 + 1.0, 0.6, H + 0.3), WOOD, BLUE, tile=4)
-            # Rivets along the bands.
-            for i in range(13):
-                xx = -W / 2 + 2 + i * (W - 4) / 12.0
-                for zz in (1.5, H - 1.5):
-                    g.sphere((xx, -0.1, zz), 0.45, WOOD, YELLOW_D, rings=4, sides=8)
-            self.__archTrim(g, arch, RED, 1.6)
-            # The giant winding key on top, turning (see __animate).
-            key = self.part('windKey')
-            kg = key.geo
-            kg.cyl(1.4, 8.0, WOOD, YELLOW_D, sides=14, caps='t')
-            kg.cyl(2.4, 1.4, WOOD, YELLOW, z0=0, sides=16, caps='t')
-            bow = kg.at((0, 0, 13.0), (0, 0, 90))
-            for sx in (-1, 1):
-                bow.at((0, sx * 5.2, 0), (0, 0, 0)).torus(4.0, 1.25, WOOD, YELLOW, seg=28, sides=10)
-            bow.at((0, 0, 0), (0, 0, 0)).cyl(2.4, 2.4, WOOD, YELLOW_D, z0=-1.2, sides=16, caps='tb')
-            kg.at((0, 0, 7.6), (0, 0, 0)).cyl(1.6, 2.6, WOOD, YELLOW, sides=12, caps='t')
-            top = self.world(front, bh, (0, D * 0.55, H))
-            self.windKey = self.keep(key, top)
-            self.windKey.setScale(1.7)
-        elif theme == 'marble':
-            arch = self.__portal(g, W, D, H, archW, spring, WOOD, BLUE, CREAM)
-            g.trimBox((-W / 2, 0, H - 2.4), (W / 2, D, H), WOOD, CREAM, CREAM_D, t=1.0, faces='sewt')
-            for sx in (-1, 1):
-                g.box((sx * W / 2 - 1.2, -0.6, 0), (sx * W / 2 + 1.2, 0.6, H + 0.3), WOOD, CREAM, tile=4)
-            # Marbles all round the opening, and up its sides to the ground.
-            mr = 2.3
-            ar = archW / 2.0
-            ring = [(-ar - mr, z) for z in (mr, mr * 3, mr * 5 - 0.6)]
-            for i in range(11):
-                a = math.pi * i / 10
-                ring.append((-(ar + mr) * math.cos(a), spring + (ar + mr) * math.sin(a)))
-            ring += [(ar + mr, z) for z in (mr * 5 - 0.6, mr * 3, mr)]
-            for i, (xx, zz) in enumerate(ring):
-                g.sphere((xx, -mr * 0.6, zz), mr, MARBLES[i % 4], (1, 1, 1, 1), rings=10, sides=16)
-            # A big one crowning the arch, and a few rolled loose.
-            g.sphere((0, -1.4, H + 2.6), 4.0, MARBLES[0], (1, 1, 1, 1), rings=12, sides=18)
-            for i, (lx, ly) in enumerate(((-ar - 7, -6), (ar + 9, -9), (ar + 4, -15))):
-                wp = self.world(front, bh, (lx, ly, 0))
-                self.g.sphere((wp[0], wp[1], 1.6), 1.6, MARBLES[(i + 1) % 4], (1, 1, 1, 1), rings=8, sides=14)
-                k.wallTube((wp[0], wp[1], 0), 1.7, 3.2)
-        else:
-            # Building Block Boulevard: a toy block set built up into an arch.
-            arch = self.__portal(g, W, D, H, archW, spring, WOOD, CREAM, CREAM_D)
-            g.trimBox((-W / 2, 0, H - 2.0), (W / 2, D, H), WOOD, CREAM, CREAM_D, t=0.8, faces='t')
-            ar = archW / 2.0
-            # The portal's front built up from ABC blocks, row on row,
-            # round the arch.
-            bs = 6.0
-            abc = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
-            n = 0
-            for row in range(5):
-                z = row * bs
-                off = (bs / 2.0) if row % 2 else 0.0
-                x = -W / 2 + bs / 2 - off
-                while x < W / 2 + 0.1:
-                    inner = abs(x) - bs / 2 < ar + 6.6
-                    low = z + bs <= 23.0
-                    if not (inner and low) and abs(x) + bs / 2 <= W / 2 + 2.6:
-                        col = (RED, BLUE, YELLOW, CREAM, GREEN)[(row * 3 + n) % 5] if r.random() < 0.85 else CREAM
-                        bh2 = bh + r.uniform(-2.5, 2.5)
-                        wp = self.world(front, bh, (x, -2.6))
-                        self.letterBlock(self.place((wp[0], wp[1], z), bh2), bs * r.uniform(0.97, 1.0), col, abc[n % 26],
-                                         letterFaces='s', worldFrame=((wp[0], wp[1]), bh2))
-                        n += 1
-                    x += bs
-            # Round column blocks each side of the opening, the arch block
-            # across them, a triangle block and two cubes on top.
-            colZ = spring + 0.4
-            for sx, col in ((-1, RED), (1, BLUE)):
-                cg = g.at((sx * (ar + 3.2), -3.6, 0), (0, 0, 0))
-                cg.cyl(3.0, colZ, WOOD, col, sides=20, caps='t', tile=6)
-                cg.at((0, 0, colZ * 0.5), (0, 0, 0)).torus(3.0, 0.35, WOOD, CREAM, seg=20, sides=6)
-            ag = g.at((0, -3.6, colZ), (0, 0, 0))
-            self.__archBlock(ag, ar + 6.4, ar, 7.0, 7.0, YELLOW, YELLOW_D)
-            archTop = colZ + ar * 0.9 + 7.0 * 0.55
-            tg = g.at((0, -3.6, archTop), (0, 0, 0))
-            tg.prism((-7, -3.5, 0), (7, 3.5, 7.5), WOOD, RED, gable=RED_D, tile=6)
-            for sx, col, s in ((-1, BLUE, 5.6), (1, GREEN, 5.0)):
-                cg = g.at((sx * 12.0, -3.6, archTop), (r.uniform(-12, 12), 0, 0))
-                self.letterBlock(cg, s, col, 'B' if sx < 0 else 'K', letterFaces='s', worldFrame=(front, bh))
-            # A few loose blocks at the foot of the columns.
-            for lx, ly, s, col, letter in ((-ar - 9.5, -7.0, 4.4, YELLOW, 'A'), (ar + 9.0, -6.0, 3.8, RED, 'C')):
-                hh = bh + r.uniform(-25, 25)
-                wp = self.world(front, bh, (lx, ly))
-                self.letterBlock(self.place((wp[0], wp[1], 0), hh), s, col, letter, letterFaces='sn', worldFrame=((wp[0], wp[1]), hh))
-                k.wallTube((wp[0], wp[1], 0), s * 0.62, 5)
-        # The sign over the mouth, in the playground tunnels' style.
-        signZ = H - 6.0 if theme != 'blocks' else spring + archW / 2 + 0.5
-        if theme == 'blocks':
-            signZ = H - 3.2
-        sg = g.at((0, -0.5 if theme != 'marble' else -3.2, signZ), (0, 0, 0))
-        sg.box((-12.5, -0.5, -3.4), (12.5, 0.0, 3.4), WOOD, CREAM, tile=4)
-        sg.trimBox((-12.5, -0.5, -3.4), (12.5, 0.0, 3.4), WOOD, CREAM, {'key': RED, 'marble': BLUE_D, 'blocks': RED}[theme], t=0.9,
-                   faces='s')
-        sp = self.world(front, bh, (0, -1.1 if theme != 'marble' else -3.8, signZ - 1.1))
-        self.text(street, sp, bh, 3.6, {'key': RED_D, 'marble': BLUE_D, 'blocks': RED_D}[theme], maxWidth=22.0)
-        # Solid: the portal's front either side of the opening, its sides,
-        # and a wall a little way in (the streets are closed tonight).
-        ar = archW / 2.0
-        self.solidRect(front, bh, -W / 2, 0, -ar, D, height=H)
-        self.solidRect(front, bh, ar, 0, W / 2, D, height=H)
-        a = self.world(front, bh, (-ar, 8.0))
-        b = self.world(front, bh, (ar, 8.0))
-        k.wallSegment(a, b, -1, 16, name='tunnelClosed', thick=2.0)
-        for sx in (-1, 1):
-            k.wallSegment(self.world(front, bh, (sx * ar, 0)), self.world(front, bh, (sx * ar, 9)), -1, 16, name='tunnelSide', thick=1.2)
-
-    def __archTrim(self, g, arch, color, t):
-        prof = [(arch[0][0], 0)] + arch + [(arch[-1][0], 0)]
-        path = [(x, -0.3, z) for x, z in prof]
-        g.tube(path, t * 0.5, WOOD, color, sides=8, plane=(0, 1, 0))
-
     def __archBlock(self, g, hw, ar, height, depth, color, trim):
         """A wooden arch block: hw half-wide, with a half-round ar cut out of
         its underside, standing on its lower edge at z 0, front at y -d/2."""
@@ -795,249 +633,248 @@ class ToyboxTerrace(PreviewMap):
         g.quad(WOOD, [(-hw, -hd, 0), (-ar, -hd, 0), (-ar, hd, 0), (-hw, hd, 0)][::-1], [(0, 0), (1, 0), (1, 1), (0, 1)], trim)
         g.quad(WOOD, [(ar, -hd, 0), (hw, -hd, 0), (hw, hd, 0), (ar, hd, 0)][::-1], [(0, 0), (1, 0), (1, 1), (0, 1)], trim)
 
-    # --- Buildings ---
+    # --- The playground's own buildings, tunnels and trolley ---
 
-    def __door(self, pos, h, local, color=CREAM, kind='door_double_round', scale=1.0):
-        """One of the playground buildings' own doors, set in a front."""
-        wp = self.world(pos, h, local)
-        door = self.kit.model('phase_3.5/models/modules/doors_practical', pos=wp, h=h, scale=scale)
-        node = door.find('**/' + kind)
-        for child in door.find('**/newdoors').getChildren():
-            if child.getName() != kind:
-                child.removeNode()
-        door.setColorScale(*color)
-        # The door leaves stay shut and the black hole behind them hidden,
-        # as on the playgrounds.
-        for hole in door.findAllMatches('**/*hole*'):
+    def __dnaXml(self):
+        """The Toontown Central pieces, written as playground DNA so the
+        game builds them exactly as in Toontown Central: the shops with
+        their doors and signs, the trolley, the Party Gate and the three
+        tunnels with their street signs."""
+        out = []
+
+        def place(pos, h):
+            return '<pos x="%.3f" y="%.3f" z="%.3f" /><nhpr h="%.3f" p="0" r="0" />' % (pos[0], pos[1], pos[2] if len(pos) > 2 else 0.0, h)
+
+        def front(pos):
+            # A landmark building's front is its +y side.
+            return facing(pos, (0, 0)) + 180
+
+        def sign(words, color, scale=1.7, z=-0.5):
+            return ('<sign><baseline code="mickey"><color r="%.3f" g="%.3f" b="%.3f" a="1" /><pos x="0" y="0" z="%.2f" />'
+                    '<scale x="%.2f" y="1" z="%.2f" /><text>%s</text></baseline></sign>' % (color[0], color[1], color[2], z, scale, scale, words))
+
+        out.append('<landmark_building id="tb20:toon_landmark_hqTT_DNARoot" code="toon_landmark_hqTT" type="hq"><title>Toon HQ</title>%s'
+                   '</landmark_building>' % place(HQ, front(HQ)))
+        out.append('<landmark_building id="sz19:toon_landmark_TT_gag_shop_DNARoot" code="toon_landmark_TT_gag_shop" type="gagshop">'
+                   '<title>Gag Shop</title>%s<door code="door_double_square_ur"><color r="1" g="0.63" b="0.38" a="1" /></door>'
+                   '</landmark_building>' % place(GAG, front(GAG)))
+        out.append('<landmark_building id="sz21:toon_landmark_TT_clothes_shop_DNARoot" code="toon_landmark_TT_clothes_shop" type="clotheshop">'
+                   '<title>Clothing Shop</title>%s<door code="door_double_clothesshop_ur"><color r="0.88" g="0.45" b="0.38" a="1" /></door>%s'
+                   '</landmark_building>' % (place(CLOTHES, front(CLOTHES)), sign('Clothing Shop', (1, 0.611765, 0.423529))))
+        out.append('<landmark_building id="sz22:toon_landmark_TT_pet_shop_DNARoot" code="toon_landmark_TT_pet_shop" type="petshop">'
+                   '<title>Pet Shop</title>%s<door code="door_double_round_ur"><color r="1" g="0.87" b="0.38" a="1" /></door>'
+                   '<sign><baseline code="mickey" width="14.2363" height="14.2363" flags="d"><color r="1" g="1" b="0" a="1" />'
+                   '<pos x="-0.0715486" y="0" z="0.575594" /><scale x="1.58014" y="1" z="2.42354" /><text>PET SHOP</text></baseline></sign>'
+                   '</landmark_building>' % place(PETS, front(PETS)))
+        # The trolley: its platform runs 30 feet along its x from the
+        # origin, its awning on its -y side toward the plaza.
+        th = facing(TROLLEY, (0, 0))
+        out.append('<prop name="prop_trolley_station_DNARoot" code="prop_trolley_station">%s<sign><color r="1" g="0.88" b="0.56" a="1" />'
+                   '<baseline code="mickey" kern="-0.09181" width="10.9993" height="10.9993"><color r="0.992157" g="0.968627" b="0.00784314" a="1" />'
+                   '<pos x="0.5" y="0" z="1.33" /><scale x="1.4" y="1" z="1.4" /><text>TROLLEY</text></baseline>'
+                   '<baseline code="mickey" kern="-0.2159"><color r="1" g="0" b="0" a="1" /><pos x="0.29" y="0" z="-1.9" />'
+                   '<scale x="2.7" y="1" z="2.7" /><text>GAMES</text></baseline></sign></prop>' % place(self.world(TROLLEY, th, (-15, -4)), th))
+        out.append('<prop name="prop_party_gate_DNARoot" code="prop_party_gate">%s</prop>' % place(PARTY, facing(PARTY, (0, 0))))
+        # Tunnels: the model's mouth (tunnel_origin) is at (60, 95, 6.67)
+        # in its own frame, looking +y.
+        for mouth, h, street, theme in TUNNELS:
+            th = facing(mouth, (0, 0)) + 180
+            f = heading(th)
+            right = Vec3(f[1], -f[0], 0)
+            origin = Vec3(mouth[0], mouth[1], 0) - right * 60.0 - f * 95.0
+            ss = min(1.5, 1.5 * 15.0 / len(street))
+            out.append('<prop name="linktunnel_toy_%s_DNARoot" code="prop_safe_zone_tunnel">%s'
+                       '<sign code="tunnel_sign_orange"><scale x="1.5" y="1" z="1.5" />'
+                       '<baseline code="mickey" width="33.3333" height="33.3333"><color r="0" g="0.501961" b="0" a="1" /><pos x="0" y="0" z="-0.76" />'
+                       '<scale x="%.3f" y="1" z="%.3f" /><text>%s</text></baseline>'
+                       '<baseline code="mickey" width="44" height="44"><color r="0" g="0.501961" b="0" a="1" /><pos x="0" y="0" z="-1.98" />'
+                       '<scale x="0.8" y="1" z="0.8" /><text>TOYBOX TERRACE</text></baseline></sign></prop>'
+                       % (theme, place((origin[0], origin[1], -6.6666), th), ss, ss, street.upper()))
+        return ('<?xml version="1.0" encoding="utf-8"?><scene zone="2000"><group name="toyboxTerrace">'
+                '<visgroup zone="2000:safe_zone" vis="2000:safe_zone">%s</visgroup></group></scene>' % ''.join(out))
+
+    def __dna(self):
+        import io
+        from panda3d.core import Filename, NodePath, VirtualFileSystem
+        from toontown.dna import DNAParser
+        from toontown.dna.DNAStorage import DNAStorage
+        from toontown.toonbase import ToontownGlobals
+        vfs = VirtualFileSystem.getGlobalPtr()
+        store = DNAStorage()
+        for name in ('phase_4/dna/storage.xml', 'phase_4/dna/storage_TT.xml', 'phase_4/dna/storage_TT_sz.xml'):
+            text = vfs.readFile(Filename('/' + name), True).decode('utf-8')
+            DNAParser.parse(io.StringIO(text)).store(store)
+        store.storeFont(ToontownGlobals.getInterfaceFont(), 'humanist')
+        store.storeFont(ToontownGlobals.getSignFont(), 'mickey')
+        store.storeFont(ToontownGlobals.getSuitFont(), 'suit')
+        node = DNAParser.parse(io.StringIO(self.__dnaXml())).generate(store)
+        geom = NodePath(node)
+        geom.reparentTo(self.root)
+        self.dnaGeom = geom
+        self.dnaStore = store
+        # As in a Survival playground: nothing leads anywhere, the doors'
+        # black holes stay hidden, no cog buildings.
+        for trigger in geom.findAllMatches('**/tunnel_trigger*') + geom.findAllMatches('**/door_trigger*'):
+            trigger.stash()
+        for hole in geom.findAllMatches('**/doorFrameHole*'):
             hole.hide()
-        return door
-
-    def __sign(self, pos, h, local, words, w, hgt, board=CREAM, trim=RED, ink=RED_D, scale=3.0):
-        """A wooden shop sign board with the shop's name, on a front."""
-        g = self.place(self.world(pos, h, local), h)
-        g.box((-w / 2, -0.7, -hgt / 2), (w / 2, 0, hgt / 2), WOOD, board, tile=6)
-        g.trimBox((-w / 2, -0.7, -hgt / 2), (w / 2, 0, hgt / 2), WOOD, board, trim, t=0.9, faces='s')
-        tp = self.world(pos, h, (local[0], local[1] - 1.3, local[2] - scale * 0.3))
-        self.text(words, tp, h, scale, ink, maxWidth=w - 2.5)
-
-    def __hq(self):
-        """Toon HQ: a toy fort of painted blocks with two round towers."""
-        pos = HQ
-        h = facing(pos, (0, 0))
-        g = self.place(pos, h)
-        W, D, H = 34.0, 26.0, 18.0
-        g.trimBox((-W / 2, 0, 0), (W / 2, D, H), WOOD, CREAM, BLUE, t=1.4, tile=10)
-        # Battlements along the top.
-        for i in range(7):
-            x = -W / 2 + 2.4 + i * (W - 4.8) / 6
-            g.trimBox((x - 1.8, -0.2, H), (x + 1.8, 3.2, H + 3.6), WOOD, BLUE, BLUE_D, t=0.5, tile=4)
-        # The middle: a taller red keep with the HQ star.
-        g.trimBox((-8, 4, H), (8, D - 4, H + 10), WOOD, RED, YELLOW, t=1.2, tile=8)
-        for i in range(4):
-            x = -6.5 + i * 13 / 3.0
-            g.trimBox((x - 1.5, 3.8, H + 10), (x + 1.5, 7, H + 12.6), WOOD, YELLOW, YELLOW_D, t=0.4, tile=4)
-        star = [(math.cos(math.radians(90 + 36 * i)) * (5.0 if i % 2 == 0 else 2.2),
-                 math.sin(math.radians(90 + 36 * i)) * (5.0 if i % 2 == 0 else 2.2)) for i in range(10)]
-        g.at((0, 3.6, H + 5.0), (0, 90, 0)).extrude(star, 0, 0.8, WOOD, YELLOW, sideColor=YELLOW_D)
-        # Two round towers at the front corners, pointed roofs.
-        for sx in (-1, 1):
-            tg = g.at((sx * (W / 2 + 1), 1.0, 0), (0, 0, 0))
-            tg.cyl(6.5, 26, WOOD, RED, sides=20, caps='', tile=8)
-            tg.at((0, 0, 9), (0, 0, 0)).torus(6.5, 0.6, WOOD, YELLOW, seg=24, sides=6)
-            tg.at((0, 0, 18), (0, 0, 0)).torus(6.5, 0.6, WOOD, YELLOW, seg=24, sides=6)
-            tg.cyl(7.8, 1.2, WOOD, YELLOW, z0=26, sides=20, caps='tb')
-            tg.cyl(7.4, 11, WOOD, BLUE, z0=27.2, sides=20, rTop=0.4, caps='', tile=8)
-            tg.sphere((0, 0, 38.6), 1.1, WOOD, YELLOW, rings=6, sides=10)
-            # A little flag.
-            tg.box((-0.15, -0.15, 38.6), (0.15, 0.15, 43), WOOD, CREAM_D, tile=2)
-            tg.at((0, 0, 41.4), (0, 0, 0)).quad(WOOD, [(0, 0, 0), (3.4, 0, 0.8), (0, 0, 1.6), (0, 0, 1.6)],
-                                                [(0, 0), (1, 0), (1, 1), (0, 1)], YELLOW, nrms=[(0, -1, 0)] * 4)
-            # Arrow-slit windows.
-            for z in (12, 21):
-                tg.box((-0.8, -6.7, z), (0.8, -6.2, z + 3.4), WOOD, INK, tile=2)
-        # The door in the middle, a sign over it.
-        self.__door(pos, h, (0, -0.25, 0), color=(0.8, 0.86, 1.0, 1))
-        self.__sign(pos, h, (0, -0.3, 12.3), 'TOON HQ', 18, 4.6, board=YELLOW, trim=BLUE_D, ink=BLUE_D, scale=3.4)
-        # The periscope and telescope look about, as on every Toon HQ.
+        for flat in geom.findAllMatches('**/door_flat*'):
+            suffix = flat.getName()[len('door_flat'):]
+            building = flat.getParent()
+            for leaf in ('leftDoor', 'rightDoor'):
+                for door in building.findAllMatches('**/%s%s' % (leaf, suffix)):
+                    door.hide()
+        for origin in geom.findAllMatches('**/suit_building_origin'):
+            origin.removeNode()
+        # The moving bits Toontown Central has: Toon HQ's periscope and
+        # telescope, the Pet Shop's fish.
         from direct.actor.Actor import Actor
-        self.hqToys = []
-        for model, anim, local, s in (('phase_3.5/models/props/HQ_periscope-mod', 'phase_3.5/models/props/HQ_periscope-chan', (-4, D - 8, H + 10), 2.2),
-                                      ('phase_3.5/models/props/HQ_telescope-mod', 'phase_3.5/models/props/HQ_telescope-chan', (12, D - 4, H), 2.0)):
+        hq = geom.find('**/tb20:toon_landmark_hqTT_DNARoot')
+        for model, anim, pos, hpr in (('phase_3.5/models/props/HQ_periscope-mod', 'phase_3.5/models/props/HQ_periscope-chan', (7.17, -7.67, 19.07), (110, 0, 0)),
+                                      ('phase_3.5/models/props/HQ_telescope-mod', 'phase_3.5/models/props/HQ_telescope-chan', (7.003, 0, 13.191), (168, 81, 0))):
             a = Actor(model, {'anim': anim})
-            a.reparentTo(self.root)
-            a.setPos(self.world(pos, h, local))
-            a.setH(h + 180)
-            a.setScale(s)
+            a.reparentTo(hq)
+            a.setPos(*pos)
+            a.setHpr(*hpr)
+            a.setScale(4)
             a.loop('anim')
             self.kit.extra.append(a)
-        self.solidRect(pos, h, -W / 2 - 7.5, 0.0, W / 2 + 7.5, D, height=18)
-        # Windows each side of the door.
-        for sx in (-1, 1):
-            wg = g.at((sx * 11, -0.05, 6), (0, 0, 0))
-            self.__window(wg, 5.0, 6.0, BLUE)
-
-    def __window(self, g, w, hgt, frame):
-        """A painted toy window: a frame, four panes and a sill."""
-        g.box((-w / 2, -0.3, 0), (w / 2, 0.02, hgt), WOOD, frame, tile=2)
-        e = 0.7
-        g.quad(WOOD, [(-w / 2 + e, -0.33, e), (w / 2 - e, -0.33, e), (w / 2 - e, -0.33, hgt - e), (-w / 2 + e, -0.33, hgt - e)],
-               [(0, 0), (1, 0), (1, 1), (0, 1)], (0.55, 0.74, 0.9, 1))
-        g.box((-0.18, -0.42, e), (0.18, -0.3, hgt - e), WOOD, frame, tile=2)
-        g.box((-w / 2 + e, -0.42, hgt / 2 - 0.18), (w / 2 - e, -0.3, hgt / 2 + 0.18), WOOD, frame, tile=2)
-        g.box((-w / 2 - 0.5, -1.0, -0.5), (w / 2 + 0.5, 0.02, 0.05), WOOD, CREAM, tile=2)
-
-    def __gagShop(self):
-        """The Gag Shop: red and yellow blocks piled up, a pie on top."""
-        pos = GAG
-        h = facing(pos, (0, 0))
-        g = self.place(pos, h)
-        W, D = 30.0, 24.0
-        g.trimBox((-W / 2, 0, 0), (W / 2, D, 16), WOOD, RED, YELLOW, t=1.4, tile=10)
-        g2 = g.at((1.0, D / 2, 16), (4, 0, 0))
-        g2.trimBox((-11, -10, 0), (11, 10, 12), WOOD, YELLOW, RED, t=1.2, tile=10)
-        # Gable roof, blue.
-        g3 = g2.at((0, 0, 12), (0, 0, 0))
-        g3.prism((-12, -11, 0), (12, 11, 8), WOOD, BLUE, gable=CREAM, overhang=1.0, tile=8)
-        # A striped awning over the door.
-        for i in range(8):
-            x0 = -9 + i * 18 / 8.0
-            col = RED if i % 2 == 0 else CREAM
-            g.quad(WOOD, [(x0, -5, 10.2), (x0 + 18 / 8.0, -5, 10.2), (x0 + 18 / 8.0, 0, 12.2), (x0, 0, 12.2)],
-                   [(0, 0), (1, 0), (1, 1), (0, 1)], col)
-            g.quad(WOOD, [(x0, 0, 12.2), (x0 + 18 / 8.0, 0, 12.2), (x0 + 18 / 8.0, -5, 10.2), (x0, -5, 10.2)],
-                   [(0, 0), (1, 0), (1, 1), (0, 1)], col)
-            g.sphere((x0 + 18 / 16.0, -5, 10.0), (18 / 16.0, 0.3, 0.7), WOOD, col, rings=4, sides=8, lat=(-90, 0))
-        self.__door(pos, h, (0, -0.25, 0), color=(1, 1, 1, 1), kind='door_double_square')
-        self.__sign(pos, h, (0, -0.3, 14.2), 'GAG SHOP', 22, 3.8, board=CREAM, trim=RED, ink=RED_D, scale=3.2)
-        for sx in (-1, 1):
-            self.__window(g.at((sx * 11.0, -0.05, 4.0), (0, 0, 0)), 4.5, 5.0, YELLOW_D)
-        # The shop's sign of signs: a giant cream pie on a plate, hung on the
-        # upper block's front.
-        g2.at((0, -10.1, 6.2), (0, 90, 0)).cyl(6.4, 0.5, WOOD, CREAM, sides=28, caps='tb')
-        g2.at((0, -10.4, 6.2), (0, 90, 0)).torus(6.4, 0.5, WOOD, BLUE, seg=32, sides=6)
-        # The pie itself, painted wood: a fluted golden crust, a heap of
-        # cream and a cherry.
-        pg = g2.at((0, -10.6, 6.2), (0, 90, 0))
-        crust = (0.9, 0.62, 0.32, 1)
-        pg.cyl(5.0, 1.0, WOOD, crust, sides=24, rTop=5.4, caps='')
-        for i in range(16):
-            a = 2 * math.pi * i / 16
-            pg.sphere((5.2 * math.cos(a), 5.2 * math.sin(a), 1.0), 0.75, WOOD, crust, rings=5, sides=8)
-        pg.sphere((0, 0, 1.0), (4.8, 4.8, 2.0), WOOD, CREAM, rings=6, sides=20, lat=(0, 90))
-        for i in range(6):
-            a = 2 * math.pi * i / 6 + 0.3
-            pg.sphere((2.9 * math.cos(a), 2.9 * math.sin(a), 2.0), (1.1, 1.1, 0.9), WOOD, CREAM, rings=5, sides=10, lat=(0, 90))
-        pg.sphere((0, 0, 3.4), 0.9, WOOD, RED, rings=6, sides=10)
-        for sx in (-1, 1):
-            g2.at((sx * 8.2, -10.05, 2.0), (0, 0, 0)).box((-1.6, -0.3, 0), (1.6, 0, 8.6), WOOD, RED, tile=3)
-        self.solidRect(pos, h, -W / 2, 0, W / 2, D, height=16)
-
-    def __clothes(self):
-        """The Clothing Shop: a dollhouse with a red roof and big buttons."""
-        pos = CLOTHES
-        h = facing(pos, (0, 0))
-        g = self.place(pos, h)
-        W, D = 32.0, 24.0
-        g.trimBox((-W / 2, 0, 0), (W / 2, D, 22), WOOD, BLUE, CREAM, t=1.4, tile=10)
-        g.at((0, D / 2, 22), (0, 0, 0)).prism((-W / 2, -D / 2, 0), (W / 2, D / 2, 12), WOOD, RED, gable=CREAM, overhang=1.4, tile=8)
-        # A chimney like a thread spool.
-        cg = g.at((9, D * 0.65, 22), (0, 0, 0))
-        cg.cyl(2.4, 12, WOOD, CREAM, sides=14, caps='', tile=4)
-        cg.cyl(3.4, 1.0, WOOD, YELLOW, z0=0, sides=14, caps='t')
-        cg.cyl(3.4, 1.0, WOOD, YELLOW, z0=11.5, sides=14, caps='tb')
-        cg.cyl(2.5, 9.6, WOOD, RED, z0=1.6, sides=14, caps='', tile=2)
-        # Upstairs windows and a round attic window.
-        for sx in (-1, 1):
-            self.__window(g.at((sx * 9.0, -0.05, 15.2), (0, 0, 0)), 5.0, 5.5, CREAM)
-            self.__window(g.at((sx * 11.0, -0.05, 3.5), (0, 0, 0)), 4.5, 5.0, CREAM)
-        # Giant buttons on the gable.
-        bg = g.at((0, -0.1, 27.5), (0, 90, 0))
-        bg.cyl(3.2, 0.7, WOOD, YELLOW, sides=20, caps='tb', z0=0)
-        for dx, dz in ((-0.9, -0.9), (0.9, -0.9), (0.9, 0.9), (-0.9, 0.9)):
-            bg.at((dx, dz, 0.75), (0, 0, 0)).cyl(0.42, 0.05, PLAIN, YELLOW_D, sides=8, caps='t')
-        self.__door(pos, h, (0, -0.25, 0), color=(1, 1, 1, 1), kind='door_double_clothshop', scale=1.1)
-        self.__sign(pos, h, (0, -0.3, 12.4), 'CLOTHING SHOP', 24, 3.8, board=CREAM, trim=RED, ink=BLUE_D, scale=3.0)
-        # A dressmaker's dummy and a spool by the door.
-        sp = self.place(self.world(pos, h, (-12.5, -5, 0)), h)
-        sp.cyl(2.0, 0.8, WOOD, CREAM, sides=14, caps='t')
-        sp.cyl(1.4, 3.2, WOOD, RED, z0=0.8, sides=14, caps='', tile=2)
-        sp.cyl(2.0, 0.8, WOOD, CREAM, z0=4.0, sides=14, caps='t')
-        self.kit.wallTube(tuple(self.world(pos, h, (-12.5, -5, 0))), 2.1, 5)
-        self.solidRect(pos, h, -W / 2, 0, W / 2, D, height=22)
-
-    def __pets(self):
-        """The Pet Shop: a round toy drum with a cone roof, fish swimming
-        over the sign."""
-        pos = PETS
-        h = facing(pos, (0, 0))
-        g = self.place(pos, h)
-        R = 15.0
-        c = g.at((0, R + 2, 0), (0, 0, 0))
-        c.cyl(R, 22, WOOD, YELLOW, sides=28, caps='', tile=10)
-        # Drum cords zig-zagging between red rims.
-        for z in (0.0, 20.6):
-            c.at((0, 0, z + 0.7), (0, 0, 0)).torus(R + 0.4, 0.9, WOOD, RED, seg=32, sides=8)
-        for i in range(14):
-            a0 = math.radians(360.0 * i / 14)
-            a1 = math.radians(360.0 * (i + 0.5) / 14)
-            p0 = ((R + 0.25) * math.cos(a0), (R + 0.25) * math.sin(a0), 1.6)
-            p1 = ((R + 0.25) * math.cos(a1), (R + 0.25) * math.sin(a1), 19.8)
-            p2 = ((R + 0.25) * math.cos(math.radians(360.0 * (i + 1) / 14)), (R + 0.25) * math.sin(math.radians(360.0 * (i + 1) / 14)), 1.6)
-            c.tube([p0, p1, p2], 0.28, WOOD, CREAM, sides=6)
-        c.cyl(R + 1.5, 1.2, WOOD, BLUE, z0=22, sides=28, caps='b')
-        c.cyl(R + 1.5, 13, WOOD, BLUE, z0=23.2, sides=28, rTop=1.0, caps='', tile=8)
-        c.sphere((0, 0, 36.6), 1.8, WOOD, RED, rings=6, sides=12)
-        # A flat front porch block to hang the door and sign on.
-        g.trimBox((-9, -1.0, 0), (9, 4, 11.5), WOOD, CREAM, BLUE, t=1.0, tile=8)
-        g.at((0, 1.5, 11.5), (0, 0, 0)).prism((-10, -3.2, 0), (10, 3.2, 3.4), WOOD, RED, gable=RED_D, tile=6)
-        self.__door(pos, h, (0, -1.25, 0), color=(0.86, 1.0, 0.86, 1), kind='door_double_round')
-        self.__sign(pos, h, (0, 1.6, 17.4), 'PET SHOP', 18, 4.2, board=CREAM, trim=GREEN, ink=(0.26, 0.5, 0.22, 1), scale=3.2)
-        from direct.actor.Actor import Actor
+        pet = geom.find('**/sz22:toon_landmark_TT_pet_shop_DNARoot')
         fish = Actor('phase_4/models/props/exteriorfish-zero', {'swim': 'phase_4/models/props/exteriorfish-swim'})
-        fish.reparentTo(self.root)
-        fish.setPos(self.world(pos, h, (0, 7.0, -10.0)))
-        fish.setH(h)
+        fish.reparentTo(pet)
         fish.loop('swim')
         self.kit.extra.append(fish)
-        # Paw prints walking up to the door.
-        for i in range(5):
-            wp = self.world(pos, h, ((-1.6 if i % 2 else 1.6), -5 - i * 3.6, 0.07))
-            self.d.at(wp, (h, 0, 0)).sphere((0, 0, 0), (0.9, 1.1, 0.01), PLAIN, (0.62, 0.48, 0.38, 1), rings=2, sides=10, lat=(0, 90))
-        cw = self.world(pos, h, (0, R + 2))
-        self.kit.wallTube((cw[0], cw[1], 0), R + 0.6, 22)
-        self.solidRect(pos, h, -9, -1.0, 9, 4, height=11.5)
+        # Each shop turned so its own door looks at the plaza's middle and
+        # stands on its spot (the models' fronts face different ways).
+        for root, spot in (('**/tb20:toon_landmark_hqTT_DNARoot', HQ), ('**/sz19:toon_landmark_TT_gag_shop_DNARoot', GAG),
+                           ('**/sz21:toon_landmark_TT_clothes_shop_DNARoot', CLOTHES), ('**/sz22:toon_landmark_TT_pet_shop_DNARoot', PETS)):
+            bldg = geom.find(root)
+            door = bldg.find('**/door_origin_0')
+            if door.isEmpty():
+                door = bldg.find('**/door_origin')
+            bldg.setPosHpr(0, 0, 0, 0, 0, 0)
+            dp = door.getPos(bldg)
+            dh = door.getH(bldg)
+            hb = facing(spot, (0, 0)) - dh
+            bldg.setH(hb)
+            off = bldg.getRelativeVector(geom, Vec3(1, 0, 0))
+            w = geom.getRelativePoint(bldg, dp)
+            bldg.setPos(spot[0] - w[0], spot[1] - w[1], 0)
+        for name in ('**/prop_trolley_station_DNARoot',):
+            station = geom.find(name)
+            station.setName('toy_trolley_station')
 
-    def __party(self):
-        pos = PARTY
-        h = facing(pos, (0, 0))
-        gate = self.kit.model('phase_4/models/modules/partyGate_TT', pos=pos, h=h)
-        self.kit.footprint(gate, below=8.0)
-
-    def __trolley(self):
-        pos = TROLLEY
-        h = facing(pos, (0, 0))
-        # The station model's platform runs from its origin 30 feet along
-        # x; its middle goes on the spot. Its tunnels and hill are for a
-        # playground's hillside (stashed, as on the Cog HQ maps): toy block
-        # piles stand at each end instead.
-        m = self.kit.model('phase_4/models/modules/trolley_station_TT', pos=self.world(pos, h, (-15, -4)), h=h, keepCollisions=True)
-        m.setName('toy_trolley_station')
-        for name in ('hill_1', 'tunnelL', 'tunnelR'):
-            for n in m.findAllMatches('**/' + name):
-                n.stash()
-        # The plaque on the awning, lettered as on the playgrounds.
-        self.text('TROLLEY', self.world(pos, h, (-0.4, -9.2, 16.6)), h, 2.6, RED_D, maxWidth=11.0)
+    def __hill(self, center, h, radii, trees=0):
+        """A grassy Toontown hill, like the ones the playgrounds' tunnels
+        and trolley are set into."""
+        g = self.place(center, h)
+        g.sphere((0, 0, -2.0), radii, GRASS, (0.74, 0.9, 0.52, 1), rings=10, sides=28, uvScale=(10, 3), lat=(0, 90))
         r = self.r
+        for i in range(trees):
+            a = math.radians(r.uniform(20, 160))
+            d = r.uniform(0.35, 0.7)
+            lx, ly = math.cos(a) * radii[0] * d, math.sin(a) * radii[1] * d
+            z = radii[2] * math.sqrt(max(0.0, 1 - (lx / radii[0]) ** 2 - (ly / radii[1]) ** 2)) - 2.5
+            wp = self.world(center, h, (lx, ly))
+            self.kit.part('phase_3.5/models/props/trees', r.choice(('prop_tree_small', 'prop_tree_large', 'prop_tree_fat')),
+                          pos=(wp[0], wp[1], z), h=r.uniform(0, 360), scale=r.uniform(1.0, 1.4))
+
+    def __hills(self):
+        for mouth, h, street, theme in TUNNELS:
+            out = Vec3(mouth[0], mouth[1], 0)
+            out.normalize()
+            th = facing(mouth, (0, 0))
+            self.__hill(Vec3(mouth[0], mouth[1], 0) + out * 60.0, th, (60.0, 32.0, 32.0), trees=3)
+            {'key': self.__keyGate, 'marble': self.__marbleGate, 'blocks': self.__blockGate}[theme](mouth, th)
+        # The trolley's hill behind it, and a hill at each end round the
+        # little tunnels it drives into.
+        th = facing(TROLLEY, (0, 0))
+        self.__hill(self.world(TROLLEY, th, (0, 50)), th, (56.0, 28.0, 28.0), trees=3)
+        for sx in (-1, 1):
+            self.__hill(self.world(TROLLEY, th, (sx * 29.0, 14.0)), th, (12.0, 22.0, 24.0))
+
+    def __keyGate(self, mouth, th):
+        """Wind-Up Way: a giant winding key turning in the hill over the
+        tunnel, as if the hill were a wind-up toy."""
+        key = self.part('windKey')
+        kg = key.geo
+        kg.cyl(1.4, 8.0, WOOD, YELLOW_D, sides=14, caps='t')
+        kg.cyl(2.6, 1.4, WOOD, YELLOW, z0=0, sides=16, caps='t')
+        bow = kg.at((0, 0, 13.0), (0, 0, 90))
+        for sx in (-1, 1):
+            bow.at((0, sx * 5.2, 0), (0, 0, 0)).torus(4.0, 1.25, WOOD, YELLOW, seg=28, sides=10)
+        bow.cyl(2.4, 2.4, WOOD, YELLOW_D, z0=-1.2, sides=16, caps='tb')
+        kg.at((0, 0, 7.6), (0, 0, 0)).cyl(1.6, 2.6, WOOD, YELLOW, sides=12, caps='t')
+        # A brass plate where it goes into the hill.
+        top = self.world(mouth, th, (0, 52, 0))
+        self.windKey = self.keep(key, (top[0], top[1], 29.0))
+        self.windKey.setScale(2.0)
+        plate = self.place((top[0], top[1], 28.0), th)
+        plate.cyl(6.5, 1.6, WOOD, YELLOW_D, sides=24, caps='t')
+        plate.at((0, 0, 1.6), (0, 0, 0)).torus(6.5, 0.6, WOOD, YELLOW, seg=24, sides=6)
+
+    def __marbleGate(self, mouth, th):
+        """Loose Marble Lane: an arch of big marbles over the path just
+        in front of the tunnel, and a few rolled loose."""
+        g = self.place(mouth, th)
+        mr = 2.4
+        ar = 14.0
+        spring = 9.0
+        y = -10.0
+        ring = [(-ar - mr, z) for z in (mr, mr * 3 - 0.2)]
+        for i in range(13):
+            a = math.pi * i / 12
+            ring.append((-(ar + mr) * math.cos(a), spring + (ar + mr) * math.sin(a)))
+        ring += [(ar + mr, z) for z in (mr * 3 - 0.2, mr)]
+        for i, (xx, zz) in enumerate(ring):
+            g.sphere((xx, y, zz), mr, MARBLES[i % 4], (1, 1, 1, 1), rings=10, sides=16)
+        g.sphere((0, y, spring + ar + mr * 3 + 1.0), 3.6, MARBLES[0], (1, 1, 1, 1), rings=12, sides=18)
+        for sx in (-1, 1):
+            wp = self.world(mouth, th, (sx * (ar + mr), y))
+            self.kit.wallTube((wp[0], wp[1], 0), mr + 0.3, spring)
+        for i, (lx, ly) in enumerate(((-ar - 9, -16), (ar + 8, -19), (ar + 4, -25))):
+            wp = self.world(mouth, th, (lx, ly))
+            self.g.sphere((wp[0], wp[1], 1.6), 1.6, MARBLES[(i + 1) % 4], (1, 1, 1, 1), rings=8, sides=14)
+            self.kit.wallTube((wp[0], wp[1], 0), 1.7, 3.2)
+
+    def __blockGate(self, mouth, th):
+        """Building Block Boulevard: a toy block-set gateway over the path
+        (round columns, an arch block, a triangle and cubes on top) and
+        blocks stacked up each side of the tunnel."""
+        r = self.r
+        g = self.place(mouth, th)
+        y = -10.0
+        ar = 17.0
+        colZ = 11.0
+        for sx, col in ((-1, RED), (1, BLUE)):
+            cg = g.at((sx * (ar + 3.2), y, 0), (0, 0, 0))
+            cg.cyl(3.0, colZ, WOOD, col, sides=20, caps='t', tile=6)
+            cg.at((0, 0, colZ * 0.5), (0, 0, 0)).torus(3.0, 0.35, WOOD, CREAM, seg=20, sides=6)
+            wp = self.world(mouth, th, (sx * (ar + 3.2), y))
+            self.kit.wallTube((wp[0], wp[1], 0), 3.2, colZ)
+        self.__archBlock(g.at((0, y, colZ), (0, 0, 0)), ar + 5.0, ar, 4.0, 4.5, YELLOW, YELLOW_D)
+        archTop = colZ + ar * 0.9 + 4.0 * 0.55
+        tg = g.at((0, y, archTop), (0, 0, 0))
+        tg.prism((-6, -2.25, 0), (6, 2.25, 6.0), WOOD, RED, gable=RED_D, tile=6)
+        tg.at((0, 0, 0), (90, 0, 0)).prism((-2.25, -6, 0), (2.25, 6, 6.0), WOOD, RED, gable=RED, tile=6)
+        for sx, col, s, letter in ((-1, BLUE, 4.6, 'B'), (1, GREEN, 4.2, 'K')):
+            bh = th + r.uniform(-12, 12)
+            wp = self.world(mouth, th, (sx * 16.5, y))
+            self.letterBlock(self.place((wp[0], wp[1], archTop), bh), s, col, letter, letterFaces='sn', worldFrame=((wp[0], wp[1]), bh))
+        # Stacks of blocks against the hill each side of the tunnel.
+        abc = 'TOYBLOCKS'
+        n = 0
         for sx in (-1, 1):
             z = 0.0
-            for i, (s, col) in enumerate(((7.5, BLUE if sx < 0 else RED), (6.0, YELLOW), (4.6, CREAM))):
-                lx = sx * (19.0 + (i % 2) * 0.8)
-                bh = h + r.uniform(-10, 10)
-                wp = self.world(pos, h, (lx, 6.0))
-                self.letterBlock(self.place((wp[0], wp[1], z), bh), s, col, 'TRO'[i] if sx < 0 else 'LEY'[i], letterFaces='sn',
+            for i, (sz, col) in enumerate(((8.0, RED if sx < 0 else YELLOW), (6.6, BLUE), (5.2, CREAM if sx < 0 else RED))):
+                bh = th + r.uniform(-14, 14)
+                wp = self.world(mouth, th, (sx * (31.0 + i * 0.6), -2.0))
+                self.letterBlock(self.place((wp[0], wp[1], z), bh), sz, col, abc[n % len(abc)], letterFaces='sn',
                                  worldFrame=((wp[0], wp[1]), bh))
-                z += s
-            self.solidRect(pos, h, sx * 19.0 - 4.0, 2.0, sx * 19.0 + 4.0, 10.0, height=16)
+                n += 1
+                z += sz
+            wp = self.world(mouth, th, (sx * 31.0, -2.0))
+            self.kit.wallTube((wp[0], wp[1], 0), 5.4, 12)
 
     # --- The pond ---
 
@@ -1302,7 +1139,8 @@ class ToyboxTerrace(PreviewMap):
         bob = math.sin(t * 1.7)
         self.jack.setSz(self.jackScale * (1.0 + 0.05 * bob))
         self.jack.setR(2.5 * math.sin(t * 0.9))
-        self.windKey.setH(t * 30.0)
+        if getattr(self, "windKey", None) is not None:
+            self.windKey.setH(t * 30.0)
         for np, key, home, h, phase in self.ducks:
             s = math.sin(t * 1.4 + phase)
             np.setR(5.0 * math.sin(t * 6.0 + phase))
