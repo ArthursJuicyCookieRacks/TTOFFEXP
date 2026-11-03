@@ -281,29 +281,9 @@ class ActivityPages:
         self.refreshFishing()
 
     def makeBingoIcon(self):
-        from toontown.fishing import BingoGlobals
-        model = self.activityModel('phase_4/models/gui/FishBingo')
-        icon = DirectFrame(parent=self.page, relief=None, state=DGG.NORMAL, pos=(0.6, 0, 0.85))
-        card = model.find('**/g').copyTo(icon)
-        card.setHpr(0, 90, 0)
-        game = getattr(self.bingoManager(), 'typeId', 0) or 0
-        try:
-            card.setColor(*BingoGlobals.getColor(game))
-        except Exception:
-            pass
-        low, high = card.getTightBounds(icon) or (Point3(-1), Point3(1))
-        size = 0.2 / max(0.001, high[2] - low[2])
-        card.setScale(card.getScale() * size)
-        card.setPos(-(low[0] + high[0]) / 2.0 * size, -1, -(low[2] + high[2]) / 2.0 * size)
-        # A little 5 by 5 grid on it, with the free middle square.
-        for row in range(5):
-            for column in range(5):
-                cell = DirectFrame(parent=icon, relief=DGG.FLAT, frameSize=(-0.011, 0.011, -0.011, 0.011),
-                                   frameColor=(0.85, 0.15, 0.15, 1) if (row, column) == (2, 2) else (1, 1, 1, 0.9),
-                                   pos=((column - 2) * 0.027, -2, 0.035 - row * 0.027))
-        self.label('BINGO', (0, 0, -0.165), scale=0.042, parent=icon, font=self.signFont, fg=(0.85, 0.15, 0.15, 1))
-        low, high = icon.getTightBounds(icon) or (Point3(-0.1), Point3(0.1))
-        icon['frameSize'] = (low[0], high[0], low[2], high[2])
+        # Arthur: just a yellow button that says Bingo.
+        icon = self.panel((0.58, 0, 0.82), 0.3, 0.14, GOLD, touchable=True, text='Bingo', text_scale=0.065,
+                          text_pos=(0, -0.022), text_fg=INK, text_font=self.signFont)
         self.bingoIcon = icon
         self.tap(icon, self.openBingo)
 
