@@ -472,6 +472,7 @@ class OfflineLauncher(DirectObject):
         self.npcLabel['text'] = str(count)
 
     def showCrashReport(self, text):
+        from toontown.toonbase import CrashReport
         # Over the whole launcher, until the player goes on.
         aspect = base.getAspectRatio()
         frame = DirectFrame(parent=self.top, relief=DGG.FLAT, frameColor=(0.05, 0.05, 0.12, 1),
@@ -479,13 +480,24 @@ class OfflineLauncher(DirectObject):
         scale = 0.034
         DirectLabel(parent=frame, relief=None, pos=(-0.96, 0, 0.93), scale=(scale / aspect, 1, scale),
                     text_align=TextNode.ALeft, text_fg=(1, 0.9, 0.1, 1), text_wordwrap=1.9 / (scale / aspect),
-                    text='The game closed by itself last time. Please send a screenshot of this screen.')
+                    text='The game closed by itself last time. Please send a screenshot of this screen, or press SAVE LOG and send that file.')
         DirectLabel(parent=frame, relief=None, pos=(-0.96, 0, 0.85), scale=(0.03 / aspect, 1, 0.03),
                     text_align=TextNode.ALeft, text_fg=(1, 1, 1, 1), text_wordwrap=1.9 / (0.03 / aspect),
                     text=text)
-        button = self.redButton('CONTINUE', (0, 0, -0.88), frame.destroy)
+        button = self.redButton('CONTINUE', (0.3, 0, -0.88), frame.destroy)
         button.reparentTo(frame)
         button.setScale(self.canvas.getScale())
+        # The screen only has room for the key lines; the whole log can be
+        # saved and sent.
+        status = DirectLabel(parent=frame, relief=None, pos=(-0.3, 0, -0.97), scale=(0.03 / aspect, 1, 0.03),
+                             text='', text_fg=(1, 0.9, 0.1, 1))
+
+        def save():
+            status['text'] = CrashReport.saveReport()
+
+        saveButton = self.redButton('SAVE LOG', (-0.3, 0, -0.88), save)
+        saveButton.reparentTo(frame)
+        saveButton.setScale(self.canvas.getScale())
 
     def showData(self):
         from toontown.toonbase import ToonDataPanel
