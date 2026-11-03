@@ -17,6 +17,7 @@ own wood grain, with quiet cream between the bright bits.
 """
 
 import math
+import random
 
 from panda3d.core import (PNMImage, Point3, SamplerState, Texture, TextNode, TransparencyAttrib, Vec3, Vec4)
 
@@ -29,6 +30,7 @@ from toontown.survival.previewmaps.ToyGeo import Geo, Part, signText
 # true: on the plain grain cream came out grey.
 WOOD_SRC = 'phase_3.5/maps/wood_gray.jpg'
 WOOD = 'gen:paint'
+SOFT = 'gen:soft'
 PLANK = 'phase_5.5/maps/floor_wood_neutral.jpg'
 TILE = 'phase_4/maps/brick_floor_Ncont.jpg'
 WALK = 'phase_3.5/maps/sidewalk_4cont_brown.jpg'
@@ -64,6 +66,10 @@ OUTLINE = [(-HALF + CUT, -HALF), (HALF - CUT, -HALF), (HALF, -HALF + CUT), (HALF
            (HALF - CUT, HALF), (-HALF + CUT, HALF), (-HALF, HALF - CUT), (-HALF, -HALF + CUT)]
 
 TOWER = Point3(0, 128, 0)
+# The tower's body: half-width at the foot and the top, height, how far
+# it leans (feet at the top), twists (degrees) and bulges (feet).
+TW0, TW1, TZ0, TH = 18.5, 16.0, 1.2, 42.0
+TLEAN, TTWIST, TBULGE = 1.8, 3.0, 1.6
 HQ = Point3(-118, 62, 0)
 GAG = Point3(66, 126, 0)
 PARTY = Point3(-66, 128, 0)
@@ -79,6 +85,8 @@ YARD = Point3(104, -118, 0)
 TUNNELS = ((Point3(0, -HALF, 0), 0, 'Wind-Up Way', 'key'),
            (Point3(HALF, 0, 0), 90, 'Loose Marble Lane', 'marble'),
            (Point3(-HALF, 0, 0), -90, 'Building Block Boulevard', 'blocks'))
+# Each tunnel sign's lettering (Arthur: pink, red and blue).
+SIGN_INK = {'key': (0.93, 0.33, 0.62), 'marble': (0.86, 0.1, 0.12), 'blocks': (0.12, 0.36, 0.86)}
 TUNNEL_GAP = 23.0
 
 
@@ -98,7 +106,7 @@ class ToyboxTerrace(PreviewMap):
     TRUNK_SPOT = (Point3(96, -104, 0), 135)
     REACH_SPAN = 175.0
     SPAWN_RING = (35.0, 240.0)
-    NO_LANDING = ((TOWER, 30.0), (Point3(0, 96, 0), 12.0), (Point3(-76, -112, 0), 12.0), (Point3(96, -104, 0), 10.0),
+    NO_LANDING = ((TOWER, 30.0), (TROLLEY, 16.0), (Point3(0, 96, 0), 12.0), (Point3(-76, -112, 0), 12.0), (Point3(96, -104, 0), 10.0),
                   (POND, 34.0))
     # A soft summer dusk, not a dark night: the toys keep their colours.
     NIGHT_SCALE = Vec4(0.95, 0.93, 1.0, 1)
@@ -167,6 +175,7 @@ class ToyboxTerrace(PreviewMap):
         k.textures[CLOCK] = self.__clockTex()
         k.textures[DARK] = self.__darkTex()
         k.textures[WOOD] = self.__paintTex()
+        k.textures[SOFT] = self.__softTex()
 
     def __tex(self, img, name):
         tex = Texture(name)
@@ -456,9 +465,6 @@ class ToyboxTerrace(PreviewMap):
                 c = a + along * t - inward * 6.0
                 if any((c - g).length() < half + 12 for g, half in gaps):
                     continue
-                if (c - Vec3(145, 145, 0)).length() < 40:
-                    # The trolley's hill.
-                    continue
                 col = BRIGHT[(i + li) % 3] if r.random() < 0.8 else CREAM
                 s = size * r.uniform(0.94, 1.02)
                 geo = self.place((c[0], c[1], 0), h + r.uniform(-4, 4))
@@ -479,128 +485,241 @@ class ToyboxTerrace(PreviewMap):
 
     # --- The jack-in-the-box clock tower ---
 
+    def __softTex(self):
+        """Flat paint with soft, uneven brushing, like the game's painted
+        buildings: no wood grain."""
+        n = 128
+        img = PNMImage(n, n)
+        r = random.Random(7)
+        blobs = [(r.uniform(0, n), r.uniform(0, n), r.uniform(10, 30), r.uniform(-1, 1)) for _ in range(26)]
+        for y in range(n):
+            for x in range(n):
+                v = 0.0
+                for bx, by, br, bs in blobs:
+                    for ox in (-n, 0, n):
+                        for oy in (-n, 0, n):
+                            d2 = ((x - bx - ox) ** 2 + (y - by - oy) ** 2) / (br * br)
+                            if d2 < 1:
+                                v += bs * (1 - d2) ** 2
+                # Faint upright brush strokes.
+                v += 0.25 * math.sin(x * 0.9 + math.sin(y * 0.11) * 2.0)
+                v = 0.95 + 0.035 * max(-1.0, min(1.0, v))
+                img.setXel(x, y, v, v, v * 0.99)
+        tex = self.__tex(img, 'soft')
+        tex.setWrapV(SamplerState.WM_repeat)
+        return tex
+
+    def __towerPoint(self, side, u, v):
+        """A point on the tower's body: side 0..3 (south, east, north,
+        west), u -1..1 across it, v 0..1 up it. The body tapers, leans a
+        little and bulges, like the playground's crooked buildings."""
+        hw = TW0 + (TW1 - TW0) * v
+        bulge = TBULGE * (1 - u * u) * max(0.0, math.sin(math.pi * v)) ** 0.8
+        a = math.radians(-90 + 90 * side + TTWIST * v)
+        out = Vec3(math.cos(a), math.sin(a), 0)
+        along = Vec3(-out[1], out[0], 0)
+        centre = Vec3(TLEAN * v, 0, TZ0 + (TH - TZ0) * v)
+        return centre + out * (hw + bulge) + along * (u * hw)
+
+    def __towerSurface(self, g, side, u0, u1, v0, v1, color, lift=0.0, nu=8, nv=10, shade=True, tex=None):
+        """A patch of the body's skin, moved out by `lift` (a panel)."""
+        tex = tex or SOFT
+        P = self.__towerPoint
+
+        def pt(u, v):
+            p = P(side, u, v)
+            if lift:
+                du = P(side, u + 0.01, v) - P(side, u - 0.01, v)
+                dv = P(side, u, v + 0.01) - P(side, u, v - 0.01)
+                n = du.cross(dv)
+                n.normalize()
+                p = p + n * lift
+            return p
+
+        def nrm(u, v):
+            du = P(side, u + 0.01, v) - P(side, u - 0.01, v)
+            dv = P(side, u, v + 0.01) - P(side, u, v - 0.01)
+            n = du.cross(dv)
+            n.normalize()
+            return n
+
+        for i in range(nu):
+            for j in range(nv):
+                ua, ub = u0 + (u1 - u0) * i / nu, u0 + (u1 - u0) * (i + 1) / nu
+                va, vb = v0 + (v1 - v0) * j / nv, v0 + (v1 - v0) * (j + 1) / nv
+                k = 0.86 + 0.14 * (va + vb) * 0.5 if shade else 1.0
+                col = (color[0] * k, color[1] * k, color[2] * k, 1)
+                pts = [pt(ua, va), pt(ub, va), pt(ub, vb), pt(ua, vb)]
+                uvs = [(ua * 1.5, va * 3), (ub * 1.5, va * 3), (ub * 1.5, vb * 3), (ua * 1.5, vb * 3)]
+                g.quad(tex, pts, uvs, col, [nrm(ua, va), nrm(ub, va), nrm(ub, vb), nrm(ua, vb)])
+
     def __tower(self):
         k = self.kit
         x, y = TOWER[0], TOWER[1]
-        W = 38.0
-        H = 42.0
         g = self.place(TOWER)
-        hw = W / 2
-        # A plinth to stand on, one step up, and the box on it.
-        g.trimBox((-hw - 4, -hw - 4, 0), (hw + 4, hw + 4, 1.2), WOOD, CREAM, CREAM_D, t=0.8, tile=8)
-        g.trimBox((-hw, -hw, 1.2), (hw, hw, H), WOOD, RED, BLUE, t=2.0, tile=10)
-        # Each side a cream panel with a coloured inset, like a toy box's.
-        b = 4.0
-        e = 0.06
-        for face, col in (('s', CREAM), ('e', CREAM), ('w', CREAM), ('n', CREAM)):
-            fg = {'s': g, 'n': g.at((0, 0, 0), (180, 0, 0)), 'e': g.at((0, 0, 0), (90, 0, 0)), 'w': g.at((0, 0, 0), (-90, 0, 0))}[face]
-            fg.quad(WOOD, [(-hw + b, -hw - e, 1.2 + b), (hw - b, -hw - e, 1.2 + b), (hw - b, -hw - e, H - b), (-hw + b, -hw - e, H - b)],
-                    [(0, 0), (2, 0), (2, 2), (0, 2)], col)
-            fg.quad(WOOD, [(-hw + b + 1.2, -hw - 2 * e, 1.2 + b + 1.2), (hw - b - 1.2, -hw - 2 * e, 1.2 + b + 1.2),
-                           (hw - b - 1.2, -hw - 2 * e, 1.2 + b + 2.0), (-hw + b - -1.2, -hw - 2 * e, 1.2 + b + 2.0)],
-                    [(0, 0), (2, 0), (2, 0.2), (0, 0.2)], YELLOW)
-        # The clock on the front panel.
-        cz = 23.5
-        cr = 12.5
-        cg = g.at((0, -hw - 0.16, cz), (0, 0, 0))
+        P = self.__towerPoint
+        # A round, slightly lumpy plinth one step up.
+        g.cyl(TW0 + 6.0, 1.2, SOFT, CREAM, sides=40, caps='t', tile=12)
+        g.at((0, 0, 1.2), (0, 90, 0)).torus(TW0 + 6.0, 0.6, SOFT, CREAM_D, seg=40, sides=6)
+        # The body: red sides with a cream panel on each, set in a little.
+        for side in range(4):
+            self.__towerSurface(g, side, -1, 1, 0, 1, RED)
+            self.__towerSurface(g, side, -0.74, 0.74, 0.1, 0.9, CREAM, lift=0.12, nu=6, nv=8)
+            # The panel's thick yellow rim, following the bulge.
+            edge = ([(-0.74 + 1.48 * t / 8.0, 0.1) for t in range(9)] + [(0.74, 0.1 + 0.8 * t / 8.0) for t in range(1, 9)] +
+                    [(0.74 - 1.48 * t / 8.0, 0.9) for t in range(1, 9)] + [(-0.74, 0.9 - 0.8 * t / 8.0) for t in range(1, 9)])
+            rim = []
+            for u, v in edge:
+                p = P(side, u, v)
+                du = P(side, u + 0.01, v) - P(side, u - 0.01, v)
+                dv = P(side, u, v + 0.01) - P(side, u, v - 0.01)
+                n = du.cross(dv)
+                n.normalize()
+                rim.append(p + n * 0.2)
+            g.tube(rim, 0.75, SOFT, YELLOW, sides=8)
+        # Fat blue corner posts and rims, following the lean and the twist.
+        for side in range(4):
+            post = [P(side, 1, v / 10.0) for v in range(11)]
+            g.tube(post, 1.6, SOFT, BLUE, sides=10)
+            g.sphere(post[0] + Vec3(0, 0, 0.4), 1.9, SOFT, BLUE_D, rings=6, sides=10)
+            g.sphere(post[-1], 2.0, SOFT, YELLOW, rings=8, sides=12)
+            for v in (0.0, 1.0):
+                edge = [P(side, -1 + 2 * t / 12.0, v) for t in range(13)]
+                g.tube(edge, 1.25 if v else 1.5, SOFT, BLUE if v else BLUE_D, sides=8)
+        # The top, under the lid.
+        top = [P(s, u, 1.0) for s in range(4) for u in (-1,)]
+        g.quad(SOFT, [top[0], top[1], top[2], top[3]], [(0, 0), (1, 0), (1, 1), (0, 1)], RED_D)
+        # The clock on the front, an alarm clock's: fat orange-gold bezel
+        # and two bells on top.
+        cv = 0.52
+        cr = 10.5
+        front = P(0, 0, cv)
+        cy = front[1] - 0.6
+        cz = front[2]
+        cx = front[0]
+        cg = g.at((cx, cy, cz), (0, 0, 0))
         cg.quad(CLOCK, [(-cr, 0, -cr), (cr, 0, -cr), (cr, 0, cr), (-cr, 0, cr)], [(0, 0), (1, 0), (1, 1), (0, 1)], (1, 1, 1, 1))
-        # A thick yellow bezel round it.
-        ring = g.at((0, -hw - 0.2, cz), (0, 90, 0))
-        ring.torus(cr + 0.4, 0.75, WOOD, YELLOW, seg=40, sides=8)
+        g.at((cx, cy - 0.2, cz), (0, 90, 0)).torus(cr + 0.6, 1.5, SOFT, (0.98, 0.62, 0.16, 1), seg=40, sides=10)
+        for sx in (-1, 1):
+            a = math.radians(90 - 42 * sx)
+            bx, bz = cx + (cr + 2.6) * math.cos(a), cz + (cr + 2.6) * math.sin(a)
+            bell = g.at((bx, cy + 1.0, bz), (0, 0, -40 * sx))
+            bell.sphere((0, 0, 0), (4.0, 3.2, 4.0), SOFT, YELLOW, rings=8, sides=16, lat=(0, 90))
+            bell.cyl(4.0, 0.5, SOFT, YELLOW_D, z0=-0.25, sides=16, caps='b')
+            bell.sphere((0, 0, 4.2), 0.9, SOFT, (0.98, 0.62, 0.16, 1), rings=6, sides=8)
         for i in range(12):
             a = math.radians(90 - i * 30)
             num = 12 if i == 0 else i
-            self.text(str(num), (x + 8.4 * math.cos(a), y - hw - 0.3, cz + 8.4 * math.sin(a) - 1.15), 0, 3.1, INK)
-        # The hands turn with the real time (see __animate).
-        hands = self.part('clockHands')
-        hg = hands.geo
-        hg.box((-0.45, -0.15, -0.6), (0.45, 0.15, 4.6), WOOD, INK, tile=2)
-        hg.box((-0.6, -0.12, -0.8), (0.6, 0.12, 3.4), WOOD, RED_D, tile=2)
-        hg.sphere((0, -0.2, 0), 0.9, WOOD, YELLOW, rings=6, sides=10)
-        # Two hands in one part would turn together: make each its own.
+            self.text(str(num), (x + cx + 7.2 * math.cos(a), y + cy - 0.15, cz + 7.2 * math.sin(a) - 0.95), 0, 2.6, INK)
+        # The hands turn with the real time (see __animate): fat and round-ended.
         minute = self.part('minuteHand')
-        minute.geo.box((-0.5, -0.25, -1.0), (0.5, 0.0, 9.6), WOOD, INK, tile=2)
-        minute.geo.sphere((0, -0.25, 0), 0.9, WOOD, YELLOW, rings=6, sides=10)
+        minute.geo.box((-0.45, -0.25, -0.8), (0.45, 0.0, 7.6), SOFT, INK, tile=2)
+        minute.geo.sphere((0, -0.12, 7.6), 0.75, SOFT, INK, rings=5, sides=8)
+        minute.geo.sphere((0, -0.3, 0), 1.0, SOFT, (0.98, 0.62, 0.16, 1), rings=6, sides=10)
         hour = self.part('hourHand')
-        hour.geo.box((-0.75, -0.12, -0.9), (0.75, 0.12, 6.2), WOOD, RED_D, tile=2)
-        self.hourHand = self.keep(hour, (x, y - hw - 0.5, cz))
-        self.minuteHand = self.keep(minute, (x, y - hw - 0.7, cz))
+        hour.geo.box((-0.7, -0.12, -0.8), (0.7, 0.12, 4.8), SOFT, RED_D, tile=2)
+        hour.geo.sphere((0, 0, 4.8), 1.0, SOFT, RED_D, rings=5, sides=8)
+        self.hourHand = self.keep(hour, (x + cx, y + cy - 0.3, cz))
+        self.minuteHand = self.keep(minute, (x + cx, y + cy - 0.5, cz))
         # The crank on the east side, turning slowly.
+        east = P(1, 0, 0.5)
         crank = self.part('crank')
         cgeo = crank.geo
-        cgeo.at((0, 0, 0), (0, 0, 90)).cyl(0.9, 5.0, WOOD, YELLOW_D, sides=12)
-        cgeo.box((4.4, -0.7, -0.7), (5.6, 0.7, 8.0), WOOD, YELLOW, tile=2)
-        cgeo.at((5.0, 0, 8.0), (0, 0, 90)).cyl(0.75, 4.0, WOOD, YELLOW_D, sides=10)
-        cgeo.sphere((9.4, 0, 8.0), (1.6, 1.6, 1.6), WOOD, RED, rings=8, sides=12)
-        self.crank = self.keep(crank, (x + hw, y, 24))
-        # The lid, flung open backwards on its hinge.
-        lid = g.at((0, hw, H), (0, -118, 0))
-        lid.trimBox((-hw - 1, -W - 1, 0), (hw + 1, 1, 2.2), WOOD, CREAM, RED, t=1.2, tile=10, faces='nsewtb')
-        # The lid's painted inside, the side the plaza sees: a blue panel
-        # with a yellow border and stars.
+        cgeo.at((0, 0, 0), (0, 0, 90)).cyl(1.1, 4.0, SOFT, YELLOW_D, sides=12)
+        cgeo.at((0, 0, 0), (0, 0, 90)).cyl(2.2, 0.9, SOFT, YELLOW, sides=16, caps='tb')
+        cgeo.box((3.4, -0.9, -0.9), (4.8, 0.9, 7.0), SOFT, YELLOW, tile=2)
+        cgeo.at((4.1, 0, 7.0), (0, 0, 90)).cyl(0.8, 3.6, SOFT, YELLOW_D, sides=10)
+        cgeo.sphere((8.0, 0, 7.0), (1.9, 1.9, 1.9), SOFT, RED, rings=8, sides=12)
+        self.crank = self.keep(crank, (x + east[0] - 0.5, y + east[1], east[2]))
+        # The lid, flung open backwards on its hinge, a little warped.
+        hw1 = TW1
+        hinge = P(2, 0, 1.0)
+        lid = g.at((hinge[0], hinge[1], TH), (TTWIST, -118, 0))
+        W = 2 * hw1
+        lid.trimBox((-hw1 - 1.2, -W - 1.2, 0), (hw1 + 1.2, 1.2, 2.4), SOFT, CREAM, RED, t=1.4, tile=4, faces='nsewtb')
+        for ex, ey0, ey1 in ((-hw1 - 1.2, -W - 1.2, 1.2), (hw1 + 1.2, -W - 1.2, 1.2)):
+            lid.tube([(ex, ey0, 1.2), (ex, ey1, 1.2)], 1.3, SOFT, BLUE, sides=8)
+        for ey in (-W - 1.2, 1.2):
+            lid.tube([(-hw1 - 1.2, ey, 1.2), (hw1 + 1.2, ey, 1.2)], 1.3, SOFT, BLUE, sides=8)
         inner = lid.at((0, -W / 2, -0.06), (0, 180, 0))
         e = 3.0
-        inner.quad(WOOD, [(-hw + e, -W / 2 + e, 0), (hw - e, -W / 2 + e, 0), (hw - e, W / 2 - e, 0), (-hw + e, W / 2 - e, 0)],
+        inner.quad(SOFT, [(-hw1 + e, -W / 2 + e, 0), (hw1 - e, -W / 2 + e, 0), (hw1 - e, W / 2 - e, 0), (-hw1 + e, W / 2 - e, 0)],
                    [(0, 0), (3, 0), (3, 3), (0, 3)], BLUE)
-        inner2 = lid.at((0, -W / 2, -0.03), (0, 180, 0))
-        inner2.quad(WOOD, [(-hw + e - 1.2, -W / 2 + e - 1.2, 0), (hw - e + 1.2, -W / 2 + e - 1.2, 0), (hw - e + 1.2, W / 2 - e + 1.2, 0),
-                           (-hw + e - 1.2, W / 2 - e + 1.2, 0)], [(0, 0), (3, 0), (3, 3), (0, 3)], YELLOW)
-        star = [(math.cos(math.radians(90 + 36 * i)) * (1.0 if i % 2 == 0 else 0.42),
-                 math.sin(math.radians(90 + 36 * i)) * (1.0 if i % 2 == 0 else 0.42)) for i in range(10)]
-        for sx, sy, ss in ((-7, -7, 4.2), (7, 6, 5.0), (-6, 8, 3.0), (8, -8, 2.6), (0, 0, 2.2)):
-            pts = [(sx + px * ss, sy + py * ss) for px, py in star]
-            lid.at((0, -W / 2, -0.09), (0, 180, 0)).extrude(pts, 0, 0.02, WOOD, YELLOW, bottom=False)
-        # Jack: a coiled spring, his ruff, his head and jester's hat. He
-        # bobs on the spring (__animate).
+        star = [(math.cos(math.radians(90 + 36 * i)) * (1.0 if i % 2 == 0 else 0.45),
+                 math.sin(math.radians(90 + 36 * i)) * (1.0 if i % 2 == 0 else 0.45)) for i in range(10)]
+        for sx, sy, ss, rot in ((-6, -6, 4.0, 8), (6, 5, 4.6, -12), (-5, 7, 2.8, 20), (7, -7, 2.4, -6), (0, 0, 2.0, 30)):
+            c, s_ = math.cos(math.radians(rot)), math.sin(math.radians(rot))
+            pts = [(sx + (px * c - py * s_) * ss, sy + (px * s_ + py * c) * ss) for px, py in star]
+            lid.at((0, -W / 2, -0.09), (0, 180, 0)).extrude(pts, 0, 0.02, SOFT, YELLOW, bottom=False)
+        # Jack: a fat golden spring, a frilly collar, a toon-like head and
+        # a floppy jester's hat. He bobs on the spring (__animate).
         jack = self.part('jack')
         j = jack.geo
         coil = []
-        turns = 5
-        steps = turns * 20
+        turns = 3.5
+        steps = int(turns * 18)
         for i in range(steps + 1):
             t = i / float(steps)
             a = 2 * math.pi * turns * t
-            coil.append((6.0 * math.cos(a), 6.0 * math.sin(a), t * 16.0))
-        j.tube(coil, 0.85, WOOD, (0.86, 0.88, 0.94, 1), sides=8)
-        j.cyl(6.6, 1.2, WOOD, BLUE, z0=-0.6, sides=24, caps='tb')
-        # Ruff: soft points in alternating colours.
-        for i in range(12):
-            a = 360.0 * i / 12
+            rr = 5.4 - 0.8 * t
+            coil.append((rr * math.cos(a), rr * math.sin(a), 0.8 + t * 13.0))
+        j.tube(coil, 1.35, SOFT, (0.98, 0.78, 0.25, 1), sides=10)
+        j.cyl(6.4, 1.4, SOFT, BLUE, z0=-0.6, sides=24, caps='tb')
+        j.cyl(2.6, 3.0, SOFT, BLUE, z0=12.0, sides=16, caps='')
+        # Collar: a ring of fat round frills, red and yellow by turns.
+        for i in range(10):
+            a = math.radians(36.0 * i)
             col = RED if i % 2 else YELLOW
-            j.at((0, 0, 16.6), (a, 0, 0)).at((0, 4.5, 0), (0, -70, 0)).cyl(2.2, 4.0, WOOD, col, sides=10, rTop=0.3, caps='b')
-        j.cyl(3.0, 2.2, WOOD, BLUE, z0=15.8, sides=16, caps='')
-        # Head.
-        hz = 23.5
-        j.sphere((0, 0, hz), (6.4, 6.0, 6.6), PLAIN, (1.0, 0.9, 0.8, 1), rings=14, sides=24)
-        # Rosy cheeks, a big red nose, eyes and a smile on the south side.
-        j.sphere((0, -6.3, hz - 0.6), 1.5, PLAIN, (0.92, 0.18, 0.18, 1), rings=8, sides=12)
+            j.sphere((4.2 * math.cos(a), 4.2 * math.sin(a), 15.0), (2.6, 2.6, 1.5), SOFT, col, rings=6, sides=12)
+        hz = 21.0
+        # The head: a big egg, a toon's big eyes, a round red nose, a wide smile.
+        j.sphere((0, 0, hz), (6.2, 5.8, 6.9), PLAIN, (1.0, 0.92, 0.84, 1), rings=14, sides=24)
         for sx in (-1, 1):
-            j.sphere((2.3 * sx, -5.4, hz + 1.8), (0.85, 0.5, 1.2), PLAIN, (0.12, 0.1, 0.18, 1), rings=6, sides=10)
-            j.sphere((2.0 * sx, -5.75, hz + 2.3), (0.25, 0.15, 0.3), PLAIN, (1, 1, 1, 1), rings=4, sides=6)
-            j.sphere((3.9 * sx, -4.6, hz - 1.0), (1.2, 0.5, 0.8), PLAIN, (1.0, 0.62, 0.6, 1), rings=6, sides=10)
-            # Eyebrows.
-            j.at((2.3 * sx, -5.6, hz + 3.8), (0, 90, -12 * sx)).torus(1.0, 0.22, PLAIN, (0.25, 0.15, 0.2, 1), seg=8, sides=5,
-                                                                         arc=(20, 160))
-        j.at((0, -4.9, hz - 2.6), (0, 90, 0)).torus(2.6, 0.38, PLAIN, (0.7, 0.12, 0.14, 1), seg=14, sides=6, arc=(200, 340))
-        # Jester's hat: two floppy horns, red and blue, bells on the tips.
-        j.cyl(6.0, 2.0, WOOD, YELLOW, z0=hz + 3.6, sides=24, rTop=5.6, caps='')
-        for sx, col in ((-1, RED), (1, BLUE)):
+            # Eyes: tall white ovals with big black pupils looking at the plaza.
+            j.sphere((2.0 * sx, -4.75, hz + 1.6), (1.55, 1.1, 2.2), PLAIN, (1, 1, 1, 1), rings=8, sides=12)
+            j.sphere((1.75 * sx, -5.6, hz + 1.2), (0.85, 0.5, 1.15), PLAIN, (0.05, 0.05, 0.08, 1), rings=6, sides=10)
+            j.sphere((1.5 * sx, -5.95, hz + 1.7), (0.25, 0.12, 0.3), PLAIN, (1, 1, 1, 1), rings=4, sides=6)
+            # Rosy cheeks.
+            j.sphere((4.1 * sx, -3.9, hz - 1.6), (1.4, 0.7, 1.0), PLAIN, (1.0, 0.6, 0.6, 1), rings=6, sides=10)
+            # A diamond under each eye, like a jester's face paint.
+            j.at((2.3 * sx, -5.35, hz - 1.5), (0, 0, 45)).box((-0.45, -0.1, -0.45), (0.45, 0.1, 0.45), PLAIN,
+                                                            BLUE if sx < 0 else RED, faces='s')
+        j.sphere((0, -6.3, hz - 0.6), 1.55, PLAIN, (0.92, 0.16, 0.16, 1), rings=8, sides=12)
+        # Smile: a wide dark crescent with a pink tongue.
+        smile = []
+        for i in range(13):
+            a = math.radians(200 + 140 * i / 12.0)
+            smile.append((3.2 * math.cos(a), -5.0 - 0.6 * math.sin(math.radians(180 * i / 12.0)), hz - 2.2 + 2.2 * math.sin(a)))
+        j.tube(smile, 0.55, PLAIN, (0.42, 0.06, 0.1, 1), sides=6)
+        j.sphere((0, -5.0, hz - 4.15), (1.3, 0.5, 0.6), PLAIN, (0.95, 0.45, 0.5, 1), rings=6, sides=10)
+        # Jester's hat: a band and three floppy points, bells on the tips.
+        j.cyl(6.1, 2.0, SOFT, YELLOW, z0=hz + 3.4, sides=24, rTop=5.7, caps='')
+        for ang, col, lift in ((-70, RED, 0.0), (70, BLUE, 0.0), (0, RED, 1.6)):
             horn = []
-            for i in range(13):
-                t = i / 12.0
-                horn.append((sx * (2.0 + 7.5 * math.sin(t * 1.6)), 0, hz + 5.0 + 7.0 * math.sin(t * 2.4) - t * t * 2.0))
-            for i in range(12):
-                rad = 3.4 * (1 - i / 12.0) + 0.5
-                j.tube(horn[i:i + 2], rad, WOOD, col, sides=12)
-            tip = horn[-1]
-            j.sphere(tip, 1.5, WOOD, YELLOW, rings=8, sides=12)
-        self.jack = self.keep(jack, (x, y, H - 0.4))
+            for i in range(11):
+                t = i / 10.0
+                rx = 1.5 + 7.0 * math.sin(t * 1.5)
+                rz = hz + 5.0 + lift + 6.5 * math.sin(t * 2.6) - t * t * 3.0
+                a = math.radians(ang)
+                horn.append((math.sin(a) * rx, math.cos(a) * rx * (1.0 if ang else 0.9) if ang == 0 else 0.0, rz))
+                if ang:
+                    horn[-1] = (math.copysign(rx, ang), 0.6, rz)
+                else:
+                    horn[-1] = (0.0, rx * 0.95, rz)
+            for i in range(10):
+                rad = 3.3 * (1 - i / 10.0) + 0.6
+                j.tube(horn[i:i + 2], rad, SOFT, col, sides=12)
+            j.sphere(horn[-1], 1.4, SOFT, YELLOW, rings=8, sides=12)
+        self.jack = self.keep(jack, (x + TLEAN, y, TH + 0.6))
         self.jack.setScale(1.3)
         self.jackScale = 1.3
         # The box is solid; the plinth is a step up all round.
-        k.wallBox((x - hw, y - hw, 1.2), (x + hw, y + hw, H))
-        k.floorPoly([(x - hw - 4, y - hw - 4, 1.2), (x + hw + 4, y - hw - 4, 1.2), (x + hw + 4, y + hw + 4, 1.2),
-                     (x - hw - 4, y + hw + 4, 1.2)], 'towerPlinth')
+        hw = TW0 + TBULGE
+        k.wallBox((x - hw, y - hw, 1.2), (x + hw, y + hw, TH))
+        rr = TW0 + 6.0
+        ring = [(x + rr * math.cos(math.radians(a)), y + rr * math.sin(math.radians(a)), 1.2) for a in range(0, 360, 30)]
+        for i in range(len(ring)):
+            k.floorPoly([(x, y, 1.2), ring[i], ring[(i + 1) % len(ring)]], 'towerPlinth')
 
     # --- Tunnels ---
 
@@ -666,30 +785,35 @@ class ToyboxTerrace(PreviewMap):
                    '<sign><baseline code="mickey" width="14.2363" height="14.2363" flags="d"><color r="1" g="1" b="0" a="1" />'
                    '<pos x="-0.0715486" y="0" z="0.575594" /><scale x="1.58014" y="1" z="2.42354" /><text>PET SHOP</text></baseline></sign>'
                    '</landmark_building>' % place(PETS, front(PETS)))
-        # The trolley: its platform runs 30 feet along its x from the
-        # origin, its awning on its -y side toward the plaza.
-        th = facing(TROLLEY, (0, 0))
-        out.append('<prop name="prop_trolley_station_DNARoot" code="prop_trolley_station">%s<sign><color r="1" g="0.88" b="0.56" a="1" />'
-                   '<baseline code="mickey" kern="-0.09181" width="10.9993" height="10.9993"><color r="0.992157" g="0.968627" b="0.00784314" a="1" />'
-                   '<pos x="0.5" y="0" z="1.33" /><scale x="1.4" y="1" z="1.4" /><text>TROLLEY</text></baseline>'
-                   '<baseline code="mickey" kern="-0.2159"><color r="1" g="0" b="0" a="1" /><pos x="0.29" y="0" z="-1.9" />'
-                   '<scale x="2.7" y="1" z="2.7" /><text>GAMES</text></baseline></sign></prop>' % place(self.world(TROLLEY, th, (-15, -4)), th))
         out.append('<prop name="prop_party_gate_DNARoot" code="prop_party_gate">%s</prop>' % place(PARTY, facing(PARTY, (0, 0))))
         # Tunnels: the model's mouth (tunnel_origin) is at (60, 95, 6.67)
         # in its own frame, looking +y.
+        from panda3d.core import TextNode
+        from toontown.toonbase import ToontownGlobals
+        tn = TextNode('measure')
+        tn.setFont(ToontownGlobals.getSignFont())
+        # Toontown Central's widest street name that sits well on this plaque.
+        maxW = tn.calcWidth('SILLY STREET') * 1.5 * 1.08
         for mouth, h, street, theme in TUNNELS:
             th = facing(mouth, (0, 0)) + 180
             f = heading(th)
             right = Vec3(f[1], -f[0], 0)
             origin = Vec3(mouth[0], mouth[1], 0) - right * 60.0 - f * 95.0
-            ss = min(1.5, 1.5 * 15.0 / len(street))
+            # Straight lines, sized to sit inside the plaque's border
+            # (Arthur): a long name is squeezed across, as the Punchline
+            # Place sign is, rather than run off the edges.
+            sx = min(1.5, maxW / max(tn.calcWidth(street.upper()), 0.01))
+            sz = min(1.5, max(sx, 1.15))
+            ink = '<color r="%.3f" g="%.3f" b="%.3f" a="1" />' % SIGN_INK[theme]
             out.append('<prop name="linktunnel_toy_%s_DNARoot" code="prop_safe_zone_tunnel">%s'
                        '<sign code="tunnel_sign_orange"><scale x="1.5" y="1" z="1.5" />'
-                       '<baseline code="mickey" width="33.3333" height="33.3333"><color r="0" g="0.501961" b="0" a="1" /><pos x="0" y="0" z="-0.76" />'
+                       '<baseline code="mickey">%s<pos x="0" y="0" z="-0.62" />'
                        '<scale x="%.3f" y="1" z="%.3f" /><text>%s</text></baseline>'
-                       '<baseline code="mickey" width="44" height="44"><color r="0" g="0.501961" b="0" a="1" /><pos x="0" y="0" z="-1.98" />'
-                       '<scale x="0.8" y="1" z="0.8" /><text>TOYBOX TERRACE</text></baseline></sign></prop>'
-                       % (theme, place((origin[0], origin[1], -6.6666), th), ss, ss, street.upper()))
+                       '<baseline code="mickey">%s<pos x="0" y="0" z="-1.9" />'
+                       '<scale x="0.8" y="1" z="0.8" /><text>TOYBOX TERRACE</text></baseline>'
+                       '<baseline><pos x="0" y="0" z="1.75" /><scale x="2.5" y="1" z="2.5" /><graphic code="mickeySZ" /></baseline>'
+                       '</sign></prop>'
+                       % (theme, place((origin[0], origin[1], -6.6666), th), ink, sx, sz, street.upper(), ink))
         return ('<?xml version="1.0" encoding="utf-8"?><scene zone="2000"><group name="toyboxTerrace">'
                 '<visgroup zone="2000:safe_zone" vis="2000:safe_zone">%s</visgroup></group></scene>' % ''.join(out))
 
@@ -760,9 +884,24 @@ class ToyboxTerrace(PreviewMap):
             off = bldg.getRelativeVector(geom, Vec3(1, 0, 0))
             w = geom.getRelativePoint(bldg, dp)
             bldg.setPos(spot[0] - w[0], spot[1] - w[1], 0)
-        for name in ('**/prop_trolley_station_DNARoot',):
-            station = geom.find(name)
-            station.setName('toy_trolley_station')
+        # The trolley: just the car, parked by the plaza like the one on
+        # Downsizer Drive (Arthur), under a node named like a station so
+        # Survival finds it for the way out.
+        station = geom.attachNewNode('toy_trolley_station')
+        proto = loader.loadModel('phase_4/models/modules/trolley_station_TT')
+        car = proto.find('**/trolley_car').copyTo(station)
+        proto.removeNode()
+        for c in car.findAllMatches('**/+CollisionNode'):
+            c.removeNode()
+        th = facing(TROLLEY, (0, 0))
+        car.setPosHpr(TROLLEY[0], TROLLEY[1], 0.05, th + 90, 0, 0)
+        # Far away it switched to low-detail models missing pieces.
+        for lod in car.findAllMatches('**/+LODNode'):
+            lod.node().forceSwitch(0)
+        low, high = car.getTightBounds(car)
+        self.solidRect(TROLLEY, th + 90, low[0] * 0.9, low[1] * 0.9, high[0] * 0.9, high[1] * 0.9, height=high[2] * 0.8)
+        # Marks the car as solid, so the way-out prompt shows all along its sides.
+        car.attachNewNode('mapSolid')
 
     def __hill(self, center, h, radii, trees=0):
         """A grassy Toontown hill, like the ones the playgrounds' tunnels
@@ -786,12 +925,6 @@ class ToyboxTerrace(PreviewMap):
             th = facing(mouth, (0, 0))
             self.__hill(Vec3(mouth[0], mouth[1], 0) + out * 60.0, th, (60.0, 32.0, 32.0), trees=3)
             {'key': self.__keyGate, 'marble': self.__marbleGate, 'blocks': self.__blockGate}[theme](mouth, th)
-        # The trolley's hill behind it, and a hill at each end round the
-        # little tunnels it drives into.
-        th = facing(TROLLEY, (0, 0))
-        self.__hill(self.world(TROLLEY, th, (0, 50)), th, (56.0, 28.0, 28.0), trees=3)
-        for sx in (-1, 1):
-            self.__hill(self.world(TROLLEY, th, (sx * 29.0, 14.0)), th, (12.0, 22.0, 24.0))
 
     def __keyGate(self, mouth, th):
         """Wind-Up Way: a giant winding key turning in the hill over the
