@@ -5,7 +5,7 @@ from panda3d import core as PM
 from direct.directnotify.DirectNotifyGlobal import directNotify
 from direct.distributed.ClockDelta import globalClockDelta
 from direct.gui.DirectGui import DirectFrame, DirectLabel
-from direct.interval.IntervalGlobal import (ActorInterval, Func, LerpColorScaleInterval, LerpHprInterval, LerpPosInterval,
+from direct.interval.IntervalGlobal import (ActorInterval, Func, LerpFunctionInterval, LerpColorScaleInterval, LerpHprInterval, LerpPosInterval,
                                             LerpScaleInterval, Parallel, ProjectileInterval, Sequence, SoundInterval, Wait)
 from direct.task.Task import Task
 from otp.otpbase import OTPGlobals
@@ -460,6 +460,18 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
 
     def _followCamera(self, toon, dt):
         pos = toon.getPos(render)
+        if self.slideState in ('off', 'jumpoff') and globalClock.getFrameTime() < getattr(self, '_jumpCamUntil', 0):
+            # Off the end of the table: watched from out to the side, so the
+            # leap down past the chairman's chair shows.
+            side = getattr(self, '_jumpSide', 1)
+            want = PM.Point3(side * Consts.JumpCamSide, Consts.TableEnd - Consts.JumpCamBack, Consts.TableTop + Consts.JumpCamUp)
+            look = PM.Point3((pos[0] + side * Consts.JumpOffX) / 2.0, (pos[1] + Consts.TableEnd + 2.5) / 2.0, 2.0)
+            cur = getattr(self, '_camPos', None) or want
+            cur = cur + (want - cur) * min(1.0, dt * 3.5)
+            self._camPos = PM.Point3(cur)
+            camera.setPos(render, cur)
+            camera.lookAt(look)
+            return
         if self.slideState in ('off', 'jumpoff'):
             want = PM.Point3(pos[0] * 0.5, pos[1] - Consts.CameraBack * 1.2, Consts.TableTop + Consts.CameraUp * 1.3)
             look = PM.Point3(pos[0], pos[1] + 6, pos[2] + 2)
@@ -501,17 +513,21 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
             if now >= start:
                 self.slideState = 'slide'
                 self.slideSpeed = Consts.SlideSpeed * 0.5
-                self._bellyFlop(toon)
+                self._diveIn(toon)
             self.lastPos = PM.Point3(pos)
             return
-        if toon.getCurrentAnim() is not None:
+        if now >= self.crashUntil and getattr(toon, '_slideMode', None) != 'dive' and not self._isSliding(toon):
             # Something set it playing again (a landing from a hop plays
             # the walk's animations): back down on its belly.
-            self._bellyFlop(toon)
+            self._slidePose(toon)
         steer, wanted = self._steer()
         slick = self._onSlick(pos, now)
         if now < self.crashUntil:
+            # Knocked flat by an obstacle: stopped dead till it is up again.
             wanted = 0.0
+            steer = 0.0
+            self.slideSpeed = 0.0
+            self.steerVel = 0.0
         self.slideSpeed += max(-Consts.SlideAccel * 2 * dt, min(Consts.SlideAccel * dt, wanted - self.slideSpeed))
         grip = Consts.SlickGrip if slick else 1.0
         self.steerVel += (steer * Consts.SteerSpeed - self.steerVel) * min(1.0, grip * dt * 10.0)
@@ -528,6 +544,10 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         new = PM.Point3(pos[0] + self.steerVel * dt, pos[1] + self.slideSpeed * dt, pos[2])
         hw = Consts.TableHalfWidth - 1.0
         new.setX(max(-hw, min(hw, new[0])))
+        if new[2] < Consts.TableTop - 0.5:
+            # Never off the table: whatever pushed it over the edge, it is
+            # back on top.
+            new.setZ(Consts.TableTop)
         toon.setFluidPos(render, new)
         self._launchRamps(toon, new)
         lean = -self.steerVel / Consts.SteerSpeed * 18.0
@@ -568,6 +588,9 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         start = PM.Point3(pos)
         self._standUp(toon)
         toon.setH(render, -side * 35)
+        # The camera swings out to the side to watch the jump.
+        self._jumpSide = side
+        self._jumpCamUntil = globalClock.getFrameTime() + Consts.JumpOffTime + Consts.JumpCamHold
 
         def landed():
             self.slideState = 'off'
@@ -596,8 +619,15 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         boost = max(0.0, min(1.0, (speed - Consts.SlideSpeed) / (Consts.SlideFastSpeed - Consts.SlideSpeed)))
         self._setFov(Consts.SlideFov + Consts.SlideFovBoost * boost)
         geom = toon.getGeomNode()
-        geom.setR(-self.steerVel / Consts.SteerSpeed * 22.0)
-        geom.setZ(Consts.SlideBodyZ + 0.08 * math.sin(now * 14.0))
+        if getattr(toon, '_slideMode', None) == 'slide':
+            geom.setR(-self.steerVel / Consts.SteerSpeed * 14.0)
+            geom.setZ(0.05 * math.sin(now * 9.0))
+            try:
+                toon.setPlayRate(Consts.PaddleRate[0] + (Consts.PaddleRate[1] - Consts.PaddleRate[0]) * boost, 'swim', partName='torso')
+                if 'head' in toon.getPartNames():
+                    toon.setPlayRate(Consts.PaddleRate[0] + (Consts.PaddleRate[1] - Consts.PaddleRate[0]) * boost, 'swim', partName='head')
+            except Exception:
+                pass
         if speed > 4.0 and now - getattr(self, '_lastPuff', 0) > 0.07 and abs(pos[2] - Consts.TableTop) < 0.6:
             self._lastPuff = now
             puff = self.marker.copyTo(self.sceneRoot)
@@ -618,28 +648,87 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
             self._fovNow = cur
             base.camLens.setMinFov(cur / (4.0 / 3.0))
 
-    def _bellyFlop(self, toon):
-        # Down on its belly, as the toons slide in the design.
-        # Superman-style: flat on its belly, arms out in front. (The diving
-        # game's swim, first frame, tipped forward onto the table; the
-        # slip-forward fall looked like a toon lying there, not sliding.)
+    # --- The belly slide ---
+    # The toon dives forward onto its belly (blended from standing into the
+    # slip-and-fall's flat-on-the-table frame) and slides along it: its legs
+    # held out behind as in that frame, and its arms paddling at the
+    # tablecloth with the diving game's swim strokes, faster as it speeds up.
+
+    def _diveIn(self, toon):
+        self._standUp(toon)
+        toon._slideMode = 'dive'
         toon.stop()
-        toon.pose('swim', 0)
+        toon.enableBlend()
+        toon.pose('neutral', 0)
+        toon.pose('slip-forward', Consts.SlideLieFrame)
         geom = toon.getGeomNode()
-        geom.setP(-90)
-        geom.setZ(Consts.SlideBodyZ)
+
+        def mix(w):
+            toon.setControlEffect('neutral', 1.0 - w)
+            toon.setControlEffect('slip-forward', w)
+            geom.setZ(Consts.DiveHop * math.sin(math.pi * w))
+
+        def done():
+            toon.disableBlend()
+            geom.setZ(0)
+            if getattr(toon, '_slideMode', None) == 'dive':
+                self._slidePose(toon)
+
+        mix(0.0)
+        ival = Sequence(LerpFunctionInterval(mix, duration=Consts.DiveTime, fromData=0.0, toData=1.0), Func(done))
+        toon._diveIval = ival
+        ival.start()
+        self.ivals.append(ival)
+
+    def _slidePose(self, toon):
+        toon._slideMode = 'slide'
+        toon.stop()
+        toon.pose('slip-forward', Consts.SlideLieFrame, partName='legs')
+        for part in ('torso', 'head'):
+            if part in toon.getPartNames() and toon.getAnimControl('swim', part) is not None:
+                toon.loop('swim', partName=part)
+
+    def _isSliding(self, toon):
+        return (getattr(toon, '_slideMode', None) == 'slide' and toon.getCurrentAnim(partName='legs') is None
+                and toon.getCurrentAnim(partName='torso') == 'swim')
+
+    def _bellyFlop(self, toon):
+        # A remote toon starting its slide: in with the same dive.
+        self._diveIn(toon)
 
     def _standUp(self, toon):
+        ival = getattr(toon, '_diveIval', None)
+        if ival is not None:
+            toon._diveIval = None
+            ival.finish()
+        toon._slideMode = None
+        try:
+            toon.disableBlend()
+        except Exception:
+            pass
         geom = toon.getGeomNode()
         geom.setHpr(0, 0, 0)
         geom.setZ(0)
 
     def _crash(self, toon, now):
+        # Ran into a pile (or a pencil it didn't hop): stopped dead, hurt,
+        # up on its feet seeing stars, then back down and off again.
         self.stuckTime = 0.0
         self.crashUntil = now + Consts.CrashTime
-        self.spinUntil = now + Consts.SpinTime
         self.slideSpeed = 0.0
+        self.steerVel = 0.0
         base.playSfx(self.hitSfx, node=toon)
+        self.sendUpdate('requestHit', [Consts.Obstacle])
+        self._standUp(toon)
+        toon._slideMode = 'crash'
+        back = toon.getPos(render) - PM.Vec3(0, Consts.CrashBounce, 0)
+        back.setZ(max(back[2], Consts.TableTop))
+        track = Sequence(Parallel(LerpPosInterval(toon, 0.18, back, other=render, blendType='easeOut'),
+                                  ActorInterval(toon, 'slip-backward', startFrame=0, endFrame=10, duration=0.18)),
+                         ActorInterval(toon, 'conked', duration=Consts.CrashTime - 0.18 - 0.05),
+                         Func(self._diveIn, toon))
+        track.start()
+        self.ivals.append(track)
 
     def _launchRamps(self, toon, pos):
         # Up a ramp and off its top: into the air.
@@ -897,8 +986,10 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         flash.start()
         self.ivals.append(flash)
         if toon.isLocal():
-            # Spun round, but still sliding.
-            self.spinUntil = self.gameTime() + Consts.SpinTime
+            # Spun round, but still sliding (an obstacle stops it dead
+            # instead: see _crash).
+            if kind != Consts.Obstacle:
+                self.spinUntil = self.gameTime() + Consts.SpinTime
             self.carried = max(0, self.carried - memosLost)
             if memosLost:
                 base.localAvatar.setSystemMessage(0, TTL.BoardroomLostMemos % memosLost)
@@ -1057,6 +1148,7 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         now = self.golfTime()
         for cog in list(self.golf.cogs.values()):
             self.golf.updateCog(cog, now)
+        self.golf.updateElevators(dt)
         for cogId in self.golf.updateBalls(dt):
             self.sendUpdate('requestGolfHit', [cogId])
         toon = base.localAvatar

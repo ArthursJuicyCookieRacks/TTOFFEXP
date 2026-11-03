@@ -82,9 +82,9 @@ class BoardroomLayout:
                 tops.append(pile)
             elif kind == 'pile2':
                 # Two piles with a gap between them, somewhere across.
-                gap = rng.uniform(-5.0, 5.0)
+                gap = rng.uniform(-4.5, 4.5)
                 for side in (-1, 1):
-                    edge = gap + side * 3.2
+                    edge = gap + side * Consts.FairGap / 2.0
                     far = side * half
                     w = abs(far - edge) / 2.0
                     if w < 1.5:
@@ -95,9 +95,9 @@ class BoardroomLayout:
             elif kind == 'slalom':
                 # Two piles on opposite sides, one after the other: weave.
                 side = rng.choice((-1, 1))
-                for k, dy in enumerate((-5.0, 5.0)):
-                    w = rng.uniform(3.5, 4.5)
-                    x = side * (1 if k == 0 else -1) * (half - w - rng.uniform(0.0, 2.0))
+                for k, dy in enumerate((-7.0, 7.0)):
+                    w = rng.uniform(3.0, 4.0)
+                    x = side * (1 if k == 0 else -1) * (half - w - rng.uniform(0.0, 1.0))
                     self.obstacles.append(Obstacle(PILE, x, mid + dy, w, rng.uniform(1.8, 2.4), rng.uniform(*Consts.PileHeight)))
             elif kind == 'pencil':
                 # A pencil the width of the table, lying a little crooked.
@@ -112,13 +112,17 @@ class BoardroomLayout:
                 self.obstacles.append(pile)
                 self.obstacles.append(Obstacle(RAMP, x, mid - 4.5, w * 0.8, 4.5, h))
                 tops.append(pile)
-            if kind in ('pile', 'pile2', 'ramp') and rng.random() < double:
+            # A second obstacle in the stretch now and then (more often in
+            # the harder offices), always far enough from the first for a
+            # good slider to hop the one and steer round the other.
+            if kind == 'pile' and rng.random() < double:
                 # A pencil rolled across the start of this stretch too.
-                self.obstacles.append(Obstacle(PENCIL, 0, y0 + 2.0, half, 0.7, Consts.PencilHeight, rng.uniform(-8, 8)))
+                self.obstacles.append(Obstacle(PENCIL, 0, y0 + 1.5, half, 0.7, Consts.PencilHeight, rng.uniform(-6, 6)))
             elif kind == 'pencil' and rng.random() < double:
-                # And a pile just past the pencil, to steer round on landing.
-                w = rng.uniform(3.0, 4.0)
-                self.obstacles.append(Obstacle(PILE, rng.choice((-1, 1)) * rng.uniform(0, half - w), mid + 6.5, w, 2.0,
+                # And a pile well past the pencil, off to a side, to steer
+                # round after landing.
+                w = rng.uniform(3.0, 3.8)
+                self.obstacles.append(Obstacle(PILE, rng.choice((-1, 1)) * (half - w), mid + 10.0, w, 2.0,
                                                rng.uniform(*Consts.PileHeight)))
             # The memos for this stretch: on the table round the obstacle,
             # and on top of a pile now and then.

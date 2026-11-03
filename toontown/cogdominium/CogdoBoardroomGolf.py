@@ -11,64 +11,69 @@ from toontown.toonbase import ToontownGlobals
 
 
 def _box(parent, x0, y0, x1, y1, z0, z1, color):
-    # A plain box: a cubicle wall or a desk side.
-    node = parent.attachNewNode('box')
-    cm = PM.CardMaker('face')
-    for frame, pos, hpr in (((x0, x1, z0, z1), (0, y0, 0), (0, 0, 0)),
-                            ((x0, x1, z0, z1), (0, y1, 0), (180, 0, 0)),
-                            ((y0, y1, z0, z1), (x0, 0, 0), (-90, 0, 0)),
-                            ((y0, y1, z0, z1), (x1, 0, 0), (90, 0, 0)),
-                            ((x0, x1, y0, y1), (0, 0, z1), (0, -90, 0))):
-        cm.setFrame(*frame)
-        face = node.attachNewNode(cm.generate())
-        face.setPos(*pos)
-        face.setHpr(*hpr)
-        face.setTwoSided(True)
+    # A plain box: a cubicle partition, a shaft wall. Its four sides and
+    # top, each face lit a little differently so the edges read.
+    fmt = PM.GeomVertexFormat.getV3n3()
+    vdata = PM.GeomVertexData('box', fmt, PM.Geom.UHStatic)
+    vw = PM.GeomVertexWriter(vdata, 'vertex')
+    nw = PM.GeomVertexWriter(vdata, 'normal')
+    tris = PM.GeomTriangles(PM.Geom.UHStatic)
+    faces = (((x0, y0, z0), (x1, y0, z0), (x1, y0, z1), (x0, y0, z1), (0, -1, 0)),
+             ((x1, y1, z0), (x0, y1, z0), (x0, y1, z1), (x1, y1, z1), (0, 1, 0)),
+             ((x0, y1, z0), (x0, y0, z0), (x0, y0, z1), (x0, y1, z1), (-1, 0, 0)),
+             ((x1, y0, z0), (x1, y1, z0), (x1, y1, z1), (x1, y0, z1), (1, 0, 0)),
+             ((x0, y0, z1), (x1, y0, z1), (x1, y1, z1), (x0, y1, z1), (0, 0, 1)))
+    for i, face in enumerate(faces):
+        for v in face[:4]:
+            vw.addData3(*v)
+            nw.addData3(*face[4])
+        k = i * 4
+        tris.addVertices(k, k + 1, k + 2)
+        tris.addVertices(k, k + 2, k + 3)
+    geom = PM.Geom(vdata)
+    geom.addPrimitive(tris)
+    gn = PM.GeomNode('box')
+    gn.addGeom(geom)
+    node = parent.attachNewNode(gn)
+    node.setTwoSided(True)
     node.setColor(*color)
+    # No lights in the office: shade the sides by hand.
     return node
 
 
 def buildOffice(parent):
-    """The golf office's furniture: the Sellbot maze office's corner
-    cubicles pulled out to the corners of a bigger room, two of its cubicles
-    out in the middle, and its checked floor (tinted green, as in the QA
-    screenshot) stretched to fit. The AI's ball grid is drawn from this."""
-    office = loader.loadModel(Consts.GolfOfficeModel)
+    """The golf office's floor and furniture: the Sellbot maze office's
+    checked floor (tinted green, as in the QA screenshot) laid edge to edge,
+    its paper strewn about, its cubicles, filing cabinets and desks set out
+    in four blocks round the aisles (Consts.GolfPieces), and low grey
+    partitions along the aisles. The AI's ball grid is drawn from this."""
     root = parent.attachNewNode('office')
+    office = loader.loadModel(Consts.GolfOfficeModel)
     floor = office.find('**/maze:floor')
-    if not floor.isEmpty():
-        floor.reparentTo(root)
-        floor.setScale(Consts.GolfFloorScale)
-        floor.setColorScale(0.62, 0.8, 0.64, 1)
     papers = office.find('**/*floorPaper*')
-    if not papers.isEmpty():
-        papers.reparentTo(root)
-        papers.setScale(Consts.GolfFloorScale * 0.9)
-    for node in office.findAllMatches('**/+GeomNode') + office.findAllMatches('**/mazeGame:*'):
-        if node.isEmpty() or node.getParent() == root:
-            continue
-        prefix = node.getName().split(':')[0]
-        if prefix not in Consts.GolfOfficePieces:
-            continue
-        where = Consts.GolfOfficePieces[prefix]
-        if where is None:
-            node.detachNode()
-            continue
-        # (Not wrtReparentTo: the office stands away from the boardroom,
-        # and its pieces keep the model's own transform.)
-        node.reparentTo(root)
-        node.setPos(node.getPos() + PM.Vec3(where[0], where[1], 0))
+    size = 51.0
+    nx = int(math.ceil(2 * Consts.GolfHalfX / size))
+    ny = int(math.ceil(2 * Consts.GolfHalfY / size))
+    for i in range(nx):
+        for j in range(ny):
+            x = (i - (nx - 1) / 2.0) * size
+            y = (j - (ny - 1) / 2.0) * size
+            if not floor.isEmpty():
+                f = floor.copyTo(root)
+                f.setPos(x, y, 0)
+                f.setColorScale(0.62, 0.8, 0.64, 1)
+            if not papers.isEmpty():
+                p = papers.copyTo(root)
+                p.setPos(x, y, 0)
+                p.setH(90 * ((i + 2 * j) % 4))
     office.removeNode()
-    # More of the maze office's cubicles and desks, borrowed from its other
-    # quadrants, fill out the four blocks between the aisles the cogs use.
     models = {}
-    for quadrant, name, dx, dy in Consts.GolfExtraPieces:
+    for quadrant, name, dx, dy in Consts.GolfPieces:
         if quadrant not in models:
             models[quadrant] = loader.loadModel(Consts.GolfQuadrantModel % quadrant)
         model = models[quadrant]
-        prefix = name.split(':')[0]
-        suffix = name.split(':')[1]
-        holder = root.attachNewNode('extra-%d-%s' % (quadrant, suffix))
+        prefix, suffix = name.split(':')
+        holder = root.attachNewNode('piece-%d-%s' % (quadrant, suffix))
         holder.setPos(dx, dy, 0)
         for node in model.findAllMatches('**/%s:*' % prefix):
             part = node.getName().split(':')[1]
@@ -90,7 +95,7 @@ def buildOffice(parent):
 
 def _partition(parent, x0, y0, x1, y1):
     h = Consts.GolfPartitionHeight
-    wall = _box(parent, x0, y0, x1, y1, 0.0, h, (0.56, 0.58, 0.62, 1))
+    wall = _box(parent, x0, y0, x1, y1, 0.0, h, (0.5, 0.52, 0.56, 1))
     # A darker cap along the top and a kick plate at the floor.
     cap = _box(wall, x0 - 0.08, y0 - 0.08, x1 + 0.08, y1 + 0.08, h - 0.25, h + 0.1, (0.5, 0.52, 0.56, 1))
     cap.setColor(0.5, 0.52, 0.56, 1)
@@ -163,25 +168,28 @@ class CogdoBoardroomGolf:
             cone.setDepthWrite(False)
             cone.setBin('fixed', 3)
         self.office = office
-        # The side doors the cogs carry the barrels out by, and a dark
-        # corridor beyond the far doorway they come in by.
-        door = loader.loadModel('phase_5/models/cogdominium/tt_m_ara_csa_exitDoor')
-        for side in (-1, 1):
-            d = door.copyTo(self.root)
-            d.setPos(side * (Consts.GolfHalfX + 0.4), 0, 0)
-            d.setH(-90 * side)
-        door.removeNode()
-        d = loader.loadModel('phase_5/models/cogdominium/tt_m_ara_csa_exitDoor')
-        d.reparentTo(self.root)
-        d.setPos(0, Consts.GolfHalfY + 0.4, 0)
-        d.setH(180)
-        # A dark corridor beyond the doorway the cogs come in by.
-        cm = PM.CardMaker('corridor')
-        cm.setFrame(-10, 10, 0, 18)
-        back = self.root.attachNewNode(cm.generate())
-        back.setPos(0, Consts.GolfHalfY + 2.5, 0)
-        back.setColor(0.04, 0.04, 0.05, 1)
-        back.setTwoSided(True)
+        # The three elevators the cogs come and go by, each in a shaft
+        # boxed out from its wall in the office's grey.
+        self.elevators = []
+        model = loader.loadModel(Consts.GolfElevatorModel)
+        for x, y, h in Consts.GolfElevators:
+            holder = self.root.attachNewNode('elevator')
+            holder.setPos(x, y, 0)
+            holder.setH(h)
+            e = model.copyTo(holder)
+            for coll in e.findAllMatches('**/+CollisionNode'):
+                coll.removeNode()
+            # The shaft: walls each side of the car and a cap above it,
+            # flush with the elevator's frame.
+            depth = Consts.GolfElevatorDepth + 1.0
+            for x0, x1 in ((-8.6, -8.0), (8.0, 8.6)):
+                _box(holder, x0, 0.5, x1, depth, 0.0, 13.0, (0.5, 0.52, 0.56, 1))
+            _box(holder, -8.6, 0.5, 8.6, depth, 11.0, 13.0, (0.46, 0.48, 0.52, 1))
+            left = e.find('**/left-door')
+            right = e.find('**/right-door')
+            self.elevators.append({'left': left, 'right': right, 'open': 0.0})
+            self._setDoors(self.elevators[-1], 0.0)
+        model.removeNode()
         # A name plate on the far cubicle, as on the screenshot's.
         plate = PM.TextNode('namePlate')
         plate.setText('Mr. Hollywood\nVP of Hijinks')
@@ -192,9 +200,29 @@ class CogdoBoardroomGolf:
         plate.setCardAsMargin(0.3, 0.3, 0.2, 0.2)
         plate.setCardDecal(True)
         sign = self.root.attachNewNode(plate.generate())
-        sign.setPos(-21.0 + 1.9, -19.5 + 6.1, 4.3)
+        sign.setPos(*Consts.GolfNamePlate)
         sign.setScale(0.55)
         sign.setTwoSided(True)
+
+    def _setDoors(self, elevator, f):
+        # f is 0 shut to 1 open; the doors slide apart 3.5 ft each, as the
+        # cog building elevators' do.
+        elevator['open'] = f
+        elevator['left'].setX(3.5 * (1.0 - f))
+        elevator['right'].setX(-3.5 * (1.0 - f))
+
+    def updateElevators(self, dt):
+        # An elevator's doors open when a cog is at them, and shut after.
+        for index, elevator in enumerate(self.elevators):
+            dx, dy = Consts.golfElevatorDoor(index)
+            near = any(c['alive'] and (c['suit'].getPos() - PM.Point3(dx, dy, 0)).length() < 9.0
+                       for c in self.cogs.values())
+            want = 1.0 if near else 0.0
+            f = elevator['open']
+            if f != want:
+                step = dt / 0.6
+                f = min(want, f + step) if want > f else max(want, f - step)
+                self._setDoors(elevator, f)
 
     def _loadBarrels(self):
         # The laff barrels the toons brought out of the meeting, piled in

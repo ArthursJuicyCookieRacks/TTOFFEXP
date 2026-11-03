@@ -132,9 +132,12 @@ class DistCogdoBoardroomGameAI(DistCogdoGameAI):
         self.nextGolfCog += 1
         top = max(2, int(round(2 + d * (len(Consts.GolfCogNames) - 2))))
         name = random.randrange(top)
-        px = random.uniform(-4.0, 4.0)
-        side = random.choice((-1, 1))
-        exitY = random.uniform(-3.0, 3.0)
+        # Out of one of the three elevators, and away by another.
+        entry = random.randrange(len(Consts.GolfElevators))
+        exit = random.choice([i for i in range(len(Consts.GolfElevators)) if i != entry])
+        side = entry * 4 + exit
+        px = random.uniform(-2.5, 2.5)
+        exitY = 0.0
         speed = Consts.lerpDifficulty(Consts.GolfCogSpeedRange, d) * random.uniform(0.9, 1.1)
         path = Consts.golfCogPath(px, side, exitY, speed)
         cog = {'id': cogId, 'path': path, 'start': self.golfTime(), 'alive': True, 'carrying': False}

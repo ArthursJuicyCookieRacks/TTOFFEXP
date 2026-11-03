@@ -81,11 +81,14 @@ Anvil = 3
 Paperwork = 4
 Oil = 5
 Swipe = 6
+# Running into a pile or a pencil.
+Obstacle = 7
 Hazards = {
     # A Boss Cog's golf club swung across the table's edge as a toon
     # slides by its chair (a strip, not a circle: see SwipeReach).
     Swipe: (2, 6, 2, 3.5),
     GolfBall: (2, 5, 1, 2.6),
+    Obstacle: (1, 4, 1, 0.0),
     Paper: (1, 4, 1, 3.0),
     Pencil: (2, 5, 1, 2.6),
     Anvil: (4, 8, 2, 3.4),
@@ -134,16 +137,32 @@ SlideFovBoost = 8.0
 JumpOffAt = 3.0
 JumpOffX = 10.0
 JumpOffTime = 1.0
-JumpOffHeight = 5.0
+JumpOffHeight = 5
+# The jump-off camera: up and back over the table, off to the other side
+# from the one the toon jumps to (the end of the hall is narrow), so the
+# whole leap down beside the chairman shows; held this long after landing.
+JumpCamSide = -7.0
+JumpCamBack = 15.0
+JumpCamUp = 9.0
+JumpCamHold = 1.8
 StartStagger = 1.5
 StartDelay = 1.0
 # A ramp throws a toon sliding up it into the air.
 LaunchForce = 30.0
 # Sliding into a pile or a pencil stops a toon and spins it round.
-CrashTime = 0.9
+CrashTime = 1.6
+# How far an obstacle knocks the toon back.
+CrashBounce = 1.4
+# The belly slide's pose: the slip-and-fall's frame lying flat on the
+# table, dived into over DiveTime with a little hop; the arms paddle at
+# PaddleRate (at cruising speed, and flat out).
+SlideLieFrame = 20
+DiveTime = 0.35
+DiveHop = 0.9
+PaddleRate = (1.0, 1.7)
 SpinTime = 0.8
-CameraBack = 13.0
-CameraUp = 5.5
+CameraBack = 12.0
+CameraUp = 7.0
 
 # --- On the table ---
 SlickRadius = 7.5
@@ -163,12 +182,14 @@ PowerUpRadius = 2.6
 # --- Laying out the table ---
 # Each stretch of table gets one obstacle, memos and now and then a
 # power-up; the first and last stretch are clear.
-SegmentLength = 21.0
+SegmentLength = 26.0
+# The narrowest lane left through any row of obstacles.
+FairGap = 7.5
 ClearStart = 10.0
-ClearEnd = 16.0
+ClearEnd = 24.0
 MemosPerSegment = (2, 4)
 # How likely a stretch gets a second obstacle (easiest, hardest).
-DoubleObstacleRange = (0.25, 0.7)
+DoubleObstacleRange = (0.15, 0.5)
 PileHeight = (5.0, 7.5)
 PencilHeight = 1.25
 NumInvulnerable = 2 * NumHalls
@@ -220,45 +241,57 @@ GameDuration = SlideDuration + GolfDuration
 # cabinets, desks and paper as the QA screenshot, on a green checked
 # floor), inside a cog building's office for its walls and ceiling.
 GolfWallModel = 'phase_5/models/cogdominium/tt_m_ara_cmg_level'
-GolfWallScale = 0.6
+GolfWallScale = 0.8
 GolfOfficeModel = 'phase_5/models/cogdominium/tt_m_ara_cmg_quadrant9'
-# The office is a big one: the maze office's four corners of cubicles,
-# filing cabinets and desks pulled out to the corners of the cog building's
-# room, and two of its cubicles out in the middle. Each piece (by its name
-# prefix in the model) and where it goes; None leaves it out.
-GolfOfficePieces = {'maze1': (18.5, 3.5), 'maze2': (-18.5, 3.5), 'maze4': (18.5, -3.5), 'maze5': (-18.5, -3.5),
-                    'maze3': (-21.0, -19.5), 'maze6': (11.0, 1.0), 'mazeGame': None}
-# (quadrant, grouping, x offset, y offset): the maze office pieces that
-# fill the inner halves of the four cubicle blocks.
 GolfQuadrantModel = 'phase_5/models/cogdominium/tt_m_ara_cmg_quadrant%d'
-GolfExtraPieces = ((6, 'maze2:grouping2', 0.0, 8.0),
-                   (3, 'maze3:grouping3', -9.0, 11.0),
-                   (3, 'maze8:grouping8', 9.0, -8.0),
-                   (8, 'maze3:grouping3a', -11.0, -30.0))
+# The office is a big one: an aisle up the middle from the toons' tee lane
+# to the front elevator, an aisle across it between the left and right
+# elevators, the barrels piled where the two cross, and in each of the
+# four blocks between, cubicles, filing cabinets and desks borrowed from
+# the Sellbot maze office. (quadrant, grouping, x offset, y offset.)
+GolfPieces = (
+    # The far left block, and its cubicles.
+    (9, 'maze2:grouping2', -32.0, 14.0), (3, 'maze3:grouping3', -16.0, 22.0),
+    # The far right block.
+    (9, 'maze1:grouping1', 32.0, 14.0), (6, 'maze2:grouping2', 4.0, 20.0),
+    # The near left block, with the VP's desk.
+    (9, 'maze5:grouping5', -32.0, -14.0), (8, 'maze3:grouping3a', -16.0, -38.0), (9, 'maze3:grouping3', -28.0, -16.0),
+    # The near right block.
+    (9, 'maze4:grouping4', 32.0, -14.0), (3, 'maze8:grouping8', 14.0, -20.0), (9, 'maze6:grouping6', 22.0, 4.0),
+)
+# Where the VP's name plate goes: on the desk of the third near-left piece.
+GolfNamePlate = (-28.0 + 1.9, -16.0 + 6.1, 4.3)
 # Low cubicle partitions (x0, y0, x1, y1) along the aisles: the tee lane
-# up the middle, and the aisle across the office the cogs carry the barrels
-# out along (with gaps, as cubicles have).
+# up the middle, the edges of the aisle across, and the front aisle (with
+# gaps, as cubicles have). The balls bank off them.
 GolfPartitionHeight = 4.2
-GolfPartitions = ((-8.6, -27.5, -8.0, -9.0), (8.0, -27.5, 8.6, -9.0),
-                  (-22.0, -9.0, -8.0, -8.4), (8.0, -9.0, 22.0, -8.4),
-                  (-40.0, -9.0, -27.0, -8.4), (27.0, -9.0, 40.0, -8.4),
-                  (-22.0, 8.4, -8.0, 9.0), (8.0, 8.4, 22.0, 9.0),
-                  (-40.0, 8.4, -27.0, 9.0), (27.0, 8.4, 40.0, 9.0),
-                  (-8.6, 9.0, -8.0, 20.0), (8.0, 9.0, 8.6, 20.0))
+GolfPartitions = ((-9.6, -39.5, -9.0, -18.0), (9.0, -39.5, 9.6, -18.0),
+                  (-22.0, -2.6, -9.0, -2.0), (9.0, -2.6, 22.0, -2.0),
+                  (-44.0, -2.6, -30.0, -2.0), (30.0, -2.6, 44.0, -2.0),
+                  (-22.0, 14.0, -9.0, 14.6), (9.0, 14.0, 22.0, 14.6),
+                  (-44.0, 14.0, -30.0, 14.6), (30.0, 14.0, 44.0, 14.6),
+                  (-9.6, 14.6, -9.0, 26.0), (9.0, 14.6, 9.6, 26.0))
 # The office is lit brighter than the maze, as in the screenshot.
 GolfOfficeBrightness = (1.25, 1.25, 1.25, 1)
-GolfFloorScale = 1.75
 # The golf office is away from the boardroom, out of its sight.
 GolfOrigin = (0.0, 2400.0, 0.0)
-GolfHalfX = 44.0
-GolfHalfY = 29.0
-# Where the toons tee off, along the near side.
-GolfTees = ((-4.5, -20.0), (-1.5, -20.0), (1.5, -20.0), (4.5, -20.0))
-# Where the barrels are piled; the cogs come in by the far doorway and go
-# out by the side doors with what they carry.
-BarrelPile = (0.0, 4.0)
-CogDoorY = 31.0
-CogExitX = 44.5
+GolfHalfX = 58.0
+GolfHalfY = 40.0
+# Where the toons tee off, at the near end of the tee lane.
+GolfTees = ((-4.5, -30.0), (-1.5, -30.0), (1.5, -30.0), (4.5, -30.0))
+# Where the barrels are piled: where the aisles cross.
+BarrelPile = (0.0, 6.0)
+# The three elevators the cogs come and go by: in the front wall and the
+# left and right walls, each built out from its wall in a boxed-in shaft.
+# (x, y, heading of its doors' front.) A cog comes out of one, takes a
+# barrel and leaves by another.
+GolfElevatorModel = 'phase_4/models/modules/elevator'
+GolfElevatorDepth = 7.3
+GolfElevators = ((0.0, GolfHalfY - GolfElevatorDepth, 0.0),
+                 (-GolfHalfX + GolfElevatorDepth, BarrelPile[1], 90.0),
+                 (GolfHalfX - GolfElevatorDepth, BarrelPile[1], -90.0))
+# Where a cog stands just out of each elevator's doors.
+GolfElevatorStep = 2.5
 NumBarrels = 10
 LaffPerBarrel = 3
 GolfCogNames = ('f', 'p', 'ym', 'mm', 'ds', 'hh', 'cr')
@@ -278,13 +311,35 @@ BallRadius = 0.45
 SwingCooldown = 0.8
 
 
-def golfCogPath(px, side, exitY, speed):
-    """The legs of a golf cog's walk: in by the far doorway to the barrel
-    pile, a moment to pick one up, then out by a side door."""
+def golfElevatorDoor(index):
+    """Where a cog steps out of (or into) elevator `index`."""
     import math
-    door = (px * 0.8, CogDoorY)
-    pile = (BarrelPile[0] + px, BarrelPile[1] + 2.4)
-    out = (side * CogExitX, exitY)
+    x, y, h = GolfElevators[index]
+    a = math.radians(h)
+    # An elevator's doors face its -y; turned by h.
+    fx, fy = math.sin(a), -math.cos(a)
+    return x + fx * GolfElevatorStep, y + fy * GolfElevatorStep
+
+
+def golfCogRoute(side):
+    """The elevators a cog comes out of and leaves by, from the `side`
+    sent with it: in * 4 + out."""
+    side = int(side)
+    return (side // 4) % len(GolfElevators), (side % 4) % len(GolfElevators)
+
+
+def golfCogPath(px, side, exitY, speed):
+    """The legs of a golf cog's walk: out of its elevator to the barrel
+    pile (to the side of the pile it comes from, px along it), a moment to
+    pick one up, then away into another elevator."""
+    import math
+    entry, exit = golfCogRoute(side)
+    door = golfElevatorDoor(entry)
+    out = golfElevatorDoor(exit)
+    dx, dy = door[0] - BarrelPile[0], door[1] - BarrelPile[1]
+    d = math.hypot(dx, dy) or 1.0
+    ux, uy = dx / d, dy / d
+    pile = (BarrelPile[0] + ux * 3.2 - uy * px, BarrelPile[1] + uy * 3.2 + ux * px)
     t1 = math.hypot(pile[0] - door[0], pile[1] - door[1]) / speed
     t2 = t1 + GolfPickupTime
     t3 = t2 + math.hypot(out[0] - pile[0], out[1] - pile[1]) / speed
@@ -320,6 +375,12 @@ def golfBlocked(x, y):
         return True
     if abs(x) > GolfHalfX or abs(y) > GolfHalfY:
         return True
+    for ex, ey, eh in GolfElevators:
+        # Each elevator's shaft, boxed out from its wall.
+        if eh == 0.0 and abs(x - ex) < 8.2 and y > ey + 0.3:
+            return True
+        if eh != 0.0 and abs(y - ey) < 8.2 and abs(x) > abs(ex) - 0.3:
+            return True
     row = int((Grid.HalfY - y) / Grid.Cell)
     col = int((x + Grid.HalfX) / Grid.Cell)
     return Grid.Rows[row][col] == '1'
