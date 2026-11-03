@@ -282,7 +282,7 @@ class ActivityPages:
 
     def makeBingoIcon(self):
         # Arthur: just a yellow button that says Bingo.
-        icon = self.panel((0.58, 0, 0.82), 0.3, 0.14, GOLD, touchable=True, text='Bingo', text_scale=0.065,
+        icon = self.panel((0.58, 0, 0.837), 0.3, 0.14, GOLD, touchable=True, text='Bingo', text_scale=0.065,
                           text_pos=(0, -0.022), text_fg=INK, text_font=self.signFont)
         self.bingoIcon = icon
         self.tap(icon, self.openBingo)
