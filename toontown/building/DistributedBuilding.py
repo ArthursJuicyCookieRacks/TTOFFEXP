@@ -608,8 +608,8 @@ class DistributedBuilding(DistributedObject.DistributedObject):
     # sign's right edge (half its width is 20 * 0.267), out in front of the
     # wall and the eyebrow beam so they never hide it, and its size in feet.
     FieldOfficeStarX = 6.75
-    FieldOfficeStarY = -6.0
-    FieldOfficeStarZ = -0.1
+    FieldOfficeStarY = -3.5
+    FieldOfficeStarZ = -0.7
     FieldOfficeStarSize = 2.5
 
     # Sign and star layout, in feet: the gap between them, and how far right
