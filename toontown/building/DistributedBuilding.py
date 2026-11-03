@@ -591,6 +591,9 @@ class DistributedBuilding(DistributedObject.DistributedObject):
             frontNP = suitBuildingNP.find('**/*_front;+s')
         backgroundNP.wrtReparentTo(frontNP)
         frontNP.node().setEffect(DecalEffect.make())
+        # A gold star right of the name sign shows the field office's level.
+        # It is not a decal: it stands just off the wall instead.
+        self.makeFieldOfficeLevelStar(signOrigin, level, backgroundNP.getZ(signOrigin))
         suitBuildingNP.setName('cb' + str(self.block) + ':_landmark__DNARoot')
         suitBuildingNP.setPosHprScale(nodePath, 15.463, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0)
         if chr(self.track) == 'm':
@@ -599,6 +602,40 @@ class DistributedBuilding(DistributedObject.DistributedObject):
         suitBuildingNP.setColorScale(0.6, 0.6, 0.6, 1.0)
         self.loadElevator(suitBuildingNP, cogdo=True)
         return suitBuildingNP
+
+    # Where the level star sits beside the field office sign: just past the
+    # sign's right edge (half its width is 20 * 0.267), out in front of the
+    # wall and the eyebrow beam so they never hide it, and its size in feet.
+    FieldOfficeStarX = 6.75
+    FieldOfficeStarY = -3.5
+    FieldOfficeStarZ = -0.7
+    FieldOfficeStarSize = 2.5
+
+    @classmethod
+    def makeFieldOfficeLevelStar(cls, signOrigin, level, z=0.0):
+        star = signOrigin.attachNewNode('fieldOfficeLevelStar')
+        star.setPos(cls.FieldOfficeStarX, cls.FieldOfficeStarY, z + cls.FieldOfficeStarZ)
+        star.setDepthOffset(2)
+        outline = loader.loadModel('phase_3.5/models/gui/name_star')
+        outline.reparentTo(star)
+        outline.setScale(cls.FieldOfficeStarSize * 1.12)
+        outline.setColor(0.35, 0.22, 0.02, 1.0)
+        face = loader.loadModel('phase_3.5/models/gui/name_star')
+        face.reparentTo(star)
+        face.setScale(cls.FieldOfficeStarSize)
+        face.setY(-0.03)
+        face.setColor(1.0, 0.82, 0.15, 1.0)
+        textNode = TextNode('fieldOfficeLevel')
+        textNode.setFont(ToontownGlobals.getSignFont())
+        textNode.setAlign(TextNode.ACenter)
+        textNode.setTextColor(0.3, 0.12, 0.0, 1.0)
+        textNode.setText(str(level))
+        text = star.attachNewNode(textNode.generate())
+        text.setScale(cls.FieldOfficeStarSize * 0.55)
+        text.setPos(0, -0.06, -cls.FieldOfficeStarSize * 0.2)
+        # The rest of the field office is darkened; the star stays bright.
+        star.setColorScaleOff(1)
+        return star
 
     # A Cashbot field office shares the Mover & Shaker building: it gets
     # Arthur's green Loan Shark poster and trim in place of the Sellbot ones.

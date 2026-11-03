@@ -1173,6 +1173,44 @@ def clearFacility(interior, suitClass, levelClass=None, timeout=1800):
     log('out of the %s, in zone %d' % (interior, localAvatar.zoneId))
 
 
+def scenarioFieldOfficeStars():
+    # One field office of each kind (Sellbot, Lawbot, Cashbot) on Silly
+    # Street, each a different level, to see the level star by the sign.
+    street = ToontownGlobals.SillyStreet
+    picks = [(t, int(d)) for t, d in (p.split(':') for p in
+             os.environ.get('AUTOPLAY_FO_STARS', 's:0 l:4 m:8').split())]
+
+    def takeOver(air):
+        manager = air.buildingManagers[street]
+        blocks = manager.getToonBlocks()[:len(picks)]
+        for block, (track, difficulty) in zip(blocks, picks):
+            manager.getBuilding(block).cogdoTakeOver(track, difficulty, 0)
+        return blocks, manager.getBuilding(blocks[0]).getExteriorAndInteriorZoneId()[0]
+
+    blocks, zoneId = onDistrict(takeOver)
+    yield from teleport(street - street % 1000, zoneId)
+    for block, (track, difficulty) in zip(blocks, picks):
+        def ours(do, block=block):
+            return getattr(do, 'bldg', None) and do.bldg.block == block
+        yield until(lambda: findObject('DistributedCogdoElevatorExt', ours), 120, 'the field office elevator')
+        elevator = findObject('DistributedCogdoElevatorExt', ours)
+        yield until(lambda: elevator.fsm.getCurrentState().getName() == 'waitEmpty', 60, 'the field office to finish landing')
+        yield sleep(1)
+        level = difficulty // 2 + 1
+        office = render.find('**/cb%d:_landmark__DNARoot' % block)
+        sign = office.find('**/sign_origin')
+        star = office.find('**/fieldOfficeLevelStar')
+        if star.isEmpty():
+            raise StepFailed('no level star on the %s field office' % track)
+        base.aspect2d.hide()
+        shotFrom('fo-star-%s-level%d.png' % (track, level), render.getRelativePoint(sign, Point3(6, -42, -6)),
+                 render.getRelativePoint(sign, Point3(3, 0, 0)))
+        shotFrom('fo-star-%s-level%d-close.png' % (track, level), render.getRelativePoint(sign, Point3(4, -20, -4)),
+                 render.getRelativePoint(sign, Point3(3, 0, 0)))
+        base.aspect2d.show()
+        log('field office %s level %d on block %d' % (track, level, block))
+
+
 def playMoleField(field, beaten, timeout=900):
     # Stands in the mole field and hits every cog that pops up (the hills
     # with HILL_BOMB are the cogs to whack; HILL_MOLE is the bomb).
@@ -4790,6 +4828,7 @@ SCENARIOS = [
     ('cogdo', scenarioCogdo),
     ('cogdolaw', lambda: scenarioCogdo('l')),
     ('cogdocash', lambda: scenarioCogdo('m')),
+    ('fostars', scenarioFieldOfficeStars),
     ('minigames', scenarioMinigames),
     ('factory', scenarioFactory),
     ('mint', scenarioMint),
