@@ -64,7 +64,8 @@ class BoardroomLayout:
         kinds = []
         # Each kind comes up a fair share, in a shuffled order, and never the
         # same twice in a row.
-        pool = ['pile', 'pile2', 'pencil', 'ramp']
+        pool = ['pile', 'pile2', 'pencil', 'ramp', 'slalom']
+        double = Consts.lerpDifficulty(Consts.DoubleObstacleRange, self.difficulty)
         for i in range(len(segments)):
             choices = [k for k in pool if not kinds or k != kinds[-1]]
             kinds.append(rng.choice(choices))
@@ -91,6 +92,13 @@ class BoardroomLayout:
                     pile = Obstacle(PILE, (edge + far) / 2.0, mid + rng.uniform(-1.5, 1.5), w,
                                     rng.uniform(2.0, 3.0), rng.uniform(*Consts.PileHeight))
                     self.obstacles.append(pile)
+            elif kind == 'slalom':
+                # Two piles on opposite sides, one after the other: weave.
+                side = rng.choice((-1, 1))
+                for k, dy in enumerate((-5.0, 5.0)):
+                    w = rng.uniform(3.5, 4.5)
+                    x = side * (1 if k == 0 else -1) * (half - w - rng.uniform(0.0, 2.0))
+                    self.obstacles.append(Obstacle(PILE, x, mid + dy, w, rng.uniform(1.8, 2.4), rng.uniform(*Consts.PileHeight)))
             elif kind == 'pencil':
                 # A pencil the width of the table, lying a little crooked.
                 angle = rng.uniform(-10, 10)
@@ -104,6 +112,14 @@ class BoardroomLayout:
                 self.obstacles.append(pile)
                 self.obstacles.append(Obstacle(RAMP, x, mid - 4.5, w * 0.8, 4.5, h))
                 tops.append(pile)
+            if kind in ('pile', 'pile2', 'ramp') and rng.random() < double:
+                # A pencil rolled across the start of this stretch too.
+                self.obstacles.append(Obstacle(PENCIL, 0, y0 + 2.0, half, 0.7, Consts.PencilHeight, rng.uniform(-8, 8)))
+            elif kind == 'pencil' and rng.random() < double:
+                # And a pile just past the pencil, to steer round on landing.
+                w = rng.uniform(3.0, 4.0)
+                self.obstacles.append(Obstacle(PILE, rng.choice((-1, 1)) * rng.uniform(0, half - w), mid + 6.5, w, 2.0,
+                                               rng.uniform(*Consts.PileHeight)))
             # The memos for this stretch: on the table round the obstacle,
             # and on top of a pile now and then.
             count = rng.randint(*Consts.MemosPerSegment)

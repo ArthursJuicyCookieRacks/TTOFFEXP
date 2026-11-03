@@ -28,6 +28,77 @@ def _box(parent, x0, y0, x1, y1, z0, z1, color):
     return node
 
 
+def buildOffice(parent):
+    """The golf office's furniture: the Sellbot maze office's corner
+    cubicles pulled out to the corners of a bigger room, two of its cubicles
+    out in the middle, and its checked floor (tinted green, as in the QA
+    screenshot) stretched to fit. The AI's ball grid is drawn from this."""
+    office = loader.loadModel(Consts.GolfOfficeModel)
+    root = parent.attachNewNode('office')
+    floor = office.find('**/maze:floor')
+    if not floor.isEmpty():
+        floor.reparentTo(root)
+        floor.setScale(Consts.GolfFloorScale)
+        floor.setColorScale(0.62, 0.8, 0.64, 1)
+    papers = office.find('**/*floorPaper*')
+    if not papers.isEmpty():
+        papers.reparentTo(root)
+        papers.setScale(Consts.GolfFloorScale * 0.9)
+    for node in office.findAllMatches('**/+GeomNode') + office.findAllMatches('**/mazeGame:*'):
+        if node.isEmpty() or node.getParent() == root:
+            continue
+        prefix = node.getName().split(':')[0]
+        if prefix not in Consts.GolfOfficePieces:
+            continue
+        where = Consts.GolfOfficePieces[prefix]
+        if where is None:
+            node.detachNode()
+            continue
+        # (Not wrtReparentTo: the office stands away from the boardroom,
+        # and its pieces keep the model's own transform.)
+        node.reparentTo(root)
+        node.setPos(node.getPos() + PM.Vec3(where[0], where[1], 0))
+    office.removeNode()
+    # More of the maze office's cubicles and desks, borrowed from its other
+    # quadrants, fill out the four blocks between the aisles the cogs use.
+    models = {}
+    for quadrant, name, dx, dy in Consts.GolfExtraPieces:
+        if quadrant not in models:
+            models[quadrant] = loader.loadModel(Consts.GolfQuadrantModel % quadrant)
+        model = models[quadrant]
+        prefix = name.split(':')[0]
+        suffix = name.split(':')[1]
+        holder = root.attachNewNode('extra-%d-%s' % (quadrant, suffix))
+        holder.setPos(dx, dy, 0)
+        for node in model.findAllMatches('**/%s:*' % prefix):
+            part = node.getName().split(':')[1]
+            # Only this grouping's own pieces: itself, its floor shadow and
+            # its lamps' light cones.
+            if part != suffix and not part.endswith('_' + suffix) and 'lightCone' not in part:
+                continue
+            node.copyTo(holder)
+    for model in models.values():
+        model.removeNode()
+    # The low grey cubicle partitions of the QA screenshot, lining the
+    # aisles: the toons putt down a lane between them, and the balls bank
+    # off them.
+    for x0, y0, x1, y1 in Consts.GolfPartitions:
+        _partition(root, x0, y0, x1, y1)
+    root.setColorScale(*Consts.GolfOfficeBrightness)
+    return root
+
+
+def _partition(parent, x0, y0, x1, y1):
+    h = Consts.GolfPartitionHeight
+    wall = _box(parent, x0, y0, x1, y1, 0.0, h, (0.56, 0.58, 0.62, 1))
+    # A darker cap along the top and a kick plate at the floor.
+    cap = _box(wall, x0 - 0.08, y0 - 0.08, x1 + 0.08, y1 + 0.08, h - 0.25, h + 0.1, (0.5, 0.52, 0.56, 1))
+    cap.setColor(0.5, 0.52, 0.56, 1)
+    kick = _box(wall, x0 - 0.04, y0 - 0.04, x1 + 0.04, y1 + 0.04, 0.0, 0.45, (0.38, 0.39, 0.42, 1))
+    kick.setColor(0.38, 0.39, 0.42, 1)
+    return wall
+
+
 class CogdoBoardroomGolf:
     """The golf office after the boardroom slide: the classic cog building
     office floor, cubicle walls and desks piled with paper as in the QA
@@ -47,9 +118,7 @@ class CogdoBoardroomGolf:
     def load(self, parent):
         self.root = parent.attachNewNode('golfOffice')
         self.root.setPos(*Consts.GolfOrigin)
-        room = loader.loadModel(Consts.GolfRoomModel)
-        room.reparentTo(self.root)
-        self.room = room
+        self.room = self._loadShell()
         self._loadDressing()
         self._loadBarrels()
         self.ballModel = loader.loadModel('phase_6/models/golf/golf_ball')
@@ -62,25 +131,57 @@ class CogdoBoardroomGolf:
         self.root.stash()
         return self.root
 
+    def _loadShell(self):
+        # The office's walls and ceiling: the Sellbot maze office's grey
+        # panelled walls, brought in to the size of this room (the walls
+        # run on past the corners, out of sight behind each other).
+        level = loader.loadModel(Consts.GolfWallModel)
+        shell = self.root.attachNewNode('shell')
+        scale = Consts.GolfWallScale
+        for name, pos in (('wallBarrier1', (0, Consts.GolfHalfY + 0.5 - 76.5 * scale, 0)),
+                          ('wallBarrier2', (0, -(Consts.GolfHalfY + 0.5) + 76.5 * scale, 0)),
+                          ('wallBarrier3', (Consts.GolfHalfX + 0.5 - 76.5 * scale, 6.0 * scale, 0)),
+                          ('wallBarrier4', (-(Consts.GolfHalfX + 0.5) + 76.5 * scale, 6.0 * scale, 0)),
+                          ('ceiling', (0, 0, 0))):
+            wall = level.find('**/' + name)
+            if wall.isEmpty():
+                continue
+            holder = shell.attachNewNode(name)
+            wall.reparentTo(holder)
+            holder.setScale(scale)
+            holder.setPos(*pos)
+        level.removeNode()
+        return shell
+
     def _loadDressing(self):
         # The office itself: one of the Sellbot maze's cubicle offices, as
         # in the QA screenshot, its floor checked green and grey; the cog
         # building office round it gives the walls and ceiling beyond.
-        office = loader.loadModel(Consts.GolfOfficeModel)
-        for name in Consts.GolfOfficeRemove:
-            office.findAllMatches(name).detach()
-        office.reparentTo(self.root)
-        floor = office.find('**/maze:floor')
-        if not floor.isEmpty():
-            floor.setColorScale(0.62, 0.8, 0.64, 1)
+        office = buildOffice(self.root)
         for cone in office.findAllMatches('**/*lightCone*'):
             cone.setTransparency(PM.TransparencyAttrib.MAlpha)
             cone.setDepthWrite(False)
             cone.setBin('fixed', 3)
         self.office = office
-        # The room round it: only its walls and ceiling show above the
-        # office's own walls, and its floor is covered.
-        self.room.setZ(-0.05)
+        # The side doors the cogs carry the barrels out by, and a dark
+        # corridor beyond the far doorway they come in by.
+        door = loader.loadModel('phase_5/models/cogdominium/tt_m_ara_csa_exitDoor')
+        for side in (-1, 1):
+            d = door.copyTo(self.root)
+            d.setPos(side * (Consts.GolfHalfX + 0.4), 0, 0)
+            d.setH(-90 * side)
+        door.removeNode()
+        d = loader.loadModel('phase_5/models/cogdominium/tt_m_ara_csa_exitDoor')
+        d.reparentTo(self.root)
+        d.setPos(0, Consts.GolfHalfY + 0.4, 0)
+        d.setH(180)
+        # A dark corridor beyond the doorway the cogs come in by.
+        cm = PM.CardMaker('corridor')
+        cm.setFrame(-10, 10, 0, 18)
+        back = self.root.attachNewNode(cm.generate())
+        back.setPos(0, Consts.GolfHalfY + 2.5, 0)
+        back.setColor(0.04, 0.04, 0.05, 1)
+        back.setTwoSided(True)
         # A name plate on the far cubicle, as on the screenshot's.
         plate = PM.TextNode('namePlate')
         plate.setText('Mr. Hollywood\nVP of Hijinks')
@@ -91,7 +192,7 @@ class CogdoBoardroomGolf:
         plate.setCardAsMargin(0.3, 0.3, 0.2, 0.2)
         plate.setCardDecal(True)
         sign = self.root.attachNewNode(plate.generate())
-        sign.setPos(4.2, 6.1, 4.3)
+        sign.setPos(-21.0 + 1.9, -19.5 + 6.1, 4.3)
         sign.setScale(0.55)
         sign.setTwoSided(True)
 

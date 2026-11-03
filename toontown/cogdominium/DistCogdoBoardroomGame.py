@@ -16,6 +16,8 @@ from toontown.cogdominium import CogdoBoardroomGameConsts as Consts
 from toontown.cogdominium import CogdoBoardroomLayout as Layout
 from toontown.cogdominium.CogdoBoardroomRoom import CogdoBoardroomRoom
 from toontown.cogdominium.CogdoBoardroomGolf import CogdoBoardroomGolf
+from toontown.cogdominium.CogdoBoardroomDecor import CogdoBoardroomDecor
+from otp.nametag.NametagConstants import CFSpeech, CFTimeout
 from toontown.cogdominium import CogdoUtil
 from toontown.suit import Suit, SuitDNA
 from toontown.toonbase import ToontownTimer
@@ -95,6 +97,8 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         self.room.load().reparentTo(self.geomRoot)
         self.sceneRoot = self.geomRoot.attachNewNode('sceneRoot')
         self._loadMeeting()
+        self.decor = CogdoBoardroomDecor(self.layout, self._makeSuit)
+        self.decor.load(self.room.root)
         self._loadProps()
         self.golf = CogdoBoardroomGolf(self)
         self.golf.load(self.geomRoot)
@@ -130,6 +134,9 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         for prop in self.props.values():
             prop.removeNode()
         self.props = {}
+        taskMgr.removeTasksMatching(self.uniqueName('hush') + '*')
+        self.decor.destroy()
+        self.decor = None
         for club in self.clubs.values():
             club.removeNode()
         self.clubs = {}
@@ -342,6 +349,10 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
                                       OTPGlobals.ToonReverseSpeed, OTPGlobals.ToonRotateSpeed)
         toon.startTrackAnimToSpeed()
         taskMgr.remove(self.uniqueName('camera'))
+        if getattr(self, '_fovNow', None) is not None:
+            self._fovNow = None
+            base.camLens.setMinFov(getattr(toon, 'fov', ToontownGlobals.DefaultCameraFov) / (4.0 / 3.0))
+        self._standUp(toon)
         if getattr(self, '_stoppedSmartCam', False):
             self._stoppedSmartCam = False
             camera.reparentTo(base.localAvatar)
@@ -391,6 +402,9 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
                 suit.headsUp(PM.Point3(x + (x - old[0]) * 10, y + (y - old[1]) * 10, suit.getZ()))
         pos = toon.getPos(render)
         self._cullCogs(pos, now)
+        if self.decor:
+            self.decor.update(now)
+        self._chatter(now)
         if toon.doId not in self.exited:
             if self.slideState in ('wait', 'slide'):
                 self._checkPickups(pos)
@@ -414,13 +428,16 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
             return
         self._nextCull = now + 0.4
         y = camera.getY(render) if self.slideState != 'wait' else pos[1]
-        for suit in list(self.bosses.values()) + self.minions:
+        decor = self.decor.allSuits() if self.decor else []
+        for suit in list(self.bosses.values()) + self.minions + decor:
             near = -40 < suit.getY(render) - y < Consts.ShowCogsWithin
             if near and suit.isStashed():
                 suit.unstash()
                 if suit in self.minions:
                     suit.pose('landing', 0)
                     suit.prop.loop('propeller')
+                elif suit in decor:
+                    self.decor.startSuit(suit)
                 else:
                     suit.loop('sit', fromFrame=random.randrange(20))
             elif not near and not suit.isStashed():
@@ -443,12 +460,12 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
 
     def _followCamera(self, toon, dt):
         pos = toon.getPos(render)
-        if self.slideState == 'off':
+        if self.slideState in ('off', 'jumpoff'):
             want = PM.Point3(pos[0] * 0.5, pos[1] - Consts.CameraBack * 1.2, Consts.TableTop + Consts.CameraUp * 1.3)
             look = PM.Point3(pos[0], pos[1] + 6, pos[2] + 2)
         else:
             want = PM.Point3(pos[0] * 0.6, pos[1] - Consts.CameraBack, max(pos[2], Consts.TableTop) + Consts.CameraUp)
-            look = PM.Point3(pos[0] * 0.85, pos[1] + 9, max(pos[2], Consts.TableTop) + 1.5)
+            look = PM.Point3(pos[0] * 0.85, pos[1] + 16, max(pos[2], Consts.TableTop) + 1.0)
         cur = getattr(self, '_camPos', None) or want
         k = min(1.0, dt * 6.0)
         cur = cur + (want - cur) * k if (want - cur).length() < 40 else want
@@ -519,19 +536,103 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
             spin = 720.0 * (1.0 - (self.spinUntil - now) / Consts.SpinTime)
         toon.setH(render, lean + spin)
         self.lastPos = PM.Point3(pos)
-        if new[1] > Consts.TableEnd + 0.5:
-            # Off the far end, down to the floor by the chairman.
+        self._slideFx(toon, new, dt, now)
+        if new[1] > Consts.TableEnd - Consts.JumpOffAt:
+            self._jumpOff(toon, new)
+
+    def _jumpGravity(self, drop):
+        # How strong a pull the arc takes so the toon rises JumpOffHeight
+        # above the table before dropping to the floor in JumpOffTime.
+        # (A ProjectileInterval with an end point can't take a waypoint.)
+        T, H = Consts.JumpOffTime, Consts.JumpOffHeight
+        # vz0 = (0.5*g*T^2 - drop)/T and vz0^2 = 2*g*H; solve for g.
+        best = 1.0
+        for k in range(1, 400):
+            g = k * 0.5
+            vz = (0.5 * g * T * T - drop) / T
+            if vz > 0 and vz * vz >= 2 * g * H:
+                best = g
+                break
+        return best / 32.174
+
+    def _jumpOff(self, toon, pos):
+        # Near the far end the toon springs up off its belly and jumps down
+        # to the floor beside the chairman's chair (not into the chairman),
+        # lands, and runs on out.
+        self.slideState = 'jumpoff'
+        place = base.cr.playGame.getPlace()
+        if place and place.fsm.getCurrentState().getName() == 'walk':
+            place.fsm.request('stopped')
+        side = 1 if pos[0] >= 0 else -1
+        land = PM.Point3(side * Consts.JumpOffX, Consts.TableEnd + 2.5, 0)
+        start = PM.Point3(pos)
+        self._standUp(toon)
+        toon.setH(render, -side * 35)
+
+        def landed():
             self.slideState = 'off'
-            toon.startTrackAnimToSpeed()
+            if place and place.fsm.getCurrentState().getName() != 'walk':
+                place.fsm.request('walk')
+            toon.stopTrackAnimToSpeed()
             toon.controlManager.setSpeeds(OTPGlobals.ToonForwardSpeed, OTPGlobals.ToonJumpForce,
                                           OTPGlobals.ToonReverseSpeed, OTPGlobals.ToonRotateSpeed)
+            toon.loop('run')
+            toon.sendCurrentPosition()
+
+        track = Sequence(
+            Parallel(ProjectileInterval(toon, startPos=start, endPos=land, duration=Consts.JumpOffTime,
+                                        gravityMult=self._jumpGravity(start[2] - land[2])),
+                     Sequence(Func(toon.pose, 'jump-squat', 0), Wait(0.1), Func(toon.loop, 'jump-idle'),
+                              Wait(Consts.JumpOffTime - 0.35), ActorInterval(toon, 'jump-land', duration=0.4))),
+            Func(landed))
+        track.start()
+        self.ivals.append(track)
+        self._jumpTrack = track
+
+    def _slideFx(self, toon, pos, dt, now):
+        # A sense of speed: the view widens as the toon speeds up, it sways
+        # into the turns, and the tablecloth squeaks out a trail of dust.
+        speed = max(0.0, self.slideSpeed)
+        boost = max(0.0, min(1.0, (speed - Consts.SlideSpeed) / (Consts.SlideFastSpeed - Consts.SlideSpeed)))
+        self._setFov(Consts.SlideFov + Consts.SlideFovBoost * boost)
+        geom = toon.getGeomNode()
+        geom.setR(-self.steerVel / Consts.SteerSpeed * 22.0)
+        geom.setZ(Consts.SlideBodyZ + 0.08 * math.sin(now * 14.0))
+        if speed > 4.0 and now - getattr(self, '_lastPuff', 0) > 0.07 and abs(pos[2] - Consts.TableTop) < 0.6:
+            self._lastPuff = now
+            puff = self.marker.copyTo(self.sceneRoot)
+            puff.setPos(pos[0] + random.uniform(-0.6, 0.6), pos[1] - 0.8, pos[2] + 0.06)
+            puff.setScale(0.35)
+            puff.setColor(1, 1, 0.95, 0.55)
+            puff.setTransparency(PM.TransparencyAttrib.MAlpha)
+            puff.setDepthOffset(2)
+            fx = Sequence(Parallel(LerpScaleInterval(puff, 0.6, 1.2, startScale=0.35),
+                                   LerpColorScaleInterval(puff, 0.6, PM.VBase4(1, 1, 1, 0), startColorScale=PM.VBase4(1, 1, 1, 1))),
+                          Func(puff.removeNode))
+            fx.start()
+
+    def _setFov(self, fov):
+        cur = getattr(self, '_fovNow', None)
+        if cur is None or abs(cur - fov) > 0.2:
+            cur = fov if cur is None else cur + (fov - cur) * 0.15
+            self._fovNow = cur
+            base.camLens.setMinFov(cur / (4.0 / 3.0))
 
     def _bellyFlop(self, toon):
         # Down on its belly, as the toons slide in the design.
+        # Superman-style: flat on its belly, arms out in front. (The diving
+        # game's swim, first frame, tipped forward onto the table; the
+        # slip-forward fall looked like a toon lying there, not sliding.)
         toon.stop()
-        # Frame 24 of 55 is flat on its belly (the last frame is the toon
-        # back on its feet, which had it sliding along standing up).
-        toon.pose('slip-forward', int(toon.getNumFrames('slip-forward') * 0.44))
+        toon.pose('swim', 0)
+        geom = toon.getGeomNode()
+        geom.setP(-90)
+        geom.setZ(Consts.SlideBodyZ)
+
+    def _standUp(self, toon):
+        geom = toon.getGeomNode()
+        geom.setHpr(0, 0, 0)
+        geom.setZ(0)
 
     def _crash(self, toon, now):
         self.stuckTime = 0.0
@@ -667,6 +768,8 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
             else:
                 start = PM.Point3(x, y, z + 18)
             sfx = self.dropSfx if kind == Consts.Anvil else self.landSfx
+            if 0 <= index < len(self.minions) and random.random() < 0.3:
+                self._say(self.minions[index], ('Downsize', 'Demotion', 'Shred', 'Sacked'))
         else:
             flight = Consts.ThrowFlightTime
             suit = self.bosses.get(source)
@@ -683,6 +786,8 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
                 self.ivals.append(swing)
             if kind == Consts.GolfBall:
                 base.playSfx(self.swingSfx, node=suit)
+            if random.random() < 0.45:
+                self._say(suit, ('TeeOff', 'PlayHardball') if kind == Consts.GolfBall else ('Synergy', 'PinkSlip', 'RedTape', 'WriteOff'))
         self.landings.append((self.gameTime() - elapsed + flight, kind, x, y, z))
         prop = self.props[kind].copyTo(self.sceneRoot)
         prop.setScale(self.propScales[kind])
@@ -738,6 +843,8 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         strip.setTransparency(PM.TransparencyAttrib.MAlpha)
         strip.setDepthOffset(3)
         strip.setTwoSided(True)
+        if random.random() < 0.6:
+            self._say(suit, ('TeeOff', 'PlayHardball', 'Canned'))
         club = BattleProps.globalPropPool.getProp('golf-club')
         hand = suit.getRightHand() if hasattr(suit, 'getRightHand') else suit
         club.reparentTo(hand)
@@ -773,7 +880,11 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
             LerpHprInterval(drum, 0.5, PM.Vec3(0, 0, 0)))
         track.start(elapsed)
         self.ivals.append(track)
-        if base.localAvatar and self.fsm.getCurrentState().getName() == 'Game':
+        # Warn only of a slick just ahead, and not more than one at a time.
+        now = globalClock.getFrameTime()
+        if base.localAvatar and self.fsm.getCurrentState().getName() == 'Game' \
+                and 0 < sy - base.localAvatar.getY(render) < 150 and now - getattr(self, '_lastOilMsg', -99) > 6.0:
+            self._lastOilMsg = now
             base.localAvatar.setSystemMessage(0, TTL.BoardroomOilSpill)
 
     def toonHit(self, avId, kind, memosLost):
@@ -848,8 +959,10 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
             toon._boardroomLast = PM.Point3(pos)
             if avId in self.exited:
                 want = 'neutral'
-            elif Consts.TableStart - 2 < pos[1] < Consts.TableEnd + 1 and pos[2] > Consts.TableTop - 0.6:
+            elif Consts.TableStart - 2 < pos[1] < Consts.TableEnd - Consts.JumpOffAt and pos[2] > Consts.TableTop - 0.6:
                 want = 'slide'
+            elif pos[1] >= Consts.TableEnd - Consts.JumpOffAt - 1 and pos[2] > 0.4:
+                want = 'jump-idle'
             elif last is not None and (pos - last).length() > 0.02:
                 want = 'run'
             else:
@@ -860,6 +973,7 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
             if want == 'slide':
                 self._bellyFlop(toon)
             else:
+                self._standUp(toon)
                 toon.loop(want)
 
     # --- The golf office ---
@@ -897,6 +1011,7 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
             if toon is None or toon.isEmpty():
                 continue
             toon._boardroomAnim = None
+            self._standUp(toon)
             self._placeAtTee(toon, avId)
             if avId not in self.clubs:
                 club = self.golf.attachPutter(toon)
@@ -986,13 +1101,14 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         h = getattr(self, 'aimH', 0.0)
         a = math.radians(h)
         fwd = PM.Vec3(-math.sin(a), math.cos(a), 0)
-        # Behind the toon and up, kept inside the office's walls.
-        want = tee - fwd * 9 + PM.Vec3(0, 0, 7.5)
+        # Behind the toon and well up, looking down over its shoulder at
+        # the cubicles, as in the QA screenshot; kept inside the walls.
+        want = tee - fwd * 8.5 + PM.Vec3(0, 0, 9.5)
         local = self.golf.toLocal(want)
         local.setX(max(-Consts.GolfHalfX + 1.5, min(Consts.GolfHalfX - 1.5, local[0])))
-        local.setY(max(-Consts.GolfHalfY + 0.8, local[1]))
+        local.setY(max(-Consts.GolfHalfY + 0.6, local[1]))
         want = local + self.golf.root.getPos(render)
-        look = tee + fwd * 9 + PM.Vec3(0, 0, 1.0)
+        look = tee + fwd * 15 + PM.Vec3(0, 0, 1.0)
         cur = self._golfCamPos or want
         cur = cur + (want - cur) * min(1.0, dt * 5.0)
         self._golfCamPos = PM.Point3(cur)
@@ -1008,7 +1124,10 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
     def golfCogPickup(self, cogId, carrying, barrelsHome):
         if self.golf is None:
             return
+        cog = self.golf.cogs.get(cogId)
         self.golf.cogPickup(cogId, carrying)
+        if carrying and cog and random.random() < 0.5:
+            self._say(cog['suit'], ('Liquidate', 'PickPocket', 'Downsize'), TTL.BoardroomGolfGrabLines)
         self.barrelsHome = barrelsHome
         self.golf.setBarrelsHome(barrelsHome)
         self._updateGui()
@@ -1026,6 +1145,10 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
     def golfCogHit(self, cogId, avId, barrelsHome):
         if self.golf is None:
             return
+        cog = self.golf.cogs.get(cogId)
+        if cog and random.random() < 0.6:
+            cog['suit']._lastSaid = -99
+            self._say(cog['suit'], (), TTL.BoardroomGolfHitLines)
         self.golf.cogHit(cogId)
         self.barrelsHome = barrelsHome
         self.golf.setBarrelsHome(barrelsHome)
@@ -1044,3 +1167,46 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
             if toon.getAnimControls('swing-putt'):
                 Sequence(ActorInterval(toon, 'swing-putt', startFrame=0, endFrame=23),
                          Func(toon.loop, 'loop-putt')).start()
+
+    # --- What the cogs say ---
+
+    ChatterKeys = ('Synergy', 'BuzzWord', 'Jargon', 'ParadigmShift', 'ReOrg', 'Rolodex', 'Watercooler', 'RedTape',
+                   'Schmooze', 'Filibuster', 'MumboJumbo', 'PowerTie', 'Tabulate', 'GuiltTrip')
+
+    def _say(self, suit, keys, extra=()):
+        # A line from what the cog would say in battle, in a speech bubble
+        # (the name shows while it talks, as on the streets).
+        if suit is None or suit.isEmpty() or suit.isStashed():
+            return
+        now = globalClock.getFrameTime()
+        if now - getattr(suit, '_lastSaid', -99) < 6.0 or now - getattr(self, '_lastSaid', -99) < 1.2:
+            return
+        lines = []
+        for key in keys:
+            lines.extend(TTL.SuitAttackTaunts.get(key, ()))
+        lines.extend(extra)
+        if not lines:
+            return
+        suit._lastSaid = now
+        self._lastSaid = now
+        suit.nametag3d.unstash()
+        suit.setChatAbsolute(random.choice(lines), CFSpeech | CFTimeout)
+        name = self.uniqueName('hush-%d' % id(suit))
+        taskMgr.remove(name)
+        taskMgr.doMethodLater(5.0, self._hush, name, extraArgs=[suit])
+
+    def _hush(self, suit):
+        if suit is not None and not suit.isEmpty():
+            suit.clearChat()
+            suit.nametag3d.stash()
+
+    def _chatter(self, now):
+        # Now and then a cog in view says something.
+        if now < getattr(self, '_nextChatter', 3.0):
+            return
+        self._nextChatter = now + random.uniform(2.0, 4.0)
+        y = base.localAvatar.getY(render)
+        near = [s for s in list(self.bosses.values()) + (self.decor.allSuits() if self.decor else [])
+                if not s.isStashed() and 5 < s.getY(render) - y < 70]
+        if near:
+            self._say(random.choice(near), self.ChatterKeys)

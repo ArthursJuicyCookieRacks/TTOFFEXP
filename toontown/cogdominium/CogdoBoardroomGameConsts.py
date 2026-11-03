@@ -37,7 +37,7 @@ TableModel = 'phase_12/models/bossbotHQ/BanquetTableChairs'
 # The table runs up the middle of the hall. The toons run on its top.
 # Three of the banquet halls end to end, the walls between them taken
 # out: each hall is this long from its near wall to its far one.
-NumHalls = 3
+NumHalls = 5
 HallLength = 333.7016
 TableHalfWidth = 13.0
 TableStart = 96.0
@@ -61,9 +61,10 @@ SeatSideX = TableHalfWidth + 3.4
 # rate on phones: the table is long.
 ShowCogsWithin = 170.0
 # Seats filled, per side, from the easiest office to the hardest.
-SeatsPerSideRange = (14, 22)
-MinionsRange = (5, 9)
-OilCansRange = (8, 13)
+# Per hall: the table is NumHalls halls long.
+SeatsPerSideRange = (6 * NumHalls, 9 * NumHalls)
+MinionsRange = (3 * NumHalls, 5 * NumHalls)
+OilCansRange = (3 * NumHalls, 5 * NumHalls)
 MinionHeight = 15.0
 # The Boss Cogs: Bossbots, as at any Bossbot meeting. The level of the
 # office and its playground make them bigger.
@@ -97,13 +98,15 @@ DropFallTime = 1.25
 WarnTime = 0.9
 # How often the meeting throws things at the toons (seconds between, at
 # the easiest and the hardest office).
-BossAttackPeriodRange = (2.2, 1.0)
-MinionDropPeriodRange = (3.2, 1.4)
-OilSpillPeriodRange = (12.0, 7.0)
+BossAttackPeriodRange = (1.3, 0.55)
+MinionDropPeriodRange = (1.8, 0.7)
+OilSpillPeriodRange = (8.0, 4.5)
+# How likely a second cog throws at the same time (easiest, hardest).
+VolleyChanceRange = (0.15, 0.6)
 # Throws land this far ahead of the toon they aim at (the toons run up the
 # table), give or take.
-AttackLead = 12.0
-AttackSpread = 4.0
+AttackLead = 24.0
+AttackSpread = 5.0
 
 # The swing at a toon sliding past a Boss Cog's chair: it reaches this far
 # in over the table, this long after the warning.
@@ -115,11 +118,23 @@ SwipeTime = 0.8
 # and right (in the air too) and hopping over what's in the way. Forward
 # slides faster, back slower. Each toon sets off a moment after the last,
 # so they don't all pile into each other.
-SlideSpeed = 8.5
-SlideFastSpeed = 13.0
-SlideSlowSpeed = 4.5
-SlideAccel = 10.0
-SteerSpeed = 11.0
+SlideSpeed = 17.0
+SlideFastSpeed = 24.0
+SlideSlowSpeed = 10.0
+SlideAccel = 16.0
+SteerSpeed = 15.0
+# The slide pose: flat on its belly this far above the table.
+SlideBodyZ = 0.55
+# The camera's field of view on the slide, and how much wider it gets at
+# full speed (the elevator ride leaves the view narrower than the game's).
+SlideFov = 62.0
+SlideFovBoost = 8.0
+# Off the far end: each toon jumps down to the floor beside the chairman's
+# chair, this far out to a side, then runs out past it.
+JumpOffAt = 3.0
+JumpOffX = 10.0
+JumpOffTime = 1.0
+JumpOffHeight = 5.0
 StartStagger = 1.5
 StartDelay = 1.0
 # A ramp throws a toon sliding up it into the air.
@@ -127,8 +142,8 @@ LaunchForce = 30.0
 # Sliding into a pile or a pencil stops a toon and spins it round.
 CrashTime = 0.9
 SpinTime = 0.8
-CameraBack = 16.0
-CameraUp = 8.5
+CameraBack = 13.0
+CameraUp = 5.5
 
 # --- On the table ---
 SlickRadius = 7.5
@@ -148,14 +163,16 @@ PowerUpRadius = 2.6
 # --- Laying out the table ---
 # Each stretch of table gets one obstacle, memos and now and then a
 # power-up; the first and last stretch are clear.
-SegmentLength = 24.0
+SegmentLength = 21.0
 ClearStart = 10.0
 ClearEnd = 16.0
 MemosPerSegment = (2, 4)
+# How likely a stretch gets a second obstacle (easiest, hardest).
+DoubleObstacleRange = (0.25, 0.7)
 PileHeight = (5.0, 7.5)
 PencilHeight = 1.25
-NumInvulnerable = 5
-NumHop = 5
+NumInvulnerable = 2 * NumHalls
+NumHop = 2 * NumHalls
 
 # --- Difficulty ---
 # As at the other offices: the playground's difficulty and the office's
@@ -195,35 +212,59 @@ def hazardHits(kind, x, y, z, px, py, pz):
 # barrels. The toons tee off golf balls across a cubicle office at the cogs
 # walking out with them: a cog that is hit drops its barrel back on the
 # pile. Each barrel left at the end is laff for every toon.
-SlideDuration = 150.0
+SlideDuration = 165.0
 GolfDuration = 60.0
 # The slide's clock, then the golf's: GameDuration above is both.
 GameDuration = SlideDuration + GolfDuration
 # The office is a Sellbot maze quadrant (the same cubicles, filing
 # cabinets, desks and paper as the QA screenshot, on a green checked
 # floor), inside a cog building's office for its walls and ceiling.
-GolfRoomModel = 'phase_7/models/modules/suit_interior'
+GolfWallModel = 'phase_5/models/cogdominium/tt_m_ara_cmg_level'
+GolfWallScale = 0.6
 GolfOfficeModel = 'phase_5/models/cogdominium/tt_m_ara_cmg_quadrant9'
-# Taken out of the quadrant: the cubicle between the tees and the barrels,
-# and the water cooler.
-GolfOfficeRemove = ('**/maze6:*', '**/mazeGame:waterCooler')
+# The office is a big one: the maze office's four corners of cubicles,
+# filing cabinets and desks pulled out to the corners of the cog building's
+# room, and two of its cubicles out in the middle. Each piece (by its name
+# prefix in the model) and where it goes; None leaves it out.
+GolfOfficePieces = {'maze1': (18.5, 3.5), 'maze2': (-18.5, 3.5), 'maze4': (18.5, -3.5), 'maze5': (-18.5, -3.5),
+                    'maze3': (-21.0, -19.5), 'maze6': (11.0, 1.0), 'mazeGame': None}
+# (quadrant, grouping, x offset, y offset): the maze office pieces that
+# fill the inner halves of the four cubicle blocks.
+GolfQuadrantModel = 'phase_5/models/cogdominium/tt_m_ara_cmg_quadrant%d'
+GolfExtraPieces = ((6, 'maze2:grouping2', 0.0, 8.0),
+                   (3, 'maze3:grouping3', -9.0, 11.0),
+                   (3, 'maze8:grouping8', 9.0, -8.0),
+                   (8, 'maze3:grouping3a', -11.0, -30.0))
+# Low cubicle partitions (x0, y0, x1, y1) along the aisles: the tee lane
+# up the middle, and the aisle across the office the cogs carry the barrels
+# out along (with gaps, as cubicles have).
+GolfPartitionHeight = 4.2
+GolfPartitions = ((-8.6, -27.5, -8.0, -9.0), (8.0, -27.5, 8.6, -9.0),
+                  (-22.0, -9.0, -8.0, -8.4), (8.0, -9.0, 22.0, -8.4),
+                  (-40.0, -9.0, -27.0, -8.4), (27.0, -9.0, 40.0, -8.4),
+                  (-22.0, 8.4, -8.0, 9.0), (8.0, 8.4, 22.0, 9.0),
+                  (-40.0, 8.4, -27.0, 9.0), (27.0, 8.4, 40.0, 9.0),
+                  (-8.6, 9.0, -8.0, 20.0), (8.0, 9.0, 8.6, 20.0))
+# The office is lit brighter than the maze, as in the screenshot.
+GolfOfficeBrightness = (1.25, 1.25, 1.25, 1)
+GolfFloorScale = 1.75
 # The golf office is away from the boardroom, out of its sight.
 GolfOrigin = (0.0, 2400.0, 0.0)
-GolfHalfX = 25.0
-GolfHalfY = 25.0
-# Where the toons tee off, in the doorway on the near side.
-GolfTees = ((-4.5, -19.0), (-1.5, -19.0), (1.5, -19.0), (4.5, -19.0))
-# Where the barrels are piled, and the doorways the cogs come in and go out
-# by, to the left and the right.
-BarrelPile = (0.0, 3.0)
-CogDoorX = 27.0
-CogExitX = 27.0
-NumBarrels = 8
+GolfHalfX = 44.0
+GolfHalfY = 29.0
+# Where the toons tee off, along the near side.
+GolfTees = ((-4.5, -20.0), (-1.5, -20.0), (1.5, -20.0), (4.5, -20.0))
+# Where the barrels are piled; the cogs come in by the far doorway and go
+# out by the side doors with what they carry.
+BarrelPile = (0.0, 4.0)
+CogDoorY = 31.0
+CogExitX = 44.5
+NumBarrels = 10
 LaffPerBarrel = 3
 GolfCogNames = ('f', 'p', 'ym', 'mm', 'ds', 'hh', 'cr')
-GolfMaxCogsRange = (2, 4)
-GolfSpawnPeriodRange = (5.0, 2.6)
-GolfCogSpeedRange = (4.5, 6.5)
+GolfMaxCogsRange = (3, 8)
+GolfSpawnPeriodRange = (3.2, 1.1)
+GolfCogSpeedRange = (5.5, 8.5)
 GolfPickupTime = 1.2
 GolfCogRadius = 2.4
 # The swing: Left/Right aims, holding Jump (Control) winds up, letting go
@@ -238,11 +279,11 @@ SwingCooldown = 0.8
 
 
 def golfCogPath(px, side, exitY, speed):
-    """The legs of a golf cog's walk: in by the doorway on one side to the
-    barrel pile, a moment to pick one up, then out by the other side's."""
+    """The legs of a golf cog's walk: in by the far doorway to the barrel
+    pile, a moment to pick one up, then out by a side door."""
     import math
-    door = (-side * CogDoorX, -exitY * 0.5)
-    pile = (BarrelPile[0] + px, BarrelPile[1] - 2.2)
+    door = (px * 0.8, CogDoorY)
+    pile = (BarrelPile[0] + px, BarrelPile[1] + 2.4)
     out = (side * CogExitX, exitY)
     t1 = math.hypot(pile[0] - door[0], pile[1] - door[1]) / speed
     t2 = t1 + GolfPickupTime
@@ -275,10 +316,12 @@ def golfBlocked(x, y):
     """Whether the office is blocked at (x, y): a wall, a cubicle, a desk or
     a filing cabinet (see CogdoBoardroomGolfGrid)."""
     from toontown.cogdominium import CogdoBoardroomGolfGrid as Grid
-    if not (-Grid.Half < x < Grid.Half and -Grid.Half < y < Grid.Half):
+    if not (-Grid.HalfX < x < Grid.HalfX and -Grid.HalfY < y < Grid.HalfY):
         return True
-    row = int((Grid.Half - y) / Grid.Cell)
-    col = int((x + Grid.Half) / Grid.Cell)
+    if abs(x) > GolfHalfX or abs(y) > GolfHalfY:
+        return True
+    row = int((Grid.HalfY - y) / Grid.Cell)
+    col = int((x + Grid.HalfX) / Grid.Cell)
     return Grid.Rows[row][col] == '1'
 
 

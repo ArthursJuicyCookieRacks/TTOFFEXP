@@ -1740,6 +1740,17 @@ class CogdoBoardroomPlayer(CogdoPlayer):
             self.memo['y'] = BoardroomConsts.TableStart + 2.5
             self.memo['speed'] = 0.0
         x, y = self.memo['x'], self.memo['y']
+        jump = self.memo.get('jump')
+        if jump:
+            # Jumping down off the end of the table, beside the chairman.
+            t0, sx, sy, sz, lx, ly = jump
+            f = min(1.0, (now - t0) / BoardroomConsts.JumpOffTime)
+            z = sz + (0 - sz) * f + BoardroomConsts.JumpOffHeight * 4 * f * (1 - f)
+            self.npc.moveTo(sx + (lx - sx) * f, sy + (ly - sy) * f, max(0.0, z), -35 if lx > 0 else 35)
+            if f >= 1.0:
+                self.memo['jump'] = None
+                self.memo['off'] = True
+            return
         if self.memo.get('off'):
             # Off the table: run into the exit.
             ex, ey = BoardroomConsts.ExitPosHpr[:2]
@@ -1810,9 +1821,9 @@ class CogdoBoardroomPlayer(CogdoPlayer):
         for j, (kind, px, py) in enumerate(layout.powerUps):
             if j not in game.powerUpsTaken and math.hypot(px - nx, py - ny) < BoardroomConsts.PowerUpRadius:
                 self.send('requestPowerUp', j)
-        if ny > BoardroomConsts.TableEnd:
-            self.memo['off'] = True
-            self.npc.moveTo(nx, ny + 3, 0, 0)
+        if ny > BoardroomConsts.TableEnd - BoardroomConsts.JumpOffAt:
+            side = 1 if nx >= 0 else -1
+            self.memo['jump'] = (now, nx, ny, z, side * BoardroomConsts.JumpOffX, BoardroomConsts.TableEnd + 2.5)
 
     def golf(self, now):
         game = self.game

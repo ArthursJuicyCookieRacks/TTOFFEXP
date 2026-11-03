@@ -176,7 +176,7 @@ class DistCogdoBoardroomGameAI(DistCogdoGameAI):
         if _isNPC(av):
             # No client rolls an NPC's ball for us: roll it here, the same
             # way the clients do.
-            tx, ty = Consts.GolfTees[self.toons.index(avId) % len(Consts.GolfTees)] if avId in self.toons else (0, -19)
+            tx, ty = Consts.GolfTees[self.toons.index(avId) % len(Consts.GolfTees)] if avId in self.toons else (0, Consts.GolfTees[0][1])
             x, y, vx, vy = Consts.golfBallStart(tx, ty, h, power)
             ball = {'x': x, 'y': y, 'vx': vx, 'vy': vy}
             taskMgr.add(self.__rollBall, self.uniqueName('golfball-%d' % random.randrange(1 << 30)),
@@ -238,7 +238,7 @@ class DistCogdoBoardroomGameAI(DistCogdoGameAI):
         avId = random.choice(avIds)
         x, y, z = self.__toonPos(avId)
         tx = x + random.uniform(-Consts.AttackSpread, Consts.AttackSpread)
-        ty = y + Consts.AttackLead * random.uniform(0.8, 1.6) + random.uniform(-Consts.AttackSpread, Consts.AttackSpread)
+        ty = y + Consts.AttackLead * random.uniform(0.75, 1.3) + random.uniform(-Consts.AttackSpread, Consts.AttackSpread)
         tx = max(-Consts.TableHalfWidth + 1, min(Consts.TableHalfWidth - 1, tx))
         ty = max(Consts.TableStart + 2, min(Consts.TableEnd - 2, ty))
         if full:
@@ -255,6 +255,14 @@ class DistCogdoBoardroomGameAI(DistCogdoGameAI):
     def __bossAttack(self, task):
         if self.finished:
             return task.done
+        self.__bossThrow()
+        if random.random() < Consts.lerpDifficulty(Consts.VolleyChanceRange, self.layout.difficulty):
+            # Another Boss Cog joins in.
+            self.__bossThrow()
+        task.delayTime = Consts.lerpDifficulty(Consts.BossAttackPeriodRange, self.layout.difficulty) * random.uniform(0.75, 1.25)
+        return task.again
+
+    def __bossThrow(self):
         target = self.__target(full=True)
         seats = self.layout.bossSeats()
         if target and seats:
@@ -263,7 +271,8 @@ class DistCogdoBoardroomGameAI(DistCogdoGameAI):
             # gets the golf club; otherwise the nearest one up the table
             # tees off a golf ball at it, or throws paperwork.
             side = 1 if px > 0 else -1
-            close = [i for i in seats if self.layout.seats[i][0] == side and 0 < self.layout.seats[i][1] - py < 14
+            # (The toon slides on about 14 feet while the club comes round.)
+            close = [i for i in seats if self.layout.seats[i][0] == side and 8 < self.layout.seats[i][1] - py < 22
                      and abs(px) > Consts.TableHalfWidth - Consts.SwipeReach]
             if close and random.random() < 0.7:
                 seat = min(close, key=lambda i: self.layout.seats[i][1])
@@ -272,8 +281,6 @@ class DistCogdoBoardroomGameAI(DistCogdoGameAI):
                 seat = min(seats, key=lambda i: abs(self.layout.seats[i][1] - ty) + random.uniform(0, 12))
                 kind = random.choice((Consts.GolfBall, Consts.GolfBall, Consts.Paper))
                 self.__launch(kind, seat, (tx, ty), Consts.ThrowFlightTime)
-        task.delayTime = Consts.lerpDifficulty(Consts.BossAttackPeriodRange, self.layout.difficulty) * random.uniform(0.75, 1.25)
-        return task.again
 
     def __minionDrop(self, task):
         if self.finished:
