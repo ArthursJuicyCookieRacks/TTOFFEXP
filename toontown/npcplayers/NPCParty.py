@@ -354,6 +354,25 @@ class NPCParty:
                 break
         return inLevel and (npc.getPos() - self.manager.getPlayerPos(player)).length() < 1500.0
 
+    def facilityFloor(self, npc, player):
+        """Which floor (its object) of a mint, office or country club the
+        two are on together."""
+        for obj in list(self.air.doId2do.values()):
+            if obj.__class__.__name__ in ('DistributedStageAI', 'DistributedMintAI', 'DistributedCountryClubAI') and \
+                    player.doId in getattr(obj, 'avIds', ()) and npc.doId in getattr(obj, 'avIds', ()):
+                return obj.doId
+        return None
+
+    def inTheOpen(self, spot, reach=2.5):
+        """Whether a toon there could walk off at least three ways."""
+        nav = getNav()
+        ways = 0
+        for k in range(4):
+            a = k * math.pi / 2
+            if nav.clearLine(spot, Point3(spot[0] + reach * math.cos(a), spot[1] + reach * math.sin(a), spot[2])):
+                ways += 1
+        return ways >= 3
+
     def spotNear(self, pos, distance, avoid=None):
         nav = getNav()
         for i in range(8):
@@ -363,14 +382,21 @@ class NPCParty:
             if ground is not None and nav.clearLine(Point3(pos), Point3(spot[0], spot[1], ground)):
                 return Point3(spot[0], spot[1], ground)
         if avoid is not None:
-            # From inside an elevator every line out hits its walls: any spot
-            # with ground under it that far off will do.
-            for i in range(8):
+            # From inside an elevator every line out hits its walls: a spot
+            # with ground under it that far off, in the open (not inside a
+            # couch or a desk, whose walls have no floor of their own).
+            fallback = None
+            for i in range(12):
                 angle = random.uniform(0, 2 * math.pi)
                 spot = Point3(pos[0] + distance * math.cos(angle), pos[1] + distance * math.sin(angle), pos[2])
                 ground = nav.groundZ(spot[0], spot[1], spot[2])
                 if ground is not None:
-                    return Point3(spot[0], spot[1], ground)
+                    spot = Point3(spot[0], spot[1], ground)
+                    if self.inTheOpen(spot):
+                        return spot
+                    fallback = fallback or spot
+            if fallback is not None:
+                return fallback
             return Point3(pos[0] + distance, pos[1], pos[2])
         # No floor found round about (it is not drawn yet): still not right
         # on top of the player or of another toon sent here.
@@ -410,10 +436,21 @@ class NPCParty:
                 if npc.busy:
                     continue
                 if self.sameFacility(npc, player):
+                    floor = self.facilityFloor(npc, player)
+                    if floor is not None and getattr(npc, 'facilityFloor', floor) != floor:
+                        # Up the elevator to the next floor of an office or
+                        # a country club with the player: it comes out where
+                        # the player does, not where it stood a floor down.
+                        npc.facilityFloor = floor
+                        self.notify.info('NPC %s rides up with %d to the next floor' % (npc.doId, player.doId))
+                        self.manager.teleportTo(npc, player.zoneId, self.spotNear(self.manager.getPlayerPos(player), 4.0))
+                        continue
+                    npc.facilityFloor = floor
                     # From room to room of a factory, mint or office (each
                     # its own zone): it goes on on foot, from where it is.
                     npc.b_setLocation(self.air.districtId, player.zoneId)
                     continue
+                npc.facilityFloor = self.facilityFloor(npc, player)
                 self.notify.info('NPC %s follows %d to zone %d' % (npc.doId, player.doId, player.zoneId))
                 spot = self.spotNear(self.manager.getPlayerPos(player), 5.0)
                 self.manager.teleportTo(npc, player.zoneId, spot)
@@ -672,6 +709,15 @@ class NPCParty:
             if any(self.manager.facilities.stomperBlocks(npc.zoneId, p) for p in data[:4]):
                 # A stomper is down in the way: wait for it to go up.
                 return
+            if self.manager.facilities.moverWallBlocks(npc.getPos(), data[:3]):
+                # A sliding wall is across the way: wait for it to open
+                # (they open every few seconds; not for ever).
+                now = globalClock.getFrameTime()
+                if getattr(npc, 'wallWaitSince', None) is None:
+                    npc.wallWaitSince = now
+                if now - npc.wallWaitSince < 12.0:
+                    return
+            npc.wallWaitSince = None
             route.pop(0)
             npc.walk = [self.lane(npc, list(data), getattr(npc, 'routeGrid', None)), self.paceOf(npc), None, None]
         elif kind == BOARD:
@@ -820,6 +866,19 @@ class NPCParty:
                 spot = Point3(x, y, z)
                 if nav.clearLine(Point3(pos[0], pos[1], pos[2]), spot):
                     npc.walk = [[spot], self.paceOf(npc) * 0.6, None, None]
+                    return True
+        # Walled in all round (it stands inside a couch's or a desk's
+        # walls): a hop over them, onto open floor.
+        for r in (3.0, 4.5, 6.0):
+            for k in range(8):
+                a = start + k * math.pi / 4
+                x, y = pos[0] + r * math.cos(a), pos[1] + r * math.sin(a)
+                z = nav.groundZ(x, y, pos[2] + 1.5)
+                if z is None or abs(z - pos[2]) > 1.0:
+                    continue
+                spot = Point3(x, y, z)
+                if self.inTheOpen(spot):
+                    self.manager.facilities.jumpTo(npc, spot)
                     return True
         return False
 

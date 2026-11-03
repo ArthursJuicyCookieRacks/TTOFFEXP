@@ -1200,6 +1200,31 @@ class NPCFacilities:
         local = into.getRelativePoint(base.render, Point3(pos[0], pos[1], ground))
         npc.ride = (into, Point3(local))
 
+    def moverWallBlocks(self, start, points):
+        """Whether a wall a mover slides to and fro stands across the next
+        bit of the way just now."""
+        base = getClientBuiltin('base')
+        if base is None or not points:
+            return False
+        from toontown.npcplayers.NPCPathfinder import wallMovers
+        levels = [o for o in list(base.cr.doId2do.values()) if getattr(o, 'entities', None)]
+        way = [Point3(start)] + [Point3(p) for p in points]
+        for node in wallMovers(levels):
+            bounds = node.getTightBounds(base.render)
+            if bounds is None:
+                continue
+            lo, hi = bounds
+            if lo[2] > start[2] + 4.0 or hi[2] < start[2] + 0.5:
+                continue
+            for a, b in zip(way, way[1:]):
+                for k in range(9):
+                    t = k / 8.0
+                    x = a[0] + (b[0] - a[0]) * t
+                    y = a[1] + (b[1] - a[1]) * t
+                    if lo[0] - 1.5 <= x <= hi[0] + 1.5 and lo[1] - 1.5 <= y <= hi[1] + 1.5:
+                        return True
+        return False
+
     def stomperBlocks(self, zoneId, point):
         """Whether a stomper is down (or coming down) over the spot."""
         base = getClientBuiltin('base')

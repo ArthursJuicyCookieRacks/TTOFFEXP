@@ -1685,15 +1685,17 @@ def scenarioMint():
         import builtins
         for board in {id(b): b for b in (getattr(builtins, 'bboard', None), getattr(getattr(builtins, 'simbase', None), 'bboard', None)) if b}.values():
             board.post('mintRoom-%s' % localAvatar.doId, int(room))
+    # AUTOPLAY_MINT A, B or C: the Coin, Dollar or Bullion Mint.
+    mintId = getattr(ToontownGlobals, 'CashbotMintInt' + os.environ.get('AUTOPLAY_MINT', 'A'))
     yield from boardElevator('DistributedMintElevatorExt',
-                             lambda do: getattr(do, 'mintId', None) == ToontownGlobals.CashbotMintIntA)
+                             lambda do: getattr(do, 'mintId', None) == mintId)
     yield from clearRooms('MintInterior', 'DistributedMint')
 
 
 def scenarioOffice():
     yield from teleport(ToontownGlobals.LawbotHQ, ToontownGlobals.LawbotOfficeExt)
     yield from boardElevator('DistributedLawOfficeElevatorExt',
-                             lambda do: getattr(do, 'intZoneId', None) == ToontownGlobals.LawbotStageIntA)
+                             lambda do: getattr(do, 'intZoneId', None) == getattr(ToontownGlobals, 'LawbotStageInt' + os.environ.get('AUTOPLAY_OFFICE', 'A')))
     yield from clearRooms('StageInterior', 'DistributedStage')
 
 
@@ -1767,7 +1769,7 @@ def scenarioNPCClubPuzzles():
     shots = os.environ.get('AUTOPLAY_SHOTS', '/tmp')
     yield from teleport(ToontownGlobals.BossbotHQ)
     yield from boardElevator('DistributedCogKart',
-                             lambda do: getattr(do, 'countryClubId', None) == ToontownGlobals.BossbotCountryClubIntA)
+                             lambda do: getattr(do, 'countryClubId', None) == getattr(ToontownGlobals, 'BossbotCountryClubInt' + os.environ.get('AUTOPLAY_CLUB', 'A')))
     interior = 'CountryClubInterior'
     yield until(lambda: placeName() == interior, 180, 'inside the club')
     yield until(lambda: findObject('DistributedCountryClub', lambda do: do.rooms), 180, 'the rooms')
@@ -2001,7 +2003,7 @@ def scenarioNPCMintRide():
 def scenarioCountryClub():
     yield from teleport(ToontownGlobals.BossbotHQ)
     yield from boardElevator('DistributedCogKart',
-                             lambda do: getattr(do, 'countryClubId', None) == ToontownGlobals.BossbotCountryClubIntA)
+                             lambda do: getattr(do, 'countryClubId', None) == getattr(ToontownGlobals, 'BossbotCountryClubInt' + os.environ.get('AUTOPLAY_CLUB', 'A')))
     yield from clearRooms('CountryClubInterior', 'DistributedCountryClub')
 
 

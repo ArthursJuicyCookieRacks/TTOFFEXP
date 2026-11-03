@@ -43,6 +43,8 @@ JUMP_CELLS = (1, 2, 3, 4, 5, 6)
 # headless against boxes of each height)
 # up: a box or ledge up to this high is jumped onto.
 JUMP_UP = 4.55
+# How far beside a square's middle a toon still squeezes through a gap.
+SQUEEZE = 1.0
 # Up onto a box: the jump takes the feet (and the wall sphere's bottom) this
 # high, over a side that ends below it; the box top may stand a little
 # higher still (the floor ray lifts the toon onto it): up to CLIMB_UP.
@@ -211,6 +213,18 @@ class Mover:
         self.stops[1].other = self.stops[0]
 
 
+def wallMovers(levels):
+    """The nodes the levels' movers (DistributedMover) carry about."""
+    out = []
+    for level in levels:
+        for ent in list(getattr(level, 'entities', {}).values()):
+            if ent.__class__.__name__ == 'DistributedMover':
+                node = getattr(ent, 'moverNode', None)
+                if node is not None and not node.isEmpty():
+                    out.append(node)
+    return out
+
+
 def findMovers(levels):
     """The moving platforms and lifts of the levels (factories, mints,
     offices), and the gears (which turn in place: just floor)."""
@@ -322,7 +336,7 @@ class GhostLift(Mover):
 
 
 class Wall:
-    __slots__ = ('kind', 'points', 'normal', 'd', 'lo', 'hi', 'a', 'b', 'radius', 'name')
+    __slots__ = ('kind', 'points', 'normal', 'd', 'lo', 'hi', 'a', 'b', 'radius', 'name', 'front')
 
     def __init__(self, kind):
         self.kind = kind
@@ -340,6 +354,10 @@ class Grid:
         self.links = {}
         self.movers, gears = findMovers(levels)
         self.moverRoots = [m.moving for m in self.movers]
+        # Walls and shelves a mover slides to and fro (the DA office lobby's
+        # maze): open way on the map; the toon waits while one is across it
+        # (NPCFacilities.moverWallBlocks).
+        self.wallMoverRoots = wallMovers(levels)
         self.gearRoots = [g for g in gears if hasattr(g, 'isEmpty') and not g.isEmpty()]
         self.stops = {}
         self.stopAdj = {}
@@ -371,6 +389,8 @@ class Grid:
                 if not np.findNetTag('avatarDoId').isEmpty() or not np.findNetPythonTag('avatar').isEmpty():
                     continue
                 if self.moverRoots and under(np, self.moverRoots):
+                    continue
+                if self.wallMoverRoots and under(np, self.wallMoverRoots):
                     continue
                 if np.getName().startswith('goonColl'):
                     # A goon walks its beat: no wall on the map.
@@ -410,7 +430,7 @@ class Grid:
                         if mask & FLOOR and facing[2] > 0.35:
                             self.addFloor(points, normal)
                         elif mask & WALL:
-                            self.addWallPolygon(points, normal)
+                            self.addWallPolygon(points, normal, facing)
                     elif mask & WALL and isinstance(solid, CollisionCapsule):
                         self.addCapsule(mat.xformPoint(solid.getPointA()), mat.xformPoint(solid.getPointB()),
                                         solid.getRadius() * mat.getRow3(0).length())
@@ -528,8 +548,12 @@ class Grid:
             for by in range(by0, by1 + 1):
                 self.walls.setdefault((bx, by), []).append(wall)
 
-    def addWallPolygon(self, points, normal):
+    def addWallPolygon(self, points, normal, facing=None):
         wall = Wall('poly')
+        # A collision polygon stops a toon only coming at its front: from
+        # behind, a toon walks through it (as a player does through the back
+        # of some furniture's oversized collision walls).
+        wall.front = facing
         wall.name = getattr(self, 'curName', '')
         wall.points = points
         wall.normal = normal
@@ -582,6 +606,11 @@ class Grid:
         return out
 
     def crossesPolygon(self, wall, p, q):
+        front = getattr(wall, 'front', None)
+        if front is not None:
+            a = wall.points[0]
+            if front[0] * (p[0] - a[0]) + front[1] * (p[1] - a[1]) + front[2] * (p[2] - a[2]) <= 0.0:
+                return False
         n = wall.normal
         dp = n[0] * p[0] + n[1] * p[1] + n[2] * p[2] - wall.d
         dq = n[0] * q[0] + n[1] * q[1] + n[2] * q[2] - wall.d
@@ -616,6 +645,22 @@ class Grid:
 
     # --- Moves ---
 
+    def squeezes(self, here, there):
+        """Whether a toon gets through a gap narrower than a square beside
+        the line between two squares' middles (between a filing cabinet and
+        a crate, say)."""
+        d = Vec3(there - here)
+        d.setZ(0)
+        if d.length() < 0.01:
+            return False
+        d.normalize()
+        side = Vec3(-d[1], d[0], 0)
+        for off in (SQUEEZE, -SQUEEZE):
+            o = side * off
+            if not self.blocked(here + o, there + o):
+                return True
+        return False
+
     def linksFrom(self, node):
         known = self.links.get(node)
         if known is not None:
@@ -636,7 +681,8 @@ class Grid:
             h = self.heightNear(nx, ny, z)
             length = CELL * math.hypot(dx, dy)
             if h is not None:
-                if not self.blocked(here, Point3(nx * CELL, ny * CELL, h + CHEST)):
+                there = Point3(nx * CELL, ny * CELL, h + CHEST)
+                if not self.blocked(here, there) or self.squeezes(here, there):
                     out.append(((nx, ny, h), WALK, length))
                 else:
                     # Something stands on the floor there (a crate, a

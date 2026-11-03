@@ -178,6 +178,10 @@ def chooseSoundCloseShot(sounds, targets, openDuration, openName, attackDuration
         shotChoices = [allGroupLowShot, suitGroupThreeQuarterLeftBehindShot]
     else:
         notify.error('Bad number of suits: %s' % numSuits)
+    if av is None or getattr(av, 'isEmpty', lambda: False)():
+        # (The cog is gone already, say a Skelecog that fell apart: a shot
+        # of the whole battle, not a close-up on nobody.)
+        shotChoices = [allGroupLowShot]
     track = random.choice(shotChoices)(*[av, duration])
     return track
 
