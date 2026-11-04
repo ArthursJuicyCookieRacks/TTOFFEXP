@@ -2951,13 +2951,27 @@ def driveKart(race):
             state['pos'] = None
             return task.cont
         # Aim at the racing line a speed-dependent distance ahead.
+        def ahead(feet):
+            return pts[(race.currentPole + max(3, int(feet / state['spacing']))) % len(pts)]
+
+        def bearing(a, b):
+            d = Vec3(b - a)
+            return math.degrees(math.atan2(-d[0], d[1]))
+
+        # How hard the road bends over the next stretch: a hairpin's far
+        # side is behind the inside rail, so look closer and brake for it.
+        here = ahead(3)
+        bend = abs((bearing(here, ahead(60)) - bearing(here, ahead(15)) + 180) % 360 - 180)
         look = 25.0 + 0.2 * speed
-        goal = pts[(race.currentPole + max(3, int(look / state['spacing']))) % len(pts)]
+        if bend > 35:
+            look = 12.0
+        goal = ahead(look)
         offset = Vec3(goal - pos)
         wanted = math.degrees(math.atan2(-offset[0], offset[1]))
         error = (wanted - kart.getH(render) + 180) % 360 - 180
         # Lift off the throttle in a sharp turn, like a player would.
-        kart.arrowVert = 1 if abs(error) < 35 or speed < 60 else 0
+        fast = 60 if bend <= 35 else 45
+        kart.arrowVert = 1 if (abs(error) < 35 or speed < fast) and not (bend > 60 and speed > 70) else 0
         # A positive arrowHorz turns the kart clockwise (its heading drops).
         kart.arrowHorz = max(-1.0, min(1.0, -error / 15.0))
         return task.cont

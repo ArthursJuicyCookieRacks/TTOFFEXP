@@ -193,7 +193,8 @@ class NPCDriver:
         side = self.startSide * (1 - blend) + self.lane * blend
         right = Vec3(math.cos(math.radians(heading)), math.sin(math.radians(heading)), 0)
         pos = point + right * side
-        self.place(kart, pos, heading)
+        pos, pitch, roll = self.ground(pos, heading)
+        self.place(kart, pos, heading, pitch, roll)
         self.pos = pos
         self.heading = heading
         if now - self.lastReport > REPORT_TIME:
@@ -207,9 +208,62 @@ class NPCDriver:
         pos, hpr = client.startingPos[client.startingPlaces[client.avIds.index(self.npc.doId)]]
         return Point3(pos), hpr[0] + spin
 
-    def place(self, kart, pos, heading):
-        kart.sendUpdate('setSmPosHpr', [pos[0], pos[1], pos[2], heading, 0, 0,
+    def place(self, kart, pos, heading, pitch=0.0, roll=0.0):
+        kart.sendUpdate('setSmPosHpr', [pos[0], pos[1], pos[2], heading, pitch, roll,
                                         globalClockDelta.getRealNetworkTime(bits=16)])
+
+    def ground(self, pos, heading):
+        """On the road itself, tilted with it (the banked turns, the hills),
+        as a player's kart sits: the road under each corner of the kart,
+        from the floor collisions a kart's wheels use. The curve alone can
+        be a few feet off the road."""
+        base = getClientBuiltin('base')
+        if base is None or getattr(self, 'rayNP', None) is None:
+            if base is None:
+                return pos, 0.0, 0.0
+            from panda3d.core import CollisionTraverser, CollisionHandlerQueue, CollisionNode, CollisionRay
+            from otp.otpbase import OTPGlobals
+            self.trav = CollisionTraverser('npcKartGround')
+            self.queue = CollisionHandlerQueue()
+            node = CollisionNode('npcKartGround')
+            node.addSolid(CollisionRay(0, 0, 0, 0, 0, -1))
+            node.setFromCollideMask(OTPGlobals.FloorBitmask)
+            node.setIntoCollideMask(0)
+            self.rayNP = base.render.attachNewNode(node)
+            self.trav.addCollider(self.rayNP, self.queue)
+        h = math.radians(heading)
+        fwd = Vec3(-math.sin(h), math.cos(h), 0)
+        right = Vec3(math.cos(h), math.sin(h), 0)
+        heights = []
+        for dx, dy in ((1.5, 2.0), (-1.5, 2.0), (1.5, -2.0), (-1.5, -2.0)):
+            at = pos + right * dx + fwd * dy
+            z = self.floorZ(base, at)
+            if z is None:
+                return pos, 0.0, 0.0
+            heights.append(z)
+        rf, lf, rr, lr = heights
+        z = sum(heights) / 4.0
+        if abs(z - pos[2]) > 12.0:
+            # Something else under it (a bridge over the road): keep the curve.
+            return pos, 0.0, 0.0
+        pitch = math.degrees(math.atan2((rf + lf) / 2 - (rr + lr) / 2, 4.0))
+        roll = math.degrees(math.atan2((lf + lr) / 2 - (rf + rr) / 2, 3.0))
+        return Point3(pos[0], pos[1], z), pitch, roll
+
+    def floorZ(self, base, at):
+        # The road nearest the curve's height there (not a bridge above).
+        self.rayNP.setPos(base.render, at[0], at[1], at[2] + 10.0)
+        self.queue.clearEntries()
+        self.trav.traverse(base.render)
+        best = None
+        for i in range(self.queue.getNumEntries()):
+            entry = self.queue.getEntry(i)
+            if not entry.hasSurfacePoint():
+                continue
+            z = entry.getSurfacePoint(base.render)[2]
+            if best is None or abs(z - at[2]) < abs(best - at[2]):
+                best = z
+        return best
 
     def speed(self, now):
         race = self.race
@@ -289,6 +343,9 @@ class NPCDriver:
         if self.left:
             return
         self.left = True
+        if getattr(self, 'rayNP', None) is not None:
+            self.rayNP.removeNode()
+            self.rayNP = None
         if self.npc.doId in self.race.avatars and not self.race.isDeleted():
             clientSend(self.npc, self.race, 'racerLeft', self.npc.doId)
 
