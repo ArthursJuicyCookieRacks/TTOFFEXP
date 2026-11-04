@@ -142,6 +142,10 @@ CLEAR_GAP = 0.005
 # Gags centred on the glove's own middle rather than the hold joint.
 CENTRE_ON_GLOVE = ('ship',)
 CENTRE_PULL = 1.0
+# Gags kept wholly inside the glove's outline (seen from above the palm),
+# and how far in from the glove's edge that outline is drawn.
+KEEP_ON_GLOVE = ('ship',)
+GLOVE_EDGE_IN = 0.95
 # The storm cloud's bounds reach below what shows (HOLD_SINK sets it).
 CLEAR_SKIP = ('stormcloud',)
 # Where the hose nozzle points: out at the cogs past the crosshair (camera space).
@@ -152,7 +156,7 @@ HOSE_GLOVE_AT = Point3(0.8, 3.4, -0.9)
 GUN_GLOVE_AT = Point3(0.9, 4.0, -0.95)
 SOUND_GLOVE_AT = Point3(0.8, 3.4, -0.75)
 SOUND_ARM_SIZE = 1.0
-SOUND_TWIST = 45
+SOUND_TWIST = 0
 # The forearm (rolled by the elbow) comes in from the lower right (Arthur),
 # the hand wrapping the megaphone from that side.
 SOUND_ROLL_BY = 'shoulder'
@@ -160,6 +164,11 @@ SOUND_ARM_FROM = None
 # The hold mirrored left to right about the megaphone (Arthur: that grip,
 # the arm coming up from the right).
 SOUND_MIRROR = True
+# Mirrored, the body is cut away inward of the holding shoulder, from this
+# far out (0 the middle between the shoulders, 1 the holding shoulder):
+# these parts. Only the holding arm is left.
+BODY_CLIP_AT = 0.75
+BODY_CLIP_PARTS = ('sleeves', 'arms', 'torso-top', 'torso-bot')
 # The gun aims at a nearer point, turned in so its side shows.
 GUN_AIM_AT = Point3(0, 8, 0.6)
 GUN_ARM_SIZE = 1.0
@@ -277,6 +286,36 @@ def megaphoneInFist(scale):
     at = line.getMat().xformPoint(Point3(0, FIST_ON_LINE, 0))
     pos = at - quat.xform(Vec3(grip) * scale)
     return TransformState.makePosQuatScale(pos, quat, Vec3(scale))
+
+
+def convexHull(points):
+    """The convex hull of 2D points, counter-clockwise (monotone chain)."""
+    pts = sorted(set(points))
+    if len(pts) < 3:
+        return pts
+
+    def cross(o, a, b):
+        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+    lower, upper = [], []
+    for p in pts:
+        while len(lower) >= 2 and cross(lower[-2], lower[-1], p) <= 0:
+            lower.pop()
+        lower.append(p)
+    for p in reversed(pts):
+        while len(upper) >= 2 and cross(upper[-2], upper[-1], p) <= 0:
+            upper.pop()
+        upper.append(p)
+    return lower[:-1] + upper[:-1]
+
+
+def insideConvex(hull, p):
+    """Whether 2D point p is inside a counter-clockwise convex hull."""
+    n = len(hull)
+    for i in range(n):
+        a, b = hull[i], hull[(i + 1) % n]
+        if (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]) < 0:
+            return False
+    return True
 
 
 def hoseInHand():
@@ -545,23 +584,86 @@ class ToonArms:
             self.toon.setScale(self.toon.getScale() * 1.08)
             self.placeGlove(side, at)
 
-    def mirrorAbout(self, node):
-        """Mirror the arms (and what the glove holds) left to right in the
-        view, about the upright plane through node's middle: a right arm
-        drawn as it would look coming in from the other side."""
-        from panda3d.core import CullFaceAttrib
+    def mirrorAbout(self, node, axis=None, side=RIGHT):
+        """Mirror the arm (and what the glove holds) left to right about
+        node's middle, the way a picture of it flipped over would look.
+        The mirror stands on a plane through the eye: one beside the camera
+        (as first done) mirrors the arm in the world, but seen from the eye
+        the hand turned another face to the view and the arm swung off to
+        the side, not the hold flipped (Arthur: "THE EXACT WAY you had it,
+        just flipped"). Given axis (the way the gag points, camera space),
+        the plane holds it too, so the gag still points where it did and
+        only the hand and arm cross over to its other side."""
         self.toon.update(force=True)
         low, high = node.getTightBounds(camera)
         if low is None:
             return
-        x0 = (low[0] + high[0]) * 0.5
+        middle = Vec3((low + high) * 0.5)
+        along = Vec3(axis) if axis is not None else Vec3(0, 0, 1)
+        normal = middle.cross(along)
+        if normal.length() < 1e-5:
+            return
+        normal.normalize()
+        flip = LMatrix4(LMatrix4.identMat())
+        for i in range(3):
+            for j in range(3):
+                flip.setCell(i, j, (1.0 if i == j else 0.0) - 2.0 * normal[i] * normal[j])
         parent = self.toon.getParent()
-        flip = LMatrix4.translateMat(-x0, 0, 0) * LMatrix4.scaleMat(-1, 1, 1) * LMatrix4.translateMat(x0, 0, 0)
         self.toon.setMat(self.toon.getMat() * parent.getMat(camera) * flip * camera.getMat(parent))
         # Mirrored, the faces wind the other way round.
         self.toon.setAttrib(CullFaceAttrib.makeReverse())
         self.mirrored = True
         self.toon.update(force=True)
+        # The sleeve's top, between the shoulder and the neck, came round
+        # into the bottom of the view once mirrored: the body is cut away
+        # inward of the holding shoulder.
+        self.clipBody(side)
+        # The arm now crosses the view another way: grown about the glove
+        # until its cut-off shoulder is out of the frame again.
+        at = self.hand(side).getPos(camera)
+        while self.shoulderInView(side) and self.grow < MAX_ARM_GROW:
+            self.grow *= 1.08
+            grow = LMatrix4.translateMat(-at) * LMatrix4.scaleMat(1.08) * LMatrix4.translateMat(at)
+            self.toon.setMat(self.toon.getMat() * parent.getMat(camera) * grow * camera.getMat(parent))
+            self.toon.update(force=True)
+
+    def clipBody(self, side):
+        """Cut away the body inward of this side's shoulder (the sleeve's
+        top, the collar, the other arm), leaving the holding arm whole."""
+        from panda3d.core import Plane, PlaneNode
+        self.unclipBody()
+        other = LEFT if side == RIGHT else RIGHT
+        keep = self.joint(side, 'shoulder')
+        fold = self.joint(other, 'shoulder')
+        if keep is None or fold is None or keep.isEmpty() or fold.isEmpty():
+            return
+        self.toon.update(force=True)
+        a = keep.getPos(self.toon)
+        b = fold.getPos(self.toon)
+        normal = Vec3(a - b)
+        if normal.length() < 1e-4:
+            return
+        normal.normalize()
+        middle = (a + b) * 0.5
+        at = Point3(middle + (a - middle) * BODY_CLIP_AT)
+        plane = self.toon.attachNewNode(PlaneNode('bodyClip', Plane(normal, at)))
+        nodes = []
+        for name in BODY_CLIP_PARTS:
+            for np in self.toon.findAllMatches('**/%s' % name):
+                np.setClipPlane(plane)
+                nodes.append(np)
+        self.bodyClip = (plane, nodes)
+
+    def unclipBody(self):
+        clip = getattr(self, 'bodyClip', None)
+        if clip:
+            plane, nodes = clip
+            for np in nodes:
+                if not np.isEmpty():
+                    np.clearClipPlane()
+            if not plane.isEmpty():
+                plane.removeNode()
+        self.bodyClip = None
 
     def rollPalm(self, side, want):
         """Roll the toon about its arm (shoulder to glove) until the palm,
@@ -700,6 +802,7 @@ class ToonArms:
         self.toon.setScale(ARMS_SCALE)
         if getattr(self, 'mirrored', False):
             self.toon.clearAttrib(CullFaceAttrib)
+            self.unclipBody()
             self.mirrored = False
         self.aimArm(side)
         if anim in PALM_UP_ANIMS:
@@ -893,6 +996,61 @@ class GagHandler:
 
     # --- What is held ---
 
+    def keepOnGlove(self, prop, hand):
+        """Slide the prop toward the middle of the glove (and, only if it
+        cannot fit, shrink it) until nothing of it hangs past the glove's
+        outline as seen from above the palm (Arthur: the ship must not hang
+        off the edge of the hand)."""
+        verts = self.arms.gloveVerts(RIGHT, hand)
+        if len(verts) < 3:
+            return
+        hull = convexHull([(v[0], v[1]) for v in verts])
+        if len(hull) < 3:
+            return
+        cx = sum(p[0] for p in hull) / len(hull)
+        cy = sum(p[1] for p in hull) / len(hull)
+        # The outline drawn in a little, so the prop clears the glove's edge.
+        hull = [(cx + (p[0] - cx) * GLOVE_EDGE_IN, cy + (p[1] - cy) * GLOVE_EDGE_IN) for p in hull]
+
+        # Its own outline as seen from above the palm (its corners stuck out
+        # past a pointed bow and drew it in smaller than it needs to be).
+        from panda3d.core import GeomVertexReader
+        own = []
+        for np in prop.findAllMatches('**/+GeomNode'):
+            if np.isHidden():
+                continue
+            mat = np.getMat(prop)
+            node = np.node()
+            for i in range(node.getNumGeoms()):
+                reader = GeomVertexReader(node.getGeom(i).getVertexData(), 'vertex')
+                while not reader.isAtEnd():
+                    own.append(mat.xformPoint(reader.getData3()))
+        if not own:
+            return
+        mat = prop.getMat(hand)
+        own = convexHull([(q[0], q[1]) for q in (mat.xformPoint(v) for v in own)])
+        # Kept in its own frame, so a move or a shrink carries it along.
+        back = hand.getMat(prop)
+        own = [Point3(back.xformPoint(Point3(x, y, 0))) for x, y in own]
+
+        def footprint():
+            mat = prop.getMat(hand)
+            return [(q[0], q[1]) for q in (mat.xformPoint(v) for v in own)]
+
+        scale = prop.getScale()
+        for i in range(80):
+            pts = footprint()
+            if all(insideConvex(hull, p) for p in pts):
+                break
+            mx = sum(p[0] for p in pts) / len(pts)
+            my = sum(p[1] for p in pts) / len(pts)
+            step = Vec3(cx - mx, cy - my, 0)
+            if step.length() > 0.005:
+                prop.setPos(hand, prop.getPos(hand) + step * 0.25)
+            else:
+                prop.setScale(prop.getScale() * 0.97)
+        self.keptScale = prop.getScale()[0] / scale[0]
+
     def seatInHold(self, prop, name):
         """Stand the prop in the open palm: upright on the hold joint (the
         way the battle holds a pie), centred on it, its bottom just in."""
@@ -920,6 +1078,8 @@ class GagHandler:
                 prop.setPos(hand, prop.getPos(hand) + Vec3(cx - mid[0], cy - mid[1], 0) * CENTRE_PULL)
         if name in HOLD_NUDGE:
             prop.setPos(camera, prop.getPos(camera) + HOLD_NUDGE[name])
+        if name in KEEP_ON_GLOVE:
+            self.keepOnGlove(prop, hand)
         # Nothing of the glove pokes up through the gag: its bottom is
         # lifted to the highest bit of glove under its middle.
         low, high = prop.getTightBounds(hand)
@@ -987,7 +1147,8 @@ class GagHandler:
                                   lambda parent: parent.getRelativeVector(megaphone, MEGAPHONE_AXIS), SOUND_ARM_SIZE,
                                   armFrom=SOUND_ARM_FROM, rollBy=SOUND_ROLL_BY, twist=SOUND_TWIST)
                 if SOUND_MIRROR:
-                    self.arms.mirrorAbout(megaphone)
+                    self.arms.mirrorAbout(megaphone, camera.getRelativeVector(megaphone, MEGAPHONE_AXIS)
+                                          if SOUND_MIRROR == 'aim' else None)
                 # Slid over in the view so the glove holds its right side.
                 self.arms.toon.update(force=True)
                 megaphone.setPos(camera, megaphone.getPos(camera) + MEGAPHONE_VIEW_SHIFT)
