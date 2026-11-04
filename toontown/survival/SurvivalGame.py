@@ -491,6 +491,13 @@ class SurvivalGame(DirectObject):
             pos = Point3(pos[0] + away[0], pos[1] + away[1], pos[2])
             moved = True
         if moved:
+            # Never through a wall: a crowd of cogs pressing the toon
+            # against the clock tower on Toybox Terrace pushed it inside
+            # the tower, where its walls then held it for good. A push the
+            # wall stops is left undone (the toon stays rubbing the cog).
+            start = body.getPos(render)
+            if not self.arena.bodyClear(start, pos):
+                return
             body.setPos(render, pos)
 
     # --- What the cogs ask ---

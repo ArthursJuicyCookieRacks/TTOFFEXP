@@ -97,6 +97,22 @@ def facing(pos, target):
     return math.degrees(math.atan2(-d[0], d[1]))
 
 
+class _AnimProp:
+    """An animated playground prop, put away with the map's actors."""
+
+    def __init__(self, prop):
+        self.prop = prop
+
+    def cleanup(self):
+        prop, self.prop = self.prop, None
+        if prop is not None:
+            prop.exit()
+            prop.delete()
+
+    def removeNode(self):
+        pass
+
+
 class ToyboxTerrace(PreviewMap):
     KEY = 'toybox_terrace'
     TITLE = 'Toybox Terrace'
@@ -773,7 +789,13 @@ class ToyboxTerrace(PreviewMap):
             return ('<sign><baseline code="mickey"><color r="%.3f" g="%.3f" b="%.3f" a="1" /><pos x="0" y="0" z="%.2f" />'
                     '<scale x="%.2f" y="1" z="%.2f" /><text>%s</text></baseline></sign>' % (color[0], color[1], color[2], z, scale, scale, words))
 
+        # Its periscope and telescope as Toontown Central has them, in the
+        # building's own frame.
         out.append('<landmark_building id="tb20:toon_landmark_hqTT_DNARoot" code="toon_landmark_hqTT" type="hq"><title>Toon HQ</title>%s'
+                   '<prop name="animated_prop_HQPeriscopeAnimatedProp_DNARoot" code="animated_prop_HQPeriscopeAnimatedProp">'
+                   '<pos x="7.17" y="-7.67" z="19.07" /><nhpr h="110" p="0" r="0" /><scale x="4" y="4" z="4" /></prop>'
+                   '<prop name="animated_prop_HQTelescopeAnimatedProp_DNARoot" code="animated_prop_HQTelescopeAnimatedProp">'
+                   '<pos x="7.003" y="0" z="13.191" /><nhpr h="168" p="81" r="0" /><scale x="4" y="4" z="4" /></prop>'
                    '</landmark_building>' % place(HQ, front(HQ)))
         out.append('<landmark_building id="sz19:toon_landmark_TT_gag_shop_DNARoot" code="toon_landmark_TT_gag_shop" type="gagshop">'
                    '<title>Gag Shop</title>%s<door code="door_double_square_ur"><color r="1" g="0.63" b="0.38" a="1" /></door>'
@@ -856,17 +878,28 @@ class ToyboxTerrace(PreviewMap):
         # The moving bits Toontown Central has: Toon HQ's periscope and
         # telescope, the Pet Shop's fish.
         from direct.actor.Actor import Actor
-        hq = geom.find('**/tb20:toon_landmark_hqTT_DNARoot')
-        for model, anim, pos, hpr in (('phase_3.5/models/props/HQ_periscope-mod', 'phase_3.5/models/props/HQ_periscope-chan', (7.17, -7.67, 19.07), (110, 0, 0)),
-                                      ('phase_3.5/models/props/HQ_telescope-mod', 'phase_3.5/models/props/HQ_telescope-chan', (7.003, 0, 13.191), (168, 81, 0))):
-            a = Actor(model, {'anim': anim})
-            a.reparentTo(hq)
-            a.setPos(*pos)
-            a.setHpr(*hpr)
-            a.setScale(4)
-            a.loop('anim')
-            self.kit.extra.append(a)
-        pet = geom.find('**/sz22:toon_landmark_TT_pet_shop_DNARoot')
+
+        def building(pattern):
+            # The DNA can make an empty node of the same name as well (Toon
+            # HQ does): the building is the one with something in it.
+            for np in geom.findAllMatches(pattern):
+                if np.getTightBounds() is not None:
+                    return np
+            return geom.find(pattern)
+
+        # Toon HQ's periscope and telescope look about, as SafeZoneLoader
+        # runs them.
+        from toontown.hood.HQPeriscopeAnimatedProp import HQPeriscopeAnimatedProp
+        from toontown.hood.HQTelescopeAnimatedProp import HQTelescopeAnimatedProp
+        for name, cls in (('**/animated_prop_HQPeriscopeAnimatedProp*', HQPeriscopeAnimatedProp),
+                          ('**/animated_prop_HQTelescopeAnimatedProp*', HQTelescopeAnimatedProp)):
+            node = geom.find(name)
+            if node.isEmpty():
+                continue
+            prop = cls(node)
+            prop.enter()
+            self.kit.extra.append(_AnimProp(prop))
+        pet = building('**/sz22:toon_landmark_TT_pet_shop_DNARoot')
         fish = Actor('phase_4/models/props/exteriorfish-zero', {'swim': 'phase_4/models/props/exteriorfish-swim'})
         fish.reparentTo(pet)
         fish.loop('swim')
@@ -875,7 +908,7 @@ class ToyboxTerrace(PreviewMap):
         # stands on its spot (the models' fronts face different ways).
         for root, spot in (('**/tb20:toon_landmark_hqTT_DNARoot', HQ), ('**/sz19:toon_landmark_TT_gag_shop_DNARoot', GAG),
                            ('**/sz21:toon_landmark_TT_clothes_shop_DNARoot', CLOTHES), ('**/sz22:toon_landmark_TT_pet_shop_DNARoot', PETS)):
-            bldg = geom.find(root)
+            bldg = building(root)
             door = bldg.find('**/door_origin_0')
             if door.isEmpty():
                 door = bldg.find('**/door_origin')
