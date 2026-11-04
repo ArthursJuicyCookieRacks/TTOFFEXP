@@ -55,7 +55,10 @@ class BoardroomLayout:
     def _layTable(self, rng):
         start = Consts.TableStart + Consts.ClearStart
         end = Consts.TableEnd - Consts.ClearEnd
-        half = Consts.TableHalfWidth - 1.2
+        # Laid out on the table's old width, then spread out to the real
+        # one (_widen): the obstacles keep their places relative to the
+        # table and the toons get the extra room (Arthur).
+        half = Consts.LayoutHalfWidth - 1.2
         y = start
         segments = []
         while y + Consts.SegmentLength <= end + 0.01:
@@ -148,6 +151,45 @@ class BoardroomLayout:
                 if not self.blockedAt(px, py, 2.0) and not self._nearMemo(px, py, 2.5):
                     self.powerUps.append((kind, px, py))
                     break
+
+        self._widen(half)
+
+    def _widen(self, half):
+        # From the layout's width out to the table's: a pile against the
+        # table's edge stays against it, the rest move out in proportion,
+        # so the gaps between things (the room to slide) widen and the
+        # obstacles stay their size. Memos on a pile's top go with it.
+        new = Consts.TableHalfWidth - 1.2
+        if abs(new - half) < 1e-6:
+            return
+        r = new / half
+        tops = {}
+        for i, (mx, my, mz) in enumerate(self.memos):
+            if mz > Consts.TableTop + 0.01:
+                for ob in self.obstacles:
+                    if ob.kind == PILE and abs(ob.x - mx) < 1e-6 and abs(ob.y - my) < 1e-6:
+                        tops[i] = ob
+        for ob in self.obstacles:
+            if ob.kind == PENCIL:
+                ob.w = new
+                ob.x *= r
+            elif abs(ob.x) + ob.w >= half - 0.05:
+                ob.x = math.copysign(new - ob.w, ob.x)
+            else:
+                ob.x *= r
+        # A ramp goes where its pile went (just in front of it).
+        for i, ob in enumerate(self.obstacles):
+            if ob.kind == RAMP and i > 0 and self.obstacles[i - 1].kind == PILE:
+                ob.x = self.obstacles[i - 1].x
+        memos = []
+        for i, (mx, my, mz) in enumerate(self.memos):
+            if i in tops:
+                memos.append((tops[i].x, my, mz))
+                continue
+            nx = mx * r
+            memos.append((nx if not self.blockedAt(nx, my, 1.2) else mx, my, mz))
+        self.memos = memos
+        self.powerUps = [(kind, px * r if not self.blockedAt(px * r, py, 1.6) else px, py) for kind, px, py in self.powerUps]
 
     def _nearMemo(self, x, y, r):
         return any(math.hypot(x - m[0], y - m[1]) < r for m in self.memos)

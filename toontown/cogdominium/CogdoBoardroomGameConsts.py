@@ -39,7 +39,10 @@ TableModel = 'phase_12/models/bossbotHQ/BanquetTableChairs'
 # out: each hall is this long from its near wall to its far one.
 NumHalls = 8
 HallLength = 333.7016
-TableHalfWidth = 13.0
+# A touch wider (Arthur), from 13: the layout is still drawn up on the
+# old width and spread out to this one (CogdoBoardroomLayout._widen).
+TableHalfWidth = 14.0
+LayoutHalfWidth = 13.0
 TableStart = 96.0
 TableEnd = 366.0 + (NumHalls - 1) * HallLength
 TableTop = 3.6
@@ -63,7 +66,11 @@ ExitPosHpr = (0, 385 + (NumHalls - 1) * HallLength, ExitFloor, 0, 0, 0)
 ExitRadius = 6.0
 # The step's near edge, this far before the exit (the floor is at 0 before it).
 ExitStepDepth = 15.5
-ChairmanPos = (0, TableEnd + 5.5, 0)
+# Up on the 2 ft step at the head of the room, all four legs on it (his
+# chair stood on the floor below, sunk in the step, so he sat wrongly in it).
+ChairmanPos = (0, TableEnd + 7.5, ExitFloor)
+ChairmanSitForward = 1.5
+ChairmanSitUp = 0.2
 
 # --- Who is at the meeting ---
 SeatSpacing = 22.0
@@ -155,6 +162,11 @@ SlideFovBoost = 8.0
 # chair, this far out to a side, then runs out past it.
 JumpOffAt = 3.0
 JumpOffX = 10.0
+# Where the jump off the table lands: up on the exit's step, beside the
+# chairman (landing on the floor below it left the toons standing in the
+# gap in front of the step, which looked like being in the floor).
+JumpLandY = TableEnd + 8.0
+JumpLandZ = ExitFloor
 JumpOffTime = 1.0
 JumpOffHeight = 5
 # The jump-off camera: up and back over the table, off to the other side

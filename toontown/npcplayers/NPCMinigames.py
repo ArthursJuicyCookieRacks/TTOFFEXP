@@ -1776,8 +1776,9 @@ class CogdoBoardroomPlayer(CogdoPlayer):
             # Jumping down off the end of the table, beside the chairman.
             t0, sx, sy, sz, lx, ly = jump
             f = min(1.0, (now - t0) / BoardroomConsts.JumpOffTime)
-            z = sz + (0 - sz) * f + BoardroomConsts.JumpOffHeight * 4 * f * (1 - f)
-            self.npc.moveTo(sx + (lx - sx) * f, sy + (ly - sy) * f, max(0.0, z), -35 if lx > 0 else 35)
+            lz = BoardroomConsts.JumpLandZ
+            z = sz + (lz - sz) * f + BoardroomConsts.JumpOffHeight * 4 * f * (1 - f)
+            self.npc.moveTo(sx + (lx - sx) * f, sy + (ly - sy) * f, max(lz, z), -35 if lx > 0 else 35)
             if f >= 1.0:
                 self.memo['jump'] = None
                 self.memo['off'] = True
@@ -1790,14 +1791,30 @@ class CogdoBoardroomPlayer(CogdoPlayer):
             z = BoardroomConsts.ExitFloor if self.npc.getPos()[1] > ey - BoardroomConsts.ExitStepDepth else 0
             # Walks the last stretch in, as a player slows to go through the
             # doors (Arthur: walking in, not floating in at a run).
-            near = math.hypot(self.npc.getPos()[0] - ex, self.npc.getPos()[1] - ey) < 22.0
-            if self.moveTo(Point3(ex, ey - 1.0, z), speed=RUN_SPEED * (0.4 if near else 0.85)):
-                self.send('requestExit')
-                # In the exit elevator, at its spot, facing out.
-                from toontown.building.ElevatorConstants import ElevatorPoints
-                p = ElevatorPoints[(len(game.exited) - 1) % len(ElevatorPoints)]
-                self.npc.placeAt(ex + p[0], ey + p[1], BoardroomConsts.ExitFloor, 180)
-                self.memo['off'] = False
+            # Its own spot in the elevator (by its place in the party, as the
+            # game draws the player's: they took spots by arrival order and
+            # stood inside each other), in through the doors at its own
+            # side, and the last stretch at a walk.
+            from toontown.building.ElevatorConstants import ElevatorPoints
+            ids = list(getattr(game, 'toons', []))
+            k = ids.index(self.npc.doId) if self.npc.doId in ids else 0
+            p = ElevatorPoints[k % len(ElevatorPoints)]
+            stage = self.memo.get('elevStage', 0)
+            here = self.npc.getPos()
+            near = math.hypot(here[0] - ex, here[1] - ey) < 22.0
+            if stage == 0:
+                door = Point3(ex + p[0] * 0.6, ey - 4.0, z)
+                if self.moveTo(door, speed=RUN_SPEED * (0.4 if near else 0.85)):
+                    self.memo['elevStage'] = 1
+                    self.send('requestExit')
+            else:
+                spot = Point3(ex + p[0], ey + p[1], BoardroomConsts.ExitFloor)
+                if self.moveTo(spot, speed=RUN_SPEED * 0.4):
+                    # In at its spot: turns round to face out.
+                    self.npc.moveTo(spot[0], spot[1], spot[2], 180)
+                    self.npc.stopMoving()
+                    self.memo['elevStage'] = 0
+                    self.memo['off'] = False
             return
         if t < BoardroomConsts.StartDelay + i * BoardroomConsts.StartStagger:
             self.npc.moveTo(x, y, BoardroomConsts.TableTop, 0)
@@ -1940,7 +1957,7 @@ class CogdoBoardroomPlayer(CogdoPlayer):
                 self.send('requestPowerUp', j)
         if ny > BoardroomConsts.TableEnd - BoardroomConsts.JumpOffAt:
             side = 1 if nx >= 0 else -1
-            self.memo['jump'] = (now, nx, ny, z, side * BoardroomConsts.JumpOffX, BoardroomConsts.TableEnd + 2.5)
+            self.memo['jump'] = (now, nx, ny, z, side * BoardroomConsts.JumpOffX, BoardroomConsts.JumpLandY)
 
     def _crashInto(self, t):
         # Stopped dead and hurt, as the player is by a pile or a pencil.

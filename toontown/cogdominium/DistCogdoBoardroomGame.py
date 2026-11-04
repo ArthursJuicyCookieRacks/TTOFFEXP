@@ -197,7 +197,11 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
             self.bosses[index] = suit
         # The chairman at the head of the table.
         self.chairman = self._makeSuit('tbc')
-        CogdoBoardroomRoom.sitCog(self.chairman, self.room.chairmanLocator, self.chairman.style.body)
+        sit = CogdoBoardroomRoom.sitCog(self.chairman, self.room.chairmanLocator, self.chairman.style.body)
+        # The Big Cheese is the biggest cog of all: the shared seat place
+        # put his legs through the seat with him sat behind it (Arthur).
+        # Forward and up a touch, onto the seat, his legs over its edge.
+        sit.setPos(sit.getX(), sit.getY() + Consts.ChairmanSitForward, sit.getZ() + Consts.ChairmanSitUp)
         self.chairman.loop('sit')
         # The minions overhead, each on its propeller.
         for i, minion in enumerate(self.layout.minions):
@@ -574,7 +578,7 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
             # leap down past the chairman's chair shows.
             side = getattr(self, '_jumpSide', 1)
             want = PM.Point3(side * Consts.JumpCamSide, Consts.TableEnd - Consts.JumpCamBack, Consts.TableTop + Consts.JumpCamUp)
-            look = PM.Point3((pos[0] + side * Consts.JumpOffX) / 2.0, (pos[1] + Consts.TableEnd + 2.5) / 2.0, 2.0)
+            look = PM.Point3((pos[0] + side * Consts.JumpOffX) / 2.0, (pos[1] + Consts.JumpLandY) / 2.0, 2.0 + Consts.JumpLandZ)
             cur = getattr(self, '_camPos', None) or want
             cur = cur + (want - cur) * min(1.0, dt * 3.5)
             self._camPos = PM.Point3(cur)
@@ -716,7 +720,7 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         if place and place.fsm.getCurrentState().getName() == 'walk':
             place.fsm.request('stopped')
         side = 1 if pos[0] >= 0 else -1
-        land = PM.Point3(side * Consts.JumpOffX, Consts.TableEnd + 2.5, 0)
+        land = PM.Point3(side * Consts.JumpOffX, Consts.JumpLandY, Consts.JumpLandZ)
         start = PM.Point3(pos)
         self._standUp(toon)
         toon.setH(render, -side * 35)
@@ -1067,7 +1071,9 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
 
     def _elevatorSpot(self, toon):
         # A toon's spot in the exit elevator: in the order they got there.
-        order = [avId for avId in self.getToonIds() if avId in self.exited]
+        # By its place in the party, as the NPCs take theirs (by arrival
+        # order the player and an NPC could be given the same spot).
+        order = list(self.getToonIds())
         i = order.index(toon.doId) if toon.doId in order else len(order)
         p = ElevatorPoints[i % len(ElevatorPoints)]
         return render.getRelativePoint(self.room.exitElevator, PM.Point3(p[0], p[1], 0))
@@ -1326,7 +1332,9 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
             last = getattr(toon, '_boardroomLast', None)
             toon._boardroomLast = PM.Point3(pos)
             if avId in self.exited:
-                want = 'neutral'
+                # Walking on in to its spot, then stood there.
+                moving = last is not None and (pos - last).length() > 0.02
+                want = 'walk' if moving else 'neutral'
             elif Consts.TableStart - 2 < pos[1] < Consts.TableEnd - Consts.JumpOffAt and pos[2] > Consts.TableTop - 0.6:
                 want = 'slide'
             elif pos[1] >= Consts.TableEnd - Consts.JumpOffAt - 1 and pos[2] > self._floorAt(pos[1]) + 0.4:
