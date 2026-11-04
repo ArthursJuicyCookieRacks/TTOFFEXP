@@ -126,16 +126,22 @@ PIE_PAST_GLOVE = Vec3(0.1, 0.7, 0.05)
 PALM_SINK = 0.05
 # Gags that need to sit deeper in the glove (a slice balanced on the
 # fingertips looked wrong, Arthur): how deep, and a nudge in camera space.
-PALM_FIT = {'fruitpie-slice': (0.2, Vec3(0.13, 0, 0)), 'creampie-slice': (0.2, Vec3(0.13, 0, 0))}
+PALM_FIT = {'fruitpie-slice': (0.2, Vec3(0.13, 0, 0)), 'creampie-slice': (0.2, Vec3(0.13, 0, 0)),
+            # Arthur: these sat on the fingertips; settled into the glove like the pies.
+            **{name: (0.2, Vec3(0.1, 0, 0)) for name in ('geyser', 'flowerpot', 'sandbag', 'anvil', 'piano', 'ship')}}
 GLOVE_TOP = 0.12
+# The hose's frame matching the toon's firehose hold (frame 30).
+HOSE_FRAME = 30
 # Gags carried on the palm that come in all sizes (a safe, a piano, a storm
 # cloud, a geyser...) are fitted to one size in the view, a pie's.
 FIT_SIZE = 0.85
 DROP_FIT_SIZE = 0.7
+# Drop gags drawn at their own size (the long, low ship looked tiny at 0.7).
+DROP_FIT_SIZES = {'ship': 0.95, 'anvil': 0.6, 'piano': 0.55}
 # Facing the player a little, so a drop gag shows its front and its top.
 DROP_IN_VIEW_HPR = Vec3(-25, 12, 0)
 FIT_TRACKS = (G.DROP, G.LURE)
-FIT_PROPS = ('squirting-flower', 'stormcloud', 'geyser', 'firehose')
+FIT_PROPS = ('squirting-flower', 'stormcloud', 'geyser')
 ARMS_H = 14
 # The arms rig (camera space): where the arms ease to in each state, and
 # the bobs as (strides a second, side, up, roll degrees, sway) per gait.
@@ -158,7 +164,9 @@ WHACK_HOLD = 0.06
 WHACK_RECOVER = 0.3
 SWITCH_UP = 0.3
 # Battle offsets for props that do not sit square in the hand.
-PROP_IN_HAND = {'water-gun': (Point3(0.28, 0.1, 0.08), (85.6, -4.44, 94.43))}
+PROP_IN_HAND = {'water-gun': (Point3(0.28, 0.1, 0.08), (85.6, -4.44, 94.43)),
+                # Measured from the battle's hydrant + hose at the toon's firehose frame 30.
+                'firehose': (Point3(-1.614, -1.543, 0.1), (10.93, -12.68, 57.7))}
 # Each level's instrument in the glove, as MovieSound places it (pos, hpr,
 # the scale it blasts at).
 INSTRUMENT_IN_HAND = {0: ((-1.1, -1.4, 0.1), (145, 0, 0), 0.65), 1: ((-1.2, -1.3, 0.1), (145, 0, 85), 0.2),
@@ -677,6 +685,10 @@ class GagHandler:
                 megaphone.setScale(megaphone.getScale() * MEGAPHONE_SCALE)
             else:
                 prop.reparentTo(self.arms.hand(RIGHT))
+                if gag.prop == 'firehose':
+                    # Posed on the toon's hold frame; PROP_IN_HAND is where
+                    # MovieSquirt's hydrant and hose put it against the glove.
+                    prop.pose('firehose', HOSE_FRAME)
                 pos, hpr = PROP_IN_HAND.get(gag.prop, (Point3(0, 0, 0), (0, 0, 0)))
                 prop.setPosHpr(pos, Vec3(*hpr))
                 prop.setScale(HAND_SCALE.get(gag.prop, 1.0) / self.arms.grow)
@@ -697,7 +709,7 @@ class GagHandler:
                     if low is not None:
                         size = max(high - low)
                         if size > 1e-4:
-                            prop.setScale(prop.getScale() * (DROP_FIT_SIZE / size))
+                            prop.setScale(prop.getScale() * (DROP_FIT_SIZES.get(gag.prop, DROP_FIT_SIZE) / size))
                     self.seatOnPalm(prop)
                 elif gag.track == G.THROW or self.arms.anim == 'throw':
                     # A pie (or a gag carried the same way) sits on the
