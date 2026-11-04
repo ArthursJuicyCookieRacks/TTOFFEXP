@@ -80,6 +80,9 @@ class NPCNav:
             self.traverse(root)
             for i in range(self.queue.getNumEntries()):
                 entry = self.queue.getEntry(i)
+                if not entry.hasSurfacePoint():
+                    # Some solids (a CFO safe's or crane's) give no point.
+                    continue
                 out.append((entry.getSurfacePoint(root), entry.getIntoNodePath(), entry.getInto().isTangible()))
         return out
 

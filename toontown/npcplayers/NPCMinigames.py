@@ -1134,6 +1134,8 @@ class FlightNav:
             self.queue.clearEntries()
             self.trav.traverse(root)
             for i in range(self.queue.getNumEntries()):
+                if not self.queue.getEntry(i).hasSurfacePoint():
+                    continue
                 z = self.queue.getEntry(i).getSurfacePoint(clientRender())[2]
                 if best is None or z > best:
                     best = z
