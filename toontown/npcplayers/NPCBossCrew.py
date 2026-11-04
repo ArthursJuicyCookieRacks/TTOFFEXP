@@ -107,6 +107,12 @@ GOLF_HIT_CHANCE = 0.45
 # carrying the fight. While behind their share they aim better; once at it
 # their hits stop counting (the pie or the swing misses).
 NPC_SHARE = (0.30, 0.04, 0.22, 0.38)
+# The Chief Justice's scale needs ~1350 evidence from a group of eight, so
+# with one player it dragged on (31 minutes of scale, 52 in all). With NPCs
+# along (Arthur): they do about half of it, and every toon's evidence weighs
+# CJ_WEIGHT times as much.
+CJ_NPC_SHARE = (0.50, 0.04, 0.44, 0.56)
+CJ_WEIGHT = 2
 # Early on, before anyone has done much, they may do this much of his
 # health on their own.
 NPC_SHARE_SLACK = 0.04
@@ -201,7 +207,10 @@ class NPCBossCrew:
         self.nextHeal = 0
         self.animRefresh = {}
         self.doorWasOpen = False
-        self.npcShare = min(max(random.gauss(NPC_SHARE[0], NPC_SHARE[1]), NPC_SHARE[2]), NPC_SHARE[3])
+        share = CJ_NPC_SHARE if self.dept == 'l' else NPC_SHARE
+        self.npcShare = min(max(random.gauss(share[0], share[1]), share[2]), share[3])
+        if self.dept == 'l':
+            self.hookWeights()
         self.dealt = {'npc': 0, 'player': 0}
         self.hookDamage()
         self.taskName = 'npcBossCrew-%d' % boss.doId
@@ -229,6 +238,20 @@ class NPCBossCrew:
 
         boss.b_setBossDamage = b_setBossDamage
 
+    def hookWeights(self):
+        # Each toon's evidence weight (1 plus its cannon's jurors) is set as
+        # the scale round starts.
+        boss = self.boss
+        orig = boss.calculateWeightPerToon
+
+        def calculateWeightPerToon(*args):
+            result = orig(*args)
+            for avId in list(boss.weightPerToon.keys()):
+                boss.weightPerToon[avId] = boss.weightPerToon[avId] * CJ_WEIGHT
+            return result
+
+        boss.calculateWeightPerToon = calculateWeightPerToon
+
     def maxDamage(self):
         return float(getattr(self.boss, 'bossMaxDamage', 0) or 100)
 
@@ -254,7 +277,7 @@ class NPCBossCrew:
         # Room for another NPC hit within this fight's share.
         share = self.npcShare
         if self.stalled():
-            share = min(0.5, share + STALL_EXTRA_SHARE)
+            share = min(0.62 if self.dept == 'l' else 0.5, share + STALL_EXTRA_SHARE)
         allowed = share / (1.0 - share) * self.dealt['player'] + NPC_SHARE_SLACK * self.maxDamage()
         return self.dealt['npc'] < allowed
 

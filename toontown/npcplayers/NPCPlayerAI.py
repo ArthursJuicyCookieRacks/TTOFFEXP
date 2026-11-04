@@ -92,6 +92,14 @@ class NPCPlayerAI(DistributedToonAI):
         self.fillBag()
         self.d_setInventory(self.inventory.makeNetString())
 
+    def fullBag(self):
+        # Every battle starts on a full bag (Arthur).
+        self.inventory.zeroInv()
+        self.inventory.maxOutInv()
+        self.inventory.calcTotalProps()
+        self.d_setInventory(self.inventory.makeNetString())
+        self.notify.info('NPC %d: full gag bag (%d gags) in zone %d' % (self.doId, self.inventory.totalProps, self.zoneId))
+
     def fillBag(self):
         # Like players, some carry a full bag and some only part of one.
         self.inventory.zeroInv()

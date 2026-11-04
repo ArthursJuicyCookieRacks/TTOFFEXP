@@ -1291,9 +1291,10 @@ class NPCPlayerManagerAI:
             if getAreaId(npc.zoneId) is None or npc.getBattleId() > 0:
                 continue
             npc.needsRefill = False
+            npc.inRun = False
             if npc.hp < npc.maxHp:
                 npc.b_setHp(npc.maxHp)
-            npc.restock()
+            npc.fullBag()
 
     # --- Friends ---
 
