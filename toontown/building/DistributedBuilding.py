@@ -626,6 +626,8 @@ class DistributedBuilding(DistributedObject.DistributedObject):
     FieldOfficeNarrowSignTaller = 1.25
     FieldOfficeTextDrop = 0.35
     FieldOfficeMidStarScale = 0.85
+    FieldOfficeWideStarScale = 0.93
+    FieldOfficeWideStarZ = -0.6
     FieldOfficeMidStarZ = -0.55
 
     def layOutFieldOfficeSign(self, signOrigin, signNP, starNP, textNP=None, textWidth=0.0):
@@ -687,6 +689,12 @@ class DistributedBuilding(DistributedObject.DistributedObject):
                     textNP.setSx(textNP.getSx() * grow)
                     textNP.setSz(textNP.getSz() * grow)
                     textNP.setZ(textNP.getZ() - self.FieldOfficeTextDrop * (grow - 1.0) * textNP.getSz() / grow)
+        elif fit >= 0.95:
+            # Wide fronts: the star a tiny bit smaller and a tiny bit higher.
+            small = self.FieldOfficeWideStarScale
+            starNP.setScale(small / squeeze, 1.0, small)
+            starNP.setX((starX - radius * (1 - small)) / squeeze)
+            starNP.setZ(signZ + self.FieldOfficeWideStarZ)
         elif fit < 0.95:
             # Middling fronts: the star a little smaller and a little higher.
             small = self.FieldOfficeMidStarScale
