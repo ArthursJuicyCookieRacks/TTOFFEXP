@@ -141,6 +141,7 @@ HOLD_NUDGE = {'squirting-flower': Vec3(0, -0.15, -0.03), 'fruitpie-slice': Vec3(
 CLEAR_GAP = 0.005
 # Gags centred on the glove's own middle rather than the hold joint.
 CENTRE_ON_GLOVE = ('ship',)
+CENTRE_PULL = 1.0
 # The storm cloud's bounds reach below what shows (HOLD_SINK sets it).
 CLEAR_SKIP = ('stormcloud',)
 # Where the hose nozzle points: out at the cogs past the crosshair (camera space).
@@ -151,6 +152,7 @@ HOSE_GLOVE_AT = Point3(0.8, 3.4, -0.9)
 GUN_GLOVE_AT = Point3(0.9, 4.0, -0.95)
 SOUND_GLOVE_AT = Point3(0.8, 3.4, -0.75)
 SOUND_ARM_SIZE = 1.0
+SOUND_TWIST = 45
 # The gun aims at a nearer point, turned in so its side shows.
 GUN_AIM_AT = Point3(0, 8, 0.6)
 GUN_ARM_SIZE = 1.0
@@ -238,7 +240,7 @@ MEGAPHONE_ROLL = 0
 # megaphone is held: the fist closes round the line about here.
 FIST_ON_LINE = -0.77
 # The megaphone slid in the view (camera space) so the glove holds its right side.
-MEGAPHONE_VIEW_SHIFT = Vec3(-0.2, 0, 0)
+MEGAPHONE_VIEW_SHIFT = Vec3(0, 0, 0)
 
 
 def megaphoneInFist(scale):
@@ -476,7 +478,7 @@ class ToonArms:
         self.aimHeld(side, HOSE_GLOVE_AT, lambda parent: nozzle.getPos(parent) - glove.getPos(parent))
 
     def aimHeld(self, side, gloveAt, pointing, size=1.0, aimAt=None, upright=None, armFrom=None, rollBy='shoulder',
-                cant=0):
+                cant=0, twist=0):
         """Turn the arm, with its gag in the battle's grip, about the glove
         so the gag points out at the cogs (HOSE_AIM_AT, camera space),
         then roll it about that line so the arm still comes in from the
@@ -522,6 +524,9 @@ class ToonArms:
             goal = flat(parent.getRelativeVector(camera, armFrom or ARM_FROM))
         if arm is not None and goal is not None:
             self.turnAbout(pivot, math.degrees(math.atan2(arm.cross(goal).dot(want), arm.dot(goal))), want)
+        if twist:
+            # Turned further about the aim line: which side the hand wraps from.
+            self.turnAbout(pivot, twist, want)
         at = glove.getPos(camera)
         while self.shoulderInView(side) and self.grow < MAX_ARM_GROW:
             self.grow *= 1.08
@@ -869,20 +874,17 @@ class GagHandler:
         shift = Vec3(-centre[0], -centre[1], -low[2] - sink * (high[2] - low[2]))
         prop.setPos(hand, prop.getPos(hand) + shift)
         if name in CENTRE_ON_GLOVE:
-            # A long gag lying across the glove is slid along its length so
-            # it overhangs the glove equally at both ends (centred on the
-            # hold joint, which sits to one side of the glove, it hung off
-            # one side).
-            low, high = prop.getTightBounds(prop)
-            mid = (low + high) * 0.5
-            size = high - low
-            along, across = (0, 1) if size[0] >= size[1] else (1, 0)
-            under = [v[along] for v in self.arms.gloveVerts(RIGHT, prop)
-                     if abs(v[across] - mid[across]) <= size[across] * 0.5]
-            if under:
-                shift = Vec3(0, 0, 0)
-                shift[along] = (min(under) + max(under)) * 0.5 - mid[along]
-                prop.setPos(prop, shift)
+            # Centred on the middle of the glove itself (the hold joint sits
+            # off to one side of it), keeping its turn: a long gag then
+            # overhangs both sides of the palm alike.
+            verts = self.arms.gloveVerts(RIGHT, hand)
+            if verts:
+                n = float(len(verts))
+                cx = sum(v[0] for v in verts) / n
+                cy = sum(v[1] for v in verts) / n
+                low, high = prop.getTightBounds(hand)
+                mid = (low + high) * 0.5
+                prop.setPos(hand, prop.getPos(hand) + Vec3(cx - mid[0], cy - mid[1], 0) * CENTRE_PULL)
         if name in HOLD_NUDGE:
             prop.setPos(camera, prop.getPos(camera) + HOLD_NUDGE[name])
         # Nothing of the glove pokes up through the gag: its bottom is
@@ -949,7 +951,8 @@ class GagHandler:
                 # does, and the arm turns with it to point it at the cogs.
                 megaphone.setTransform(megaphoneInFist(megaphone.getScale()[0] * MEGAPHONE_SCALE))
                 self.arms.aimHeld(RIGHT, SOUND_GLOVE_AT,
-                                  lambda parent: parent.getRelativeVector(megaphone, MEGAPHONE_AXIS), SOUND_ARM_SIZE)
+                                  lambda parent: parent.getRelativeVector(megaphone, MEGAPHONE_AXIS), SOUND_ARM_SIZE,
+                                  twist=SOUND_TWIST)
                 # Slid over in the view so the glove holds its right side.
                 self.arms.toon.update(force=True)
                 megaphone.setPos(camera, megaphone.getPos(camera) + MEGAPHONE_VIEW_SHIFT)
