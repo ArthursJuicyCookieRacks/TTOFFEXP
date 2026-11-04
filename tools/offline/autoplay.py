@@ -5046,7 +5046,15 @@ def useCogSummons(shots, prefix='summons'):
         return '; '.join(out) or 'none'
     deadline = time.time() + 60
     while time.time() < deadline and not [s for s in suitsNearby() if s.doId not in before and s.dna.name == name]:
-        yield sleep(2)
+        if placeState() == 'battle':
+            # The summoned cog walked straight into the toon: that's the
+            # fight with it.
+            log('summoned %s walked into us' % name)
+            yield from fightBattle()
+            yield until(walking, 120, 'walking after the summoned cog battle')
+            log('beat the summoned %s' % name)
+            return
+        yield sleep(1)
     if not [s for s in suitsNearby() if s.doId not in before and s.dna.name == name]:
         log('SUMMONCHECK AI %s: %s; client sees %s; toon zone %s' % (name, onDistrict(aiSuits, name),
             [(s.dna.name, s.zoneId) for s in suitsNearby()], localAvatar.zoneId))
