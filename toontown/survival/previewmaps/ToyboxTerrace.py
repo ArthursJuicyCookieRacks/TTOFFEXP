@@ -464,16 +464,10 @@ class ToyboxTerrace(PreviewMap):
             along = (b - a) / length
             inward = Vec3(-along[1], along[0], 0)
             h = math.degrees(math.atan2(-inward[0], inward[1])) + 180
-            # The solid line, broken where a tunnel goes through.
-            cuts = [0.0]
-            for g, half in gaps:
-                t = (g - a).dot(along)
-                if -1 < t < length + 1 and abs((g - a).dot(inward)) < 2:
-                    cuts += [t - half, t + half]
-            cuts.append(length)
-            for s0, s1 in zip(cuts[::2], cuts[1::2]):
-                if s1 - s0 > 0.5:
-                    k.wallSegment(a + along * s0 - inward * 1.0, a + along * s1 - inward * 1.0, -1, 30, name='toyWall', thick=2.4)
+            # The solid line, unbroken: the tunnels are walled off too, and a
+            # gap left for each let a toon slip in beside the tunnel's face
+            # and round behind the boundary.
+            k.wallSegment(a - inward * 1.0, b - inward * 1.0, -1, 30, name='toyWall', thick=2.4)
             size = 12.0
             n = int(length / size)
             step = length / n
