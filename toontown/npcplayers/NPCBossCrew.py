@@ -100,6 +100,14 @@ GOLFERS = 2
 GOLF_HIT_CHANCE = 0.45
 # Between goes the NPCs move about the arena on their own, as players do,
 # rather than following the player: how often, and how far from the boss.
+# The boss's damage is mostly the players' doing: the NPC toons help with
+# about 30% of it (a new share each fight, a little more or less), never
+# carrying the fight. While behind their share they aim better; once at it
+# their hits stop counting (the pie or the swing misses).
+NPC_SHARE = (0.30, 0.04, 0.22, 0.38)
+# Early on, before anyone has done much, they may do this much of his
+# health on their own.
+NPC_SHARE_SLACK = 0.04
 ROAM_TIME = (1.0, 4.0)
 ROAM_RANGE = (14.0, 40.0)
 # In the pie round the toons not stunning him keep moving, as players do.
@@ -179,8 +187,57 @@ class NPCBossCrew:
         self.nextHeal = 0
         self.animRefresh = {}
         self.doorWasOpen = False
+        self.npcShare = min(max(random.gauss(NPC_SHARE[0], NPC_SHARE[1]), NPC_SHARE[2]), NPC_SHARE[3])
+        self.dealt = {'npc': 0, 'player': 0}
+        self.hookDamage()
         self.taskName = 'npcBossCrew-%d' % boss.doId
         taskMgr.doMethodLater(TICK, self.__tick, self.taskName)
+
+    # --- Sharing the work ---
+
+    def hookDamage(self):
+        # Who took his health: every boss's hits end in b_setBossDamage, sent
+        # by the toon that made them.
+        boss = self.boss
+        orig = boss.b_setBossDamage
+        crew = self
+
+        def b_setBossDamage(bossDamage, *rest):
+            before = getattr(boss, 'bossDamage', 0) or 0
+            result = orig(bossDamage, *rest)
+            delta = (getattr(boss, 'bossDamage', 0) or 0) - before
+            # (The CJ's scale jumps to its starting weight in his scenes.)
+            if 0 < delta <= 0.15 * crew.maxDamage():
+                avId = crew.air.getAvatarIdFromSender()
+                if avId in boss.involvedToons:
+                    crew.dealt['npc' if isNPCId(crew.air, avId) else 'player'] += delta
+            return result
+
+        boss.b_setBossDamage = b_setBossDamage
+
+    def maxDamage(self):
+        return float(getattr(self.boss, 'bossMaxDamage', 0) or 100)
+
+    def share(self):
+        total = self.dealt['npc'] + self.dealt['player']
+        return self.dealt['npc'] / total if total else 0.0
+
+    def mayHurt(self):
+        # Room for another NPC hit within this fight's share.
+        allowed = self.npcShare / (1.0 - self.npcShare) * self.dealt['player'] + NPC_SHARE_SLACK * self.maxDamage()
+        return self.dealt['npc'] < allowed
+
+    def aim(self, chance):
+        # Behind their share they hit more often; past it, less.
+        share = self.share()
+        if share < self.npcShare - 0.05:
+            return min(0.95, chance * 1.5)
+        if share > self.npcShare + 0.03:
+            return chance * 0.6
+        return chance
+
+    def hits(self, chance):
+        return random.random() < self.aim(chance) and self.mayHurt()
 
     def destroy(self):
         taskMgr.remove(self.taskName)
@@ -793,6 +850,10 @@ class NPCBossCrew:
             self.safeUntil[npc.doId] = now + HIT_REST
             self.animRefresh[npc.doId] = now + ANIM_REFRESH_AFTER
             npc.walk = None
+            # The zap puts the toon where it is said to be on every client:
+            # from where the player sees it, or it would jump there (the
+            # district's place for it can be a scene or a walk behind).
+            self.syncPos(npc)
             pos = npc.getPos()
             npc.asSender(boss.zapToon, pos[0], pos[1], pos[2], npc.getH(), 0, 0, 0, 0, hit,
                          globalClockDelta.getFrameNetworkTime(bits=16))
@@ -911,7 +972,7 @@ class NPCBossCrew:
                 # Still running in; throws from close up.
                 self.nextAction[npc.doId] = now + 0.5
                 return
-            hit = random.random() < DIZZY_HIT_CHANCE
+            hit = self.hits(DIZZY_HIT_CHANCE)
             self.throwAt(npc, target, ToontownGlobals.PieCodeBossCog, hit)
             if hit:
                 npc.asSender(boss.hitBoss, 1)
@@ -971,7 +1032,7 @@ class NPCBossCrew:
             if getattr(obj, 'avId', 0) == npc.doId and obj.state in ('Grabbed',):
                 held = obj
         if held is not None:
-            if random.random() < CRANE_HIT_CHANCE:
+            if self.hits(CRANE_HIT_CHANCE):
                 npc.asSender(held.hitBoss, random.uniform(0.3, 0.8))
                 self.count('cfo crane hits')
             else:
@@ -1041,7 +1102,7 @@ class NPCBossCrew:
             return
         target = self.bossPos()
         # Evidence on the scale's pan. (Nobody stuns the CJ.)
-        hit = random.random() < EVIDENCE_HIT_CHANCE
+        hit = self.hits(EVIDENCE_HIT_CHANCE)
         self.throwAt(npc, target, ToontownGlobals.PieCodeDefensePan, hit)
         if npc.numPies != ToontownGlobals.FullPies:
             npc.setNumPies(npc.numPies - 1)
@@ -1105,7 +1166,7 @@ class NPCBossCrew:
             return
         self.nextAction[npc.doId] = globalClock.getFrameTime() + random.uniform(*PITCHER_TIME)
         self.count('ceo pitcher shots')
-        if random.random() < PITCHER_HIT_CHANCE:
+        if self.hits(PITCHER_HIT_CHANCE):
             npc.asSender(boss.hitBoss, random.randint(1, 3))
 
     def playGolf(self, npc):
