@@ -13,7 +13,7 @@ import random
 from direct.directnotify import DirectNotifyGlobal
 from direct.interval.IntervalGlobal import (ActorInterval, Func, LerpPosHprInterval, LerpPosInterval, LerpScaleInterval, Parallel,
                                             Sequence, SoundInterval, Wait)
-from panda3d.core import LMatrix4, NodePath, Point2, Point3, Quat, Vec3, Vec4
+from panda3d.core import CullFaceAttrib, LMatrix4, NodePath, Point2, Point3, Quat, Vec3, Vec4
 
 from toontown.battle import BattleProps
 from toontown.battle.BattleSounds import globalBattleSoundCache
@@ -136,7 +136,7 @@ VIEW_NUDGE = {}
 BATTLE_GRIP = {'glass': 20}
 # Gags in the palm moved in the view (camera space) before they are kept
 # clear of the glove.
-HOLD_NUDGE = {'squirting-flower': Vec3(0, -0.15, -0.03), 'ship': Vec3(0.08, -0.25, -0.06), 'fruitpie-slice': Vec3(-0.15, 0, -0.1),
+HOLD_NUDGE = {'squirting-flower': Vec3(0, -0.15, -0.03), 'ship': Vec3(-0.2, 0.05, -0.03), 'fruitpie-slice': Vec3(-0.15, 0, -0.1),
               'creampie-slice': Vec3(-0.15, 0, -0.1)}
 CLEAR_GAP = 0.005
 # Gags centred on the glove's own middle rather than the hold joint.
@@ -152,11 +152,14 @@ HOSE_GLOVE_AT = Point3(0.8, 3.4, -0.9)
 GUN_GLOVE_AT = Point3(0.9, 4.0, -0.95)
 SOUND_GLOVE_AT = Point3(0.8, 3.4, -0.75)
 SOUND_ARM_SIZE = 1.0
-SOUND_TWIST = 0
+SOUND_TWIST = 45
 # The forearm (rolled by the elbow) comes in from the lower right (Arthur),
 # the hand wrapping the megaphone from that side.
-SOUND_ROLL_BY = 'elbow'
-SOUND_ARM_FROM = Vec3(0.8, -0.3, -0.5)
+SOUND_ROLL_BY = 'shoulder'
+SOUND_ARM_FROM = None
+# The hold mirrored left to right about the megaphone (Arthur: that grip,
+# the arm coming up from the right).
+SOUND_MIRROR = True
 # The gun aims at a nearer point, turned in so its side shows.
 GUN_AIM_AT = Point3(0, 8, 0.6)
 GUN_ARM_SIZE = 1.0
@@ -240,7 +243,7 @@ MEGAPHONE_GRIP = Point3(0.188, 0.398, 0.151)
 # about its axis (degrees).
 MEGAPHONE_GRIP_ALONG = 0.15
 MEGAPHONE_ROLL = 0
-MEGAPHONE_FLIP = True
+MEGAPHONE_FLIP = False
 # Where along the fist's grip line (the hose's, in the nozzle's frame) the
 # megaphone is held: the fist closes round the line about here.
 FIST_ON_LINE = -0.77
@@ -542,6 +545,24 @@ class ToonArms:
             self.toon.setScale(self.toon.getScale() * 1.08)
             self.placeGlove(side, at)
 
+    def mirrorAbout(self, node):
+        """Mirror the arms (and what the glove holds) left to right in the
+        view, about the upright plane through node's middle: a right arm
+        drawn as it would look coming in from the other side."""
+        from panda3d.core import CullFaceAttrib
+        self.toon.update(force=True)
+        low, high = node.getTightBounds(camera)
+        if low is None:
+            return
+        x0 = (low[0] + high[0]) * 0.5
+        parent = self.toon.getParent()
+        flip = LMatrix4.translateMat(-x0, 0, 0) * LMatrix4.scaleMat(-1, 1, 1) * LMatrix4.translateMat(x0, 0, 0)
+        self.toon.setMat(self.toon.getMat() * parent.getMat(camera) * flip * camera.getMat(parent))
+        # Mirrored, the faces wind the other way round.
+        self.toon.setAttrib(CullFaceAttrib.makeReverse())
+        self.mirrored = True
+        self.toon.update(force=True)
+
     def rollPalm(self, side, want):
         """Roll the toon about its arm (shoulder to glove) until the palm,
         the hold joint's up, faces as near the view's `want` as it can, so
@@ -677,6 +698,9 @@ class ToonArms:
         glove, pitch = VIEW_POSE.get(anim, VIEW_POSE['throw'])
         self.toon.setPosHpr(0, 0, 0, ARMS_H, pitch, 0)
         self.toon.setScale(ARMS_SCALE)
+        if getattr(self, 'mirrored', False):
+            self.toon.clearAttrib(CullFaceAttrib)
+            self.mirrored = False
         self.aimArm(side)
         if anim in PALM_UP_ANIMS:
             self.rollPalm(side, PALM_UP)
@@ -962,6 +986,8 @@ class GagHandler:
                 self.arms.aimHeld(RIGHT, SOUND_GLOVE_AT,
                                   lambda parent: parent.getRelativeVector(megaphone, MEGAPHONE_AXIS), SOUND_ARM_SIZE,
                                   armFrom=SOUND_ARM_FROM, rollBy=SOUND_ROLL_BY, twist=SOUND_TWIST)
+                if SOUND_MIRROR:
+                    self.arms.mirrorAbout(megaphone)
                 # Slid over in the view so the glove holds its right side.
                 self.arms.toon.update(force=True)
                 megaphone.setPos(camera, megaphone.getPos(camera) + MEGAPHONE_VIEW_SHIFT)
