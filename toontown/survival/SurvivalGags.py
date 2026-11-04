@@ -84,9 +84,7 @@ RIGHT, LEFT = 'right', 'left'
 BATTLE_POSES = {
     G.THROW: ('throw', 38, 45, 84, RIGHT),
     (G.SQUIRT, 0): ('throw', 38, 38, 52, RIGHT),
-    # The glass rides the open palm like a pie (held at the mouth, the
-    # glove pointed up and hid it behind the fingers).
-    (G.SQUIRT, 1): ('throw', 38, 38, 52, RIGHT),
+    (G.SQUIRT, 1): ('spit', 20, 20, 95, RIGHT),
     (G.SQUIRT, 2): ('water-gun', 44, 44, 93, RIGHT),
     (G.SQUIRT, 3): ('hold-bottle', 44, 44, 96, RIGHT),
     (G.SQUIRT, 4): ('firehose', 30, 30, 72, RIGHT),
@@ -122,23 +120,14 @@ SHOULDER_OUT = 1.15
 # How much the arm may be grown about the glove to reach past the edge.
 MAX_ARM_GROW = 2.6
 PIE_IN_VIEW_HPR = Vec3(0, 28, 0)
-# Carried gags turned their own way in the view.
-# The glass model lies along its own Y axis: pitched up to stand, rim tipped to the player.
-IN_VIEW_HPR = {'glass': (0, 102, 0)}
-# Carried gags left exactly where the battle animation's hold joint puts them.
-BATTLE_HOLD = set()
 # ...and sits a little past the glove, so the glove shows under its near edge.
 PIE_PAST_GLOVE = Vec3(0.1, 0.7, 0.05)
 # How deep a carried gag sits into the glove, as a share of its height.
 PALM_SINK = 0.05
 # Gags that need to sit deeper in the glove (a slice balanced on the
 # fingertips looked wrong, Arthur): how deep, and a nudge in camera space.
-# The storm cloud's and geyser's bounds reach below what shows (thin wisps,
-# the spray's foot), so they sink further to rest on the glove.
-PALM_FIT = {'stormcloud': (0.35, Vec3(0)), 'geyser': (0.2, Vec3(0))}
+PALM_FIT = {'fruitpie-slice': (0.2, Vec3(0.13, 0, 0)), 'creampie-slice': (0.2, Vec3(0.13, 0, 0))}
 GLOVE_TOP = 0.12
-# How far from the palm joint (toon units) a hands vertex still counts as the glove.
-GLOVE_REACH = 0.9
 # Gags carried on the palm that come in all sizes (a safe, a piano, a storm
 # cloud, a geyser...) are fitted to one size in the view, a pie's.
 FIT_SIZE = 0.85
@@ -146,10 +135,7 @@ DROP_FIT_SIZE = 0.7
 # Facing the player a little, so a drop gag shows its front and its top.
 DROP_IN_VIEW_HPR = Vec3(-25, 12, 0)
 FIT_TRACKS = (G.DROP, G.LURE)
-FIT_PROPS = ('squirting-flower', 'stormcloud', 'geyser', 'firehose', 'glass')
-# Fitted props drawn at their own size instead of FIT_SIZE (the glass of
-# water was a speck in the fingers).
-FIT_SIZES = {'glass': 0.42}
+FIT_PROPS = ('squirting-flower', 'stormcloud', 'geyser', 'firehose')
 ARMS_H = 14
 # The arms rig (camera space): where the arms ease to in each state, and
 # the bobs as (strides a second, side, up, roll degrees, sway) per gait.
@@ -409,41 +395,6 @@ class ToonArms:
                     node.setScale(0.001)
                     self.folded.append((joint, lod, node))
 
-    def gloveBounds(self, side=RIGHT, space=None):
-        """The glove as it is drawn now (its posed vertices), in space's
-        coordinates: (low, high), or None. Only the hand's own vertices:
-        those within reach of its palm joint."""
-        from panda3d.core import GeomVertexReader, Point3 as P3, Thread
-        space = space if space is not None else camera
-        hand = self.hand(side)
-        palm = hand.getPos(self.toon)
-        low = high = None
-        found = list(self.toon.findAllMatches('**/hands'))
-        # The detail level the arms are drawn at first.
-        found.sort(key=lambda np: '/1000/' not in str(np))
-        for np in found:
-            if np.isHidden() or not np.node().isGeomNode():
-                continue
-            mat = np.getMat(space)
-            toToon = np.getMat(self.toon)
-            node = np.node()
-            for i in range(node.getNumGeoms()):
-                vdata = node.getGeom(i).getVertexData().animateVertices(True, Thread.getCurrentThread())
-                reader = GeomVertexReader(vdata, 'vertex')
-                while not reader.isAtEnd():
-                    v = reader.getData3()
-                    if (toToon.xformPoint(v) - palm).length() > GLOVE_REACH:
-                        continue
-                    q = mat.xformPoint(v)
-                    if low is None:
-                        low, high = P3(q), P3(q)
-                    else:
-                        low = P3(min(low[0], q[0]), min(low[1], q[1]), min(low[2], q[2]))
-                        high = P3(max(high[0], q[0]), max(high[1], q[1]), max(high[2], q[2]))
-            if low is not None:
-                break
-        return None if low is None else (low, high)
-
     def hand(self, side=RIGHT):
         hands = self.toon.getLeftHands() if side == LEFT else self.toon.getRightHands()
         return hands[0] if hands else self.toon
@@ -668,23 +619,21 @@ class GagHandler:
     # --- What is held ---
 
     def seatOnPalm(self, prop):
-        """Rest the prop on the glove: its bottom on the glove's top (the
-        glove as it is drawn, measured), centred over it, instead of
-        floating past it or sunk through the fingers (Arthur: the cream
-        pie slice sat beside the glove with the fingers through it)."""
+        """Rest the prop on the glove: its bottom on the palm, centred over
+        the hand, instead of floating past it."""
+        hand = self.arms.hand(RIGHT)
         low, high = prop.getTightBounds(camera)
         if low is None:
             return
-        sink, nudge = PALM_FIT.get(getattr(prop, 'propName', None) or prop.getName(), (PALM_SINK, Vec3(0)))
-        glove = self.arms.gloveBounds(RIGHT, camera)
+        palm = hand.getPos(camera)
         centre = (low + high) * 0.5
-        if glove is not None:
-            gLow, gHigh = glove
-            spot = Point3((gLow[0] + gHigh[0]) * 0.5, (gLow[1] + gHigh[1]) * 0.5, gHigh[2])
-        else:
-            palm = self.arms.hand(RIGHT).getPos(camera)
-            spot = Point3(palm[0], palm[1], palm[2] + GLOVE_TOP * self.arms.toon.getScale()[0])
-        lift = Vec3(spot[0] - centre[0], spot[1] - centre[1], spot[2] - low[2] - sink * (high[2] - low[2])) + nudge
+        # Over the palm in the view's x/y, bottom a little into the glove.
+        # The glove's top is about GLOVE_TOP toon units over the palm joint;
+        # resting there, the fingers show under the gag's near edge.
+        gloveTop = GLOVE_TOP * self.arms.toon.getScale()[0]
+        sink, nudge = PALM_FIT.get(getattr(prop, 'propName', None) or prop.getName(), (PALM_SINK, Vec3(0)))
+        lift = Vec3(palm[0] - centre[0], palm[1] - centre[1],
+                    palm[2] + gloveTop - low[2] - sink * (high[2] - low[2])) + nudge
         prop.setPos(camera, prop.getPos(camera) + lift)
 
     @property
@@ -728,10 +677,6 @@ class GagHandler:
                 megaphone.setScale(megaphone.getScale() * MEGAPHONE_SCALE)
             else:
                 prop.reparentTo(self.arms.hand(RIGHT))
-                if gag.prop == 'glass':
-                    # Unposed the glass is half shrunk; frame 20 is the full glass
-                    # (it pops in from nothing over the first frames).
-                    prop.pose('glass', 20)
                 pos, hpr = PROP_IN_HAND.get(gag.prop, (Point3(0, 0, 0), (0, 0, 0)))
                 prop.setPosHpr(pos, Vec3(*hpr))
                 prop.setScale(HAND_SCALE.get(gag.prop, 1.0) / self.arms.grow)
@@ -742,7 +687,7 @@ class GagHandler:
                     if low is not None:
                         size = max(high - low)
                         if size > 1e-4:
-                            prop.setScale(FIT_SIZES.get(gag.prop, FIT_SIZE) / size)
+                            prop.setScale(FIT_SIZE / size)
                 if gag.track == G.DROP:
                     # A drop gag stands upright on the open palm, a little
                     # smaller than the glove so the fingers show round it.
@@ -754,14 +699,11 @@ class GagHandler:
                         if size > 1e-4:
                             prop.setScale(prop.getScale() * (DROP_FIT_SIZE / size))
                     self.seatOnPalm(prop)
-                elif gag.prop in BATTLE_HOLD:
-                    # Right where the battle's own animation holds it.
-                    pass
                 elif gag.track == G.THROW or self.arms.anim == 'throw':
                     # A pie (or a gag carried the same way) sits on the
                     # glove's palm, tipped so the player sees its top.
                     self.arms.toon.update(force=True)
-                    prop.setHpr(camera, IN_VIEW_HPR.get(gag.prop, PIE_IN_VIEW_HPR))
+                    prop.setHpr(camera, PIE_IN_VIEW_HPR)
                     self.seatOnPalm(prop)
             for node in [prop] + extras:
                 node.setBin('fixed', 41)
