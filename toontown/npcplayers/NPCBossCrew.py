@@ -112,7 +112,7 @@ NPC_SHARE = (0.30, 0.04, 0.22, 0.38)
 NPC_SHARE_SLACK = 0.04
 # No headway for this long: the NPCs may take this much more of a share.
 STALL_TIME = 150.0
-STALL_EXTRA_SHARE = 0.08
+STALL_EXTRA_SHARE = 0.05
 # Off by this much from where the player sees it, an NPC standing about is
 # moved (on the district) to there.
 SYNC_GAP = 4.0

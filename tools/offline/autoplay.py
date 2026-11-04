@@ -2213,7 +2213,7 @@ def bossStatus(air, bossId):
     return status
 
 
-def fightBoss(interior, bossClass, actions, timeout=2400, prelude={}):
+def fightBoss(interior, bossClass, actions, timeout=int(os.environ.get('AUTOPLAY_BOSS_TIMEOUT', '2400')), prelude={}):
     # Plays a boss battle: cog rounds are fought as usual, and actions maps
     # the boss's other states to what a toon does in them (called every
     # half second with the boss). prelude actions also run while that
