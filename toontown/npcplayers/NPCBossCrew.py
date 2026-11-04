@@ -110,6 +110,9 @@ NPC_SHARE = (0.30, 0.04, 0.22, 0.38)
 # Early on, before anyone has done much, they may do this much of his
 # health on their own.
 NPC_SHARE_SLACK = 0.04
+# No headway for this long: the NPCs may take this much more of a share.
+STALL_TIME = 150.0
+STALL_EXTRA_SHARE = 0.08
 # Off by this much from where the player sees it, an NPC standing about is
 # moved (on the district) to there.
 SYNC_GAP = 4.0
@@ -186,6 +189,7 @@ class NPCBossCrew:
         self.foodNum = 1000
         self.stateSince = (None, 0)
         self.resyncAt = None
+        self.progress = []
         self.stunners = None
         self.lawyerStunners = None
         self.stunOffsets = {}
@@ -232,9 +236,26 @@ class NPCBossCrew:
         total = self.dealt['npc'] + self.dealt['player']
         return self.dealt['npc'] / total if total else 0.0
 
+    def stalled(self):
+        """The fight going nowhere: his health no lower than a while ago (the
+        CJ's scale tips back, the player falls behind). The NPCs then help
+        past their share a little, so a fight can always be won."""
+        now = globalClock.getFrameTime()
+        damage = getattr(self.boss, 'bossDamage', 0) or 0
+        marks = self.progress
+        if not marks or now - marks[-1][0] > 5.0:
+            marks.append((now, damage))
+            while len(marks) > 2 and now - marks[1][0] > STALL_TIME:
+                marks.pop(0)
+        old = marks[0]
+        return now - old[0] >= STALL_TIME * 0.9 and damage <= old[1] + 0.02 * self.maxDamage()
+
     def mayHurt(self):
         # Room for another NPC hit within this fight's share.
-        allowed = self.npcShare / (1.0 - self.npcShare) * self.dealt['player'] + NPC_SHARE_SLACK * self.maxDamage()
+        share = self.npcShare
+        if self.stalled():
+            share = min(0.5, share + STALL_EXTRA_SHARE)
+        allowed = share / (1.0 - share) * self.dealt['player'] + NPC_SHARE_SLACK * self.maxDamage()
         return self.dealt['npc'] < allowed
 
     def aim(self, chance):
@@ -284,6 +305,7 @@ class NPCBossCrew:
             self.nextRoam = {}
             self.placed = False
             self.resyncAt = now + RESYNC_DELAY
+            self.progress = []
             for npc in self.members():
                 npc.walk = None
         try:
@@ -1188,7 +1210,9 @@ class NPCBossCrew:
         if self.healPlayer(npc):
             return
         lawyers = [l for l in getattr(boss, 'lawyers', None) or [] if not l.isDeleted() and not l.stunned]
-        if lawyers and self.isLawyerStunner(npc):
+        if lawyers and (self.isLawyerStunner(npc) or not self.mayHurt()):
+            # (Past their share of the scale, the rest help this way too:
+            # it holds the cogs' side back without weighing for the toons.)
             # The lawyer stunners' job: a pie at a lawyer stops its evidence
             # landing on the cogs' pan, and with every lawyer stunned the
             # toons' evidence weighs more. With all of them down they throw
