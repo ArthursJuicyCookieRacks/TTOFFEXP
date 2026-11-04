@@ -115,6 +115,8 @@ NPC_SHARE_SLACK = 0.04
 SYNC_GAP = 4.0
 # How long after a boss state change the clients take to place the toons.
 RESYNC_DELAY = 1.0
+# A walking NPC this far from where the player's game shows it was put there.
+PLACED_GAP = 25.0
 ROAM_TIME = (1.0, 4.0)
 ROAM_RANGE = (14.0, 40.0)
 # In the pie round the toons not stunning him keep moving, as players do.
@@ -306,6 +308,16 @@ class NPCBossCrew:
                     # catch up, or the next step from the old place (being
                     # kept apart, a hit) shows the toon jumping back there.
                     self.syncPos(npc, SYNC_GAP)
+                elif self.clientGap(npc) > PLACED_GAP:
+                    # Far from where it walks: the player's game has put it
+                    # somewhere (the CJ's cannons line up once the player
+                    # reads the witness's words). Stay there, not walk on
+                    # from the old place.
+                    npc.walk = None
+                    self.syncPos(npc, 0.0)
+                    pos = npc.getPos()
+                    npc.moveTo(pos[0], pos[1], pos[2], npc.getH())
+                    npc.stopMoving()
             pieRound = self.dept == 's' and state == 'BattleThree'
             if self.dept == 'l' and state == 'BattleThree' and not self.placed:
                 self.placed = True
@@ -976,6 +988,13 @@ class NPCBossCrew:
             return False
         # No walk there from here (blocked all ways): takes it from here.
         return True
+
+    def clientGap(self, npc):
+        base = getClientBuiltin('base')
+        client = base.cr.doId2do.get(npc.doId) if base is not None and getattr(base, 'cr', None) else None
+        if client is None or client.isEmpty():
+            return 0.0
+        return (client.getPos(base.render) - npc.getPos()).length()
 
     def syncPos(self, npc, gap=0.5):
         """Where the player's game shows the NPC. The boss fight's scenes move
