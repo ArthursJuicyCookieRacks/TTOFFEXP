@@ -143,7 +143,7 @@ MAPS['farewell_fair'] = {
 MAPS['toybox_terrace'] = {
     'title': 'Toybox Terrace',
     'description': 'A playground built from giant wooden toys round a board-game plaza. Jack pops out of the clock tower, '
-                   'Mickey waits in front of it, Fisherman Freddy by the marble pond, and the trunk in the toy yard.',
+                   'Mickey waits in front of it, Fisherman Freddy by the marble pond, and the trunk on the spinner in the middle of the plaza.',
     'picture': 'phase_4/maps/survival_map_farewell_fair.jpg',
     'preview': 'toybox_terrace',
 }

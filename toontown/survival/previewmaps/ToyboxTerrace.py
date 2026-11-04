@@ -104,10 +104,10 @@ class ToyboxTerrace(PreviewMap):
     PLAYER_START = (Point3(0, -118, 0), 0)
     MICKEY_SPOT = (Point3(0, 96, 0), 180)
     FISHERMAN_SPOT = (Point3(-76, -112, 0), 70)
-    TRUNK_SPOT = (Point3(96, -104, 0), 135)
+    TRUNK_SPOT = (Point3(0, 0, 0), 0)
     REACH_SPAN = 175.0
     SPAWN_RING = (35.0, 240.0)
-    NO_LANDING = ((TOWER, 30.0), (TROLLEY, 16.0), (Point3(0, 96, 0), 12.0), (Point3(-76, -112, 0), 12.0), (Point3(96, -104, 0), 10.0),
+    NO_LANDING = ((TOWER, 30.0), (TROLLEY, 16.0), (Point3(0, 96, 0), 12.0), (Point3(-76, -112, 0), 12.0), (Point3(0, 0, 0), 10.0),
                   (POND, 34.0))
     # A soft summer dusk, not a dark night: the toys keep their colours.
     NIGHT_SCALE = Vec4(0.95, 0.93, 1.0, 1)
@@ -928,6 +928,11 @@ class ToyboxTerrace(PreviewMap):
             th = facing(mouth, (0, 0))
             self.__hill(Vec3(mouth[0], mouth[1], 0) + out * 60.0, th, (60.0, 32.0, 32.0), trees=3)
             {'key': self.__keyGate, 'marble': self.__marbleGate, 'blocks': self.__blockGate}[theme](mouth, th)
+            # Nobody goes into a tunnel: they lead nowhere here (Arthur).
+            # A thick wall across the mouth, a little out in front of it.
+            a = self.world(mouth, th, (-17.0, -1.5))
+            b = self.world(mouth, th, (17.0, -1.5))
+            self.kit.wallSegment(a, b, -1, 26, name='toyTunnelBlock', thick=2.4)
 
     def __keyGate(self, mouth, th):
         """Wind-Up Way: a giant winding key turning in the hill over the
