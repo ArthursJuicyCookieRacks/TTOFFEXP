@@ -449,9 +449,9 @@ class Grid:
                     count += 1
                     if count % 25 == 0:
                         yield
-                self.noteBox(boxWalls)
+                self.noteBox(boxWalls, np)
 
-    def noteBox(self, walls):
+    def noteBox(self, walls, np=None):
         """Walls of one collision node that close round a box (the mints'
         big metal crates): the inside is solid. A platform's top that slides
         into it (a paint mixer down at its foot) is no place to stand."""
@@ -480,6 +480,21 @@ class Grid:
                 return
             sides.add((round(m[0]), round(m[1])))
         if len(sides) >= 4:
+            # The crate drawn round it can be bigger than its walls (the
+            # mints' big crates stick out a few feet past them): the drawn
+            # one, so no toon stands half in it.
+            model = np.getParent().getParent() if np is not None and not np.getParent().isEmpty() else None
+            if model is not None and not model.isEmpty():
+                try:
+                    vb = model.getTightBounds(getClientBuiltin('base').render)
+                except Exception:
+                    vb = None
+                if vb is not None:
+                    vlo, vhi = vb
+                    if all(vlo[k] <= lo[k] + 0.5 and vhi[k] >= hi[k] - 0.5 for k in (0, 1)) and \
+                            all(lo[k] - vlo[k] <= 6.0 and vhi[k] - hi[k] <= 6.0 for k in (0, 1)):
+                        lo = [min(lo[0], vlo[0]), min(lo[1], vlo[1]), lo[2]]
+                        hi = [max(hi[0], vhi[0]), max(hi[1], vhi[1]), max(hi[2], vhi[2])]
             self.solids.append((lo, hi))
 
     def inSolid(self, x, y, z, margin=0.0):
@@ -577,6 +592,12 @@ class Grid:
                                 lst = self.stopAdj.setdefault(c, [])
                                 if stop not in lst:
                                     lst.append(stop)
+            if mover.stops:
+                # (Riders stay on between stops: the tightest one counts.)
+                least = min(getattr(st, 'capacity', mover.capacity) for st in mover.stops)
+                mover.capacity = least
+                for st in mover.stops:
+                    st.capacity = least
 
     def finishFloors(self):
         try:

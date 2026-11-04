@@ -504,6 +504,9 @@ class NPCParty:
             if npc.walk is None and getattr(npc, 'onMover', None) is None and self.outOfSweep(npc):
                 # Never stands where a stomper slams across.
                 continue
+            if npc.walk is None and getattr(npc, 'onMover', None) is not None and self.makeRoom(npc):
+                # Someone came onto its small top right where it stands.
+                continue
             if npc.walk is not None:
                 continue
             if [e for e in self.getElevators() if player.doId in seatsOf(e)]:
@@ -874,6 +877,9 @@ class NPCParty:
                         npc.atHopEdge = True
                 if not bothWaiting and not close and (math.hypot(c[0] - p[0], c[1] - p[1]) > HOP_REACH or abs(c[2] - p[2]) > 3.0):
                     return
+                if len(self.aboard(npc, data)) >= getattr(data, 'capacity', data.mover.capacity):
+                    # The next top is full: waits on its own for a later pass.
+                    return
                 npc.atHopEdge = False
             elif not data.present() or len(self.aboard(npc, data)) >= getattr(data, 'capacity', data.mover.capacity):
                 # Not here yet, or full (a paint mixer's top holds two:
@@ -889,6 +895,7 @@ class NPCParty:
                 self.notify.info('NPC %s %s onto %s at %s; next %s' % (npc.doId, 'hops' if hopping else 'boards', data.node[:3], npc.getPos(),
                                                                      [(k, getattr(d, 'node', d) if k in (BOARD, RIDE) else None) for k, d in route[:3]]))
             npc.atStop = data
+            npc.boardedAt = globalClock.getFrameTime()
             spot = self.spotOn(npc, data)
             if (npc.getPos() - spot).length() > CELL_JUMP:
                 self.manager.facilities.jumpTo(npc, spot)
@@ -1016,6 +1023,24 @@ class NPCParty:
                     return True
         return False
 
+    def makeRoom(self, npc):
+        """On a small top (a paint mixer), a toon who jumps on right where
+        the NPC stands: the NPC steps over to the other side of it, never
+        stays standing inside them."""
+        stop = getattr(npc, 'atStop', None)
+        if stop is None or stop.mover is not npc.onMover or stop.mover.capacity > 3:
+            return False
+        p = npc.getPos()
+        for o in self.aboard(npc, stop):
+            q = o.getPos() if o in self.members else self.manager.getPlayerPos(o)
+            if math.hypot(q[0] - p[0], q[1] - p[1]) < 1.8 and abs(q[2] - p[2]) < 2.0:
+                spot = self.spotOn(npc, stop)
+                if math.hypot(spot[0] - p[0], spot[1] - p[1]) > 0.4:
+                    npc.walk = [[spot], self.paceOf(npc) * 0.6, None, None]
+                    return True
+                return False
+        return False
+
     def clearOfPlatform(self, npc, stop):
         if npc.walk is not None:
             return
@@ -1033,9 +1058,19 @@ class NPCParty:
             a = math.atan2(d[1], d[0]) + math.radians(turn)
             x, y = c[0] + keep * math.cos(a), c[1] + keep * math.sin(a)
             ground = nav.groundZ(x, y, p[2])
-            if ground is not None and abs(ground - p[2]) < 1.5:
+            if ground is not None and abs(ground - p[2]) < 1.5 and not self.covered(x, y, ground):
                 npc.walk = [[Point3(x, y, ground)], self.paceOf(npc) * 0.6, None, None]
                 return
+        if self.covered(p[0], p[1], p[2]):
+            # (Every way out from the middle is under a crate: out the far
+            # side, then.)
+            for turn in (120, -120, 160, -160, 180):
+                a = math.atan2(d[1], d[0]) + math.radians(turn)
+                x, y = c[0] + keep * math.cos(a), c[1] + keep * math.sin(a)
+                ground = nav.groundZ(x, y, p[2])
+                if ground is not None and abs(ground - p[2]) < 1.5 and not self.covered(x, y, ground):
+                    npc.walk = [[Point3(x, y, ground)], self.paceOf(npc) * 0.6, None, None]
+                    return
 
     def aboard(self, npc, stop):
         """Who else is on a platform now: the party's NPCs riding it, and
@@ -1044,7 +1079,11 @@ class NPCParty:
         def on(p):
             return math.hypot(p[0] - c[0], p[1] - c[1]) <= stop.mover.halfSize + 0.5 and abs(p[2] - c[2]) < 2.5
         # (Ones it carried and that have since got off do not count.)
-        riders = [m for m in self.members if m is not npc and getattr(m, 'onMover', None) is stop.mover and (on(m.getPos()) or m.walk is not None)]
+        # (One that has just jumped on is in the air, not on it yet: it
+        # counts too, so two never take a one-toon top at once.)
+        now = globalClock.getFrameTime()
+        riders = [m for m in self.members if m is not npc and getattr(m, 'onMover', None) is stop.mover and
+                  (on(m.getPos()) or m.walk is not None or now - getattr(m, 'boardedAt', -99) < 4.0)]
         player = self.air.doId2do.get(getattr(npc, 'party', None))
         if player is not None:
             pos = self.manager.getPlayerPos(player)
