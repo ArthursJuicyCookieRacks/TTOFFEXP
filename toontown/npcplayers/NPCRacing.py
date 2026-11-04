@@ -35,6 +35,21 @@ TELEPORT_TIME = 2.6
 MOVIE_TIME = 3.0
 # How often a racer tells the race how far round it is, as clients do.
 REPORT_TIME = 0.5
+# Surfaces a kart wheel should not be on, and how the NPCs keep off them.
+OFF_ROAD = ('grass', 'sand')
+# Floors with no surface named that are the ground beside the road.
+OFF_ROAD_FLOORS = ('inner_ground', 'outter_ground', 'ground1')
+# The road's edges are measured every ROAD_BIN feet round, ROAD_WIDTH
+# either side of the curve; a kart keeps ROAD_MARGIN inside them (half a
+# kart and a little), looking ROAD_AHEAD feet ahead.
+ROAD_BIN = 8.0
+ROAD_STEP = 1.0
+ROAD_WIDTH = 40.0
+ROAD_AHEAD = 40.0
+ROAD_MARGIN = 2.6
+ROAD_STEER_SPEED = 25.0
+import os as _os
+ROAD_DEBUG = bool(_os.environ.get('NPC_ROAD_DEBUG'))
 # How near a racer has to pass a gag to pick it up, or a banana peel to hit it.
 PICKUP_RADIUS = 6.0
 BANANA_RADIUS = 2.5
@@ -126,6 +141,10 @@ class NPCDriver:
         self.distance = None
         self.side = 0.0
         self.lane = random.uniform(-3, 3)
+        # Steering in from the edge where the curve runs off the road (it
+        # hugs the inside of some turns): how far, and toward where.
+        self.shift = 0.0
+        self.shiftTarget = 0.0
         self.lastTime = None
         self.lastReport = 0
         self.finished = False
@@ -192,7 +211,20 @@ class NPCDriver:
         blend = min(max((self.distance - self.startDistance) / 120.0, 0.0), 1.0)
         side = self.startSide * (1 - blend) + self.lane * blend
         right = Vec3(math.cos(math.radians(heading)), math.sin(math.radians(heading)), 0)
-        pos = point + right * side
+        # Kept between the road's edges a little way ahead (the curve
+        # hugs the inside of some turns, past the edge of the asphalt).
+        want = side
+        bounds = self.roadBounds(self.distance, side)
+        if bounds is not None:
+            lo, hi = bounds
+            if hi - lo >= 2 * ROAD_MARGIN:
+                want = min(max(side, lo + ROAD_MARGIN), hi - ROAD_MARGIN)
+            else:
+                want = (lo + hi) / 2.0
+        self.shiftTarget = want - side
+        step = ROAD_STEER_SPEED * dt
+        self.shift += max(-step, min(step, self.shiftTarget - self.shift))
+        pos = point + right * (side + self.shift)
         pos, pitch, roll = self.ground(pos, heading)
         self.place(kart, pos, heading, pitch, roll)
         self.pos = pos
@@ -249,6 +281,87 @@ class NPCDriver:
         pitch = math.degrees(math.atan2((rf + lf) / 2 - (rr + lr) / 2, 4.0))
         roll = math.degrees(math.atan2((lf + lr) / 2 - (rf + rr) / 2, 3.0))
         return Point3(pos[0], pos[1], z), pitch, roll
+
+    def roadBounds(self, distance, side):
+        """The road's edges (as offsets right of the curve) where this
+        kart is and a short way ahead of it: the narrowest of them, or
+        None where no road is loaded to tell."""
+        lo, hi = None, None
+        d = distance - ROAD_BIN
+        while d <= distance + ROAD_AHEAD:
+            edges = self.roadEdges(d, side + self.shift)
+            if edges is not None:
+                lo = edges[0] if lo is None else max(lo, edges[0])
+                hi = edges[1] if hi is None else min(hi, edges[1])
+            d += ROAD_BIN
+        if lo is None:
+            return None
+        if lo > hi:
+            mid = (lo + hi) / 2.0
+            lo = hi = mid
+        return lo, hi
+
+    def roadEdges(self, distance, near):
+        """Where the road's edges are across the track this far round:
+        the stretch of road under the curve's crosswise line that holds
+        (or is nearest) the offset near. Worked out once a track piece is
+        loaded, and kept for every racer on the track."""
+        cache = self.track.__dict__.setdefault('roadEdges', {})
+        key = int((distance % self.track.length) // ROAD_BIN)
+        if key in cache:
+            return cache[key]
+        base = getClientBuiltin('base')
+        if base is None:
+            return None
+        if getattr(self, 'rayNP', None) is None:
+            self.ground(Point3(0, 0, 0), 0)
+            if getattr(self, 'rayNP', None) is None:
+                return None
+        point, heading, t = self.track.at(key * ROAD_BIN + ROAD_BIN / 2.0)
+        right = Vec3(math.cos(math.radians(heading)), math.sin(math.radians(heading)), 0)
+        offsets = [x * ROAD_STEP for x in range(-int(ROAD_WIDTH / ROAD_STEP), int(ROAD_WIDTH / ROAD_STEP) + 1)]
+        road, anyHit = [], False
+        for x in offsets:
+            hit = self.floorHit(base, point + right * x)
+            anyHit = anyHit or hit is not None
+            road.append(hit is not None and hit[1] not in OFF_ROAD and hit[2] not in OFF_ROAD_FLOORS)
+        if not anyHit:
+            # This stretch isn't loaded (far from the player): ask again later.
+            return None
+        runs, start = [], None
+        for i, ok in enumerate(road + [False]):
+            if ok and start is None:
+                start = i
+            elif not ok and start is not None:
+                runs.append((offsets[start] - ROAD_STEP / 2.0, offsets[i - 1] + ROAD_STEP / 2.0))
+                start = None
+        if not runs:
+            edges = None
+        else:
+            edges = min(runs, key=lambda r: 0 if r[0] <= 0 <= r[1] else min(abs(r[0]), abs(r[1])))
+        if ROAD_DEBUG:
+            self.notify.info('road edges %d ft round: %s (runs %s)' % (key * ROAD_BIN, edges, runs))
+        cache[key] = edges
+        return edges
+
+    def floorHit(self, base, at):
+        """The road surface under a point: (height, surface kind, floor), the one
+        nearest the point's height."""
+        self.rayNP.setPos(base.render, at[0], at[1], at[2] + 10.0)
+        self.queue.clearEntries()
+        self.trav.traverse(base.render)
+        best = None
+        for i in range(self.queue.getNumEntries()):
+            entry = self.queue.getEntry(i)
+            if not entry.hasSurfacePoint():
+                continue
+            z = entry.getSurfacePoint(base.render)[2]
+            if abs(z - at[2]) > 12.0:
+                continue
+            if best is None or abs(z - at[2]) < abs(best[0] - at[2]):
+                into = entry.getIntoNodePath()
+                best = (z, into.getNetTag('surface'), into.getName())
+        return best
 
     def floorZ(self, base, at):
         # The road nearest the curve's height there (not a bridge above).
