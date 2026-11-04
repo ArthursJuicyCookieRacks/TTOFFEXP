@@ -304,6 +304,7 @@ class CogdoBoardroomRoom:
         self.exitElevator.reparentTo(self.root)
         self.exitElevator.setPosHpr(*Consts.ExitPosHpr)
         CogdoUtil.addElevatorShell(self.exitElevator)
+        CogdoUtil.addElevatorHousing(self.exitElevator)
         self.entranceElevator = CogdoUtil.loadElevatorModel()
         self.entranceElevator.reparentTo(self.root)
         self.entranceElevator.setPosHpr(*Consts.ElevatorPosHpr)

@@ -69,6 +69,47 @@ def addElevatorShell(model):
     return shell
 
 
+def addElevatorHousing(model, color=(0.16, 0.16, 0.17, 1)):
+    # An elevator standing free in a room (not set in a wall as in the cog
+    # buildings) showed its inside through its sides and back: the car's
+    # walls face in only. Box it in from outside, sides, back and roof the
+    # dark grey of its frame, open only at the doors (Arthur).
+    from panda3d import core as PM
+    if not model.find('**/elevatorHousing').isEmpty():
+        return None
+    b = model.getTightBounds(model)
+    if not b:
+        return None
+    (x0, y0, z0), (x1, y1, z1) = b
+    frame = model.find('**/frame')
+    fy = frame.getTightBounds(model)[1][1] if not frame.isEmpty() else y0 + 0.3
+    x0, x1, y0, y1, z0, z1 = x0 + 0.02, x1 - 0.02, fy, y1 + 0.3, 0.0, z1 - 0.02
+    fmt = PM.GeomVertexFormat.getV3n3()
+    vdata = PM.GeomVertexData('housing', fmt, PM.Geom.UHStatic)
+    vw = PM.GeomVertexWriter(vdata, 'vertex')
+    nw = PM.GeomVertexWriter(vdata, 'normal')
+    tris = PM.GeomTriangles(PM.Geom.UHStatic)
+    faces = (((x1, y1, z0), (x0, y1, z0), (x0, y1, z1), (x1, y1, z1), (0, 1, 0)),
+             ((x0, y1, z0), (x0, y0, z0), (x0, y0, z1), (x0, y1, z1), (-1, 0, 0)),
+             ((x1, y0, z0), (x1, y1, z0), (x1, y1, z1), (x1, y0, z1), (1, 0, 0)),
+             ((x0, y0, z1), (x1, y0, z1), (x1, y1, z1), (x0, y1, z1), (0, 0, 1)))
+    for i, face in enumerate(faces):
+        for v in face[:4]:
+            vw.addData3(*v)
+            nw.addData3(*face[4])
+        k = i * 4
+        # Outward faces only: from inside the car you still see its walls.
+        tris.addVertices(k, k + 1, k + 2)
+        tris.addVertices(k, k + 2, k + 3)
+    geom = PM.Geom(vdata)
+    geom.addPrimitive(tris)
+    gn = PM.GeomNode('elevatorHousing')
+    gn.addGeom(geom)
+    node = model.attachNewNode(gn)
+    node.setColor(*color)
+    return node
+
+
 def getRandomDialogueLine(lineList, rng):
     return lineList[rng.randint(0, len(lineList) - 1)]
 
