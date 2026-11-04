@@ -28,6 +28,8 @@ BoxRight = -0.555
 # Where the intro panels' titles are centred on screen (aspect2d x).
 TitleX = 0.26
 TitleDrop = 0.058
+# The golf panel's green button (stock 0.74, frame space), nudged right.
+GolfButtonX = 0.84
 
 
 def centerTitle(panel):
@@ -231,6 +233,8 @@ class CogdoBoardroomGolfIntro(CogdoBoardroomGameIntro):
         title = self._panel.gameTitleText
         title.setScale(title.getScale() * 0.8)
         title.setX(aspect2d, title.getX(aspect2d) - 0.075)
+        # And the button sits a little further right, clear of the title.
+        self._panel.playButton.setX(GolfButtonX)
         self._root = root
         self._makeIval()
 
