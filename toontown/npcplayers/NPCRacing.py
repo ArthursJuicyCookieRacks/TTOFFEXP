@@ -218,6 +218,7 @@ class NPCDriver:
         speed *= min(max((now - race.startTime) / 3.0, 0.1), 1.0)
         # Nobody drives at one speed the whole way.
         speed *= 1 + 0.08 * math.sin(now * 0.4 + self.wobble)
+        speed *= self.pack(speed)
         if now < self.turboUntil:
             speed *= TURBO_SPEED
         if race.currentlyAffectedByAnvil.get(self.npc.doId):
@@ -229,6 +230,27 @@ class NPCDriver:
         if now < self.slowUntil:
             speed *= self.slowSpeed
         return speed
+
+    def pack(self, speed):
+        # Racers react to the players around them, a little: one far ahead
+        # of every player eases off, one far behind pushes harder. It stays
+        # a race (a slow driver still loses, a fast one can still win):
+        # never quicker than the track record's pace, never slower than the
+        # pace to qualify, and no more than 12% either way.
+        race = self.race
+        players = [p for a, p in race.avatarProgress.items() if a != self.npc.doId and not isNPC(self.air.doId2do.get(a))]
+        if not players or self.distance is None or self.distance <= 0:
+            return 1.0
+        lead = self.distance / self.track.length - max(players)
+        factor = 1.0
+        if lead > 0.15:
+            factor = 1.0 - min(0.12, (lead - 0.15) * 0.25)
+        elif lead < -0.15:
+            factor = 1.0 + min(0.12, (-lead - 0.15) * 0.25)
+        record, qualify = RaceGlobals.TrackDict[race.trackId][2], RaceGlobals.TrackDict[race.trackId][1]
+        fastest = race.lapCount * self.track.length / record
+        slowest = race.lapCount * self.track.length / qualify
+        return min(max(speed * factor, slowest), max(speed, fastest)) / speed if speed > 0 else 1.0
 
     def slow(self, until, speed):
         self.slowUntil = until

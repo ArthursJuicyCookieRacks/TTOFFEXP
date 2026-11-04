@@ -16,6 +16,12 @@ class DistributedGagTreeAI(DistributedPlantBaseAI):
         DistributedPlantBaseAI.sendState(self)
         self.sendUpdate('setWilted', [self.getWilted()])
 
+    def d_setWaterLevel(self, waterLevel):
+        # Watering a wilted tree revives it: the client shows the wilt
+        # (and offers Remove instead of Pick) from setWilted, not the water.
+        DistributedPlantBaseAI.d_setWaterLevel(self, waterLevel)
+        self.sendUpdate('setWilted', [self.getWilted()])
+
     def canBeHarvested(self):
         # A tree bears gags the toon can pick once every lower tree of its
         # track is full grown.

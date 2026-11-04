@@ -129,7 +129,9 @@ class DistributedGagTree(DistributedPlantBase.DistributedPlantBase):
 
     def handlePicking(self):
         messenger.send('wakeup')
-        if self.isFruiting() and self.canBeHarvested():
+        # Same test as the button's label (getShovelAction): a wilted tree
+        # reads Remove, so pressing it must not try to pick.
+        if self.isFruiting() and not self.isWilted() and self.canBeHarvested():
             if self.velvetRoped():
                 self._teaserPanel = TeaserPanel(pageName='pickGags')
                 localAvatar._gagTreeVelvetRoped = None

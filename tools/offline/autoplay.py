@@ -2900,18 +2900,57 @@ def raceState(race):
 def driveKart(race):
     # Drives the local kart the way a player holding the arrow keys would:
     # full throttle, steering toward a pole a little way down the track.
+    state = {'t': time.time(), 'pos': None, 'backUntil': 0, 'shots': 0}
+
     def drive(task):
         if race.isDisabled() or raceState(race) != 'racing':
             return task.done
         kart = race.localKart
         pos = kart.getPos(render)
-        goal = race.curvePoints[(race.currentPole + 3) % len(race.curvePoints)]
+        now = time.time()
+        if now < state['backUntil']:
+            # Backing off a wall, as a player would: reverse, wheel turned.
+            kart.arrowVert = -1
+            kart.arrowHorz = state['backTurn']
+            return task.cont
+        pts = race.curvePoints
+        if 'spacing' not in state:
+            step = max(1, len(pts) // 200)
+            total = sum((pts[i] - pts[i - step]).length() for i in range(step, len(pts), step))
+            state['spacing'] = max(0.05, total / float(len(pts)))
+        speed = abs(getattr(kart, 'curSpeed', 0))
+        # Stuck: barely moving for a few seconds (nose in a wall, or
+        # scraping along one), as a player would notice and back off.
+        if speed > 25 or state['pos'] is None:
+            state['pos'] = Point3(pos)
+            state['t'] = now
+        elif now - state['t'] > 3.0:
+            if state['shots'] < 3:
+                state['shots'] += 1
+                log('kart stuck at %s h %.0f, pole %d, speed %.0f; backing off' % (
+                    tuple(round(v, 1) for v in pos), kart.getH(render), race.currentPole, speed))
+                base.screenshot(os.path.join(os.environ.get('AUTOPLAY_SHOTS', '/tmp'),
+                                             'kart-stuck-%d.png' % state['shots']), defaultFilename=0)
+            state['stuck'] = state.get('stuck', 0) + 1
+            state['backUntil'] = now + 1.5
+            # Reverse with the wheel turned away from where it must go.
+            g = pts[(race.currentPole + int(20 / state['spacing'])) % len(pts)]
+            off = Vec3(g - pos)
+            want = math.degrees(math.atan2(-off[0], off[1]))
+            err = (want - kart.getH(render) + 180) % 360 - 180
+            state['backTurn'] = 1.0 if err > 0 else -1.0
+            state['pos'] = None
+            return task.cont
+        # Aim at the racing line a speed-dependent distance ahead.
+        look = 25.0 + 0.2 * speed
+        goal = pts[(race.currentPole + max(3, int(look / state['spacing']))) % len(pts)]
         offset = Vec3(goal - pos)
         wanted = math.degrees(math.atan2(-offset[0], offset[1]))
         error = (wanted - kart.getH(render) + 180) % 360 - 180
-        kart.arrowVert = 1
+        # Lift off the throttle in a sharp turn, like a player would.
+        kart.arrowVert = 1 if abs(error) < 35 or speed < 60 else 0
         # A positive arrowHorz turns the kart clockwise (its heading drops).
-        kart.arrowHorz = max(-1.0, min(1.0, -error / 20.0))
+        kart.arrowHorz = max(-1.0, min(1.0, -error / 15.0))
         return task.cont
 
     taskMgr.add(drive, 'autoplay-drive-kart')
