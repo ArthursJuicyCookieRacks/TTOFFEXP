@@ -87,6 +87,8 @@ STUN_REST = (4.0, 8.0)
 # kept free for the player at the start.
 CRANE_HIT_CHANCE = 0.4
 CRANE_FOR_PLAYER = 30.0
+# How near a crane, pitcher or golf spot an NPC walks before it takes it.
+STATION_REACH = 5.0
 # The CFO's floor toons: they jump on the goons' heads to stun them for the
 # craners, and pick up the treasures the stunned goons leave when hurt.
 GOON_STOMP_RANGE = 6.0
@@ -111,6 +113,8 @@ NPC_SHARE_SLACK = 0.04
 # Off by this much from where the player sees it, an NPC standing about is
 # moved (on the district) to there.
 SYNC_GAP = 4.0
+# How long after a boss state change the clients take to place the toons.
+RESYNC_DELAY = 1.0
 ROAM_TIME = (1.0, 4.0)
 ROAM_RANGE = (14.0, 40.0)
 # In the pie round the toons not stunning him keep moving, as players do.
@@ -179,6 +183,7 @@ class NPCBossCrew:
         self.pieSequence = {}
         self.foodNum = 1000
         self.stateSince = (None, 0)
+        self.resyncAt = None
         self.stunners = None
         self.lawyerStunners = None
         self.stunOffsets = {}
@@ -233,6 +238,8 @@ class NPCBossCrew:
     def aim(self, chance):
         # Behind their share they hit more often; past it, less.
         share = self.share()
+        if share < self.npcShare - 0.10:
+            return min(0.95, chance * 2.2)
         if share < self.npcShare - 0.05:
             return min(0.95, chance * 1.5)
         if share > self.npcShare + 0.03:
@@ -274,8 +281,25 @@ class NPCBossCrew:
             # A new stretch: everyone gets going straight away.
             self.nextRoam = {}
             self.placed = False
+            self.resyncAt = now + RESYNC_DELAY
+            for npc in self.members():
+                npc.walk = None
         try:
             members = self.members()
+            if self.resyncAt is not None:
+                if now < self.resyncAt:
+                    # The clients are still putting the toons where this
+                    # stretch begins: nobody sets off from the old places.
+                    return Task.cont
+                self.resyncAt = None
+                for npc in members:
+                    # From where the player's game shows each toon, told to
+                    # every client, so no walk starts from a stale place.
+                    npc.walk = None
+                    self.syncPos(npc, 0.0)
+                    pos = npc.getPos()
+                    npc.moveTo(pos[0], pos[1], pos[2], npc.getH())
+                    npc.stopMoving()
             for npc in members:
                 if npc.walk is None:
                     # The boss's scenes move the toons on the clients only;
@@ -321,6 +345,10 @@ class NPCBossCrew:
                     pace = STUN_THROW_TIME
                 elif self.dept == 'l' and state == 'BattleThree':
                     pace = BONUS_TIME if getattr(boss, 'bonusState', False) else EVIDENCE_TIME
+                share = self.share()
+                if share < self.npcShare - 0.08:
+                    # Well behind their part: they keep at it harder.
+                    pace = (pace[0] * 0.6, pace[1] * 0.6)
                 for npc in members:
                     if now >= self.nextAction.get(npc.doId, 0):
                         self.nextAction[npc.doId] = now + random.uniform(*pace)
@@ -907,6 +935,48 @@ class NPCBossCrew:
         npc.sendUpdate('tossPie', [pos[0], pos[1], pos[2], h, sequence, 60, 0, now])
         npc.sendUpdate('pieSplat', [target[0], target[1], target[2], sequence, pieCode, now + 30])
 
+    def stationPoint(self, obj):
+        """Where a toon stands to use a crane, a banquet table's pitcher or a
+        golf spot, from the player's game."""
+        base = getClientBuiltin('base')
+        do = base.cr.doId2do.get(obj.doId)
+        if do is None:
+            return None
+        for name in ('controls', 'waterPitcherNode', 'root'):
+            node = getattr(do, name, None)
+            if node is not None and not node.isEmpty():
+                return node.getPos(base.render)
+        return None
+
+    def pickStation(self, npc, free):
+        """The free station this NPC heads for: the one it picked before
+        while that is still free, else a new one."""
+        goal = getattr(npc, 'stationGoal', None)
+        for obj in free:
+            if obj.doId == goal:
+                return obj
+        obj = random.choice(free)
+        npc.stationGoal = obj.doId
+        return obj
+
+    def approach(self, npc, obj):
+        """A player walks up to a crane (a pitcher, a golf spot) before
+        taking it; true once the NPC is there. (Taking one from across the
+        room drew it as a jump onto the controls.)"""
+        if npc.walk is not None:
+            return False
+        spot = self.stationPoint(obj)
+        if spot is None:
+            return True
+        self.syncPos(npc)
+        pos = npc.getPos()
+        if math.hypot(spot[0] - pos[0], spot[1] - pos[1]) <= STATION_REACH:
+            return True
+        if self.walkToward(npc, pos, Point3(spot[0], spot[1], pos[2]), ToontownGlobals.ToonForwardSpeed):
+            return False
+        # No walk there from here (blocked all ways): takes it from here.
+        return True
+
     def syncPos(self, npc, gap=0.5):
         """Where the player's game shows the NPC. The boss fight's scenes move
         every toon about on the clients (into the elevator, onto the
@@ -1029,7 +1099,10 @@ class NPCBossCrew:
                 # an NPC takes it.
                 free = free[:-1]
             if free:
-                npc.asSender(random.choice(free).requestControl)
+                target = self.pickStation(npc, free)
+                if not self.approach(npc, target):
+                    return
+                npc.asSender(target.requestControl)
                 onCranes = len([c for c in cranes if isNPCId(self.air, c.avId)])
                 self.manager.stats['cfo npc cranes'] = max(self.manager.stats.get('cfo npc cranes', 0), onCranes)
                 if globalClock.getFrameTime() - self.stateSince[1] < CRANE_FOR_PLAYER:
@@ -1174,7 +1247,9 @@ class NPCBossCrew:
                     globalClock.getFrameTime() - self.stateSince[1] < CRANE_FOR_PLAYER:
                 free = free[:-1]
             if free:
-                npc.asSender(random.choice(free).requestControl)
+                target = self.pickStation(npc, free)
+                if self.approach(npc, target):
+                    npc.asSender(target.requestControl)
             return
         self.nextAction[npc.doId] = globalClock.getFrameTime() + random.uniform(*PITCHER_TIME)
         self.count('ceo pitcher shots')
@@ -1189,8 +1264,13 @@ class NPCBossCrew:
         if not mine:
             golfers = [spot for spot in spots if isNPCId(self.air, spot.avId)]
             free = [spot for spot in spots if spot.avId == 0 and spot.state != 'Off']
-            if len(golfers) < GOLFERS and free and random.random() < 0.5:
-                npc.asSender(random.choice(free).requestControl)
+            goal = getattr(npc, 'stationGoal', None)
+            heading = goal is not None and any(spot.doId == goal for spot in free)
+            if len(golfers) < GOLFERS and free and (heading or random.random() < 0.5):
+                target = self.pickStation(npc, free)
+                if not self.approach(npc, target):
+                    return True
+                npc.asSender(target.requestControl)
                 return bool([spot for spot in spots if spot.avId == npc.doId])
             return False
         now = globalClock.getFrameTime()
