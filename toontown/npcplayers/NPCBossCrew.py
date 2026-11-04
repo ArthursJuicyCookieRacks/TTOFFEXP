@@ -17,6 +17,7 @@ from direct.task import Task
 from panda3d.core import Point3
 
 from otp.local.ExecutionContext import getClientBuiltin
+from toontown.npcplayers import NPCBanquetOperator, NPCCraneOperator
 from toontown.npcplayers.NPCNav import getNav
 from toontown.toonbase import ToontownGlobals
 
@@ -89,14 +90,28 @@ CRANE_HIT_CHANCE = 0.4
 CRANE_FOR_PLAYER = 30.0
 # How near a crane, pitcher or golf spot an NPC walks before it takes it.
 STATION_REACH = 5.0
+# At a crane: how near the magnet comes to a safe or goon to pick it up, and
+# how near the CFO's head a swinging magnet lets go (wide: far off, a miss).
+CRANE_GRAB_REACH = 3.0
+CRANE_LET_GO = 14.0
+CRANE_LET_GO_WIDE = 30.0
 # The CFO's floor toons: they jump on the goons' heads to stun them for the
 # craners, and pick up the treasures the stunned goons leave when hurt.
-GOON_STOMP_RANGE = 6.0
+GOON_STOMP_RANGE = 5.0
+# A goon walks out of the CFO for this long before anyone goes for it; a
+# jump takes GOON_JUMP_TIME, and lands on its head within GOON_HEAD_REACH.
+GOON_OUT_TIME = 3.0
+GOON_JUMP_TIME = 0.5
+GOON_HEAD_REACH = 2.0
 GOON_STOMP_CHANCE = 0.6
 TREASURE_BELOW = 0.6
 TREASURE_NEAR = 4.0
 # The CJ: how likely a toon fired from a cannon lands in a chair.
 CANNON_HIT_CHANCE = 0.3
+# The CEO's banquet: how close a waiter must come to a plate or a chair,
+# and how far beside a belt or chair it walks to.
+WAITER_REACH = 4.5
+WAITER_BESIDE = 3.5
 # The CEO: how many NPCs take a golf spot, and how likely a ball hits him.
 GOLFERS = 2
 GOLF_HIT_CHANCE = 0.45
@@ -207,6 +222,14 @@ class NPCBossCrew:
         self.nextHeal = 0
         self.animRefresh = {}
         self.doorWasOpen = False
+        self.waiterTarget = {}
+        self.stomping = {}
+        self.craneWork = {}
+        if self.dept == 'm':
+            NPCCraneOperator.install(self.air)
+        if self.dept == 'c':
+            NPCBanquetOperator.install(self.air)
+        self.goonOutSince = {}
         share = CJ_NPC_SHARE if self.dept == 'l' else NPC_SHARE
         self.npcShare = min(max(random.gauss(share[0], share[1]), share[2]), share[3])
         if self.dept == 'l':
@@ -309,6 +332,7 @@ class NPCBossCrew:
         for npc in members:
             # Laff and gags fill up once out of the boss fight altogether.
             npc.needsRefill = True
+            NPCCraneOperator.npcIds.add(npc.doId)
         return members
 
     def players(self):
@@ -384,10 +408,13 @@ class NPCBossCrew:
                         else:
                             self.roam(npc, now)
                     elif self.dept == 'm' and state == 'BattleThree':
-                        if not self.floorJob(npc, now):
+                        if not self.craneJob(npc, now) and not self.floorJob(npc, now):
                             self.roam(npc, now)
                     elif self.dept == 'l' and state == 'BattleThree':
                         if not self.witnessTrip(npc, now):
+                            self.roam(npc, now)
+                    elif self.dept == 'c' and state == 'BattleTwo':
+                        if not self.waiterJob(npc, now):
                             self.roam(npc, now)
                     else:
                         self.roam(npc, now)
@@ -705,20 +732,50 @@ class NPCBossCrew:
         if job is not None:
             kind, doId = job
             if kind == 'goon':
-                goon = boss.air.doId2do.get(doId) if hasattr(boss, 'air') else self.air.doId2do.get(doId)
+                goon = self.air.doId2do.get(doId)
                 client = base.cr.doId2do.get(doId)
                 if goon is None or client is None or client.isEmpty() or goon.state not in ('Walk', 'Battle'):
                     del self.chasing[npc.doId]
+                    self.stomping.pop(npc.doId, None)
                     return False
-                target = client.getPos(base.render)
-                if math.hypot(pos[0] - target[0], pos[1] - target[1]) < GOON_STOMP_RANGE:
+                gpos = client.getPos(base.render)
+                stomp = self.stomping.get(npc.doId)
+                if stomp is not None:
+                    # In the air: did it come down on the goon's head (as
+                    # the player's game draws them both)?
+                    if now < stomp:
+                        return True
+                    del self.stomping[npc.doId]
                     del self.chasing[npc.doId]
-                    npc.walk = None
-                    self.jump(npc)
-                    npc.asSender(goon.requestStunned, 0)
-                    self.count('cfo goon stomps')
-                    self.nextRoam[npc.doId] = now + 1.5
+                    me = base.cr.doId2do.get(npc.doId)
+                    mpos = me.getPos(base.render) if me is not None else pos
+                    if math.hypot(mpos[0] - gpos[0], mpos[1] - gpos[1]) < GOON_HEAD_REACH:
+                        npc.asSender(goon.requestStunned, 0)
+                        self.count('cfo goon stomps')
+                    else:
+                        self.count('cfo goon stomp misses')
+                    self.nextRoam[npc.doId] = now + 1.0
                     return True
+                fwd = base.render.getRelativeVector(client, Point3(0, 1, 0))
+                fwd.setZ(0)
+                if fwd.length() > 0.01:
+                    fwd.normalize()
+                if math.hypot(pos[0] - gpos[0], pos[1] - gpos[1]) < GOON_STOMP_RANGE:
+                    # A jump onto where its head will be, with a toon's aim.
+                    lead = getattr(goon, 'velocity', 4) * GOON_JUMP_TIME if goon.state == 'Walk' else 0.0
+                    land = Point3(gpos[0] + fwd[0] * lead + random.uniform(-1.2, 1.2),
+                                  gpos[1] + fwd[1] * lead + random.uniform(-1.2, 1.2), pos[2])
+                    self.jump(npc)
+                    dist = math.hypot(land[0] - pos[0], land[1] - pos[1])
+                    self.startWalk(npc, [Point3(pos), land])
+                    npc.walk[1] = max(dist / GOON_JUMP_TIME, 1.0)
+                    self.stomping[npc.doId] = now + GOON_JUMP_TIME
+                    return True
+                # Up beside it (out of its light), a step ahead of it.
+                side = Point3(-fwd[1], fwd[0], 0)
+                if (pos[0] - gpos[0]) * side[0] + (pos[1] - gpos[1]) * side[1] < 0:
+                    side = -side
+                target = Point3(gpos[0] + fwd[0] * 2.0 + side[0] * 3.0, gpos[1] + fwd[1] * 2.0 + side[1] * 3.0, pos[2])
             else:
                 treasure = boss.treasures.get(doId)
                 if treasure is None:
@@ -748,7 +805,16 @@ class NPCBossCrew:
             nearest = min(boss.treasures.values(), key=lambda t: math.hypot(pos[0] - t.pos[0], pos[1] - t.pos[1]))
             self.chasing[npc.doId] = ('treasure', nearest.doId)
             return True
-        goons = [g for g in (boss.goons or []) if g.state in ('Walk', 'Battle')]
+        for g in boss.goons or []:
+            if g.state in ('Walk', 'Battle'):
+                self.goonOutSince.setdefault(g.doId, now)
+            else:
+                self.goonOutSince.pop(g.doId, None)
+        # A goon that has come out a little way (not one still leaving the
+        # CFO), and that no one else is after.
+        taken = set(job[1] for other, job in self.chasing.items() if other != npc.doId)
+        goons = [g for g in (boss.goons or []) if g.state in ('Walk', 'Battle') and g.doId not in taken
+                 and now - self.goonOutSince.get(g.doId, now) >= GOON_OUT_TIME]
         random.shuffle(goons)
         for goon in goons:
             client = base.cr.doId2do.get(goon.doId)
@@ -809,29 +875,80 @@ class NPCBossCrew:
                 client.startSmooth()
 
     def witnessTrip(self, npc, now):
-        """Out of evidence, a CJ toon runs to the witness stand, touches it
-        and runs back to its spot. True while it is on the run."""
-        if not getattr(npc, 'fetchingEvidence', False):
+        """Out of evidence, a CJ toon walks to the witness stand, touches it
+        and walks back to where it was fighting (Arthur: no evidence from
+        afar). True while it is on the way there or back."""
+        returning = getattr(npc, 'returnSpot', None)
+        if npc.numPies <= 0 and not getattr(npc, 'fetchingEvidence', False) and returning is None \
+                and not npc.busy:
+            # Out: straight off towards the stand, not at its next throw.
+            self.startFetch(npc)
+        if not getattr(npc, 'fetchingEvidence', False) and returning is None:
             return False
         if npc.walk is not None or npc.busy:
             return True
         self.syncPos(npc)
         pos = npc.getPos()
+        if returning is not None:
+            if math.hypot(pos[0] - returning[0], pos[1] - returning[1]) < 6.0:
+                self.count('cj back to fight')
+                npc.returnSpot = None
+                self.faceBoss(npc)
+                # Back in place: straight on with the fight.
+                self.nextAction[npc.doId] = min(self.nextAction.get(npc.doId, now), now + random.uniform(0.3, 1.0))
+                return False
+            if now < self.nextRoam.get(npc.doId, 0):
+                return True
+            self.nextRoam[npc.doId] = now + 0.5
+            if self.walkToward(npc, pos, Point3(returning[0], returning[1], pos[2]), ToontownGlobals.ToonForwardSpeed):
+                return True
+            # No way back from here: it fights from where it stands.
+            self.count('cj no way back')
+            npc.returnSpot = None
+            self.faceBoss(npc)
+            self.nextAction[npc.doId] = min(self.nextAction.get(npc.doId, now), now + random.uniform(0.3, 1.0))
+            return False
         if math.hypot(pos[0] - WITNESS_STAND[0], pos[1] - WITNESS_STAND[1]) < WITNESS_NEAR:
             npc.fetchingEvidence = False
             npc.asSender(self.boss.touchWitnessStand)
             self.count('cj witness refills')
-            self.nextRoam[npc.doId] = now
-            return False
+            spot = getattr(npc, 'fightSpot', None)
+            self.notify.info('NPC %d touched the witness stand at (%.0f, %.0f), %.0f s after leaving (%s)' % (
+                npc.doId, pos[0], pos[1], now - getattr(npc, 'fetchSince', now),
+                '%.0f, %.0f' % (spot[0], spot[1]) if spot is not None else '?'))
+            npc.returnSpot = spot
+            self.nextRoam[npc.doId] = now + random.uniform(0.3, 0.8)
+            return True
         if now < self.nextRoam.get(npc.doId, 0):
             return True
         self.nextRoam[npc.doId] = now + 0.5
         if self.walkToward(npc, pos, Point3(WITNESS_STAND[0], WITNESS_STAND[1], pos[2]), ToontownGlobals.ToonForwardSpeed):
             return True
-        # No way over there from here: the evidence comes anyway.
-        npc.fetchingEvidence = False
-        npc.asSender(self.boss.touchWitnessStand)
+        # No straight way over from here: a step to one side and on towards
+        # the stand, else it moves about (roam) and tries again; never any
+        # evidence without touching the stand.
+        self.count('cj witness detours')
+        nav = getNav()
+        toward = math.atan2(WITNESS_STAND[1] - pos[1], WITNESS_STAND[0] - pos[0])
+        for turn in (30, -30, 60, -60, 90, -90):
+            angle = toward + math.radians(turn)
+            dist = random.uniform(12.0, 22.0)
+            target = Point3(pos[0] + math.cos(angle) * dist, pos[1] + math.sin(angle) * dist, pos[2])
+            path = nav.walkable(pos, target)
+            if path:
+                self.startWalk(npc, path)
+                npc.walk[1] = ToontownGlobals.ToonForwardSpeed
+                return True
         return False
+
+    def startFetch(self, npc):
+        npc.fetchingEvidence = True
+        npc.returnSpot = None
+        self.syncPos(npc)
+        npc.fightSpot = npc.getPos()
+        npc.fetchSince = globalClock.getFrameTime()
+        npc.walk = None
+        self.nextRoam[npc.doId] = globalClock.getFrameTime()
 
     def isLawyerStunner(self, npc):
         if self.lawyerStunners is None:
@@ -1173,31 +1290,102 @@ class NPCBossCrew:
                     self.manager.stats['cfo npc cranes early'] = max(
                         self.manager.stats.get('cfo npc cranes early', 0), onCranes)
             return
+        # At the controls: craneJob works the crane, every tick.
+        return
+
+    def craneJob(self, npc, now):
+        """An NPC at a crane works it as a player does (NPCCraneOperator
+        moves it on the player's screen): swings the magnet over a safe or
+        a goon, picks it up, swings it at the CFO and lets go; the flight
+        and the hit are the game's own. True while at a crane."""
+        boss = self.boss
+        crane = None
+        for c in boss.cranes or []:
+            if c.avId == npc.doId:
+                crane = c
+        if crane is None:
+            NPCCraneOperator.targets.pop(getattr(npc, 'craneDoId', None), None)
+            return False
+        npc.craneDoId = crane.doId
+        base = getClientBuiltin('base')
+        client = base.cr.doId2do.get(crane.doId) if base else None
+        if client is None or getattr(client, 'npcWorked', None) != npc.doId:
+            return True
+        work = self.craneWork.setdefault(npc.doId, {'next': 0, 'last': None})
+        magnet = NPCCraneOperator.magnetPos(client)
         held = None
         for obj in list(boss.safes or []) + list(boss.goons or []):
-            if getattr(obj, 'avId', 0) == npc.doId and obj.state in ('Grabbed',):
+            if getattr(obj, 'avId', 0) == npc.doId and obj.state == 'Grabbed':
                 held = obj
         if held is not None:
-            # Knocking his helmet off with a safe does him no harm, so it
-            # is never held back for the share.
+            head = self.bossPos()
+            if head is None:
+                return True
+            d = math.hypot(magnet[0] - head[0], magnet[1] - head[1])
+            last = work.get('last')
+            work['last'] = d
+            # Knocking his helmet off with a safe does him no harm; a hit
+            # that hurts waits for the NPCs' share (let go wide instead).
             helmetOff = boss.heldObject is not None and held in (boss.safes or [])
-            if (random.random() < CRANE_HIT_CHANCE) if helmetOff else self.hits(CRANE_HIT_CHANCE):
-                npc.asSender(held.hitBoss, random.uniform(0.3, 0.8))
-                self.count('cfo crane hits')
-            else:
+            wide = not helmetOff and not self.mayHurt()
+            reach = NPCCraneOperator.reachFor(client, head)
+            if reach is None:
+                # Out of this crane's reach: as near as it goes.
+                reach = (client.craneMaxY, max(min(self.headingTo(client, head), client.armMaxH), client.armMinH))
+            NPCCraneOperator.targets[crane.doId] = reach
+            closing = last is not None and d < last - 0.05
+            letGo = CRANE_LET_GO_WIDE if wide else CRANE_LET_GO
+            if closing and d < letGo:
                 npc.asSender(held.requestDrop)
-            return
+                self.count('cfo crane swings' if not wide else 'cfo crane wide swings')
+                work['last'] = None
+                work['next'] = now + random.uniform(1.0, 2.5)
+            return True
+        work['last'] = None
+        if now < work['next']:
+            return True
         # A safe knocks his helmet off, or hurts him while he is dizzy; a
         # goon hurts him while his helmet is off.
         wantSafe = boss.heldObject is not None or boss.attackCode == ToontownGlobals.BossCogDizzy
         kinds = [list(boss.safes or []), list(boss.goons or [])]
         if not wantSafe:
             kinds.reverse()
-        for objects in kinds:
+        taken = set(w.get('obj') for k, w in self.craneWork.items() if k != npc.doId)
+        best = None
+        for rank, objects in enumerate(kinds):
             for obj in objects:
-                if obj.state not in ('Grabbed', 'Off') and obj is not boss.heldObject:
-                    npc.asSender(obj.requestGrab)
-                    return
+                if obj.state in ('Grabbed', 'Off') or obj is boss.heldObject or obj.doId in taken:
+                    continue
+                oc = base.cr.doId2do.get(obj.doId)
+                if oc is None or oc.isEmpty():
+                    continue
+                where = oc.getPos(base.render)
+                reach = NPCCraneOperator.reachFor(client, where)
+                if reach is None:
+                    continue
+                d = math.hypot(where[0] - magnet[0], where[1] - magnet[1]) + rank * 60
+                if best is None or d < best[0]:
+                    best = (d, obj, oc, reach)
+        if best is None:
+            work['obj'] = None
+            NPCCraneOperator.targets[crane.doId] = (client.initialArmPosition[1], 0)
+            return True
+        d, obj, oc, reach = best
+        work['obj'] = obj.doId
+        NPCCraneOperator.targets[crane.doId] = reach
+        where = oc.getPos(base.render)
+        if math.hypot(where[0] - magnet[0], where[1] - magnet[1]) < CRANE_GRAB_REACH:
+            # The magnet over it, as it comes down onto it.
+            npc.asSender(obj.requestGrab)
+            if obj.state == 'Grabbed' and obj.avId == npc.doId:
+                self.count('cfo crane grabs')
+            work['next'] = now + random.uniform(0.3, 0.8)
+        return True
+
+    def headingTo(self, client, point):
+        base = getClientBuiltin('base')
+        p = client.arm.getParent().getRelativePoint(base.render, point)
+        return math.degrees(math.atan2(-p[0], p[1]))
 
     # --- The CJ ---
 
@@ -1222,13 +1410,11 @@ class NPCBossCrew:
     def playLBattleThree(self, npc):
         boss = self.boss
         if npc.numPies <= 0:
-            if not getattr(npc, 'fetchingEvidence', False):
+            if not getattr(npc, 'fetchingEvidence', False) and getattr(npc, 'returnSpot', None) is None:
                 # Off to the witness stand for more (witnessTrip walks it).
-                npc.fetchingEvidence = True
-                npc.walk = None
-                self.nextRoam[npc.doId] = globalClock.getFrameTime()
+                self.startFetch(npc)
             return
-        if getattr(npc, 'fetchingEvidence', False):
+        if getattr(npc, 'fetchingEvidence', False) or getattr(npc, 'returnSpot', None) is not None:
             return
         if self.healPlayer(npc):
             return
@@ -1274,17 +1460,167 @@ class NPCBossCrew:
     # --- The CEO ---
 
     def playCBattleTwo(self, npc):
-        # Runs plates from the belts to the hungry diners.
+        # The waiting is all walking (waiterJob): to the belt for a plate,
+        # then to a hungry diner.
+        return
+
+    def waiterJob(self, npc, now):
+        """The CEO's banquet, as a player does it: walk to a conveyor belt,
+        take a plate by reaching it as it passes, walk to a hungry diner's
+        chair and serve it there. Nothing from afar. True while busy."""
         boss = self.boss
+        base = getClientBuiltin('base')
+        bossClient = base.cr.doId2do.get(boss.doId) if base else None
+        if bossClient is None or npc.busy:
+            return False
+        if npc.walk is not None and now < self.nextRoam.get(npc.doId, 0):
+            self.waiterReach(npc, bossClient)
+            return True
+        self.syncPos(npc)
+        pos = npc.getPos()
+        if self.waiterReach(npc, bossClient):
+            return True
+        self.nextRoam[npc.doId] = now + 1.5
+        if boss.toonFoodStatus.get(npc.doId):
+            target = self.dinerSpot(npc, bossClient)
+        else:
+            target = self.beltSpot(npc, pos, bossClient)
+        if target is None:
+            return False
+        if math.hypot(target[0] - pos[0], target[1] - pos[1]) < 1.5:
+            return True
+        if self.walkToward(npc, pos, Point3(target[0], target[1], pos[2]), ToontownGlobals.ToonForwardSpeed):
+            return True
+        self.count('ceo waiter detours')
+        return False
+
+    def waiterReach(self, npc, bossClient):
+        """A plate or a diner within reach of where the NPC is now (on the
+        player's screen): taken or served, as a player touching it."""
+        boss = self.boss
+        base = getClientBuiltin('base')
+        client = base.cr.doId2do.get(npc.doId)
+        if client is None:
+            return False
+        pos = client.getPos(base.render)
         if not boss.toonFoodStatus.get(npc.doId):
-            self.foodNum += 1
-            npc.asSender(boss.requestGetFood, random.randrange(2), 0, self.foodNum)
-            return
+            for food in self.beltFoods(bossClient):
+                beltIndex, foodIndex, foodNum, where = food
+                if math.hypot(where[0] - pos[0], where[1] - pos[1]) < WAITER_REACH:
+                    npc.asSender(boss.requestGetFood, beltIndex, foodIndex, foodNum)
+                    if boss.toonFoodStatus.get(npc.doId):
+                        self.count('ceo plates taken')
+                        self.waiterTarget.pop(npc.doId, None)
+                        npc.walk = None
+                        return True
+            return False
         for table in boss.tables:
+            tableClient = base.cr.doId2do.get(table.doId)
+            if tableClient is None:
+                continue
             for chairIndex in range(table.numDiners):
-                if table.getDinerStatus(chairIndex) in (table.HUNGRY, table.ANGRY):
+                if table.getDinerStatus(chairIndex) not in (table.HUNGRY, table.ANGRY):
+                    continue
+                chair = self.chairPos(tableClient, chairIndex)
+                if chair is not None and math.hypot(chair[0] - pos[0], chair[1] - pos[1]) < WAITER_REACH + 2.0:
                     npc.asSender(boss.requestServeFood, table.index, chairIndex)
-                    return
+                    if not boss.toonFoodStatus.get(npc.doId):
+                        self.count('ceo plates served')
+                        self.waiterTarget.pop(npc.doId, None)
+                        npc.walk = None
+                        return True
+        return False
+
+    def beltFoods(self, bossClient):
+        base = getClientBuiltin('base')
+        foods = []
+        for belt in getattr(bossClient, 'belts', None) or []:
+            if belt is None or belt.state != 'On':
+                continue
+            for foodIndex, model in belt.foodModelDict.items():
+                if model.isStashed() or model.getParent().isEmpty():
+                    continue
+                col = model.find('**/FoodCol*')
+                try:
+                    foodNum = int(col.getTag('foodNum'))
+                except Exception:
+                    continue
+                foods.append((belt.index, foodIndex, foodNum, model.getPos(base.render)))
+        return foods
+
+    def beltSpot(self, npc, pos, bossClient):
+        """Beside a belt, a little ahead of the nearest plate coming along
+        (on the NPC's side of it); each NPC its own plate."""
+        base = getClientBuiltin('base')
+        taken = set(v for k, v in self.waiterTarget.items() if k != npc.doId)
+        best = None
+        for belt in getattr(bossClient, 'belts', None) or []:
+            if belt is None or belt.state != 'On':
+                continue
+            start = belt.startLocator.getPos(base.render)
+            end = belt.endLocator.getPos(base.render)
+            along = Point3(end[0] - start[0], end[1] - start[1], 0)
+            if along.length() < 1:
+                continue
+            along.normalize()
+            across = Point3(-along[1], along[0], 0)
+            for b, foodIndex, foodNum, where in self.beltFoods(bossClient):
+                if b != belt.index or (b, foodNum) in taken:
+                    continue
+                side = 1 if (pos[0] - where[0]) * across[0] + (pos[1] - where[1]) * across[1] >= 0 else -1
+                dist = math.hypot(where[0] - pos[0], where[1] - pos[1])
+                lead = min(dist / ToontownGlobals.ToonForwardSpeed, 4.0) * belt.BeltSpeed
+                spot = Point3(where[0] + along[0] * lead + across[0] * side * WAITER_BESIDE,
+                              where[1] + along[1] * lead + across[1] * side * WAITER_BESIDE, pos[2])
+                # Not past the end of the belt.
+                if (spot[0] - end[0]) * along[0] + (spot[1] - end[1]) * along[1] > 0:
+                    continue
+                d = math.hypot(spot[0] - pos[0], spot[1] - pos[1])
+                if best is None or d < best[0]:
+                    best = (d, spot, (b, foodNum))
+        if best is None:
+            return None
+        self.waiterTarget[npc.doId] = best[2]
+        return best[1]
+
+    def chairPos(self, tableClient, chairIndex):
+        base = getClientBuiltin('base')
+        loc = tableClient.chairLocators.get(chairIndex)
+        if loc is None or loc.isEmpty():
+            return None
+        return loc.getPos(base.render)
+
+    def dinerSpot(self, npc, bossClient):
+        """Just outside a hungry diner's chair (angry ones first), the
+        nearest one no other NPC is heading for."""
+        boss = self.boss
+        base = getClientBuiltin('base')
+        taken = set(v for k, v in self.waiterTarget.items() if k != npc.doId)
+        pos = npc.getPos()
+        best = None
+        for table in boss.tables:
+            tableClient = base.cr.doId2do.get(table.doId)
+            if tableClient is None:
+                continue
+            center = tableClient.tableGroup.getPos(base.render)
+            for chairIndex in range(table.numDiners):
+                status = table.getDinerStatus(chairIndex)
+                if status not in (table.HUNGRY, table.ANGRY) or ('diner', table.index, chairIndex) in taken:
+                    continue
+                chair = self.chairPos(tableClient, chairIndex)
+                if chair is None:
+                    continue
+                out = Point3(chair[0] - center[0], chair[1] - center[1], 0)
+                if out.length() > 0.1:
+                    out.normalize()
+                spot = Point3(chair[0] + out[0] * WAITER_BESIDE, chair[1] + out[1] * WAITER_BESIDE, pos[2])
+                d = math.hypot(spot[0] - pos[0], spot[1] - pos[1]) - (30 if status == table.ANGRY else 0)
+                if best is None or d < best[0]:
+                    best = (d, spot, ('diner', table.index, chairIndex))
+        if best is None:
+            return None
+        self.waiterTarget[npc.doId] = best[2]
+        return best[1]
 
     def playCBattleFour(self, npc):
         boss = self.boss
@@ -1318,9 +1654,13 @@ class NPCBossCrew:
                     npc.asSender(target.requestControl)
             return
         self.nextAction[npc.doId] = globalClock.getFrameTime() + random.uniform(*PITCHER_TIME)
-        self.count('ceo pitcher shots')
-        if self.hits(PITCHER_HIT_CHANCE):
-            npc.asSender(boss.hitBoss, random.randint(1, 3))
+        # Turned and fired on the player's screen (NPCBanquetOperator):
+        # only the water that reaches him counts. Past their share they aim
+        # wide.
+        base = getClientBuiltin('base')
+        client = base.cr.doId2do.get(mine[0].doId) if base else None
+        if client is not None and NPCBanquetOperator.wantShot(client, npc.doId, wide=not self.mayHurt()):
+            self.count('ceo pitcher shots')
 
     def playGolf(self, npc):
         # A few take a golf spot, and slow him down with golf balls.
@@ -1341,7 +1681,10 @@ class NPCBossCrew:
             return False
         now = globalClock.getFrameTime()
         self.nextAction[npc.doId] = now + random.uniform(*GOLF_TIME)
-        self.count('ceo golf swings')
-        if random.random() < GOLF_HIT_CHANCE:
-            npc.asSender(boss.ballHitBoss, random.randint(2, 5))
+        # Turned and swung on the player's screen (NPCBanquetOperator): only
+        # a ball that reaches him counts.
+        base = getClientBuiltin('base')
+        client = base.cr.doId2do.get(mine[0].doId) if base else None
+        if client is not None and NPCBanquetOperator.wantShot(client, npc.doId, wide=random.random() > GOLF_HIT_CHANCE * 1.6):
+            self.count('ceo golf swings')
         return True
