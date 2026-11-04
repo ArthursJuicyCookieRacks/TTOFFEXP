@@ -146,6 +146,13 @@ CENTRE_PULL = 1.0
 # PALM_EDGE_ROOM of the glove's width in from its edge all round, at the
 # first of FIT_SIZES (of its size) that fits somewhere.
 KEEP_ON_GLOVE = ('ship',)
+# Where on the glove such a gag's middle goes, from the roomiest spot, in
+# glove widths along the hand's x and y (-y is the side nearer the eye).
+# Tall, the ship hid the far half of the palm and seemed to sit up on its
+# far edge (Arthur: "it should sit where the blue dot is", the middle of
+# the palm as seen). It still never goes nearer the edge than PALM_EDGE_ROOM.
+GLOVE_AIM = {'ship': (0.0, -0.12)}
+AIM_EDGE_ROOM = 0.02
 PALM_EDGE_ROOM = 0.1
 # The turns (degrees about the palm's up) it may take to fit, first first.
 FIT_TURNS = (-90,)
@@ -1188,7 +1195,7 @@ class GagHandler:
 
     # --- What is held ---
 
-    def keepOnGlove(self, prop, hand):
+    def keepOnGlove(self, prop, hand, name=None):
         """Put the prop where all of it stands on the glove (Arthur: "the
         FULL SHIP needs to be ON THE PALM"): seen from above the palm, its
         footprint must lie inside the glove's own shape (the gap between
@@ -1289,27 +1296,43 @@ class GagHandler:
         cx = sum(p[0] for p in foot) / len(foot)
         cy = sum(p[1] for p in foot) / len(foot)
         need = PALM_EDGE_ROOM * width
+        aim = GLOVE_AIM.get(name)
+        closest = [None]
+
+        def spots(size, turn, least, step):
+            # Every place the prop, this big and turned so, keeps least room.
+            c, s_ = math.cos(math.radians(turn)), math.sin(math.radians(turn))
+            shaped = [((p[0] - cx) * c - (p[1] - cy) * s_, (p[0] - cx) * s_ + (p[1] - cy) * c) for p in foot]
+            found = []
+            for r in range(0, rows, step):
+                for k in range(0, cols, step):
+                    if grid[r][k] < least:
+                        continue
+                    x = x0 + (k + 0.5) * cell
+                    y = y0 + (r + 0.5) * cell
+                    have = room([(x + p[0] * size, y + p[1] * size) for p in shaped])
+                    if have >= least:
+                        found.append((have, x, y, size, turn))
+                    if closest[0] is None or have > closest[0][0]:
+                        closest[0] = (have, x, y, size, turn)
+            return found
+
         best = None
-        closest = None
         for size in FIT_SIZES:
-            for turn in FIT_TURNS:
-                c, s_ = math.cos(math.radians(turn)), math.sin(math.radians(turn))
-                shaped = [((p[0] - cx) * c - (p[1] - cy) * s_, (p[0] - cx) * s_ + (p[1] - cy) * c) for p in foot]
-                for r in range(0, rows, 2):
-                    for k in range(0, cols, 2):
-                        if grid[r][k] < need:
-                            continue
-                        x = x0 + (k + 0.5) * cell
-                        y = y0 + (r + 0.5) * cell
-                        have = room([(x + p[0] * size, y + p[1] * size) for p in shaped])
-                        if have >= need and (best is None or have > best[0]):
-                            best = (have, x, y, size, turn)
-                        if closest is None or have > closest[0]:
-                            closest = (have, x, y, size, turn)
-            if best is not None:
+            fits = [f for turn in FIT_TURNS for f in spots(size, turn, need, 2)]
+            if fits:
+                best = max(fits)
                 break
-        # Fitting nowhere, it goes where it comes nearest.
-        best = best or closest
+        if best is not None and aim:
+            # As big as it fits with all the room, there is one place for it;
+            # to go where it is wanted it may come nearer the edge, never
+            # nearer than AIM_EDGE_ROOM of the glove's width.
+            have, x, y, size, turn = best
+            tx, ty = x + aim[0] * width, y + aim[1] * width
+            near = spots(size, turn, AIM_EDGE_ROOM * width, 1) or [best]
+            best = min(near, key=lambda f: (f[1] - tx) ** 2 + (f[2] - ty) ** 2)
+        best = best or closest[0]
+        # Fitting nowhere, it goes where it comes nearest (above).
         if best is None:
             return
         have, x, y, size, turn = best
@@ -1379,7 +1402,7 @@ class GagHandler:
         if name in HOLD_NUDGE:
             prop.setPos(camera, prop.getPos(camera) + HOLD_NUDGE[name])
         if name in KEEP_ON_GLOVE:
-            self.keepOnGlove(prop, hand)
+            self.keepOnGlove(prop, hand, name)
             self.restOnGlove(prop, hand)
             return
         # Nothing of the glove pokes up through the gag: its bottom is
