@@ -85,13 +85,16 @@ BATTLE_POSES = {
     G.THROW: ('throw', 38, 45, 84, RIGHT),
     (G.SQUIRT, 0): ('throw', 38, 38, 52, RIGHT),
     (G.SQUIRT, 1): ('spit', 20, 20, 95, RIGHT),
-    (G.SQUIRT, 2): ('water-gun', 44, 44, 93, RIGHT),
+    # Held aimed (see aimHeld): the arm stays put and the gun kicks (KICKS).
+    (G.SQUIRT, 2): ('water-gun', 44, 44, 44, RIGHT),
     (G.SQUIRT, 3): ('hold-bottle', 44, 44, 96, RIGHT),
     (G.SQUIRT, 4): ('firehose', 30, 30, 72, RIGHT),
     (G.SQUIRT, 5): ('throw', 38, 38, 52, RIGHT),
     (G.SQUIRT, 6): ('throw', 38, 38, 52, RIGHT),
-    # The megaphone is at the mouth on the frame the battle blasts (tSound).
-    G.SOUND: ('sound', 59, 50, 72, RIGHT),
+    # The megaphone is held out in the fist like the fire hose's nozzle (the
+    # battle holds it at the mouth, its wrist bent back: from the eyes that
+    # bend looked broken). The blast pushes it forward (see shoot).
+    G.SOUND: ('firehose', 30, 30, 30, RIGHT),
     G.DROP: ('throw', 38, 38, 52, RIGHT),
     G.LURE: ('throw', 38, 38, 52, RIGHT),
 }
@@ -143,16 +146,16 @@ HOSE_AIM_AT = Point3(0, 30, 0.5)
 HOSE_GLOVE_AT = Point3(0.8, 3.4, -0.9)
 # The same for the squirt gun and the sound gags' megaphone.
 GUN_GLOVE_AT = Point3(0.9, 4.0, -0.95)
-SOUND_GLOVE_AT = Point3(0.75, 3.5, -0.8)
-SOUND_ARM_SIZE = 1.2
-# The arm comes up from below (its forearm: rolled by the elbow), so it
-# does not cross the view or cover the megaphone it holds.
-SOUND_ARM_FROM = Vec3(0.3, -0.4, -0.85)
+SOUND_GLOVE_AT = Point3(0.8, 3.4, -0.75)
+SOUND_ARM_SIZE = 1.0
 # The gun aims at a nearer point, turned in so its side shows.
 GUN_AIM_AT = Point3(0, 8, 0.6)
 GUN_ARM_SIZE = 1.0
-GUN_IN_FIST = Vec3(0, 0.15, 0.2)
+GUN_IN_FIST = Vec3(0, 0.05, -0.15)
 GUN_SCALE = 0.75
+GUN_CANT = 0
+# The arms' kick when an aimed gag fires: (pos, hpr) of the swing, camera space.
+KICKS = {'shout': ((0, 0.15, 0.03), (0, 3, 0)), 'gun': ((0, -0.1, 0.04), (0, 5, 0))}
 # The shoulder must end up at least this far outside the frame (film units,
 # the frame is -1..1).
 SHOULDER_OUT = 1.15
@@ -217,6 +220,44 @@ PROP_IN_HAND = {'water-gun': (Point3(0.28, 0.1, 0.08), (85.6, -4.44, 94.43))}
 HOSE_ROOT_IN_HAND = ((-1.614, -1.543, 0.1), (10.93, -12.68, 57.7))
 HOSE_NOZZLE_ON_ROOT = ((0.7807, 2.0188, 2.0038), (-1.046, -6.595, -8.24))
 HOSE_NOZZLE_BIND = (1.74885, 4.94567, 0.877083)
+
+
+# The megaphone is a cone: its axis (narrow mouthpiece end to wide end) and
+# the point on it, near the mouthpiece, where the fist closes round it, in
+# its own frame (measured from its vertices).
+MEGAPHONE_AXIS = Vec3(-0.6659, -0.7457, 0.0199)
+MEGAPHONE_GRIP = Point3(0.188, 0.398, 0.151)
+# How far along its axis from MEGAPHONE_GRIP the fist holds it, and a turn
+# about its axis (degrees).
+MEGAPHONE_GRIP_ALONG = 0.15
+MEGAPHONE_ROLL = 0
+# Where along the fist's grip line (the hose's, in the nozzle's frame) the
+# megaphone is held: the fist closes round the line about here.
+FIST_ON_LINE = -0.77
+
+
+def megaphoneInFist(scale):
+    """The megaphone in the glove: held round its narrow end the way the
+    fist holds the fire hose's nozzle, its cone along the grip line and
+    opening forward."""
+    from panda3d.core import Quat, TransformState, lookAt
+    line = TransformState.makePosHpr(Point3(*HOSE_ROOT_IN_HAND[0]), Vec3(*HOSE_ROOT_IN_HAND[1])).compose(
+        TransformState.makePosHpr(Point3(*HOSE_NOZZLE_ON_ROOT[0]), Vec3(*HOSE_NOZZLE_ON_ROOT[1])))
+    axis = Vec3(MEGAPHONE_AXIS)
+    axis.normalize()
+    side = axis.cross(Vec3(0, 0, 1))
+    up = side.cross(axis)
+    src = Quat()
+    lookAt(src, axis, up)
+    srcInv = Quat(src)
+    srcInv.invertInPlace()
+    roll = Quat()
+    roll.setHpr(Vec3(0, 0, MEGAPHONE_ROLL))
+    quat = srcInv * roll * line.getQuat()
+    grip = Point3(MEGAPHONE_GRIP) + axis * MEGAPHONE_GRIP_ALONG
+    at = line.getMat().xformPoint(Point3(0, FIST_ON_LINE, 0))
+    pos = at - quat.xform(Vec3(grip) * scale)
+    return TransformState.makePosQuatScale(pos, quat, Vec3(scale))
 
 
 def hoseInHand():
@@ -308,6 +349,7 @@ class ToonArms:
         self.toon.setColorScaleOff()
         self.track = None
         self.anim = None
+        self.kick = None
         self.hold = 0
         self.grow = 1.0
         # Motion: the pose the rig eases toward ('idle', 'walk', 'run',
@@ -428,7 +470,8 @@ class ToonArms:
         glove = self.hand(side)
         self.aimHeld(side, HOSE_GLOVE_AT, lambda parent: nozzle.getPos(parent) - glove.getPos(parent))
 
-    def aimHeld(self, side, gloveAt, pointing, size=1.0, aimAt=None, upright=None, armFrom=None, rollBy='shoulder'):
+    def aimHeld(self, side, gloveAt, pointing, size=1.0, aimAt=None, upright=None, armFrom=None, rollBy='shoulder',
+                cant=0):
         """Turn the arm, with its gag in the battle's grip, about the glove
         so the gag points out at the cogs (HOSE_AIM_AT, camera space),
         then roll it about that line so the arm still comes in from the
@@ -465,7 +508,9 @@ class ToonArms:
         if upright is not None:
             # Rolled so the gag's own up is the view's up.
             arm = flat(upright(parent))
-            goal = flat(parent.getRelativeVector(camera, Vec3(0, 0, 1)))
+            # Canted in (its top toward the middle of the view) by cant degrees.
+            goal = flat(parent.getRelativeVector(camera, Vec3(-math.sin(math.radians(cant)), 0,
+                                                              math.cos(math.radians(cant)))))
         else:
             # The shoulder, or the elbow when the forearm is what shows.
             arm = flat(self.joint(side, rollBy).getPos(parent) - pivot)
@@ -583,6 +628,7 @@ class ToonArms:
 
     def holdPose(self, track, level=0):
         anim, hold, start, end, side = battlePose(track, level)
+        self.kick = 'shout' if track == G.SOUND else 'gun' if (track, level) == (G.SQUIRT, 2) else None
         if self.track:
             self.track.finish()
             self.track = None
@@ -654,13 +700,15 @@ class ToonArms:
         duration = min(max(rate * 0.8, 0.15), 0.6)
         self.track = Sequence(ActorInterval(self.toon, self.anim, startFrame=self.start, endFrame=self.end, duration=duration),
                               Func(self.toon.pose, self.anim, self.hold))
-        if self.anim == 'sound':
-            # The shout pushes the megaphone forward from the mouth and
-            # it settles back, as the battle toon leans into the blast.
+        if self.kick:
+            # The shout pushes the megaphone forward and it settles back, as
+            # the battle toon leans into the blast; the squirt gun kicks up
+            # and back. Small, so the arm's cut-off shoulder stays out of view.
             if self.swingTrack:
                 self.swingTrack.finish()
             self.swing.setPosHpr(0, 0, 0, 0, 0, 0)
-            self.swingTrack = Sequence(LerpPosHprInterval(self.swing, duration * 0.3, (0, 0.35, 0.05), (0, 4, 0), blendType='easeOut'),
+            kickPos, kickHpr = KICKS[self.kick]
+            self.swingTrack = Sequence(LerpPosHprInterval(self.swing, duration * 0.3, kickPos, kickHpr, blendType='easeOut'),
                                        LerpPosHprInterval(self.swing, duration * 0.7, (0, 0, 0), (0, 0, 0), blendType='easeInOut'))
             self.swingTrack.start()
         self.track.start()
@@ -873,21 +921,15 @@ class GagHandler:
                     # The Opera Singer's helmet sits over the eyes in first
                     # person and hides the crosshair: only the megaphone shows.
                     prop.hide()
-                # The glove is turned to bring the arm in from the corner, so
-                # the megaphone is turned back to point where the toon looks,
-                # as it does at the mouth in a battle, its instrument riding
-                # inside it.
+                # The instrument rides inside the megaphone as in the battle.
                 self.arms.toon.update(force=True)
                 prop.wrtReparentTo(megaphone)
-                # The glove keeps the battle's grip on the megaphone and the
-                # arm turns with it to point it where the toon faces in the
-                # battle (the toon's forward) out at the cogs. The arm is
-                # drawn bigger (a toon's arm is a thin tube, and seen this
-                # long it looked a stick), the megaphone kept its size.
-                toon = self.arms.toon
-                self.arms.aimHeld(RIGHT, SOUND_GLOVE_AT, lambda parent: parent.getRelativeVector(toon, Vec3(0, 1, 0)),
-                                  SOUND_ARM_SIZE, armFrom=SOUND_ARM_FROM,
-                                  rollBy='elbow')
+                # The megaphone's handle stays in the fist, the megaphone
+                # turned to lie along the fist the way the hose's nozzle
+                # does, and the arm turns with it to point it at the cogs.
+                megaphone.setTransform(megaphoneInFist(megaphone.getScale()[0] * MEGAPHONE_SCALE))
+                self.arms.aimHeld(RIGHT, SOUND_GLOVE_AT,
+                                  lambda parent: parent.getRelativeVector(megaphone, MEGAPHONE_AXIS), SOUND_ARM_SIZE)
                 # Smaller than in a battle so the arm holding it shows.
                 megaphone.setScale(megaphone.getScale() * MEGAPHONE_SCALE / SOUND_ARM_SIZE)
             else:
@@ -928,7 +970,8 @@ class GagHandler:
                     # The battle's grip, its barrel (the gun's forward) out at the cogs.
                     prop.setScale(GUN_SCALE)
                     self.arms.aimHeld(RIGHT, GUN_GLOVE_AT, lambda parent: parent.getRelativeVector(prop, Vec3(0, 1, 0)), GUN_ARM_SIZE,
-                                      GUN_AIM_AT, lambda parent: parent.getRelativeVector(prop, Vec3(0, 0, 1)))
+                                      GUN_AIM_AT, lambda parent: parent.getRelativeVector(prop, Vec3(0, 0, 1)),
+                                      cant=GUN_CANT)
                     # Slid in its own frame so its grip sits inside the fist
                     # rather than poking out in front of the glove.
                     prop.setPos(prop, GUN_IN_FIST)
