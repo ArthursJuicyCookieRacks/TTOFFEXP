@@ -13,7 +13,7 @@ import random
 from direct.directnotify import DirectNotifyGlobal
 from direct.interval.IntervalGlobal import (ActorInterval, Func, LerpPosHprInterval, LerpPosInterval, LerpScaleInterval, Parallel,
                                             Sequence, SoundInterval, Wait)
-from panda3d.core import LMatrix4, NodePath, Point2, Point3, Vec3, Vec4
+from panda3d.core import LMatrix4, NodePath, Point2, Point3, Quat, Vec3, Vec4
 
 from toontown.battle import BattleProps
 from toontown.battle.BattleSounds import globalBattleSoundCache
@@ -101,7 +101,7 @@ BATTLE_POSES = {
 # how far the toon leans back under the camera, per animation: the gag is
 # big and low on the right like a BO1 view model, the shoulder stays below
 # the frame.
-VIEW_POSE = {'throw': (Point3(1.25, 4.8, -1.35), 15), 'water-gun': (Point3(1.0, 3.8, -0.95), 25),
+VIEW_POSE = {'throw': (Point3(0.85, 4.8, -1.05), 15), 'water-gun': (Point3(1.0, 3.8, -0.95), 25),
              'hold-bottle': (Point3(1.0, 4.0, -0.6), 10), 'spit': (Point3(1.0, 4.0, -0.7), 5),
              'firehose': (Point3(1.1, 4.6, -1.3), -10), 'sound': (Point3(0.8, 4.6, -0.72), 10),
              'pushbutton': (Point3(0.7, 4.4, -1.2), 20)}
@@ -114,6 +114,21 @@ SOUND_HAND_AT = Vec3(0.6, 3.4, -0.85)
 # comes in from the lower right of the frame toward the glove, and runs on
 # past the frame's edge, so its cut-off shoulder is never in view.
 ARM_FROM = Vec3(0.55, -0.35, -0.76)
+# Holds whose gag rests on the palm: the arm is rolled so the palm faces up
+# (tipped a little to the player) and the gag sits in it.
+PALM_UP_ANIMS = ('throw',)
+PALM_UP = Vec3(0, -0.35, 1)
+# The arm comes in flatter for those, so the rolled palm can face up.
+PALM_ARM_FROM = Vec3(0.85, -0.5, -0.12)
+# Gags rest in the hold joint (the palm) as the battle puts a pie there.
+PALM_HOLD = True
+# Heading in the palm per gag, and how deep it sinks (fraction of height).
+HOLD_HPR = {'squirting-flower': (0, 0, 70)}
+HOLD_SINK = {'stormcloud': 0.35, 'geyser': 0.2}
+# Gags held another way, moved in the view (camera space) off the glove.
+VIEW_NUDGE = {'glass': Vec3(-0.15, 0, 0)}
+# The hose nozzle turned to point out at the cogs (camera space).
+HOSE_AIM = Vec3(0, 1, 0.08)
 # The shoulder must end up at least this far outside the frame (film units,
 # the frame is -1..1).
 SHOULDER_OUT = 1.15
@@ -183,7 +198,7 @@ MEGAPHONE_SCALE = 0.7
 INSTRUMENT_SCALE = {'bikehorn': 0.5, 'whistle': 0.6, 'bugle': 0.6, 'aoogah': 0.6, 'elephant': 0.5, 'fog_horn': 0.5, 'singing': 0.5}
 HAND_SCALE = {'ship': 0.05, 'piano': 0.1, 'safe': 0.22, 'weight': 0.25, 'anvil': 0.3, 'sandbag': 0.6, 'flowerpot': 0.6,
               'geyser': 0.1, 'stormcloud': 0.25, 'firehose': 1.0, 'wedding-cake': 1.0, 'birthday-cake': 1.0,
-              '1dollar': 0.8, 'glass': 1.4, 'bottle': 1.0, 'water-gun': 1.0, 'squirting-flower': 1.0}
+              '1dollar': 0.8, 'glass': 2.2, 'bottle': 1.0, 'water-gun': 1.0, 'squirting-flower': 1.0}
 LEFT_ARM_JOINTS = ('def_left_shoulder', 'def_left_elbow', 'def_left_forearm', 'def_left_wrist', 'def_left_palm',
                    'def_left_sleeve_short', 'def_left_sleeve_long', 'def_left_forSleeve', 'def_left_neg_sleeve',
                    'def_left_collar', 'def_left_midA', 'def_left_midB', 'def_left_thumbB', 'def_left_thumbC',
@@ -341,7 +356,7 @@ class ToonArms:
         if shoulder is None or shoulder.isEmpty():
             return
         self.toon.update(force=True)
-        want = Vec3(ARM_FROM)
+        want = Vec3(PALM_ARM_FROM if self.anim in PALM_UP_ANIMS else ARM_FROM)
         want.normalize()
         for i in range(3):
             have = shoulder.getPos(camera) - glove.getPos(camera)
@@ -357,6 +372,34 @@ class ToonArms:
             # the toon's own transform.
             self.toon.setMat(self.toon.getMat() * LMatrix4.rotateMat(angle, axis))
             self.toon.update(force=True)
+
+    def rollPalm(self, side, want):
+        """Roll the toon about its arm (shoulder to glove) until the palm,
+        the hold joint's up, faces as near the view's `want` as it can, so
+        a gag rests in the open palm instead of against the glove's back."""
+        shoulder = self.joint(side, 'shoulder')
+        glove = self.hand(side)
+        if shoulder is None or shoulder.isEmpty():
+            return
+        self.toon.update(force=True)
+        axis = glove.getPos(camera) - shoulder.getPos(camera)
+        if axis.length() < 1e-4:
+            return
+        axis.normalize()
+        def flat(v):
+            v = Vec3(v) - axis * axis.dot(v)
+            return v if v.length() > 1e-4 else None
+        up = flat(glove.getQuat(camera).getUp())
+        goal = flat(Vec3(want))
+        if up is None or goal is None:
+            return
+        up.normalize()
+        goal.normalize()
+        angle = math.degrees(math.atan2(up.cross(goal).dot(axis), up.dot(goal)))
+        pivot = glove.getPos(camera)
+        self.toon.setMat(self.toon.getMat() * LMatrix4.translateMat(-pivot) * LMatrix4.rotateMat(angle, axis)
+                         * LMatrix4.translateMat(pivot))
+        self.toon.update(force=True)
 
     def shoulderInView(self, side):
         """Whether this side's shoulder (where the arm's sleeve is cut off)
@@ -439,6 +482,8 @@ class ToonArms:
         self.toon.setPosHpr(0, 0, 0, ARMS_H, pitch, 0)
         self.toon.setScale(ARMS_SCALE)
         self.aimArm(side)
+        if anim in PALM_UP_ANIMS:
+            self.rollPalm(side, PALM_UP)
         # Place the toon so the glove lands where the view wants it, and
         # grow the arm about the glove until its shoulder is out of the
         # frame (the gag keeps its size: see grow).
@@ -626,6 +671,49 @@ class GagHandler:
 
     # --- What is held ---
 
+    def aimHose(self, prop):
+        """Swing the hose about the glove so its nozzle points out at the
+        cogs (the battle hold points it up past the player's face)."""
+        self.arms.toon.update(force=True)
+        nozzle = prop.find('**/joint_water_stream')
+        if nozzle.isEmpty():
+            return
+        hand = self.arms.hand(RIGHT)
+        pivotAt = hand.getPos(camera)
+        have = nozzle.getPos(camera) - pivotAt
+        if have.length() < 1e-4:
+            return
+        have.normalize()
+        want = Vec3(HOSE_AIM)
+        want.normalize()
+        axis = have.cross(want)
+        if axis.length() < 1e-5:
+            return
+        axis.normalize()
+        angle = math.degrees(math.acos(max(-1.0, min(1.0, have.dot(want)))))
+        pivot = camera.attachNewNode('hosePivot')
+        pivot.setPos(pivotAt)
+        prop.wrtReparentTo(pivot)
+        turn = Quat()
+        turn.setFromAxisAngle(angle, axis)
+        pivot.setQuat(turn)
+        prop.wrtReparentTo(hand)
+        pivot.removeNode()
+
+    def seatInHold(self, prop, name):
+        """Stand the prop in the open palm: upright on the hold joint (the
+        way the battle holds a pie), centred on it, its bottom just in."""
+        hand = self.arms.hand(RIGHT)
+        self.arms.toon.update(force=True)
+        prop.setHpr(hand, *HOLD_HPR.get(name, (0, 0, 0)))
+        low, high = prop.getTightBounds(hand)
+        if low is None:
+            return
+        centre = (low + high) * 0.5
+        sink = HOLD_SINK.get(name, PALM_SINK)
+        shift = Vec3(-centre[0], -centre[1], -low[2] - sink * (high[2] - low[2]))
+        prop.setPos(hand, prop.getPos(hand) + shift)
+
     def seatOnPalm(self, prop):
         """Rest the prop on the glove: its bottom on the palm, centred over
         the hand, instead of floating past it."""
@@ -710,13 +798,18 @@ class GagHandler:
                         size = max(high - low)
                         if size > 1e-4:
                             prop.setScale(prop.getScale() * (DROP_FIT_SIZES.get(gag.prop, DROP_FIT_SIZE) / size))
-                    self.seatOnPalm(prop)
+                    self.seatInHold(prop, gag.prop) if PALM_HOLD else self.seatOnPalm(prop)
                 elif gag.track == G.THROW or self.arms.anim == 'throw':
                     # A pie (or a gag carried the same way) sits on the
                     # glove's palm, tipped so the player sees its top.
                     self.arms.toon.update(force=True)
                     prop.setHpr(camera, PIE_IN_VIEW_HPR)
-                    self.seatOnPalm(prop)
+                    self.seatInHold(prop, gag.prop) if PALM_HOLD else self.seatOnPalm(prop)
+                if gag.prop == 'firehose':
+                    self.aimHose(prop)
+                if gag.prop in VIEW_NUDGE:
+                    self.arms.toon.update(force=True)
+                    prop.setPos(camera, prop.getPos(camera) + VIEW_NUDGE[gag.prop])
             for node in [prop] + extras:
                 node.setBin('fixed', 41)
                 node.setLightOff()
