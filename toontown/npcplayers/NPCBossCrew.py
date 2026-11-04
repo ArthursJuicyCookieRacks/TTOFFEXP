@@ -108,6 +108,9 @@ NPC_SHARE = (0.30, 0.04, 0.22, 0.38)
 # Early on, before anyone has done much, they may do this much of his
 # health on their own.
 NPC_SHARE_SLACK = 0.04
+# Off by this much from where the player sees it, an NPC standing about is
+# moved (on the district) to there.
+SYNC_GAP = 4.0
 ROAM_TIME = (1.0, 4.0)
 ROAM_RANGE = (14.0, 40.0)
 # In the pie round the toons not stunning him keep moving, as players do.
@@ -273,6 +276,12 @@ class NPCBossCrew:
             self.placed = False
         try:
             members = self.members()
+            for npc in members:
+                if npc.walk is None:
+                    # The boss's scenes move the toons on the clients only;
+                    # catch up, or the next step from the old place (being
+                    # kept apart, a hit) shows the toon jumping back there.
+                    self.syncPos(npc, SYNC_GAP)
             pieRound = self.dept == 's' and state == 'BattleThree'
             if self.dept == 'l' and state == 'BattleThree' and not self.placed:
                 self.placed = True
@@ -898,7 +907,7 @@ class NPCBossCrew:
         npc.sendUpdate('tossPie', [pos[0], pos[1], pos[2], h, sequence, 60, 0, now])
         npc.sendUpdate('pieSplat', [target[0], target[1], target[2], sequence, pieCode, now + 30])
 
-    def syncPos(self, npc):
+    def syncPos(self, npc, gap=0.5):
         """Where the player's game shows the NPC. The boss fight's scenes move
         every toon about on the clients (into the elevator, onto the
         battle spots, down off the boss's platform); a walk or a throw from
@@ -909,7 +918,7 @@ class NPCBossCrew:
         if client is None or client.isEmpty():
             return
         pos = client.getPos(base.render)
-        if (pos - npc.getPos()).length() > 0.5:
+        if (pos - npc.getPos()).length() > gap:
             npc.setPosHpr(pos[0], pos[1], pos[2], client.getH(base.render), 0, 0)
 
     def makePieThrower(self, npc):

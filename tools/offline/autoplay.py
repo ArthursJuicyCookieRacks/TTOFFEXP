@@ -2272,6 +2272,15 @@ def fightBoss(interior, bossClass, actions, timeout=2400, prelude={}):
         if os.environ.get('AUTOPLAY_BOSS_PASSIVE') and boss.state in ('BattleThree', 'BattleFour'):
             # The player stands back, to see how the NPCs alone do.
             action = None
+        if os.environ.get('AUTOPLAY_BOSS_HUMAN') and boss.state in ('BattleThree', 'BattleFour') and action is not None:
+            # At a player's pace and aim: a go every second or two, and
+            # about a third of them miss.
+            if time.time() < getattr(boss, 'autoplayNextGo', 0):
+                action = None
+            else:
+                boss.autoplayNextGo = time.time() + random.uniform(1.0, 2.2)
+                if random.random() < 0.35:
+                    action = None
         if action is not None:
             action(boss)
         yield sleep(0.5)
