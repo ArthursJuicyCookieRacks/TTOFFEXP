@@ -131,6 +131,8 @@ CJ_WEIGHT = 2
 # Early on, before anyone has done much, they may do this much of his
 # health on their own.
 NPC_SHARE_SLACK = 0.04
+# Past their share, at least this many of their hits still count.
+SHARE_FLOOR = 0.25
 # No headway for this long: the NPCs may take this much more of a share.
 STALL_TIME = 150.0
 STALL_EXTRA_SHARE = 0.05
@@ -297,12 +299,21 @@ class NPCBossCrew:
         return now - old[0] >= STALL_TIME * 0.9 and damage <= old[1] + 0.02 * self.maxDamage()
 
     def mayHurt(self):
-        # Room for another NPC hit within this fight's share.
+        """Whether this NPC hit may count: the NPCs keep pace with the
+        player's damage at their share (Arthur: never stop helping). Behind
+        it, every hit counts; ahead of it they ease off smoothly, down to
+        SHARE_FLOOR of their hits, never none."""
         share = self.npcShare
         if self.stalled():
             share = min(0.62 if self.dept == 'l' else 0.5, share + STALL_EXTRA_SHARE)
         allowed = share / (1.0 - share) * self.dealt['player'] + NPC_SHARE_SLACK * self.maxDamage()
-        return self.dealt['npc'] < allowed
+        npc = self.dealt['npc']
+        if npc < allowed:
+            return True
+        # How far past it, in boss health: a tenth of his health over
+        # leaves only the floor.
+        over = (npc - allowed) / (0.10 * self.maxDamage())
+        return random.random() < max(SHARE_FLOOR, 1.0 - over * (1.0 - SHARE_FLOOR))
 
     def aim(self, chance):
         # Behind their share they hit more often; past it, less.
