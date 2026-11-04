@@ -7,6 +7,7 @@ from toontown.quest import BlinkingArrows
 from direct.interval.IntervalGlobal import *
 from direct.directnotify import DirectNotifyGlobal
 from toontown.toonbase import ToontownGlobals
+from toontown.toonbase import GameSettings
 from otp.otpbase import OTPGlobals
 
 class InventoryNew(InventoryBase.InventoryBase, DirectFrame):
@@ -349,6 +350,10 @@ class InventoryNew(InventoryBase.InventoryBase, DirectFrame):
             mult = self.__battleCreditMultiplier
             if self.__respectInvasions:
                 mult *= self.__invasionCreditMultiplier
+            # Double XP for gags (Shticker Book > Settings > Double XP) is
+            # applied by the battle calculator, so show it here too.
+            if GameSettings.isPlayerToon(self.toon):
+                mult *= GameSettings.getXpMultiplier(GameSettings.DOUBLE_XP_GAGS)
             self.setDetailCredit(track, (level + 1) * mult)
         else:
             self.setDetailCredit(track, None)
@@ -362,7 +367,7 @@ class InventoryNew(InventoryBase.InventoryBase, DirectFrame):
                 credit = min(credit, maxCredit)
             credit = int(credit * 10 + 0.5)
             if credit % 10 == 0:
-                credit /= 10
+                credit //= 10
             else:
                 credit /= 10.0
         if self.detailCredit == credit:
