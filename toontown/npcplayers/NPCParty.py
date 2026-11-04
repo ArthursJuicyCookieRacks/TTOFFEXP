@@ -145,6 +145,11 @@ class NPCParty:
             self.members.append(npc)
 
     def disband(self, npc):
+        import traceback
+        player = self.air.doId2do.get(npc.party)
+        self.notify.info('DISBAND %s zone %s player zone %s busy %s from %s' % (
+            npc.doId, npc.zoneId, getattr(player, 'zoneId', None), npc.busy,
+            [f[2] + ':' + str(f[1]) for f in traceback.extract_stack()[-4:-1]]))
         if npc in self.members:
             self.members.remove(npc)
         npc.party = None
@@ -439,6 +444,7 @@ class NPCParty:
                 continue
             seated = [e for e in self.getElevators() if npc.doId in seatsOf(e)]
             if seated:
+                npc.seatedAt = globalClock.getFrameTime()
                 continue
             helper = getattr(npc, 'helper', False)
             if player.zoneId != npc.zoneId and helper and not npc.busy and \
@@ -448,8 +454,12 @@ class NPCParty:
                 # from one part of the place to the next.
                 npc.b_setLocation(self.air.districtId, player.zoneId)
             if player.zoneId != npc.zoneId:
+                # (Nor one whose elevator just left with the player: the
+                # player can stand in the next stretch of the street, its
+                # own zone, for a moment before the ride takes it inside.)
+                justRode = globalClock.getFrameTime() - getattr(npc, 'seatedAt', -100) < 15.0
                 if getAreaId(player.zoneId) is not None and not helper and \
-                        not (npc.busy and getAreaId(npc.zoneId) == getAreaId(player.zoneId)):
+                        not ((npc.busy or justRode) and getAreaId(npc.zoneId) == getAreaId(player.zoneId)):
                     # Back out in town: the trip is over. (Not one walking
                     # to the player's elevator from the next stretch of the
                     # street, which is its own zone.)

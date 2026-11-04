@@ -1089,9 +1089,9 @@ dclass DistributedToon : DistributedPlayer {
   catalogGenAccessories(uint32 avId) broadcast ownrecv;
   setPetId(uint32 petId = 0) required broadcast ownrecv db;
   setPetMovie(uint32 petId, uint8 flag) ownsend airecv;
-  setPetTutorialDone(uint8 bDone = 0) required ownsend airecv db;
-  setFishBingoTutorialDone(uint8 bDone = 0) required ownsend airecv db;
-  setFishBingoMarkTutorialDone(uint8 bDone = 0) required ownsend airecv db;
+  setPetTutorialDone(uint8 bDone = 0) required ownsend ownrecv airecv db;
+  setFishBingoTutorialDone(uint8 bDone = 0) required ownsend ownrecv airecv db;
+  setFishBingoMarkTutorialDone(uint8 bDone = 0) required ownsend ownrecv airecv db;
   setKartBodyType(int8 bodyType = -1) required broadcast ownrecv db;
   setKartBodyColor(int8 bodyColor = -1) required broadcast ownrecv db;
   setKartAccessoryColor(int8 accColor = -1) required broadcast ownrecv db;
