@@ -132,7 +132,8 @@ VIEW_NUDGE = {}
 BATTLE_GRIP = {'glass': 20}
 # Gags in the palm moved in the view (camera space) before they are kept
 # clear of the glove.
-HOLD_NUDGE = {'squirting-flower': Vec3(0, -0.15, -0.03)}
+HOLD_NUDGE = {'squirting-flower': Vec3(0, -0.15, -0.03), 'fruitpie-slice': Vec3(-0.15, 0, -0.1),
+              'creampie-slice': Vec3(-0.15, 0, -0.1)}
 CLEAR_GAP = 0.005
 # The storm cloud's bounds reach below what shows (HOLD_SINK sets it).
 CLEAR_SKIP = ('stormcloud',)
@@ -141,15 +142,17 @@ HOSE_AIM_AT = Point3(0, 30, 0.5)
 # Where the glove on the hose sits in the view (camera space).
 HOSE_GLOVE_AT = Point3(0.8, 3.4, -0.9)
 # The same for the squirt gun and the sound gags' megaphone.
-GUN_GLOVE_AT = Point3(0.9, 4.0, -1.05)
-SOUND_GLOVE_AT = Point3(0.7, 3.2, -0.75)
-SOUND_ARM_SIZE = 1.5
-# The arm comes in from the right more than from below, so it does not
-# cover the megaphone it holds.
-SOUND_ARM_FROM = Vec3(0.8, -0.2, -0.6)
+GUN_GLOVE_AT = Point3(0.9, 4.0, -0.95)
+SOUND_GLOVE_AT = Point3(0.75, 3.5, -0.8)
+SOUND_ARM_SIZE = 1.2
+# The arm comes up from below (its forearm: rolled by the elbow), so it
+# does not cross the view or cover the megaphone it holds.
+SOUND_ARM_FROM = Vec3(0.3, -0.4, -0.85)
 # The gun aims at a nearer point, turned in so its side shows.
 GUN_AIM_AT = Point3(0, 8, 0.6)
 GUN_ARM_SIZE = 1.0
+GUN_IN_FIST = Vec3(0, 0.15, 0.2)
+GUN_SCALE = 0.75
 # The shoulder must end up at least this far outside the frame (film units,
 # the frame is -1..1).
 SHOULDER_OUT = 1.15
@@ -171,6 +174,8 @@ GLOVE_REACH = 0.9
 # Of a gag's footprint, the middle part whose glove must stay under it
 # (the fingertips past its edge may curl up round it).
 CLEAR_FOOT = 0.85
+# Thin gags settle lower into the cupped palm, the curled fingers round their edge.
+CLEAR_FOOTS = {'fruitpie-slice': 0.5, 'creampie-slice': 0.5}
 # Gags carried on the palm that come in all sizes (a safe, a piano, a storm
 # cloud, a geyser...) are fitted to one size in the view, a pie's.
 FIT_SIZE = 0.85
@@ -815,7 +820,7 @@ class GagHandler:
         # Nothing of the glove pokes up through the gag: its bottom is
         # lifted to the highest bit of glove under its middle.
         low, high = prop.getTightBounds(hand)
-        half = (high - low) * 0.5 * CLEAR_FOOT
+        half = (high - low) * 0.5 * CLEAR_FOOTS.get(name, CLEAR_FOOT)
         mid = (low + high) * 0.5
         under = [v[2] for v in self.arms.gloveVerts(RIGHT, hand)
                  if abs(v[0] - mid[0]) <= half[0] and abs(v[1] - mid[1]) <= half[1]]
@@ -921,9 +926,12 @@ class GagHandler:
                     self.seatInHold(prop, gag.prop) if PALM_HOLD else self.seatOnPalm(prop)
                 if gag.prop == 'water-gun':
                     # The battle's grip, its barrel (the gun's forward) out at the cogs.
-                    prop.setScale(1.0)
+                    prop.setScale(GUN_SCALE)
                     self.arms.aimHeld(RIGHT, GUN_GLOVE_AT, lambda parent: parent.getRelativeVector(prop, Vec3(0, 1, 0)), GUN_ARM_SIZE,
                                       GUN_AIM_AT, lambda parent: parent.getRelativeVector(prop, Vec3(0, 0, 1)))
+                    # Slid in its own frame so its grip sits inside the fist
+                    # rather than poking out in front of the glove.
+                    prop.setPos(prop, GUN_IN_FIST)
                 if gag.prop == 'firehose':
                     # The hose keeps the battle's grip (its size the glove's)
                     # and the arm and hose turn together to aim it.
