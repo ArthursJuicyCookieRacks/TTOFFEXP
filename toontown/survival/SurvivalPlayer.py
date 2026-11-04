@@ -53,6 +53,13 @@ CROSS_UNDO_RESCUE = 8
 # many checks in a row, the toon is set down outside (__enclosed).
 ENCLOSED_EVERY = 5
 ENCLOSED_RESCUE = 3
+# The open ground (the cells the cogs walk): a toon further than this from
+# every cell on its level, for this long, is put back where it last stood
+# on it (checked this often).
+OPEN_GROUND_NEAR = 8.0
+OPEN_GROUND_RISE = 6.0
+OPEN_GROUND_TIME = 2.5
+OPEN_GROUND_EVERY = 0.25
 MOUSE_SENSITIVITY = 0.12
 # Camera sensitivity 1 (very slow) to 10 (very fast), from the pause
 # menu's Settings; 5 is the turn speed the game always had.
@@ -235,6 +242,11 @@ class SurvivalPlayer(DirectObject):
         self.enclosedCount = 0
         self.guardUndone = 0
         self.mayForce = False
+        # The last spot on the open ground, and since when the toon has
+        # been off it (see __offGround).
+        self.groundSpot = Point3(start)
+        self.offSince = None
+        self.nextGroundCheck = 0.0
         self.mouseCentered = False
         self.touchMode = TouchControls.wantTouchControls()
         self.sprintLatched = False
@@ -581,6 +593,7 @@ class SurvivalPlayer(DirectObject):
             self.moveState = 'walk'
         self.__footsteps()
         self.__unstick(moving and speed > 0, speed, dt)
+        self.__offGround()
         # Laff comes back out of the cogs' reach.
         now = globalClock.getFrameTime()
         if not self.down and self.hp < self.maxHp:
@@ -666,6 +679,55 @@ class SurvivalPlayer(DirectObject):
             self.mayForce = self.__walkingAway()
             self.plainFrames = PLAIN_FRAMES
             self.__usePlainPusher(True)
+
+    def __onOpenGround(self, pos):
+        """Whether the toon stands on (or right beside) the open ground the
+        cogs walk, the arena's reach cells."""
+        arena = getattr(self.game, 'arena', None)
+        reach = getattr(arena, 'reach', None)
+        if not reach:
+            return True
+        step = arena.REACH_STEP
+        ci, cj = int(round(pos[0] / step)), int(round(pos[1] / step))
+        ring = int(math.ceil(OPEN_GROUND_NEAR / step))
+        for di in range(-ring, ring + 1):
+            for dj in range(-ring, ring + 1):
+                point = reach.get((ci + di, cj + dj))
+                if point is None or abs(point[2] - pos[2]) > OPEN_GROUND_RISE:
+                    continue
+                if (point[0] - pos[0]) ** 2 + (point[1] - pos[1]) ** 2 <= OPEN_GROUND_NEAR ** 2:
+                    return True
+        return False
+
+    def __offGround(self):
+        """A toon off the open ground for a while is put back on it, where
+        it last stood. Off it, no cog can get to the toon and the toon may
+        not get back (dropped onto Donald's Dock's low boat landings, or
+        slipped behind a tunnel's facade into the hill): Arthur wants no
+        toon stuck anywhere, and no spot safe from the cogs."""
+        now = globalClock.getFrameTime()
+        if now < self.nextGroundCheck:
+            return
+        self.nextGroundCheck = now + OPEN_GROUND_EVERY
+        if getattr(self.walker, 'isAirborne', False):
+            return
+        pos = Point3(self.body.getPos())
+        if self.__onOpenGround(pos):
+            self.groundSpot = pos
+            self.offSince = None
+            return
+        if self.offSince is None:
+            self.offSince = now
+            return
+        if now - self.offSince < OPEN_GROUND_TIME:
+            return
+        self.offSince = None
+        self.notify.info('off the open ground at %s: back to %s' % (pos, self.groundSpot))
+        self.body.setPos(self.groundSpot)
+        self.lastFlat = Point3(self.groundSpot)
+        self.guardFrom = None
+        # Or the depenetration guard takes the step back.
+        self.lastFinal = None
 
     def __touching(self):
         self.touchQueue.clearEntries()

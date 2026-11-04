@@ -88,6 +88,29 @@ DD_PUDDLE_Z = -11.4
 DD_PIER_PITCH = -44.5
 
 
+# Posts along the bow of the boat aground, in the boat's own space (its
+# bow is +y): (how far forward, radius).
+DD_BOW_POSTS = ((19.0, 2.0), (22.5, 1.6))
+# Each bridge's two rails, in its own space (along +y from its hinge, 25
+# feet long): the model's rails are walls from the inside only, and tipped
+# down as ramps a toon walked through them, off the ramp's side onto the
+# harbour bed or up onto it from there.
+PIER_RAIL_X = (-4.0, 3.8)
+PIER_RAIL_HEIGHTS = (1.3, 2.6)
+PIER_RAIL_RADIUS = 0.75
+PIER_LENGTH = 25.0
+
+
+def pierRails(pier):
+    node = CollisionNode('survivalPierRails')
+    for x in PIER_RAIL_X:
+        for z in PIER_RAIL_HEIGHTS:
+            node.addSolid(CollisionTube(x, 0.5, z, x, PIER_LENGTH - 0.5, z, PIER_RAIL_RADIUS))
+    node.setIntoCollideMask(ToontownGlobals.WallBitmask)
+    node.setFromCollideMask(BitMask32.allOff())
+    pier.attachNewNode(node)
+
+
 def dryDock(arena):
     """Donald's Dock with the water gone from the harbour and the fishing
     pond, Donald's boat nose down in the harbour mud, and both bridges
@@ -120,6 +143,7 @@ def dryDock(arena):
     for name, h in (('east_pier', 90), ('west_pier', -90)):
         for pier in geom.findAllMatches('**/' + name):
             pier.setHpr(h, DD_PIER_PITCH, 0)
+            pierRails(pier)
     boat = geom.find('**/donalds_boat')
     if not boat.isEmpty():
         boat.unstash()
@@ -132,6 +156,23 @@ def dryDock(arena):
         # Its deck isn't a floor to stand on any more, and it no longer
         # needs to carry toons: just the walls round it.
         stashAll(boat, 'donalds_boat_floor', 'pole-tube')
+        # The hull's walls stop short of the bow, and the bow is the end
+        # stuck in the mud: toons walked through its tip on the harbour
+        # bed. Posts where the bow goes into the ground.
+        for y, radius in DD_BOW_POSTS:
+            arena.addBlocker(render.getRelativePoint(boat, Point3(0, y, 1.5)), radius, 8.0)
+    # The pylons standing on the harbour bed (under the boardwalk's edge,
+    # round the island) are walls from the outside only: crowded by cogs, a
+    # helper toon was pushed into one against the boardwalk and stayed
+    # there, the cogs round it pushing in too, and the round never ended
+    # (Survival playthrough). Solid posts instead.
+    for pylon in geom.findAllMatches('**/pylon'):
+        bounds = pylon.getTightBounds(render)
+        if not bounds or bounds[0][2] > DD_PUDDLE_Z + 2.0:
+            continue
+        lo, hi = bounds
+        half = max(hi[0] - lo[0], hi[1] - lo[1]) * 0.5
+        arena.addBlocker(Point3((lo[0] + hi[0]) * 0.5, (lo[1] + hi[1]) * 0.5, lo[2]), half + 0.2, hi[2] - lo[2])
 
 
 # --- The Cog HQs ---
@@ -155,7 +196,10 @@ def addTrolley(arena):
     holder.setH(h)
 
 
-SELLBOT_TUNNEL_WALLS = (((-40, -256), (40, -256)), ((140, -195), (140, -115)))
+# The wall across the way to Daisy Gardens runs on past the corridor's
+# sides: from just beyond its end a jump got a toon round it and down the
+# side of the tunnel (survival tunnel test).
+SELLBOT_TUNNEL_WALLS = (((-60, -256), (60, -256)), ((140, -195), (140, -115)))
 
 
 def sellbotCourtyard(arena):
@@ -318,6 +362,10 @@ HOOD_MAPS = {
         'reachRise': 4.5,
         # The horn slides are only a few feet wide.
         'reachStep': 2.5,
+        # The pond's wide rim and the piano keys stand 2.1 feet over the
+        # bowl's floor, a step for a toon but more than a cog's usual
+        # step: the toons stood out there and no cog came.
+        'reachJump': 2.6,
         # The bowl's floor is at about -15.
         'lowest': -20,
         'spots': {
@@ -407,7 +455,12 @@ HOOD_MAPS = {
             'trunk': (Point3(0, -27, 0), 0),
             'start': (Point3(130, 0, 0), 90),
         },
-        'reachSpan': 200.0,
+        # The grounds reach about 260 feet out from the fountain, the path
+        # west 340 and the way down to the tunnel east to its wall at 415:
+        # with 200 the strips along the walls and those ways had no cells,
+        # and no cog could reach a toon standing there.
+        'reachCenter': Point3(40, 0, 0),
+        'reachSpan': 385.0,
         'spawnRing': (40.0, 200.0),
     },
 }

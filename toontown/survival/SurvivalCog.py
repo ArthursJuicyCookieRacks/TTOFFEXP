@@ -78,6 +78,9 @@ QUEUE_TIME = 20.0
 # Only near the toon: a jam on the far side of the map still flies in.
 QUEUE_NEAR = 30.0
 GROUND_EVERY = 0.1
+# Where else to feel for the floor when there is none right under a cog's
+# next step: a crack is narrower than this, a ledge's drop isn't.
+CRACK_PROBES = ((0.75, 0), (-0.75, 0), (0, 0.75), (0, -0.75))
 HEAD_FRACTION = 0.72
 # The neck counts as the head, a little below where the head joint is.
 NECK_MARGIN = 0.04
@@ -345,7 +348,13 @@ class SurvivalCog:
         # (Only counted near it: from across the playground nearly every
         # walk has something between, and a cog that came round the
         # buildings flew off just as it got there.)
-        if level or self.lure is not None or dist >= OFF_LEVEL_NEAR:
+        # Only a cog really above or below the toon: one on its level with
+        # something between them (the trunk, Freddy's stand, a lamp post)
+        # walks round it. It used to count as off the toon's level too, and
+        # the cogs round a toon standing by the trunk or Freddy flew off
+        # and back in every five seconds (Survival soak, Donald's Dock).
+        upDown = abs(goal[2] - self.pos[2]) > G.COG_REACH_RISE
+        if level or not upDown or self.lure is not None or dist >= OFF_LEVEL_NEAR:
             self.offLevelSince = None
         elif self.offLevelSince is None:
             self.offLevelSince = now
@@ -412,12 +421,15 @@ class SurvivalCog:
         # Straight at the goal only on its level: from the harbour bed
         # under a dock nothing stood between the cog and the toon overhead,
         # so it walked under the toon and stayed there.
-        if abs(goal[2] - self.pos[2]) <= G.COG_REACH_RISE and self.__clearWide(self.pos, goal):
+        # (And only where the ground keeps to that level all the way: see
+        # levelLine.)
+        if abs(goal[2] - self.pos[2]) <= G.COG_REACH_RISE and self.__clearWide(self.pos, goal) and \
+                self.arena.levelLine(self.pos, goal):
             self.boxedSince = None
             self.stepsSince = None
             return goal
         flow, goalCell = self.arena.flowTo(goal)
-        cell = self.arena.nearestCell(self.pos)
+        cell = self.arena.nearestCell(self.pos, level=True)
         if not flow or cell is None or cell not in flow:
             # Off the map: feel along the walls the old way.
             self.routed = False
@@ -437,7 +449,8 @@ class SurvivalCog:
             return goal
         pick = None
         for c in reversed(chain):
-            if self.__clearWide(self.pos, self.arena.cellPoint(c)):
+            point = self.arena.cellPoint(c)
+            if self.__clearWide(self.pos, point) and self.arena.levelLine(self.pos, point):
                 pick = c
                 break
         if pick is None:
@@ -606,6 +619,15 @@ class SurvivalCog:
         if now >= self.nextGround:
             self.nextGround = now + GROUND_EVERY
             z = self.arena.nav.groundZ(new[0], new[1], pos[2])
+            if z is None:
+                # A crack between two pieces of floor, not a ledge: the
+                # floor goes on just beside it. Sellbot HQ's courtyard has
+                # them all over, and the cogs dropped through to the floor
+                # under the courtyard and walked about under the toons.
+                for dx, dy in CRACK_PROBES:
+                    z = self.arena.nav.groundZ(new[0] + dx, new[1] + dy, pos[2])
+                    if z is not None:
+                        break
             if z is None:
                 # Off a ledge deeper than a step: down to the floor below
                 # (before, the cog kept its height and walked on air).

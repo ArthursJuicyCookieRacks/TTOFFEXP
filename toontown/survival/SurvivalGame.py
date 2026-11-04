@@ -253,6 +253,15 @@ class SurvivalGame(DirectObject):
         for i in range(self.npcCount):
             angle = math.radians(120 * i - 60)
             spot, sh = self.arena.placeOnGround(start[0] + 5 * math.sin(angle), start[1] + 5 * math.cos(angle) + 3, 0)
+            # Only on the player's own level with a clear walk from there:
+            # on Donald's Dock the spot was just off the boardwalk's edge,
+            # down on the harbour bed inside a pylon, and the helper stood
+            # there all game with the cogs crowding it, so the round never
+            # ended (Survival playthrough).
+            if abs(spot[2] - start[2]) > 2.5 or not self.arena.bodyClear(start, spot):
+                cell = self.arena.nearestCell(Point3(spot[0], spot[1], start[2]), level=True)
+                point = self.arena.cellPoint(cell) if cell is not None else None
+                spot = Point3(point) if point is not None and self.arena.bodyClear(start, point) else Point3(start)
             self.npcs.append(SurvivalNPC(self, i, spot))
         self.hud.setLaff(self.player.hp, self.player.maxHp)
         self.hud.setBeans(self.beans)
