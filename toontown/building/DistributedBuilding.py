@@ -628,7 +628,7 @@ class DistributedBuilding(DistributedObject.DistributedObject):
     FieldOfficeMidStarScale = 0.9
     FieldOfficeWideStarScale = 0.93
     FieldOfficeWideStarZ = -0.6
-    FieldOfficeMidStarZ = -0.67
+    FieldOfficeMidStarZ = -0.62
     FieldOfficeMidStarShift = 0.35
     FieldOfficeMidSignScale = 1.08
 
