@@ -618,7 +618,7 @@ class DistributedBuilding(DistributedObject.DistributedObject):
     FieldOfficeStarGap = 0.17
     FieldOfficeStarRightLimit = 8.0
     FieldOfficeNarrowStarScale = 0.85
-    FieldOfficeNarrowStarZ = -0.15
+    FieldOfficeNarrowStarZ = 0.0
     FieldOfficeNarrowShift = 0.6
     FieldOfficeNarrowTextScale = 1.3
     FieldOfficeNarrowSignScale = 1.22
