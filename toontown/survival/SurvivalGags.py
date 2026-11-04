@@ -142,10 +142,14 @@ CLEAR_GAP = 0.005
 # Gags centred on the glove's own middle rather than the hold joint.
 CENTRE_ON_GLOVE = ('ship',)
 CENTRE_PULL = 1.0
-# Gags kept wholly inside the glove's outline (seen from above the palm),
-# and how far in from the glove's edge that outline is drawn.
+# Gags kept wholly on the glove (seen from above the palm): at least
+# PALM_EDGE_ROOM of the glove's width in from its edge all round, at the
+# first of FIT_SIZES (of its size) that fits somewhere.
 KEEP_ON_GLOVE = ('ship',)
-GLOVE_EDGE_IN = 0.95
+PALM_EDGE_ROOM = 0.1
+# The turns (degrees about the palm's up) it may take to fit, first first.
+FIT_TURNS = (-90,)
+FIT_SIZES = (1.0, 0.95, 0.9, 0.85, 0.8, 0.75, 0.7, 0.65, 0.6, 0.55, 0.5)
 # The storm cloud's bounds reach below what shows (HOLD_SINK sets it).
 CLEAR_SKIP = ('stormcloud',)
 # Where the hose nozzle points: out at the cogs past the crosshair (camera space).
@@ -164,6 +168,9 @@ SOUND_ARM_FROM = None
 # The hold mirrored left to right about the megaphone (Arthur: that grip,
 # the arm coming up from the right).
 SOUND_MIRROR = True
+# How much of the battle hold's bent wrist is straightened (1: the forearm
+# carries on in line with the hand).
+SOUND_WRIST_STRAIGHT = 0.5
 # Mirrored, the body is cut away inward of the holding shoulder, from this
 # far out (0 the middle between the shoulders, 1 the holding shoulder):
 # these parts. Only the holding arm is left.
@@ -620,6 +627,96 @@ class ToonArms:
         self.clipBody(side)
         # The arm now crosses the view another way: grown about the glove
         # until its cut-off shoulder is out of the frame again.
+        self.growOut(side)
+
+    def straightenWrist(self, side, amount):
+        """Swing the forearm about the wrist, the hand (and what it holds)
+        staying just where it is, until the forearm carries on in line with
+        the hand (amount 1; less leaves some of the bend). The battle hold
+        bends the wrist hard to one side (Arthur: "straighten out" the arm)."""
+        lod = '1000'
+        try:
+            wrist = self.toon.exposeJoint(None, 'torso', 'def_%s_wrist' % side, lodName=lod)
+            elbow = self.toon.exposeJoint(None, 'torso', 'def_%s_elbow' % side, lodName=lod)
+            knuckle = self.toon.exposeJoint(None, 'torso', 'def_%s_midA' % side, lodName=lod)
+            joint = self.toon.getPartBundle('torso', lod).findChild('def_%s_wrist' % side)
+        except Exception:
+            return
+        if joint is None or wrist.isEmpty() or elbow.isEmpty() or knuckle.isEmpty():
+            return
+        self.toon.update(force=True)
+        at = wrist.getPos(camera)
+        along = at - knuckle.getPos(camera)
+        arm = elbow.getPos(camera) - at
+        if along.length() < 1e-5 or arm.length() < 1e-5:
+            return
+        along.normalize()
+        arm.normalize()
+        axis = arm.cross(along)
+        if axis.length() < 1e-5:
+            return
+        axis.normalize()
+        bend = math.degrees(math.acos(max(-1.0, min(1.0, arm.dot(along)))))
+        local = LMatrix4(joint.getTransformState().getMat())
+        net = wrist.getMat(camera)
+        above = LMatrix4(local)
+        above.invertInPlace()
+        above = above * net
+        aboveInv = LMatrix4(above)
+        aboveInv.invertInPlace()
+        parent = self.toon.getParent()
+        start = self.toon.getMat()
+        self.releaseWrist()
+        nodes = []
+        for name in self.toon.getLODNames():
+            try:
+                node = self.toon.controlJoint(None, 'torso', 'def_%s_wrist' % side, lodName=name)
+            except Exception:
+                node = None
+            if node is not None and not node.isEmpty():
+                nodes.append(node)
+                self.wristHeld.append(('def_%s_wrist' % side, name, node))
+        # As straight as it goes with the cut-off shoulder still out of the
+        # frame (grown to hide it, the glove would come out bigger).
+        steps = 10
+        for step in range(steps, -1, -1):
+            angle = bend * amount * step / float(steps)
+            turn = LMatrix4.translateMat(-at) * LMatrix4.rotateMat(angle, axis) * LMatrix4.translateMat(at)
+            back = LMatrix4.translateMat(-at) * LMatrix4.rotateMat(-angle, axis) * LMatrix4.translateMat(at)
+            # The arm swings about the wrist; the wrist turns back by as
+            # much, so the hand stays put.
+            self.toon.setMat(start * parent.getMat(camera) * turn * camera.getMat(parent))
+            for node in nodes:
+                node.setMat(local * above * back * aboveInv)
+            self.toon.update(force=True)
+            if not self.shoulderInView(side):
+                break
+
+    def releaseWrist(self):
+        held = getattr(self, 'wristHeld', None) or []
+        # (releaseJoint lets go in every detail level at once.)
+        for joint in set(joint for joint, lod, node in held):
+            self.toon.releaseJoint('torso', joint)
+        for joint, lod, node in held:
+            if not node.isEmpty():
+                node.removeNode()
+        self.wristHeld = []
+        if held and self.anim:
+            # Let go, the wrist keeps the turned value until its animation
+            # changes frame: posed one frame over and back, it takes the
+            # hold's own wrist again (else each sound gag picked turned the
+            # hand a little more).
+            frames = max(1, self.toon.getNumFrames(self.anim) or 1)
+            other = self.hold + 1 if self.hold + 1 < frames else max(0, self.hold - 1)
+            for frame in (other, self.hold):
+                self.toon.pose(self.anim, frame)
+                for lod in range(len(self.toon.getLODNames())):
+                    self.toon.update(lod=lod, force=True)
+
+    def growOut(self, side):
+        """Grow the arm about the glove until its cut-off shoulder is out of
+        the frame."""
+        parent = self.toon.getParent()
         at = self.hand(side).getPos(camera)
         while self.shoulderInView(side) and self.grow < MAX_ARM_GROW:
             self.grow *= 1.08
@@ -764,6 +861,43 @@ class ToonArms:
                 break
         return verts
 
+    def gloveTriangles(self, side, space):
+        """The glove's triangles as drawn now (posed), in space's
+        coordinates: those within GLOVE_REACH of its palm joint."""
+        from panda3d.core import GeomVertexReader, Thread
+        palm = self.hand(side).getPos(self.toon)
+        found = list(self.toon.findAllMatches('**/hands'))
+        found.sort(key=lambda np: '/1000/' not in str(np))
+        tris = []
+        for np in found:
+            if np.isHidden() or not np.node().isGeomNode():
+                continue
+            mat = np.getMat(space)
+            toToon = np.getMat(self.toon)
+            node = np.node()
+            for i in range(node.getNumGeoms()):
+                geom = node.getGeom(i)
+                vdata = geom.getVertexData().animateVertices(True, Thread.getCurrentThread())
+                reader = GeomVertexReader(vdata, 'vertex')
+                points = []
+                near = []
+                while not reader.isAtEnd():
+                    v = reader.getData3()
+                    points.append(mat.xformPoint(v))
+                    near.append((toToon.xformPoint(v) - palm).length() <= GLOVE_REACH)
+                for k in range(geom.getNumPrimitives()):
+                    prim = geom.getPrimitive(k).decompose()
+                    for t in range(prim.getNumPrimitives()):
+                        start, end = prim.getPrimitiveStart(t), prim.getPrimitiveEnd(t)
+                        if end - start != 3:
+                            continue
+                        idx = [prim.getVertex(j) for j in range(start, end)]
+                        if all(near[j] for j in idx):
+                            tris.append(tuple(points[j] for j in idx))
+            if tris:
+                break
+        return tris
+
     def hand(self, side=RIGHT):
         hands = self.toon.getLeftHands() if side == LEFT else self.toon.getRightHands()
         return hands[0] if hands else self.toon
@@ -804,6 +938,7 @@ class ToonArms:
             self.toon.clearAttrib(CullFaceAttrib)
             self.unclipBody()
             self.mirrored = False
+        self.releaseWrist()
         self.aimArm(side)
         if anim in PALM_UP_ANIMS:
             self.rollPalm(side, PALM_UP)
@@ -997,29 +1132,92 @@ class GagHandler:
     # --- What is held ---
 
     def keepOnGlove(self, prop, hand):
-        """Slide the prop toward the middle of the glove (and, only if it
-        cannot fit, shrink it) until nothing of it hangs past the glove's
-        outline as seen from above the palm (Arthur: the ship must not hang
-        off the edge of the hand)."""
-        verts = self.arms.gloveVerts(RIGHT, hand)
-        if len(verts) < 3:
-            return
-        hull = convexHull([(v[0], v[1]) for v in verts])
-        if len(hull) < 3:
-            return
-        cx = sum(p[0] for p in hull) / len(hull)
-        cy = sum(p[1] for p in hull) / len(hull)
-        # The outline drawn in a little, so the prop clears the glove's edge.
-        hull = [(cx + (p[0] - cx) * GLOVE_EDGE_IN, cy + (p[1] - cy) * GLOVE_EDGE_IN) for p in hull]
-
-        # Its own outline as seen from above the palm (its corners stuck out
-        # past a pointed bow and drew it in smaller than it needs to be).
+        """Put the prop where all of it stands on the glove (Arthur: "the
+        FULL SHIP needs to be ON THE PALM"): seen from above the palm, its
+        footprint must lie inside the glove's own shape (the gap between
+        thumb and fingers is not glove) with PALM_EDGE_ROOM of the glove's
+        width to spare all round. Its turn is kept; it slides to where it
+        has the most room, drawn smaller only if it fits nowhere. (Against
+        the glove's convex outline, the ship's back stood over the gap by the
+        thumb and past the glove's far edge.)"""
         from panda3d.core import GeomVertexReader
+        glove = self.arms.gloveVerts(RIGHT, hand)
+        shape = [tuple((v[0], v[1]) for v in tri) for tri in self.arms.gloveTriangles(RIGHT, hand)]
+        if len(glove) < 3 or not shape:
+            return
+        # The glove from above on a fine grid, each cell with how far it is
+        # inside the glove's edge.
+        xs = [q[0] for t in shape for q in t]
+        ys = [q[1] for t in shape for q in t]
+        width = min(max(xs) - min(xs), max(ys) - min(ys))
+        cell = width / 60.0
+        if cell <= 0:
+            return
+        x0, y0 = min(xs) - cell * 2, min(ys) - cell * 2
+        cols = int((max(xs) - x0) / cell) + 3
+        rows = int((max(ys) - y0) / cell) + 3
+        far = 1e9
+        grid = [[0.0] * cols for _ in range(rows)]
+        for a, b, c in shape:
+            d = (b[1] - c[1]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[1] - c[1])
+            if abs(d) < 1e-12:
+                continue
+            for r in range(max(0, int((min(a[1], b[1], c[1]) - y0) / cell)),
+                           min(rows, int((max(a[1], b[1], c[1]) - y0) / cell) + 1)):
+                py = y0 + (r + 0.5) * cell
+                for k in range(max(0, int((min(a[0], b[0], c[0]) - x0) / cell)),
+                               min(cols, int((max(a[0], b[0], c[0]) - x0) / cell) + 1)):
+                    px = x0 + (k + 0.5) * cell
+                    l1 = ((b[1] - c[1]) * (px - c[0]) + (c[0] - b[0]) * (py - c[1])) / d
+                    l2 = ((c[1] - a[1]) * (px - c[0]) + (a[0] - c[0]) * (py - c[1])) / d
+                    if l1 >= -1e-9 and l2 >= -1e-9 and l1 + l2 <= 1 + 1e-9:
+                        grid[r][k] = far
+        # Distance to the edge (chamfer, two passes).
+        diag = cell * 1.4142
+        for r in range(rows):
+            for k in range(cols):
+                if grid[r][k]:
+                    best = grid[r][k]
+                    if r > 0:
+                        best = min(best, grid[r - 1][k] + cell)
+                        if k > 0:
+                            best = min(best, grid[r - 1][k - 1] + diag)
+                        if k + 1 < cols:
+                            best = min(best, grid[r - 1][k + 1] + diag)
+                    if k > 0:
+                        best = min(best, grid[r][k - 1] + cell)
+                    grid[r][k] = best
+        for r in range(rows - 1, -1, -1):
+            for k in range(cols - 1, -1, -1):
+                if grid[r][k]:
+                    best = grid[r][k]
+                    if r + 1 < rows:
+                        best = min(best, grid[r + 1][k] + cell)
+                        if k + 1 < cols:
+                            best = min(best, grid[r + 1][k + 1] + diag)
+                        if k > 0:
+                            best = min(best, grid[r + 1][k - 1] + diag)
+                    if k + 1 < cols:
+                        best = min(best, grid[r][k + 1] + cell)
+                    grid[r][k] = best
+
+        def room(points):
+            # How far inside the glove's edge the nearest point is.
+            worst = far
+            for p in points:
+                k = int((p[0] - x0) / cell)
+                r = int((p[1] - y0) / cell)
+                if r < 0 or k < 0 or r >= rows or k >= cols or not grid[r][k]:
+                    return -cell
+                worst = min(worst, grid[r][k])
+            return worst
+        # The prop from above the palm: its outline, its edges as well as its
+        # corners (the glove's shape is not convex).
         own = []
         for np in prop.findAllMatches('**/+GeomNode'):
             if np.isHidden():
                 continue
-            mat = np.getMat(prop)
+            mat = np.getMat(hand)
             node = np.node()
             for i in range(node.getNumGeoms()):
                 reader = GeomVertexReader(node.getGeom(i).getVertexData(), 'vertex')
@@ -1027,29 +1225,43 @@ class GagHandler:
                     own.append(mat.xformPoint(reader.getData3()))
         if not own:
             return
-        mat = prop.getMat(hand)
-        own = convexHull([(q[0], q[1]) for q in (mat.xformPoint(v) for v in own)])
-        # Kept in its own frame, so a move or a shrink carries it along.
-        back = hand.getMat(prop)
-        own = [Point3(back.xformPoint(Point3(x, y, 0))) for x, y in own]
-
-        def footprint():
-            mat = prop.getMat(hand)
-            return [(q[0], q[1]) for q in (mat.xformPoint(v) for v in own)]
-
-        scale = prop.getScale()
-        for i in range(80):
-            pts = footprint()
-            if all(insideConvex(hull, p) for p in pts):
+        low = min(v[2] for v in own)
+        foot = convexHull([(v[0], v[1]) for v in own])
+        foot = [(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)
+                for a, b in zip(foot, foot[1:] + foot[:1]) for t in (0.0, 0.25, 0.5, 0.75)]
+        cx = sum(p[0] for p in foot) / len(foot)
+        cy = sum(p[1] for p in foot) / len(foot)
+        need = PALM_EDGE_ROOM * width
+        best = None
+        closest = None
+        for size in FIT_SIZES:
+            for turn in FIT_TURNS:
+                c, s_ = math.cos(math.radians(turn)), math.sin(math.radians(turn))
+                shaped = [((p[0] - cx) * c - (p[1] - cy) * s_, (p[0] - cx) * s_ + (p[1] - cy) * c) for p in foot]
+                for r in range(0, rows, 2):
+                    for k in range(0, cols, 2):
+                        if grid[r][k] < need:
+                            continue
+                        x = x0 + (k + 0.5) * cell
+                        y = y0 + (r + 0.5) * cell
+                        have = room([(x + p[0] * size, y + p[1] * size) for p in shaped])
+                        if have >= need and (best is None or have > best[0]):
+                            best = (have, x, y, size, turn)
+                        if closest is None or have > closest[0]:
+                            closest = (have, x, y, size, turn)
+            if best is not None:
                 break
-            mx = sum(p[0] for p in pts) / len(pts)
-            my = sum(p[1] for p in pts) / len(pts)
-            step = Vec3(cx - mx, cy - my, 0)
-            if step.length() > 0.005:
-                prop.setPos(hand, prop.getPos(hand) + step * 0.25)
-            else:
-                prop.setScale(prop.getScale() * 0.97)
-        self.keptScale = prop.getScale()[0] / scale[0]
+        # Fitting nowhere, it goes where it comes nearest.
+        best = best or closest
+        if best is None:
+            return
+        have, x, y, size, turn = best
+        mat = prop.getMat(hand)
+        mat = mat * LMatrix4.translateMat(-cx, -cy, -low) * LMatrix4.rotateMat(turn, Vec3(0, 0, 1)) \
+            * LMatrix4.scaleMat(size) * LMatrix4.translateMat(x, y, low)
+        self.keptTurn = turn
+        prop.setMat(hand, mat)
+        self.keptScale = size
 
     def seatInHold(self, prop, name):
         """Stand the prop in the open palm: upright on the hold joint (the
@@ -1149,6 +1361,8 @@ class GagHandler:
                 if SOUND_MIRROR:
                     self.arms.mirrorAbout(megaphone, camera.getRelativeVector(megaphone, MEGAPHONE_AXIS)
                                           if SOUND_MIRROR == 'aim' else None)
+                if SOUND_WRIST_STRAIGHT:
+                    self.arms.straightenWrist(RIGHT, SOUND_WRIST_STRAIGHT)
                 # Slid over in the view so the glove holds its right side.
                 self.arms.toon.update(force=True)
                 megaphone.setPos(camera, megaphone.getPos(camera) + MEGAPHONE_VIEW_SHIFT)
