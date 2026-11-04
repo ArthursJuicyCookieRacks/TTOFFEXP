@@ -391,6 +391,36 @@ class BoardroomLayout:
         return (side * Consts.SeatSideX, y, 0)
 
     def slickAt(self, can):
-        # The spill reaches in from the can at the table's edge.
+        # The spill reaches in from the can at the table's edge, never past
+        # a couple of feet short of the middle: the rest of the table stays
+        # dry to steer round it (Arthur: always a way to dodge the oil).
         cx, cy = self.oilCans[can]
-        return (cx * 0.55, cy, Consts.SlickRadius)
+        side = 1 if cx > 0 else -1
+        return (side * (Consts.TableHalfWidth - Consts.SlickRadius), cy, Consts.SlickRadius)
+
+    def laneClear(self, slicks, y0, y1, lane=None):
+        """Whether every row of the table from y0 to y1 still has a dry,
+        clear stretch at least `lane` ft wide across: not under any of the
+        slicks (x, y, radius) and not blocked by a pile (pencils are hopped,
+        ramps slid up). The oil is only spilt or thrown where it leaves
+        one, so a toon can always dodge it."""
+        lane = lane or Consts.OilFreeLane
+        half = Consts.TableHalfWidth - 1.0
+        step = 0.5
+        xs = [-half + i * step for i in range(int(2 * half / step) + 1)]
+        y = y0
+        while y <= y1:
+            near = [(sx, sy, r) for sx, sy, r in slicks if abs(sy - y) < r]
+            piles = [ob for ob in self._pilesNear(y) if ob.kind == PILE]
+            run = best = 0.0
+            for x in xs:
+                wet = any((x - sx) ** 2 + (y - sy) ** 2 < r * r for sx, sy, r in near)
+                if wet or any(ob.contains(x, y, 0.8) for ob in piles):
+                    run = 0.0
+                else:
+                    run += step
+                    best = max(best, run)
+            if best < lane:
+                return False
+            y += 1.0
+        return True

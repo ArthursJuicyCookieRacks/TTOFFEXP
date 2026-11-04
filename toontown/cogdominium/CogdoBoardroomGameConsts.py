@@ -202,7 +202,10 @@ CameraBack = 12.0
 CameraUp = 7.0
 
 # --- On the table ---
-SlickRadius = 7.5
+SlickRadius = 6.0
+# However the oil lies, every row of the table keeps a dry, clear lane at
+# least this wide to steer through (Arthur).
+OilFreeLane = 6.0
 SlickDuration = 14.0
 # On a slick the toon keeps sliding the way it went: this much of its run
 # speed is lost a second, and its steering counts for this little.

@@ -38,6 +38,7 @@ class DistCogdoBoardroomGameAI(DistCogdoGameAI):
         self.invulnerableUntil = {}
         self.lastHit = {}
         self.spilled = {}
+        self.thrownSlicks = []
         self.nextCan = 0
         # The golf office after the slide.
         self.phase = 'slide'
@@ -434,8 +435,12 @@ class DistCogdoBoardroomGameAI(DistCogdoGameAI):
                 self.__launch(Consts.Swipe, seat, (side * Consts.TableHalfWidth, self.layout.seats[seat][1]), Consts.SwipeTime)
             else:
                 seat = min(seats, key=lambda i: abs(self.layout.seats[i][1] - ty) + random.uniform(0, 12))
-                if random.random() < Consts.lerpDifficulty(Consts.OilThrowChanceRange, self.layout.difficulty):
+                if random.random() < Consts.lerpDifficulty(Consts.OilThrowChanceRange, self.layout.difficulty) \
+                        and self.__oilLeavesLane(tx, ty, Consts.ThrownSlickRadius, Consts.ThrowFlightTime, Consts.ThrownSlickDuration):
                     kind = Consts.Oil
+                    self.thrownSlicks.append((self.now() + Consts.ThrowFlightTime,
+                                              self.now() + Consts.ThrowFlightTime + Consts.ThrownSlickDuration,
+                                              tx, ty, Consts.ThrownSlickRadius))
                 else:
                     kind = random.choice((Consts.GolfBall, Consts.GolfBall, Consts.Paper))
                 self.__launch(kind, seat, (tx, ty), Consts.ThrowFlightTime)
@@ -466,12 +471,34 @@ class DistCogdoBoardroomGameAI(DistCogdoGameAI):
             # where the toons are if there's one up ahead of them.
             ys = [self.__toonPos(a)[1] for a in self.stillRunning()] or [Consts.TableStart]
             ahead = [i for i in range(len(cans)) if i not in self.spilled and cans[i][1] > min(ys)]
+            # Only a can whose spill still leaves a dry lane past it, with
+            # the other oil about (Arthur).
+            ahead = [i for i in ahead if self.__oilLeavesLane(*self.layout.slickAt(i), delay=0.6, duration=Consts.SlickDuration)]
             if ahead:
                 can = min(ahead, key=lambda i: cans[i][1])
                 self.spilled[can] = self.now()
                 self.sendUpdate('oilSpill', [can, self.getNetworkTime()])
         task.delayTime = Consts.lerpDifficulty(Consts.OilSpillPeriodRange, self.layout.difficulty) * random.uniform(0.8, 1.2)
         return task.again
+
+    def __slicksBetween(self, t0, t1):
+        # The oil that will be on the table at some time from t0 to t1: the
+        # knocked-over cans' spills and the thrown jugs'.
+        out = []
+        for can, at in self.spilled.items():
+            start = at + 0.6
+            if start < t1 and start + Consts.SlickDuration > t0:
+                out.append(self.layout.slickAt(can))
+        self.thrownSlicks = [s for s in self.thrownSlicks if s[1] > self.now()]
+        for start, end, x, y, r in self.thrownSlicks:
+            if start < t1 and end > t0:
+                out.append((x, y, r))
+        return out
+
+    def __oilLeavesLane(self, x, y, r, delay, duration):
+        start = self.now() + delay
+        slicks = self.__slicksBetween(start, start + duration) + [(x, y, r)]
+        return self.layout.laneClear(slicks, y - r, y + r)
 
     def __launch(self, kind, source, target, flight):
         x, y = target
