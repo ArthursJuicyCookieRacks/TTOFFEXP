@@ -448,8 +448,11 @@ class NPCParty:
                 # from one part of the place to the next.
                 npc.b_setLocation(self.air.districtId, player.zoneId)
             if player.zoneId != npc.zoneId:
-                if getAreaId(player.zoneId) is not None and not helper:
-                    # Back out in town: the trip is over.
+                if getAreaId(player.zoneId) is not None and not helper and \
+                        not (npc.busy and getAreaId(npc.zoneId) == getAreaId(player.zoneId)):
+                    # Back out in town: the trip is over. (Not one walking
+                    # to the player's elevator from the next stretch of the
+                    # street, which is its own zone.)
                     self.disband(npc)
                     continue
                 if npc.busy:
@@ -503,6 +506,10 @@ class NPCParty:
                 npc.route = None
             if npc.walk is None and getattr(npc, 'onMover', None) is None and self.outOfSweep(npc):
                 # Never stands where a stomper slams across.
+                continue
+            if npc.walk is None and getattr(npc, 'onMover', None) is None and self.outOfCrate(npc):
+                # Never stands half in a crate (one that dropped off a
+                # crate's edge, which is drawn past where its top ends).
                 continue
             if npc.walk is None and getattr(npc, 'onMover', None) is not None and self.makeRoom(npc):
                 # Someone came onto its small top right where it stands.
@@ -873,6 +880,13 @@ class NPCParty:
                             edge = Point3(a[0], a[1], p[2]) + d * max(0.0, min(1.0, here.mover.halfSize - 2.0)) + side
                         else:
                             edge = Point3(a[0], a[1], p[2]) + d * max(0.0, rA - 2.0) + side
+                        grid = getattr(here.mover, 'grid', None)
+                        if grid is not None and grid.solids and \
+                                any(grid.inSolid(edge[0], edge[1], st.z, 0.9) for st in here.mover.stops):
+                            # (Toward the next top is into a crate at one of
+                            # its stops: waits on its own place instead.)
+                            edge = self.spotOn(npc, here)
+                            edge = Point3(edge[0], edge[1], p[2])
                         npc.walk = [[edge], self.paceOf(npc) * 0.5, None, None]
                         npc.atHopEdge = True
                 if not bothWaiting and not close and (math.hypot(c[0] - p[0], c[1] - p[1]) > HOP_REACH or abs(c[2] - p[2]) > 3.0):
@@ -880,7 +894,17 @@ class NPCParty:
                 if len(self.aboard(npc, data)) >= getattr(data, 'capacity', data.mover.capacity):
                     # The next top is full: waits on its own for a later pass.
                     return
+                if abs(c[2] - p[2]) > 3.0 or self.hopThroughCrate(npc, p, c):
+                    # Never a jump up the side of a crate (the mixers either
+                    # side of one): over only when the tops are level.
+                    return
                 npc.atHopEdge = False
+            elif data.present() and data.mover.liftDoId is None and data.mover.capacity <= 3 and self.farFromTop(npc, data):
+                # Not beside it (it was carried off, or fell, since the way
+                # was planned): never a long jump up to it through whatever
+                # is between, a new way from here instead.
+                npc.route = None
+                return
             elif not data.present() or len(self.aboard(npc, data)) >= getattr(data, 'capacity', data.mover.capacity):
                 # Not here yet, or full (a paint mixer's top holds two:
                 # players take it in turns): waits beside it, clear of where
@@ -991,6 +1015,35 @@ class NPCParty:
                     return True
         return False
 
+    def outOfCrate(self, npc):
+        pos = npc.getPos()
+        for g in list(getPathfinder().grids.values()):
+            for lo, hi in g.solids:
+                if not (lo[0] - 0.6 < pos[0] < hi[0] + 0.6 and lo[1] - 0.6 < pos[1] < hi[1] + 0.6 and lo[2] - 3.0 < pos[2] < hi[2] - 0.5):
+                    continue
+                # (One on a paint mixer's top beside the crate is carried by
+                # it, and steps where its rider's place is: not here.)
+                for m in g.movers:
+                    if m.stops and m.liftDoId is None:
+                        c = m.stops[0].center()
+                        if math.hypot(c[0] - pos[0], c[1] - pos[1]) < m.halfSize + 0.5 and -0.6 < pos[2] - c[2] < 2.0:
+                            return False
+                outs = [Point3(lo[0] - 1.8, pos[1], pos[2]), Point3(hi[0] + 1.8, pos[1], pos[2]),
+                        Point3(pos[0], lo[1] - 1.8, pos[2]), Point3(pos[0], hi[1] + 1.8, pos[2])]
+                # (Out the near side only: never on through the crate.)
+                outs = sorted([o for o in outs if (o - pos).length() < 5.5], key=lambda o: (o - pos).length())
+                nav = getNav()
+                for out in outs:
+                    ground = nav.groundZ(out[0], out[1], pos[2] + 1.0)
+                    if ground is not None and abs(ground - pos[2]) < 1.5 and not self.covered(out[0], out[1], ground):
+                        npc.walk = [[Point3(out[0], out[1], ground)], self.paceOf(npc), None, None]
+                        npc.route = None
+                        if LEG_DEBUG:
+                            self.notify.info('NPC %s steps out of a crate to %s' % (npc.doId, out))
+                        return True
+                return False
+        return False
+
     def outOfSweep(self, npc):
         """An NPC standing where a stomper slams across (the conveyor past
         the paint mixers) steps out of its way, to the nearer side."""
@@ -1020,6 +1073,26 @@ class NPCParty:
                     npc.route = None
                     if LEG_DEBUG:
                         self.notify.info('NPC %s steps out of stomper %s to %s' % (npc.doId, obj.doId, out))
+                    return True
+        return False
+
+    def farFromTop(self, npc, stop):
+        c = stop.center()
+        p = npc.getPos()
+        return math.hypot(c[0] - p[0], c[1] - p[1]) > stop.mover.halfSize + HOP_REACH or abs(c[2] - p[2]) > 3.5
+
+    def hopThroughCrate(self, npc, a, b):
+        """Whether the jump from a to b goes through a crate (a box whose
+        top is over the lower end of it)."""
+        grid = getattr(getattr(npc, 'onMover', None), 'grid', None)
+        if grid is None or not grid.solids:
+            return False
+        low = min(a[2], b[2])
+        for k in range(1, 10):
+            t = k / 10.0
+            x, y = a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t
+            for lo, hi in grid.solids:
+                if lo[0] < x < hi[0] and lo[1] < y < hi[1] and lo[2] - 3.0 < low < hi[2] - 0.5:
                     return True
         return False
 
@@ -1115,13 +1188,13 @@ class NPCParty:
             # its foot, half under the crate beside it): only the part
             # sticking out is stood on, never the part in the crate.
             grid = getattr(stop.mover, 'grid', None)
-            solid = grid is not None and grid.solids and stop.cells and \
-                any(grid.inSolid(center[0] + 1.5 * math.cos(a), center[1] + 1.5 * math.sin(a), center[2], 1.0)
-                    for a in [k * math.pi / 4 for k in range(8)] + [0.0]) or False
-            if solid:
-                home = stop.worldOf(stop.mover.centerLocal)
-                ox = sum(c[0] for c in stop.cells) * CELL / len(stop.cells) - home[0]
-                oy = sum(c[1] for c in stop.cells) * CELL / len(stop.cells) - home[1]
+            opening = getattr(stop.mover, 'openOffset', None)
+            if grid is not None and opening is not None:
+                ox, oy = opening
+                # (Clear of the crate at every stop it goes to.)
+                dz = [st.z - stop.z for st in stop.mover.stops]
+                def inCrate(x, y):
+                    return any(grid.inSolid(x, y, center[2] + z, 0.9) for z in dz)
                 best = None
                 for rr in (0.0, 0.5, 1.0, 1.5, 2.0):
                     for k in range(8):
@@ -1129,7 +1202,7 @@ class NPCParty:
                         spot = Point3(center[0] + ox + rr * math.cos(a), center[1] + oy + rr * math.sin(a), center[2])
                         if math.hypot(spot[0] - center[0], spot[1] - center[1]) > stop.mover.halfSize - 0.6:
                             continue
-                        if grid.inSolid(spot[0], spot[1], spot[2], 0.9):
+                        if inCrate(spot[0], spot[1]):
                             continue
                         apart = min([math.hypot(spot[0] - o[0], spot[1] - o[1]) for o in others] or [9.0])
                         score = (apart >= 2.2, -rr, apart)

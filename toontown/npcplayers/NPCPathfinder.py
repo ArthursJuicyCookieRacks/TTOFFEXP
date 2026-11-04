@@ -339,6 +339,35 @@ class GhostLift(Mover):
         return state is not None and state.getName() == 'moving'
 
 
+def beltOf(np):
+    """The conveyor belt a tread is on (its 'belt' node, with the clip
+    planes at its two ends), or None."""
+    anc = np.getParent()
+    for i in range(8):
+        if anc.isEmpty():
+            return None
+        if anc.getName() == 'belt':
+            head = anc.find('headClip')
+            tail = anc.find('tailClip')
+            if head.isEmpty() or tail.isEmpty():
+                return None
+            return (anc, min(head.getY(), tail.getY()), max(head.getY(), tail.getY()))
+        anc = anc.getParent()
+    return None
+
+
+def clipToBelt(points, belt, render):
+    """A tread's floor cut to the belt's ends: the treads run on past
+    them (hidden by its clip planes), floor that is not there to see."""
+    node, y0, y1 = belt
+    toBelt = render.getMat(node)
+    toRender = node.getMat(render)
+    local = [toBelt.xformPoint(p) for p in points]
+    if max(p[1] for p in local) <= y0 or min(p[1] for p in local) >= y1:
+        return None
+    return [toRender.xformPoint(Point3(p[0], min(max(p[1], y0), y1), p[2])) for p in local]
+
+
 class Wall:
     __slots__ = ('kind', 'points', 'normal', 'd', 'lo', 'hi', 'a', 'b', 'radius', 'name', 'front')
 
@@ -356,6 +385,7 @@ class Grid:
         self.walls = {}
         # Closed boxes (noteBox): (lo, hi) corners.
         self.solids = []
+        self.solidNames = {}
         self.ready = False
         self.links = {}
         self.movers, gears = findMovers(levels)
@@ -417,6 +447,7 @@ class Grid:
                 # A mirrored node turns its polygons' winding around.
                 flipped = mat.getUpper3().determinant() < 0
                 boxWalls = []
+                belt = beltOf(np)
                 for i in range(node.getNumSolids()):
                     solid = node.getSolid(i)
                     if not solid.isTangible():
@@ -435,6 +466,10 @@ class Grid:
                         # (A floor faces up: one facing down is the
                         # underside of something, stood on by nobody.)
                         if mask & FLOOR and facing[2] > 0.35:
+                            if belt is not None:
+                                points = clipToBelt(points, belt, render)
+                                if points is None:
+                                    continue
                             self.addFloor(points, normal)
                         elif mask & WALL:
                             self.addWallPolygon(points, normal, facing)
@@ -456,6 +491,11 @@ class Grid:
         big metal crates): the inside is solid. A platform's top that slides
         into it (a paint mixer down at its foot) is no place to stand."""
         if len(walls) < 4:
+            return
+        if np is not None and ('stomper' in str(np).lower() or 'cratecollision' in str(np).lower()):
+            # (A stomper's housing: the toons wait beside it, under its
+            # head, for it to go up; or a crate the toons push about: no
+            # fixed box.)
             return
         pts = [p for poly, f in walls for p in poly]
         lo = [min(p[k] for p in pts) for k in range(3)]
@@ -484,7 +524,7 @@ class Grid:
             # mints' big crates stick out a few feet past them): the drawn
             # one, so no toon stands half in it.
             model = np.getParent().getParent() if np is not None and not np.getParent().isEmpty() else None
-            if model is not None and not model.isEmpty():
+            if model is not None and not model.isEmpty() and ('crate' in model.getName().lower() or 'box' in model.getName().lower()):
                 try:
                     vb = model.getTightBounds(getClientBuiltin('base').render)
                 except Exception:
@@ -496,6 +536,7 @@ class Grid:
                         lo = [min(lo[0], vlo[0]), min(lo[1], vlo[1]), lo[2]]
                         hi = [max(hi[0], vhi[0]), max(hi[1], vhi[1]), max(hi[2], vhi[2])]
             self.solids.append((lo, hi))
+            self.solidNames[id(lo)] = '/'.join(str(np).split('/')[-4:]) if np is not None else ''
 
     def inSolid(self, x, y, z, margin=0.0):
         """Whether a toon standing at the spot is inside one of the boxes."""
@@ -581,6 +622,10 @@ class Grid:
                     # (Part of the top in a crate at this stop: one at a
                     # time on the rest, never two squeezed side by side.)
                     stop.capacity = 1
+                    # Where the open part's middle is, from the top's middle
+                    # (the same at every stop: riders keep their place).
+                    mover.openOffset = (sum(c[0] for c in stop.cells) * CELL / len(stop.cells) - world[0],
+                                        sum(c[1] for c in stop.cells) * CELL / len(stop.cells) - world[1])
                 cx, cy = cellOf(world[0], world[1])
                 stop.node = (cx, cy, stop.z, 'stop%d-%d' % (id(mover), stop.index))
                 self.stops[stop.node] = stop
@@ -592,6 +637,17 @@ class Grid:
                                 lst = self.stopAdj.setdefault(c, [])
                                 if stop not in lst:
                                     lst.append(stop)
+            if mover.liftDoId is None and getattr(mover, 'openOffset', None) is not None:
+                # (A rider stays on between stops: the part of the top that
+                # is in the crate at one stop is no place at any.)
+                for st in mover.stops:
+                    for other in mover.stops:
+                        if other is st:
+                            continue
+                        dx, dy = other.local[0] - st.local[0], other.local[1] - st.local[1]
+                        if abs(dx) > 0.5 or abs(dy) > 0.5:
+                            continue
+                        st.cells = set(c for c in st.cells if not self.inSolid(c[0] * CELL, c[1] * CELL, other.z, 0.5))
             if mover.stops:
                 # (Riders stay on between stops: the tightest one counts.)
                 least = min(getattr(st, 'capacity', mover.capacity) for st in mover.stops)

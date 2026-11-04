@@ -1162,6 +1162,19 @@ class NPCFacilities:
                     npc.walk[0] = [delta.xformPoint(Point3(w)) for w in npc.walk[0]]
                     npc.moveTo(moved[0], moved[1], moved[2], npc.getH())
                 return
+            top = stop.center()
+            if math.hypot(moved[0] - top[0], moved[1] - top[1]) < getattr(mover, 'halfSize', 2.0) + 0.3 and abs(moved[2] - top[2]) < 3.0:
+                # Standing on the top, on it: never sunk into it (it moved
+                # on while the NPC was landing).
+                # (A little ahead while it rises: the toon is drawn a beat
+                # behind where the district puts it.)
+                now = globalClock.getFrameTime()
+                last = getattr(npc, 'lastTop', None)
+                lead = 0.0
+                if last is not None and last[0] is mover and now - last[1] > 0.0:
+                    lead = max(0.0, min(1.5, (top[2] - last[2]) / (now - last[1]) * 0.3))
+                npc.lastTop = (mover, now, top[2])
+                moved = Point3(moved[0], moved[1], top[2] + lead)
             if (moved - pos).length() > 0.02:
                 npc.moveTo(moved[0], moved[1], moved[2], npc.getH())
                 npc.riding = True
@@ -1190,6 +1203,23 @@ class NPCFacilities:
         if rideState is not None and rideState[0] == into and not rideState[0].isEmpty():
             world = base.render.getRelativePoint(into, rideState[1])
             moved = Point3(world[0], world[1], world[2])
+            from toontown.npcplayers.NPCPathfinder import getPathfinder
+            grids = list(getPathfinder().grids.values())
+            if any(g.inSolid(moved[0], moved[1], moved[2], 0.3) for g in grids):
+                # Its toes on a mixer's rim at a crate's edge, the mixer
+                # going down into the crate: it steps in toward the middle
+                # of the top, out of the crate, and rides on there.
+                mid = into.getBounds().getCenter()
+                mid = base.render.getRelativePoint(into, mid)
+                d = Vec3(mid[0] - moved[0], mid[1] - moved[1], 0)
+                if d.length() > 0.1:
+                    d.normalize()
+                    for step in (0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0):
+                        q = Point3(moved[0] + d[0] * step, moved[1] + d[1] * step, moved[2])
+                        if not any(g.inSolid(q[0], q[1], q[2], 0.3) for g in grids):
+                            moved = q
+                            npc.ride = (into, into.getRelativePoint(base.render, q))
+                            break
             if (moved - pos).length() > 0.02:
                 npc.moveTo(moved[0], moved[1], moved[2], npc.getH())
                 npc.riding = True
