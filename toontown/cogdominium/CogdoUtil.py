@@ -265,3 +265,28 @@ BOX_CLIP_Z = -1.27 + 2.45 * 0.18
 
 def clipToBox(node, z = BOX_CLIP_Z):
     node.setEffect(ScissorEffect.makeNode(Point3(-10, 0, z), Point3(10, 0, 10), aspect2d))
+
+
+def makeOilSlick(parent, radius, pick=0, h=0.0):
+    """A pool of spilled oil lying flat on a table or floor, `radius` ft
+    across at scale 1: one of the game's own ground-oil decals, picked by
+    `pick` and turned `h` degrees (so no two slicks look alike)."""
+    from panda3d.core import CardMaker, TransparencyAttrib, SamplerState
+    from toontown.cogdominium import CogdoBoardroomGameConsts as Consts
+    names = Consts.OilTextures
+    name = names[pick % len(names)]
+    tex = loader.loadTexture(name, name.replace('.jpg', '_a.rgb'))
+    tex.setMinfilter(SamplerState.FT_linear_mipmap_linear)
+    cm = CardMaker('oilSlick')
+    # The decals' oil fills most of the square, not all of it.
+    cm.setFrame(-radius * 1.15, radius * 1.15, -radius * 1.15, radius * 1.15)
+    slick = parent.attachNewNode(cm.generate())
+    slick.setP(-90)
+    slick.setH(h)
+    slick.setTexture(tex)
+    slick.setTransparency(TransparencyAttrib.MAlpha)
+    slick.setDepthOffset(2)
+    slick.setDepthWrite(False)
+    slick.setLightOff()
+    slick.setBin('fixed', 0)
+    return slick

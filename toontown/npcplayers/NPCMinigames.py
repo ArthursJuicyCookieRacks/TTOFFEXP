@@ -1863,6 +1863,15 @@ class CogdoBoardroomPlayer(CogdoPlayer):
         # On an oil slick the steering barely grips and the NPC drifts, as
         # the player does (the NPCs used to ignore the slicks).
         slick = self._onSlick(x, y, t)
+        if slick and not crashed:
+            # Oil slows it, spins it round once and shoves it, as the
+            # player (never a hit: Arthur).
+            if not self.memo.get('onSlick') and t >= self.memo.get('slickSpin', -99) + BoardroomConsts.SlickSpinCooldown:
+                self.memo['slickSpin'] = t
+                speed *= 0.7
+                self.memo['steerVel'] = self.memo.get('steerVel', 0.0) + random.choice((-1, 1)) * BoardroomConsts.SlickShove * BoardroomConsts.SteerSpeed
+            speed = min(speed, BoardroomConsts.SlideSpeed * BoardroomConsts.SlickSpeed)
+        self.memo['onSlick'] = bool(slick)
         grip = BoardroomConsts.SlickGrip if slick else 1.0
         vel = self.memo.get('steerVel', 0.0)
         vel += (steer * BoardroomConsts.SteerSpeed - vel) * min(1.0, grip * dt * 10.0)
@@ -1947,7 +1956,9 @@ class CogdoBoardroomPlayer(CogdoPlayer):
         if hop:
             z += 2.0
         z = max(z, layout.heightAt(nx, ny))
-        self.npc.moveTo(nx, ny, z, 0)
+        spun = t - self.memo.get('slickSpin', -99)
+        heading = (720.0 * spun / BoardroomConsts.SlickSpinTime) % 360 if 0 <= spun < BoardroomConsts.SlickSpinTime else 0
+        self.npc.moveTo(nx, ny, z, heading)
         for j, (mx, my, mz) in enumerate(layout.memos):
             if j not in game.memosTaken and abs(mx - nx) < BoardroomConsts.PickupRadius and abs(my - ny) < BoardroomConsts.PickupRadius \
                     and -1.5 < z - mz < 3.5:

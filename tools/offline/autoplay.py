@@ -4976,65 +4976,77 @@ def scenarioDoubleXp():
 
 
 def useCogSummons(shots, prefix='summons'):
-    # A field office reward in use: the Shticker Book's Cog Gallery, the
-    # summoned cog's panel, Issue Summons, a single cog, Yes; then out on
-    # the street find that cog and fight it.
+    # A field office reward in use: SpeedChat's Summons menu, the cog's
+    # department, the cog, Yes; then out on the street find that cog and
+    # fight it.
     from toontown.suit import SuitDNA
-    from toontown.toonbase import ToontownGlobals as TG
+    from toontown.toonbase import TTLocalizer
+    from toontown.speedchat import TTSCSummonsMenu
     from direct.gui import DirectGuiGlobals as DGG
-    have = [i for i in range(len(SuitDNA.suitHeadTypes)) if localAvatar.hasCogSummons(i, 'single')]
-    log('single summons held: %s' % ', '.join(SuitDNA.suitHeadTypes[i] for i in have))
+    os.makedirs(shots, exist_ok=True)
+    held = localAvatar.getMiniSummons()
+    have = [i for i in range(len(SuitDNA.suitHeadTypes)) if held[i] > 0]
+    log('mini summons held: %s' % ', '.join('%s x%d' % (SuitDNA.suitHeadTypes[i], held[i]) for i in have))
     if not have:
-        raise StepFailed('no single summons to use')
+        raise StepFailed('no mini summons to use')
     index = have[0]
     name = SuitDNA.suitHeadTypes[index]
-    yield until(walking, 60, 'walking before opening the book')
+    yield until(walking, 60, 'walking before SpeedChat')
     before = set(s.doId for s in suitsNearby())
-    place().fsm.request('stickerBook')
-    yield until(lambda: place().isAccepting('bookDone'), 30, 'the Shticker Book open')
-    book = localAvatar.book
-    page = book.pages[[p.__class__.__name__ for p in book.pages].index('SuitPage')]
-    book.setPage(page)
-    yield sleep(1.5)
-    panel = page.panels[index]
-    try:
-        page.showPanel(panel) if hasattr(page, 'showPanel') else None
-    except Exception:
-        pass
-    base.screenshot(os.path.join(shots, '%s-1-gallery.png' % prefix), defaultFilename=0)
-    if not getattr(panel, 'summonButton', None):
-        page.addSummonButton(panel)
-    page.summonButtonPressed(panel)
-    yield sleep(1.5)
-    base.screenshot(os.path.join(shots, '%s-2-dialog.png' % prefix), defaultFilename=0)
-    dialog = page.summonDialog
-    dialog.issueSummons('single')
-    yield sleep(1.2)
-    base.screenshot(os.path.join(shots, '%s-3-confirm.png' % prefix), defaultFilename=0)
+    sc = localAvatar.chatMgr.chatInputSpeedChat
+    sc.show()
+    yield sleep(0.5)
+    base.screenshot(os.path.join(shots, '%s-1-speedchat.png' % prefix), defaultFilename=0)
+    terminal = None
+    for holder in list(sc.speedChat):
+        if getattr(holder, 'getTitle', None) and holder.getTitle() == TTLocalizer.SCMenuSummons:
+            holder.showMenu()
+            yield sleep(0.5)
+            base.screenshot(os.path.join(shots, '%s-2-menu.png' % prefix), defaultFilename=0)
+            dept = index // SuitDNA.suitsPerDept
+            for sub in list(holder.getMenu()):
+                if getattr(sub, 'getTitle', None) and sub.getTitle() == TTLocalizer.SCSummonsDepts[dept]:
+                    sub.showMenu()
+                    yield sleep(0.5)
+                    base.screenshot(os.path.join(shots, '%s-3-cogs.png' % prefix), defaultFilename=0)
+                    terminal = [t for t in sub.getMenu() if getattr(t, 'suitIndex', None) == index][0]
+    if terminal is None:
+        raise StepFailed('no %s in the SpeedChat Summons menu' % name)
+    terminal.handleSelect('mouse1')
+    sc.hide()
+    yield sleep(1.0)
+    base.screenshot(os.path.join(shots, '%s-4-confirm.png' % prefix), defaultFilename=0)
     responses = []
-    localAvatar.accept('cog-summons-response', lambda *a: responses.append(a))
-    dialog.popup['command'](DGG.DIALOG_OK)
+    localAvatar.accept('mini-summons-response', lambda *a: responses.append(a))
+    TTSCSummonsMenu._dialog['command'](DGG.DIALOG_OK)
     yield until(lambda: responses, 30, 'the summons answer')
     yield sleep(1.5)
-    base.screenshot(os.path.join(shots, '%s-4-answer.png' % prefix), defaultFilename=0)
-    log('summons %s answer: %s' % (name, responses[0]))
+    base.screenshot(os.path.join(shots, '%s-5-answer.png' % prefix), defaultFilename=0)
+    log('summons %s answer: %s, now holding %d' % (name, responses[0], localAvatar.getMiniSummons()[index]))
     if responses[0][0] != 'success':
         raise StepFailed('summons failed: %s' % (responses[0],))
-    # Done: close the dialog and the book.
-    try:
-        dialog.cogSummonsDone(*responses[0]) if False else None
-        messenger.send(dialog.doneEvent)
-    except Exception as e:
-        log('closing summons dialog: %r' % e)
-    yield sleep(0.5)
-    book.doneStatus = {'mode': 'close'}
-    messenger.send(book.doneEvent)
-    yield until(walking, 60, 'walking after the book')
-    yield until(lambda: [s for s in suitsNearby() if s.doId not in before and s.dna.name == name], 60, 'the summoned %s' % name)
+    yield until(walking, 60, 'walking after the summons')
+    if base.cr.playGame.getPlace().__class__.__name__ != 'Street' and 'Street' not in base.cr.playGame.getPlace().__class__.__name__:
+        log('BUG: after the summons the toon is in %s' % base.cr.playGame.getPlace().__class__.__name__)
+    def aiSuits(air, name):
+        out = []
+        for do in list(air.doId2do.values()):
+            dna = getattr(do, 'dna', None)
+            if getattr(dna, 'name', None) == name and hasattr(do, 'pathState'):
+                out.append('%d zone %s state %s pathState %s battle %s' % (do.doId, do.zoneId, getattr(getattr(do, 'fsm', None), 'getCurrentState', lambda: None)(),
+                                                                       do.pathState, getattr(do, 'battle', None) is not None))
+        return '; '.join(out) or 'none'
+    deadline = time.time() + 60
+    while time.time() < deadline and not [s for s in suitsNearby() if s.doId not in before and s.dna.name == name]:
+        yield sleep(2)
+    if not [s for s in suitsNearby() if s.doId not in before and s.dna.name == name]:
+        log('SUMMONCHECK AI %s: %s; client sees %s; toon zone %s' % (name, onDistrict(aiSuits, name),
+            [(s.dna.name, s.zoneId) for s in suitsNearby()], localAvatar.zoneId))
+    yield until(lambda: [s for s in suitsNearby() if s.doId not in before and s.dna.name == name], 1, 'the summoned %s' % name)
     suit = [s for s in suitsNearby() if s.doId not in before and s.dna.name == name][0]
     log('summoned %s (level %d) is here' % (name, suit.getActualLevel() if hasattr(suit, 'getActualLevel') else -1))
     yield sleep(3)
-    base.screenshot(os.path.join(shots, '%s-5-cog.png' % prefix), defaultFilename=0)
+    base.screenshot(os.path.join(shots, '%s-6-cog.png' % prefix), defaultFilename=0)
     end = time.time() + 40
     while placeState() == 'walk' and not suit.isEmpty() and time.time() < end:
         localAvatar.setPos(render, suit.getPos(render))
@@ -5048,7 +5060,8 @@ def scenarioUseSummons():
     street = ToontownGlobals.SillyStreet
     yield from teleport(street - street % 1000, firstVisgroup(street))
     onDistrict(restock, localAvatar.doId)
-    onDistrict(lambda air, avId: air.doId2do[avId].assignNewCogSummons(3, 'single', 0), localAvatar.doId)
+    lvl, dept = [int(v) for v in os.environ.get('AUTOPLAY_SUMMON_COG', '3,0').split(',')]
+    onDistrict(lambda air, avId: air.doId2do[avId].addMiniSummons(dept * 8 + lvl), localAvatar.doId)
     yield sleep(2)
     yield from useCogSummons(os.environ.get('AUTOPLAY_SHOTS', '/tmp'))
 

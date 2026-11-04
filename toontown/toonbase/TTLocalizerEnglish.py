@@ -10189,7 +10189,14 @@ CogdoExecutiveSuiteTitle = 'Executive Suite'
 CogdoExecutiveSuiteIntroMessage = "Oh no, they've got the shop keeper!\nDefeat the Cogs and free the captive."
 CogdoExecutiveSuiteToonThankYou = 'Thanks for the rescue!\nIf you need help in a fight, use this SOS card to call my friend %s.'
 CogdoExecutiveSuiteToonThankYouMini = "Thanks for the rescue!\nHere are some Mini Unites: tiny Toon-ups, Gag-ups and Jellybeans.\x07Say them from the Unites part of SpeedChat when you need a little help."
-CogdoExecutiveSuiteToonThankYouSummons = "Thanks for the rescue! The Bossbots left these Cog Summons in the boardroom, and now they're yours. Each one calls just one Cog, so use them when you need them!"
+CogdoExecutiveSuiteToonThankYouSummons = "Thanks for the rescue! The Bossbots left these Cog Summons in the boardroom, and now they're yours. Each one calls just one Cog, of any kind. Find them under Summons in your SpeedChat!"
+SCMenuSummons = 'SUMMONS'
+SCSummonsNone = 'No summons yet'
+SCSummonsDepts = ('Bossbots', 'Lawbots', 'Cashbots', 'Sellbots')
+SCSummonsConfirm = 'Summon one %s here? It will appear on this street.'
+SCSummonsSuccess = 'Your %s summons worked! The Cog is on its way.'
+SCSummonsBadLoc = "A %s can't be summoned here. Try a street with Cogs on it."
+SCSummonsFail = "That summons didn't work."
 CogdoExecutiveSuiteToonBye = 'Bye!'
 SillySurgeTerms = {1: 'Amusing Ascent!',
  2: 'Silly Surge!',

@@ -287,13 +287,9 @@ class CogdoBoardroomRoom:
             self.oilCanModels.append(can)
             # Its spill, ready to spread when it is knocked over.
             sx, sy, r = self.layout.slickAt(i)
-            slick = loader.loadModel('phase_3/models/props/drop_shadow')
-            slick.reparentTo(cans)
+            # The game's own spilled-oil decal (Arthur), not a dark shadow.
+            slick = CogdoUtil.makeOilSlick(cans, r, pick=i, h=(i * 137) % 360)
             slick.setPos(sx, sy, Consts.TableTop + 0.03)
-            slick.setScale(r * 2.0 / 2.2)
-            slick.setColor(0.08, 0.07, 0.05, 0.85)
-            slick.setTransparency(TransparencyAttrib.MAlpha)
-            slick.setDepthOffset(2)
             slick.hide()
             self.slickModels.append(slick)
 

@@ -1119,6 +1119,9 @@ dclass DistributedToon : DistributedPlayer {
   setCogSummonsEarned(uint8 cogSummonsEarned[] = [0*32]) required ownrecv db;
   reqCogSummons(char type[0-256], uint32 suitIndex) ownsend airecv;
   cogSummonsResponse(string returnCode, uint32 suitIndex, uint32 doId) ownrecv;
+  setMiniSummons(uint8 miniSummons[] = [0*32]) required ownrecv db;
+  reqMiniSummons(uint32 suitIndex) ownsend airecv;
+  miniSummonsResponse(string returnCode, uint32 suitIndex) ownrecv;
   reqUseSpecial(int32 special) ownsend airecv;
   useSpecialResponse(string returnCode) ownrecv;
   setGardenStarted(uint8 bStarted = 0) required ownrecv db;

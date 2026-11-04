@@ -1958,6 +1958,32 @@ class DistributedToon(DistributedPlayer.DistributedPlayer, Toon.Toon, Distribute
     def cogSummonsResponse(self, returnCode, suitIndex, doId):
         messenger.send('cog-summons-response', [returnCode, suitIndex, doId])
 
+    # Mini summons (the field offices' reward), used from SpeedChat's
+    # Summons menu: a count for each of the 32 cogs.
+    def setMiniSummons(self, miniSummons):
+        self.miniSummons = list(miniSummons)
+        messenger.send('miniSummonsChanged')
+
+    def getMiniSummons(self):
+        return getattr(self, 'miniSummons', None) or [0] * 32
+
+    def d_reqMiniSummons(self, suitIndex):
+        self.sendUpdate('reqMiniSummons', [suitIndex])
+
+    def miniSummonsResponse(self, returnCode, suitIndex):
+        from toontown.suit import SuitDNA
+        from toontown.battle import SuitBattleGlobals
+        name = SuitBattleGlobals.SuitAttributes[SuitDNA.suitHeadTypes[suitIndex]]['name']
+        if returnCode == 'success':
+            text = TTLocalizer.SCSummonsSuccess % name
+        elif returnCode == 'badlocation':
+            text = TTLocalizer.SCSummonsBadLoc % name
+        else:
+            text = TTLocalizer.SCSummonsFail
+        if self.isLocal():
+            self.setSystemMessage(0, text)
+        messenger.send('mini-summons-response', [returnCode, suitIndex])
+
     def setCogSummonsEarned(self, cogSummonsEarned):
         self.cogSummonsEarned = cogSummonsEarned
 

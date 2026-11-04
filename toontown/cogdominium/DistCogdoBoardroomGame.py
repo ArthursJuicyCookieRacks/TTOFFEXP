@@ -127,6 +127,7 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         self.dropSfx = loader.loadSfx('phase_5/audio/sfx/AA_drop_anvil.ogg')
         self.landSfx = loader.loadSfx('phase_5/audio/sfx/AA_drop_sandbag.ogg')
         self.oilSfx = loader.loadSfx('phase_9/audio/sfx/CHQ_FACT_stomper_small.ogg')
+        self.slipSfx = loader.loadSfx('phase_6/audio/sfx/KART_Skidding_On_Asphalt.ogg')
         self.exitSfx = loader.loadSfx('phase_5/audio/sfx/elevator_door_open.ogg')
         # The ride to the golf office, as between the other field offices'
         # floors.
@@ -332,6 +333,9 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         # that one (Arthur), till it is past it.
         self.passOb = None
         self.spinUntil = -1
+        self.spinTime = Consts.SpinTime
+        self.wasOnSlick = False
+        self.slickSpinAt = -99
         self.stuckTime = 0.0
         self.launched = set()
         self._task = taskMgr.add(self._update, self.uniqueName('update'), priority=35)
@@ -641,6 +645,21 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
             steer = 0.0
             self.slideSpeed = 0.0
             self.steerVel = 0.0
+        if slick and now >= self.crashUntil:
+            # Oil (Arthur): never a hit, but the toon skids. Onto a slick it
+            # loses speed, spins round once and gets shoved to a side; while
+            # on it, it goes slower and the steering slips.
+            if not self.wasOnSlick and now >= self.slickSpinAt + Consts.SlickSpinCooldown:
+                self.slickSpinAt = now
+                self.notify.info('oil: skidded onto a slick at (%.1f, %.1f), speed %.1f' % (pos[0], pos[1], self.slideSpeed))
+                self.spinUntil = now + Consts.SlickSpinTime
+                self.spinTime = Consts.SlickSpinTime
+                self.slideSpeed *= 0.7
+                self.steerVel += random.choice((-1, 1)) * Consts.SlickShove * Consts.SteerSpeed
+                base.playSfx(self.slipSfx, volume=0.7) if getattr(self, 'slipSfx', None) else None
+            wanted = min(wanted, Consts.SlideSpeed * Consts.SlickSpeed)
+            steer += math.sin(now * 5.3) * 0.35
+        self.wasOnSlick = bool(slick)
         self.slideSpeed += max(-Consts.SlideAccel * 2 * dt, min(Consts.SlideAccel * dt, wanted - self.slideSpeed))
         grip = Consts.SlickGrip if slick else 1.0
         self.steerVel += (steer * Consts.SteerSpeed - self.steerVel) * min(1.0, grip * dt * 10.0)
@@ -689,7 +708,8 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         lean = -self.steerVel / Consts.SteerSpeed * 18.0
         spin = 0.0
         if now < self.spinUntil:
-            spin = 720.0 * (1.0 - (self.spinUntil - now) / Consts.SpinTime)
+            spinTime = getattr(self, 'spinTime', Consts.SpinTime)
+            spin = 720.0 * (1.0 - (self.spinUntil - now) / spinTime)
         toon.setH(render, lean + spin)
         self.lastPos = PM.Point3(pos)
         self._slideFx(toon, new, dt, now)
@@ -1012,14 +1032,9 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         if self.room is None:
             return
         base.playSfx(self.oilSfx, volume=0.8)
-        slick = loader.loadModel('phase_3/models/props/drop_shadow')
-        slick.reparentTo(self.sceneRoot)
+        slick = CogdoUtil.makeOilSlick(self.sceneRoot, Consts.ThrownSlickRadius, pick=random.randrange(3), h=random.uniform(0, 360))
         slick.setPos(x, y, z + 0.03)
-        slick.setColor(0.08, 0.07, 0.05, 0.85)
-        slick.setTransparency(PM.TransparencyAttrib.MAlpha)
-        slick.setDepthOffset(2)
-        scale = Consts.ThrownSlickRadius * 2.0 / 2.2
-        track = Sequence(LerpScaleInterval(slick, 0.6, scale, startScale=0.3),
+        track = Sequence(LerpScaleInterval(slick, 0.6, 1.0, startScale=0.3),
                          Wait(Consts.ThrownSlickDuration - 0.6 - 1.5),
                          LerpColorScaleInterval(slick, 1.5, PM.VBase4(1, 1, 1, 0)), Func(slick.removeNode))
         track.start()
@@ -1162,7 +1177,12 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         prop.setScale(self.propScales[kind])
         marker = self.marker.copyTo(self.sceneRoot)
         marker.setPos(x, y, z + 0.05)
-        marker.setColor(1, 0.1, 0.05, 0.7)
+        if kind == Consts.Oil:
+            # Oil doesn't hurt (Arthur): no red hit warning, just a faint
+            # dark shadow where the jug will splash.
+            marker.setColor(0.05, 0.05, 0.04, 0.35)
+        else:
+            marker.setColor(1, 0.1, 0.05, 0.7)
         marker.setTransparency(PM.TransparencyAttrib.MAlpha)
         marker.setDepthOffset(3)
         radius = Consts.ThrownSlickRadius if kind == Consts.Oil else Consts.Hazards[kind][3]
@@ -1242,7 +1262,7 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         x, y = self.layout.oilCans[can]
         side = 1 if x > 0 else -1
         sx, sy, r = self.layout.slickAt(can)
-        scale = r * 2.0 / 2.2
+        scale = 1.0
         track = Sequence(
             Func(base.playSfx, self.oilSfx, volume=1.0, node=drum),
             LerpHprInterval(drum, 0.6, PM.Vec3(0, 0, -side * 90), blendType='easeIn'),
@@ -1273,6 +1293,7 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
             # instead: see _crash).
             if kind != Consts.Obstacle:
                 self.spinUntil = self.gameTime() + Consts.SpinTime
+                self.spinTime = Consts.SpinTime
             self.carried = max(0, self.carried - memosLost)
             if memosLost:
                 base.localAvatar.setSystemMessage(0, TTL.BoardroomLostMemos % memosLost)

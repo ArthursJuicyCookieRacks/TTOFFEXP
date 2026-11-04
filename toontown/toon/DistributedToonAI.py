@@ -3571,6 +3571,39 @@ class DistributedToonAI(DistributedPlayerAI.DistributedPlayerAI, DistributedSmoo
             self.sendUpdate('cogSummonsResponse', returnCode)
         return
 
+    # Mini summons: one-cog summons won from the field offices (Arthur),
+    # kept apart from the boss battles' summons. A count per cog (32), used
+    # from SpeedChat's Summons menu.
+    def setMiniSummons(self, miniSummons):
+        self.miniSummons = list(miniSummons) + [0] * (len(SuitDNA.suitHeadTypes) - len(miniSummons))
+
+    def getMiniSummons(self):
+        return getattr(self, 'miniSummons', None) or [0] * len(SuitDNA.suitHeadTypes)
+
+    def b_setMiniSummons(self, miniSummons):
+        self.setMiniSummons(miniSummons)
+        self.sendUpdate('setMiniSummons', [self.getMiniSummons()])
+
+    def addMiniSummons(self, suitIndex, count=1):
+        summons = self.getMiniSummons()[:]
+        summons[suitIndex] = min(255, summons[suitIndex] + count)
+        self.b_setMiniSummons(summons)
+
+    def reqMiniSummons(self, suitIndex):
+        if suitIndex >= len(SuitDNA.suitHeadTypes) or self.getMiniSummons()[suitIndex] <= 0:
+            self.air.writeServerEvent('suspicious', avId=self.doId, issue='bogus mini summons')
+            self.sendUpdate('miniSummonsResponse', ['fail', suitIndex])
+            return
+        if ZoneUtil.isWelcomeValley(self.zoneId):
+            self.sendUpdate('miniSummonsResponse', ['badlocation', suitIndex])
+            return
+        returnCode = self.doSummonSingleCog(suitIndex)
+        if returnCode[0] == 'success':
+            summons = self.getMiniSummons()[:]
+            summons[suitIndex] -= 1
+            self.b_setMiniSummons(summons)
+        self.sendUpdate('miniSummonsResponse', [returnCode[0], suitIndex])
+
     def doSummonSingleCog(self, suitIndex):
         if suitIndex >= len(SuitDNA.suitHeadTypes):
             self.notify.warning('Bad suit index: %s' % suitIndex)

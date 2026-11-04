@@ -8,6 +8,7 @@ from toontown.speedchat import TTSpeedChatGlobals
 from toontown.speedchat import TTSCSingingTerminal
 from toontown.speedchat import TTSCIndexedTerminal
 from toontown.speedchat.TTSCToolsMenu import TTSCToolsMenu
+from toontown.speedchat.TTSCSummonsMenu import TTSCSummonsMenu
 from direct.showbase import DirectObject
 from direct.fsm import ClassicFSM, State
 from direct.fsm import State
@@ -499,6 +500,8 @@ class TTChatInputSpeedChat(DirectObject.DirectObject):
         structure.append([TTSCResistanceMenu, OTPLocalizer.SCMenuResistance])
         # Magic words for the offline game's player (MaxToon and restocks).
         structure.append([TTSCToolsMenu, 'TOOLS'])
+        # The field offices' mini summons (Arthur): picked here, not in the book.
+        structure.append([TTSCSummonsMenu, TTLocalizer.SCMenuSummons])
         if hasattr(base, 'wantPets') and base.wantPets:
             structure += scPetMenuStructure
         if config.ConfigVariableBool('want-doomsday', False).getValue():

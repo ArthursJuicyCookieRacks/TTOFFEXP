@@ -538,19 +538,22 @@ class DistributedCogdoInteriorAI(DistributedObjectAI):
         level = int(self.bldg.difficulty) // 2 + 1
         count = 1 if level <= 2 else 2 if level == 3 else 3
         cogs = [(dept, lvl) for dept in range(len(SuitDNA.suitDepts)) for lvl in range(SuitDNA.suitsPerDept)]
-        # Ones the toon doesn't have yet first, if there are enough.
-        fresh = [c for c in cogs if not toon.hasParticularCogSummons(c[0], c[1], 'single')]
+        # Mini summons, kept apart from the boss battles' summons and used
+        # from SpeedChat's Summons menu (Arthur). Ones the toon doesn't have
+        # yet first, if there are enough.
+        held = toon.getMiniSummons() if hasattr(toon, 'getMiniSummons') else [0] * len(SuitDNA.suitHeadTypes)
+        fresh = [c for c in cogs if not held[c[0] * SuitDNA.suitsPerDept + c[1]]]
         picks = random.sample(fresh, min(count, len(fresh)))
         if len(picks) < count:
             rest = [c for c in cogs if c not in picks]
             picks += random.sample(rest, count - len(picks))
         names = []
         for dept, lvl in picks:
-            toon.assignNewCogSummons(lvl, 'single', dept)
+            toon.addMiniSummons(dept * SuitDNA.suitsPerDept + lvl)
             names.append(SuitDNA.suitHeadTypes[dept * SuitDNA.suitsPerDept + lvl])
         self.rewardSummons = getattr(self, 'rewardSummons', {})
         self.rewardSummons[toon.doId] = picks
-        self.notify.info('%s gets %d single summons (level %d office): %s' % (toon.doId, count, level, ', '.join(names)))
+        self.notify.info('%s gets %d mini summons (level %d office): %s' % (toon.doId, count, level, ', '.join(names)))
 
     def enterFailed(self):
         # A game made for a ride nobody finished.

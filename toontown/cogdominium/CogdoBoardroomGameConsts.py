@@ -207,7 +207,19 @@ SlickDuration = 14.0
 # On a slick the toon keeps sliding the way it went: this much of its run
 # speed is lost a second, and its steering counts for this little.
 SlickFriction = 0.6
-SlickGrip = 0.12
+SlickGrip = 0.22
+# Oil never hurts (Arthur): it slows the toon (down to this much of the
+# slide speed while on it), spins it round once as it skids on, and its
+# steering slips (SlickGrip, plus a shove to one side on the way in).
+SlickSpeed = 0.6
+SlickSpinTime = 1.2
+SlickSpinCooldown = 2.5
+SlickShove = 0.45
+# The oil itself: the game's own spilled-oil decals (the resistance
+# hideout's ground oil), one picked for each slick.
+OilTextures = ('phase_9/maps/ttr_t_ara_shq_resistanceProps_GroundOil1.jpg',
+               'phase_9/maps/ttr_t_ara_shq_resistanceProps_GroundOil2.jpg',
+               'phase_9/maps/ttr_t_ara_shq_resistanceProps_GroundOil3.jpg')
 InvulnerableTime = 8.0
 HopTime = 10.0
 HopJumpForce = 38.0
