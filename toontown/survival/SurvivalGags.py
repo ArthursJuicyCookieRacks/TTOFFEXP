@@ -171,6 +171,8 @@ SOUND_MIRROR = True
 # How much of the battle hold's bent wrist is straightened (1: the forearm
 # carries on in line with the hand).
 SOUND_WRIST_STRAIGHT = 0.5
+# How much of that swing the glove's cuff follows (1: all, with the sleeve).
+CUFF_FOLLOW = 1.0
 # Mirrored, the body is cut away inward of the holding shoulder, from this
 # far out (0 the middle between the shoulders, 1 the holding shoulder):
 # these parts. Only the holding arm is left.
@@ -313,6 +315,45 @@ def convexHull(points):
             upper.pop()
         upper.append(p)
     return lower[:-1] + upper[:-1]
+
+
+def heightIn(tri, x, y):
+    """The height of triangle tri (three points) above (x, y), or None if
+    (x, y) is not under it."""
+    a, b, c = tri
+    d = (b[1] - c[1]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[1] - c[1])
+    if abs(d) < 1e-12:
+        return None
+    l1 = ((b[1] - c[1]) * (x - c[0]) + (c[0] - b[0]) * (y - c[1])) / d
+    l2 = ((c[1] - a[1]) * (x - c[0]) + (a[0] - c[0]) * (y - c[1])) / d
+    l3 = 1.0 - l1 - l2
+    if l1 < -1e-6 or l2 < -1e-6 or l3 < -1e-6:
+        return None
+    return l1 * a[2] + l2 * b[2] + l3 * c[2]
+
+
+def propTriangles(prop, space):
+    """The prop's triangles, in space's coordinates."""
+    from panda3d.core import GeomVertexReader
+    tris = []
+    for np in prop.findAllMatches('**/+GeomNode'):
+        if np.isHidden():
+            continue
+        mat = np.getMat(space)
+        node = np.node()
+        for i in range(node.getNumGeoms()):
+            geom = node.getGeom(i)
+            reader = GeomVertexReader(geom.getVertexData(), 'vertex')
+            points = []
+            while not reader.isAtEnd():
+                points.append(mat.xformPoint(reader.getData3()))
+            for k in range(geom.getNumPrimitives()):
+                prim = geom.getPrimitive(k).decompose()
+                for t in range(prim.getNumPrimitives()):
+                    start, end = prim.getPrimitiveStart(t), prim.getPrimitiveEnd(t)
+                    if end - start == 3:
+                        tris.append(tuple(points[prim.getVertex(j)] for j in range(start, end)))
+    return tris
 
 
 def insideConvex(hull, p):
@@ -666,16 +707,27 @@ class ToonArms:
         aboveInv.invertInPlace()
         parent = self.toon.getParent()
         start = self.toon.getMat()
+        # The glove's cuff (the collar joint, under the wrist) turns with the
+        # sleeve, so no gap opens between them (Arthur: "a weird invisible
+        # line" on the glove).
+        collar = self.toon.getPartBundle('torso', lod).findChild('def_%s_collar' % side)
+        cuff = LMatrix4(collar.getTransformState().getMat()) if collar is not None else None
+        netInv = LMatrix4(net)
+        netInv.invertInPlace()
         self.releaseWrist()
         nodes = []
+        cuffs = []
         for name in self.toon.getLODNames():
-            try:
-                node = self.toon.controlJoint(None, 'torso', 'def_%s_wrist' % side, lodName=name)
-            except Exception:
-                node = None
-            if node is not None and not node.isEmpty():
-                nodes.append(node)
-                self.wristHeld.append(('def_%s_wrist' % side, name, node))
+            for joint, into in (('wrist', nodes), ('collar', cuffs)):
+                if joint == 'collar' and cuff is None:
+                    continue
+                try:
+                    node = self.toon.controlJoint(None, 'torso', 'def_%s_%s' % (side, joint), lodName=name)
+                except Exception:
+                    node = None
+                if node is not None and not node.isEmpty():
+                    into.append(node)
+                    self.wristHeld.append(('def_%s_%s' % (side, joint), name, node))
         # As straight as it goes with the cut-off shoulder still out of the
         # frame (grown to hide it, the glove would come out bigger).
         steps = 10
@@ -688,6 +740,11 @@ class ToonArms:
             self.toon.setMat(start * parent.getMat(camera) * turn * camera.getMat(parent))
             for node in nodes:
                 node.setMat(local * above * back * aboveInv)
+            if cuffs:
+                follow = LMatrix4.translateMat(-at) * LMatrix4.rotateMat(angle * CUFF_FOLLOW, axis) \
+                    * LMatrix4.translateMat(at)
+                for node in cuffs:
+                    node.setMat(cuff * net * follow * netInv)
             self.toon.update(force=True)
             if not self.shoulderInView(side):
                 break
@@ -1263,6 +1320,37 @@ class GagHandler:
         prop.setMat(hand, mat)
         self.keptScale = size
 
+    def restOnGlove(self, prop, hand):
+        """Stand the prop on the glove's surface itself, measured point by
+        point both ways: no corner of the prop below the glove under it, no
+        bit of glove above the prop's underside (Arthur: the ship sank into
+        the hand where the palm curves up; the old lift only looked at the
+        glove's corners under the middle of its box)."""
+        glove = self.arms.gloveTriangles(RIGHT, hand)
+        own = propTriangles(prop, hand)
+        if not glove or not own:
+            return
+        need = None
+        # The prop's corners against the glove's top, and the glove's
+        # corners against the prop's underside.
+        for points, faces, sign in (([p for t in own for p in t], glove, 1),
+                                    ([p for t in glove for p in t], own, -1)):
+            boxes = [(min(q[0] for q in t), max(q[0] for q in t), min(q[1] for q in t), max(q[1] for q in t), t)
+                     for t in faces]
+            for p in points:
+                for x0, x1, y0, y1, t in boxes:
+                    if not (x0 <= p[0] <= x1 and y0 <= p[1] <= y1):
+                        continue
+                    z = heightIn(t, p[0], p[1])
+                    if z is None:
+                        continue
+                    # How far the prop must rise for this pair to clear.
+                    gap = (z - p[2]) if sign > 0 else (p[2] - z)
+                    if need is None or gap > need:
+                        need = gap
+        if need is not None:
+            prop.setPos(hand, prop.getPos(hand) + Vec3(0, 0, need + CLEAR_GAP))
+
     def seatInHold(self, prop, name):
         """Stand the prop in the open palm: upright on the hold joint (the
         way the battle holds a pie), centred on it, its bottom just in."""
@@ -1292,6 +1380,8 @@ class GagHandler:
             prop.setPos(camera, prop.getPos(camera) + HOLD_NUDGE[name])
         if name in KEEP_ON_GLOVE:
             self.keepOnGlove(prop, hand)
+            self.restOnGlove(prop, hand)
+            return
         # Nothing of the glove pokes up through the gag: its bottom is
         # lifted to the highest bit of glove under its middle.
         low, high = prop.getTightBounds(hand)
