@@ -1059,7 +1059,9 @@ class ToyboxTerrace(PreviewMap):
         n = 72
         # The three docks' angles round the rim (degrees, 0 = east).
         docks = (20.0, 75.0, 140.0)
-        dockW = 3.6
+        # Wide enough for the biggest cogs to walk out after a toon (at 3.6
+        # they crowded at the foot of a dock and never got onto it).
+        dockW = 5.4
         # Each dock's line in from the rim: the rim opens only where a dock
         # crosses it (wider, and toons slipped past a dock into the water).
         dockLines = []
@@ -1117,7 +1119,7 @@ class ToyboxTerrace(PreviewMap):
             h = math.degrees(math.atan2(-inward[0], inward[1]))
             dg = self.place((edge[0], edge[1], 0), h)
             L = 14.0
-            w = 3.6
+            w = dockW
             dg.box((-w, -4.0, 0.0), (w, L, 0.5), PLANK, (0.98, 0.86, 0.66, 1), tile=6)
             for yy in (2.5, L - 1.0):
                 for sx in (-1, 1):
