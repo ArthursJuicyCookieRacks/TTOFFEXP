@@ -127,32 +127,8 @@ class BoardroomLayout:
                 w = rng.uniform(3.0, 3.8)
                 self.obstacles.append(Obstacle(PILE, rng.choice((-1, 1)) * (half - w), mid + 10.0, w, 2.0,
                                                rng.uniform(*Consts.PileHeight)))
-            # The memos for this stretch: on the table round the obstacle,
-            # and on top of a pile now and then.
-            count = rng.randint(*Consts.MemosPerSegment)
-            for i in range(count):
-                for tries in range(20):
-                    mx = rng.uniform(-half + 1.0, half - 1.0)
-                    my = rng.uniform(y0 + 2.0, y0 + Consts.SegmentLength - 2.0)
-                    if not self.blockedAt(mx, my, 1.4):
-                        self.memos.append((mx, my, Consts.TableTop))
-                        break
-            for pile in tops:
-                if rng.random() < 0.85:
-                    self.memos.append((pile.x, pile.y, Consts.TableTop + pile.h))
-        # The power-ups, spread out along the table, in the open.
-        kinds = [INVULNERABLE] * Consts.NumInvulnerable + [HOP] * Consts.NumHop
-        rng.shuffle(kinds)
-        span = (end - start) / float(len(kinds) + 1)
-        for i, kind in enumerate(kinds):
-            for tries in range(30):
-                px = rng.uniform(-half + 2.0, half - 2.0)
-                py = start + span * (i + 1) + rng.uniform(-span * 0.3, span * 0.3)
-                if not self.blockedAt(px, py, 2.0) and not self._nearMemo(px, py, 2.5):
-                    self.powerUps.append((kind, px, py))
-                    break
-
         self._widen(half)
+        self._layRoute(rng, start, end)
 
     def _widen(self, half):
         # From the layout's width out to the table's: a pile against the
@@ -190,6 +166,158 @@ class BoardroomLayout:
             memos.append((nx if not self.blockedAt(nx, my, 1.2) else mx, my, mz))
         self.memos = memos
         self.powerUps = [(kind, px * r if not self.blockedAt(px * r, py, 1.6) else px, py) for kind, px, py in self.powerUps]
+
+    # --- The memos and power-ups ---
+
+    def _walkable(self, x, y):
+        # Can a sliding toon be here? On the table, not inside a pile (up
+        # on a ramp's pile is fine: it slides up the ramp onto it).
+        if abs(x) > Consts.TableHalfWidth - 1.3:
+            return False
+        for ob in self._pilesNear(y):
+            if ob.contains(x, y, 1.0) and not self._rampPile(ob, x):
+                return False
+        return True
+
+    def _pilesNear(self, y):
+        # The piles by 10 ft stretch of table, for speed (the route checks
+        # thousands of spots, on phones too).
+        grid = getattr(self, '_pileGrid', None)
+        if grid is None:
+            grid = self._pileGrid = {}
+            for ob in self.obstacles:
+                if ob.kind == PILE:
+                    for k in range(int((ob.y - ob.l - 1.5) // 10), int((ob.y + ob.l + 1.5) // 10) + 1):
+                        grid.setdefault(k, []).append(ob)
+        return grid.get(int(y // 10), ())
+
+    def _rampPile(self, pile, x):
+        # A pile with a ramp up to it, and x within the ramp's width.
+        ramp = getattr(pile, 'ramp', 0)
+        if ramp == 0:
+            ramp = pile.ramp = next((ob for ob in self.obstacles if ob.kind == RAMP and abs(ob.x - pile.x) < 0.01
+                                     and abs(ob.y - pile.y) < 10.0), None)
+        return ramp is not None and abs(x - ramp.x) <= ramp.w - 0.6
+
+    def _clearLeg(self, x0, y0, x1, y1):
+        n = max(2, int(abs(y1 - y0) / 0.5))
+        for i in range(n + 1):
+            f = i / float(n)
+            if not self._walkable(x0 + (x1 - x0) * f, y0 + (y1 - y0) * f):
+                return False
+        return True
+
+    def _layRoute(self, rng, start, end):
+        """One line down the table a toon can slide at the normal speed,
+        steering no harder than it easily can: round the piles, up the
+        ramps, over the pencils. Every memo and power-up is laid along it,
+        so all of them can be had in one run (Arthur), at a natural spacing:
+        no heaps in one place and bare stretches in another. The line is new
+        every game (the layout's seed is)."""
+        # A grid down the table, a row every DY ft and a column every DX ft
+        # across; from each row a toon can move at most `step` columns over
+        # (no harder steering than it easily can at the normal speed).
+        DY, DX = 1.5, 0.6
+        reach = Consts.SteerSpeed * 0.55 / Consts.SlideSpeed
+        step = max(1, int(reach * DY / DX))
+        half = Consts.TableHalfWidth - 1.6
+        cols = int(2 * half / DX) + 1
+        xs = [-half + j * DX for j in range(cols)]
+        rows = int((end - start) / DY) + 1
+        ys = [start + i * DY for i in range(rows)]
+        walk = [[self._walkable(x, y) for x in xs] for y in ys]
+        # Working back from the far end: from which spots can the end still
+        # be reached? (A greedy walk got boxed in behind wide piles.)
+        ok = [None] * rows
+        ok[-1] = walk[-1]
+        def leg(i, j, k):
+            # Clear all the way from row i, column j to row i+1, column k
+            # (not just at both ends: a corner of a pile can be in between).
+            return k == j or self._clearLeg(xs[j], ys[i], xs[k], ys[i + 1])
+
+        for i in range(rows - 2, -1, -1):
+            nxt = ok[i + 1]
+            ok[i] = [walk[i][j] and any(nxt[k] and leg(i, j, k) for k in range(max(0, j - step), min(cols, j + step + 1)))
+                     for j in range(cols)]
+        route = []
+        starts = [j for j in range(cols) if ok[0][j]]
+        if not starts:
+            # (Never seen: every stretch has a way through.)
+            starts = [cols // 2]
+            ok = walk = [[True] * cols for i in range(rows)]
+        j = rng.choice(starts)
+        aim = rng.randrange(cols)
+        aimUntil = 0
+        for i in range(rows):
+            if i >= aimUntil:
+                # Wander: a new spot across the table to drift towards
+                # every 10 to 30 ft.
+                aim = rng.randrange(cols)
+                aimUntil = i + int(rng.uniform(10.0, 30.0) / DY)
+            if i > 0:
+                choices = [k for k in range(max(0, j - step), min(cols, j + step + 1))
+                           if ok[i][k] and leg(i - 1, j, k)]
+                if choices:
+                    j = min(choices, key=lambda k: abs(k - aim) + rng.random() * 0.5)
+            route.append((xs[j], ys[i]))
+        # Smoothed a touch, so the line doesn't zigzag.
+        smooth = list(route)
+        for i in range(1, len(route) - 1):
+            near = [route[k][0] for k in range(max(0, i - 2), min(len(route), i + 3))]
+            sx = sum(near) / len(near)
+            y = route[i][1]
+            px, py = smooth[i - 1]
+            nx, ny = route[i + 1]
+            if self._clearLeg(px, py, sx, y) and self._clearLeg(sx, y, nx, ny):
+                smooth[i] = (sx, y)
+        route = smooth
+        self.route = route
+        self.memos = []
+        y = start + rng.uniform(1.0, 4.0)
+        while y < end:
+            # Either side of the line, within pick-up reach of a toon on it.
+            x = self.routeX(y) + rng.uniform(-2.0, 2.0)
+            if not self._walkable(x, y):
+                x = self.routeX(y)
+            if not self._walkable(x, y):
+                y += 0.5
+                continue
+            if self._nearPencil(x, y, 1.8):
+                # Not inside a pencil: just past it, for the landing.
+                y += 2.0
+                continue
+            self.memos.append((x, y, self.heightAt(x, y)))
+            y += rng.uniform(5.0, 10.0)
+        # The power-ups: spread evenly along the table, on the line too,
+        # away from the memos.
+        kinds = [INVULNERABLE] * Consts.NumInvulnerable + [HOP] * Consts.NumHop
+        rng.shuffle(kinds)
+        span = (end - start) / float(len(kinds) + 1)
+        self.powerUps = []
+        for i, kind in enumerate(kinds):
+            base = start + span * (i + 1)
+            for tries in range(80):
+                py = base + rng.uniform(-span * 0.45, span * 0.45)
+                px = self.routeX(py) + rng.uniform(-0.8, 0.8)
+                if self._walkable(px, py) and not self._nearMemo(px, py, 2.8) and not self._nearPencil(px, py, 2.0) \
+                        and abs(self.heightAt(px, py) - Consts.TableTop) < 0.01:
+                    self.powerUps.append((kind, px, py))
+                    break
+
+    def _nearPencil(self, x, y, r):
+        for ob in self.obstacles:
+            if ob.kind == PENCIL:
+                line = ob.y + (x - ob.x) * math.tan(math.radians(ob.angle))
+                if abs(y - line) < r:
+                    return True
+        return False
+
+    def routeX(self, y):
+        route = self.route
+        for (x0, y0), (x1, y1) in zip(route, route[1:]):
+            if y0 <= y <= y1:
+                return x0 + (x1 - x0) * (y - y0) / max(1e-6, y1 - y0)
+        return route[-1][0]
 
     def _nearMemo(self, x, y, r):
         return any(math.hypot(x - m[0], y - m[1]) < r for m in self.memos)
