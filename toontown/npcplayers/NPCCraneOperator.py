@@ -21,6 +21,9 @@ notify = DirectNotifyGlobal.directNotify.newCategory('NPCCraneOperator')
 # district they belong to (to send their requests as theirs).
 npcIds = set()
 air = [None]
+# The district's execution context (what it hears runs there, with its own
+# task manager and builtins, even when the player's game saw it).
+aiContext = [None]
 # craneDoId -> (crane y, arm h) the NPC is steering for, or None to hold.
 targets = {}
 # How close the arm counts as there.
@@ -42,11 +45,34 @@ def asNPC(avId, doId, method, *args):
     obj = a.doId2do.get(doId)
     if obj is None:
         return
-    a.callAsSender(avId, getattr(obj, method), *args)
+    from otp.local import ExecutionContext
+    contexts = ExecutionContext.contexts
+    if contexts is None or aiContext[0] is None:
+        return a.callAsSender(avId, getattr(obj, method), *args)
+    with contexts.use(aiContext[0]):
+        return a.callAsSender(avId, getattr(obj, method), *args)
+
+
+def onClient(func, *args):
+    """Runs func with the player's game's task manager and builtins."""
+    from otp.local import ExecutionContext
+    contexts = ExecutionContext.contexts
+    if contexts is None:
+        return func(*args)
+    with contexts.use(contexts.client):
+        return func(*args)
+
+
+def _rememberContext():
+    from otp.local import ExecutionContext
+    contexts = ExecutionContext.contexts
+    if contexts is not None and contexts.current is not contexts.client:
+        aiContext[0] = contexts.current
 
 
 def install(theAir):
     air[0] = theAir
+    _rememberContext()
     if _installed[0]:
         return
     _installed[0] = True

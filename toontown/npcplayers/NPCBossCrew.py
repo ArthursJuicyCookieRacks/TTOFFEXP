@@ -1338,7 +1338,11 @@ class NPCBossCrew:
             # Knocking his helmet off with a safe does him no harm; a hit
             # that hurts waits for the NPCs' share (let go wide instead).
             helmetOff = boss.heldObject is not None and held in (boss.safes or [])
-            wide = not helmetOff and not self.mayHurt()
+            # (Decided once per swing: the share is a chance now.)
+            if work.get('wideFor') != held.doId:
+                work['wideFor'] = held.doId
+                work['wide'] = not self.mayHurt()
+            wide = not helmetOff and work['wide']
             reach = NPCCraneOperator.reachFor(client, head)
             if reach is None:
                 # Out of this crane's reach: as near as it goes.
@@ -1350,6 +1354,7 @@ class NPCBossCrew:
                 npc.asSender(held.requestDrop)
                 self.count('cfo crane swings' if not wide else 'cfo crane wide swings')
                 work['last'] = None
+                work['wideFor'] = None
                 work['next'] = now + random.uniform(1.0, 2.5)
             return True
         work['last'] = None

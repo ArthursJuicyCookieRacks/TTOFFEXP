@@ -40,6 +40,7 @@ def _render():
 
 def install(theAir):
     NPCCraneOperator.air[0] = theAir
+    NPCCraneOperator._rememberContext()
     if _installed[0]:
         return
     _installed[0] = True
@@ -68,7 +69,9 @@ def install(theAir):
         return result
 
     Spot._DistributedGolfSpot__flyBallHit = flyBallHit
-    taskMgr.add(_tick, 'npcBanquetOperator')
+    # (install runs on the district; the shots are worked in the player's
+    # game, on its task manager.)
+    NPCCraneOperator.onClient(lambda: taskMgr.add(_tick, 'npcBanquetOperator'))
 
 
 def _patchControlled(cls):
