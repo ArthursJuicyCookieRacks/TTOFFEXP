@@ -1041,7 +1041,10 @@ class NPCBossCrew:
             if getattr(obj, 'avId', 0) == npc.doId and obj.state in ('Grabbed',):
                 held = obj
         if held is not None:
-            if self.hits(CRANE_HIT_CHANCE):
+            # Knocking his helmet off with a safe does him no harm, so it
+            # is never held back for the share.
+            helmetOff = boss.heldObject is not None and held in (boss.safes or [])
+            if (random.random() < CRANE_HIT_CHANCE) if helmetOff else self.hits(CRANE_HIT_CHANCE):
                 npc.asSender(held.hitBoss, random.uniform(0.3, 0.8))
                 self.count('cfo crane hits')
             else:

@@ -699,11 +699,13 @@ class NPCFacilities:
                 # (Walking about on a moving platform, the toon still goes
                 # along with it, or it would hang in the air as the
                 # platform drops away under it.)
-                if self.manager.party.isPlaying(npc):
+                if self.manager.party.isPlaying(npc) or self.manager.party.inBossFight(npc):
                     # A field office game (or a trolley game, a race, golf)
                     # moves the toon itself; riding the floor it stands on
                     # would pin it to the spot (the Lawbot flyers never
-                    # took off from the start platform).
+                    # took off from the start platform). A boss fight
+                    # places its toons itself too: riding the boss's own
+                    # moving parts threw them across the room.
                     npc.ride = None
                 else:
                     self.ride(npc)

@@ -773,7 +773,10 @@ class NPCPlayerManagerAI:
         movable = set()
         for npc in list(self.party.members) + [n for area in self.areas.values() if area.isActive() for n in area.npcs]:
             if npc.isDeleted() or npc.crew is not None or npc.busy or getattr(npc, 'onMover', None) is not None \
-                    or getattr(npc, 'jumping', False) or self.party.isPlaying(npc):
+                    or getattr(npc, 'jumping', False) or self.party.isPlaying(npc) \
+                    or any(crew.isStationed(npc) for crew in list(self.bossCrews.values())):
+                # (On a boss's crane, cannon, golf spot or table, the game
+                # holds it in place; a step aside would be drawn as a jump.)
                 continue
             if npc.doId in movable:
                 continue

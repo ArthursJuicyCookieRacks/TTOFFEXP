@@ -2272,7 +2272,9 @@ def fightBoss(interior, bossClass, actions, timeout=2400, prelude={}):
         if os.environ.get('AUTOPLAY_BOSS_PASSIVE') and boss.state in ('BattleThree', 'BattleFour'):
             # The player stands back, to see how the NPCs alone do.
             action = None
-        if os.environ.get('AUTOPLAY_BOSS_HUMAN') and boss.state in ('BattleThree', 'BattleFour') and action is not None:
+        if os.environ.get('AUTOPLAY_BOSS_HUMAN') and boss.state in ('BattleThree', 'BattleFour') and action is not None \
+                and bossClass != 'DistributedCashbotBoss':
+            # (The CFO's crane keeps its own pace: cfoBattleThree.)
             # At a player's pace and aim: a go every second or two, and
             # about a third of them miss.
             if time.time() < getattr(boss, 'autoplayNextGo', 0):
@@ -2330,6 +2332,13 @@ def cfoBattleThree(boss):
     held = findObject('DistributedCashbotBossSafe', lambda do: do.avId == me and do.state in ('Grabbed', 'LocalGrabbed')) or \
         findObject('DistributedCashbotBossGoon', lambda do: do.avId == me and do.state in ('Grabbed', 'LocalGrabbed'))
     if held is not None:
+        if os.environ.get('AUTOPLAY_BOSS_HUMAN'):
+            # A player's swing takes a few seconds to line up, and some miss.
+            if time.time() < getattr(boss, 'autoplayNextSwing', 0):
+                return
+            boss.autoplayNextSwing = time.time() + random.uniform(2.0, 4.0)
+            if random.random() < 0.3:
+                return
         held.sendUpdate('hitBoss', [1.0])
         return
     wantSafe = boss.heldObject is not None or getattr(boss, 'attackCode', None) == ToontownGlobals.BossCogDizzy
@@ -2943,7 +2952,7 @@ def driveKart(race):
             state['stuck'] = state.get('stuck', 0) + 1
             state['backUntil'] = now + 1.5
             # Reverse with the wheel turned away from where it must go.
-            g = pts[(race.currentPole + int(20 / state['spacing'])) % len(pts)]
+            g = pts[(state.get('idx', race.currentPole) + int(20 / state['spacing'])) % len(pts)]
             off = Vec3(g - pos)
             want = math.degrees(math.atan2(-off[0], off[1]))
             err = (want - kart.getH(render) + 180) % 360 - 180
@@ -2951,8 +2960,26 @@ def driveKart(race):
             state['pos'] = None
             return task.cont
         # Aim at the racing line a speed-dependent distance ahead.
+        # Where on the track the kart is, followed along from where it was
+        # (the race's own nearest pole can jump across to the other side of
+        # a hairpin, whose far leg runs close by behind the rail).
+        n = len(pts)
+        if 'idx' not in state:
+            state['idx'] = race.currentPole
+        jump = (race.currentPole - state['idx']) % n
+        if min(jump, n - jump) < 150:
+            state['idx'] = race.currentPole
+        else:
+            best = None
+            for k in range(-60, 61):
+                i = (state['idx'] + k) % n
+                d = (pts[i] - pos).lengthSquared()
+                if best is None or d < best[0]:
+                    best = (d, i)
+            state['idx'] = best[1]
+
         def ahead(feet):
-            return pts[(race.currentPole + max(3, int(feet / state['spacing']))) % len(pts)]
+            return pts[(state['idx'] + max(3, int(feet / state['spacing']))) % n]
 
         def bearing(a, b):
             d = Vec3(b - a)
