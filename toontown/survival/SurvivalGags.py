@@ -126,9 +126,20 @@ PALM_HOLD = True
 HOLD_HPR = {'squirting-flower': (0, 0, 70)}
 HOLD_SINK = {'stormcloud': 0.35, 'geyser': 0.2}
 # Gags held another way, moved in the view (camera space) off the glove.
-VIEW_NUDGE = {'glass': Vec3(-0.15, 0, 0)}
-# The hose nozzle turned to point out at the cogs (camera space).
-HOSE_AIM = Vec3(0, 1, 0.08)
+VIEW_NUDGE = {}
+# Gags gripped as the battle holds them (prop: its animation frame on the
+# toon's hold frame). The glass pops in from nothing over its first frames.
+BATTLE_GRIP = {'glass': 20}
+# Gags in the palm moved in the view (camera space) before they are kept
+# clear of the glove.
+HOLD_NUDGE = {'squirting-flower': Vec3(0, -0.15, -0.03)}
+CLEAR_GAP = 0.005
+# The storm cloud's bounds reach below what shows (HOLD_SINK sets it).
+CLEAR_SKIP = ('stormcloud',)
+# Where the hose nozzle points: out at the cogs past the crosshair (camera space).
+HOSE_AIM_AT = Point3(0, 30, 0.5)
+# Where the glove on the hose sits in the view (camera space).
+HOSE_GLOVE_AT = Point3(0.8, 3.4, -0.9)
 # The shoulder must end up at least this far outside the frame (film units,
 # the frame is -1..1).
 SHOULDER_OUT = 1.15
@@ -145,8 +156,11 @@ PALM_FIT = {'fruitpie-slice': (0.2, Vec3(0.13, 0, 0)), 'creampie-slice': (0.2, V
             # Arthur: these sat on the fingertips; settled into the glove like the pies.
             **{name: (0.2, Vec3(0.1, 0, 0)) for name in ('geyser', 'flowerpot', 'sandbag', 'anvil', 'piano', 'ship')}}
 GLOVE_TOP = 0.12
-# The hose's frame matching the toon's firehose hold (frame 30).
-HOSE_FRAME = 30
+# How far from the palm joint (toon units) a hands vertex still counts as the glove.
+GLOVE_REACH = 0.9
+# Of a gag's footprint, the middle part whose glove must stay under it
+# (the fingertips past its edge may curl up round it).
+CLEAR_FOOT = 0.85
 # Gags carried on the palm that come in all sizes (a safe, a piano, a storm
 # cloud, a geyser...) are fitted to one size in the view, a pie's.
 FIT_SIZE = 0.85
@@ -179,9 +193,23 @@ WHACK_HOLD = 0.06
 WHACK_RECOVER = 0.3
 SWITCH_UP = 0.3
 # Battle offsets for props that do not sit square in the hand.
-PROP_IN_HAND = {'water-gun': (Point3(0.28, 0.1, 0.08), (85.6, -4.44, 94.43)),
-                # Measured from the battle's hydrant + hose at the toon's firehose frame 30.
-                'firehose': (Point3(-1.614, -1.543, 0.1), (10.93, -12.68, 57.7))}
+PROP_IN_HAND = {'water-gun': (Point3(0.28, 0.1, 0.08), (85.6, -4.44, 94.43))}
+# The fire hose's nozzle in the glove as MovieSquirt's hydrant and hose put
+# it at the toon's firehose frame 30 (hose root in the glove, then the nozzle
+# joint on the hose's own frame 30), measured. The hose itself is left in its
+# bind pose, laid out straight behind the nozzle, so in first person it runs
+# back out of the view instead of looping up past the player's face.
+HOSE_ROOT_IN_HAND = ((-1.614, -1.543, 0.1), (10.93, -12.68, 57.7))
+HOSE_NOZZLE_ON_ROOT = ((0.7807, 2.0188, 2.0038), (-1.046, -6.595, -8.24))
+HOSE_NOZZLE_BIND = (1.74885, 4.94567, 0.877083)
+
+
+def hoseInHand():
+    from panda3d.core import TransformState
+    root = TransformState.makePosHpr(Point3(*HOSE_ROOT_IN_HAND[0]), Vec3(*HOSE_ROOT_IN_HAND[1]))
+    nozzle = TransformState.makePosHpr(Point3(*HOSE_NOZZLE_ON_ROOT[0]), Vec3(*HOSE_NOZZLE_ON_ROOT[1]))
+    bind = TransformState.makePos(Point3(*HOSE_NOZZLE_BIND))
+    return root.compose(nozzle).compose(bind.getInverse())
 # Each level's instrument in the glove, as MovieSound places it (pos, hpr,
 # the scale it blasts at).
 INSTRUMENT_IN_HAND = {0: ((-1.1, -1.4, 0.1), (145, 0, 0), 0.65), 1: ((-1.2, -1.3, 0.1), (145, 0, 85), 0.2),
@@ -198,7 +226,7 @@ MEGAPHONE_SCALE = 0.7
 INSTRUMENT_SCALE = {'bikehorn': 0.5, 'whistle': 0.6, 'bugle': 0.6, 'aoogah': 0.6, 'elephant': 0.5, 'fog_horn': 0.5, 'singing': 0.5}
 HAND_SCALE = {'ship': 0.05, 'piano': 0.1, 'safe': 0.22, 'weight': 0.25, 'anvil': 0.3, 'sandbag': 0.6, 'flowerpot': 0.6,
               'geyser': 0.1, 'stormcloud': 0.25, 'firehose': 1.0, 'wedding-cake': 1.0, 'birthday-cake': 1.0,
-              '1dollar': 0.8, 'glass': 2.2, 'bottle': 1.0, 'water-gun': 1.0, 'squirting-flower': 1.0}
+              '1dollar': 0.8, 'glass': 1.0, 'bottle': 1.0, 'water-gun': 1.0, 'squirting-flower': 1.0}
 LEFT_ARM_JOINTS = ('def_left_shoulder', 'def_left_elbow', 'def_left_forearm', 'def_left_wrist', 'def_left_palm',
                    'def_left_sleeve_short', 'def_left_sleeve_long', 'def_left_forSleeve', 'def_left_neg_sleeve',
                    'def_left_collar', 'def_left_midA', 'def_left_midB', 'def_left_thumbB', 'def_left_thumbC',
@@ -373,6 +401,59 @@ class ToonArms:
             self.toon.setMat(self.toon.getMat() * LMatrix4.rotateMat(angle, axis))
             self.toon.update(force=True)
 
+    def turnAbout(self, pivot, angle, axis):
+        """Turn the toon by angle about axis through pivot, both in the
+        toon's parent's coordinates."""
+        self.toon.setMat(self.toon.getMat() * LMatrix4.translateMat(-pivot) * LMatrix4.rotateMat(angle, axis)
+                         * LMatrix4.translateMat(pivot))
+        self.toon.update(force=True)
+
+    def aimNozzle(self, hose, side=RIGHT):
+        """Turn the arm, with the hose in its battle grip, about the glove
+        so the nozzle points out at the cogs (HOSE_AIM_AT, camera space),
+        then roll it about that line so the arm still comes in from the
+        lower right."""
+        parent = self.toon.getParent()
+        nozzle = hose.find('**/joint_water_stream')
+        glove = self.hand(side)
+        shoulder = self.joint(side, 'shoulder')
+        if nozzle.isEmpty() or shoulder is None or shoulder.isEmpty():
+            return
+        # Low and close, as a hose is held at the hip: the arm, reaching
+        # back up to the shoulder, leaves the view behind the camera.
+        self.toon.setScale(ARMS_SCALE)
+        self.grow = 1.0
+        self.placeGlove(side, HOSE_GLOVE_AT)
+        pivot = glove.getPos(parent)
+        want = parent.getRelativePoint(camera, HOSE_AIM_AT) - pivot
+        want.normalize()
+        have = nozzle.getPos(parent) - pivot
+        if have.length() < 1e-4:
+            return
+        have.normalize()
+        axis = have.cross(want)
+        if axis.length() > 1e-5:
+            axis.normalize()
+            self.turnAbout(pivot, math.degrees(math.acos(max(-1.0, min(1.0, have.dot(want))))), axis)
+        def flat(v):
+            v = Vec3(v) - want * want.dot(v)
+            if v.length() < 1e-4:
+                return None
+            v.normalize()
+            return v
+        # Rolled about the nozzle line so the arm comes in from the lower
+        # right; the straight hose runs back past it out of the view.
+        arm = flat(shoulder.getPos(parent) - pivot)
+        goal = flat(parent.getRelativeVector(camera, ARM_FROM))
+        if arm is not None and goal is not None:
+            self.turnAbout(pivot, math.degrees(math.atan2(arm.cross(goal).dot(want), arm.dot(goal))), want)
+        # The arm grows about the glove until its shoulder is out of view.
+        at = glove.getPos(camera)
+        while self.shoulderInView(side) and self.grow < MAX_ARM_GROW:
+            self.grow *= 1.08
+            self.toon.setScale(self.toon.getScale() * 1.08)
+            self.placeGlove(side, at)
+
     def rollPalm(self, side, want):
         """Roll the toon about its arm (shoulder to glove) until the palm,
         the hold joint's up, faces as near the view's `want` as it can, so
@@ -445,6 +526,32 @@ class ToonArms:
                 if node is not None and not node.isEmpty():
                     node.setScale(0.001)
                     self.folded.append((joint, lod, node))
+
+    def gloveVerts(self, side, space):
+        """The glove's vertices as drawn now (posed), in space's
+        coordinates: only those within GLOVE_REACH of its palm joint."""
+        from panda3d.core import GeomVertexReader, Thread
+        palm = self.hand(side).getPos(self.toon)
+        found = list(self.toon.findAllMatches('**/hands'))
+        # The detail level the arms are drawn at first.
+        found.sort(key=lambda np: '/1000/' not in str(np))
+        verts = []
+        for np in found:
+            if np.isHidden() or not np.node().isGeomNode():
+                continue
+            mat = np.getMat(space)
+            toToon = np.getMat(self.toon)
+            node = np.node()
+            for i in range(node.getNumGeoms()):
+                vdata = node.getGeom(i).getVertexData().animateVertices(True, Thread.getCurrentThread())
+                reader = GeomVertexReader(vdata, 'vertex')
+                while not reader.isAtEnd():
+                    v = reader.getData3()
+                    if (toToon.xformPoint(v) - palm).length() <= GLOVE_REACH:
+                        verts.append(mat.xformPoint(v))
+            if verts:
+                break
+        return verts
 
     def hand(self, side=RIGHT):
         hands = self.toon.getLeftHands() if side == LEFT else self.toon.getRightHands()
@@ -671,35 +778,6 @@ class GagHandler:
 
     # --- What is held ---
 
-    def aimHose(self, prop):
-        """Swing the hose about the glove so its nozzle points out at the
-        cogs (the battle hold points it up past the player's face)."""
-        self.arms.toon.update(force=True)
-        nozzle = prop.find('**/joint_water_stream')
-        if nozzle.isEmpty():
-            return
-        hand = self.arms.hand(RIGHT)
-        pivotAt = hand.getPos(camera)
-        have = nozzle.getPos(camera) - pivotAt
-        if have.length() < 1e-4:
-            return
-        have.normalize()
-        want = Vec3(HOSE_AIM)
-        want.normalize()
-        axis = have.cross(want)
-        if axis.length() < 1e-5:
-            return
-        axis.normalize()
-        angle = math.degrees(math.acos(max(-1.0, min(1.0, have.dot(want)))))
-        pivot = camera.attachNewNode('hosePivot')
-        pivot.setPos(pivotAt)
-        prop.wrtReparentTo(pivot)
-        turn = Quat()
-        turn.setFromAxisAngle(angle, axis)
-        pivot.setQuat(turn)
-        prop.wrtReparentTo(hand)
-        pivot.removeNode()
-
     def seatInHold(self, prop, name):
         """Stand the prop in the open palm: upright on the hold joint (the
         way the battle holds a pie), centred on it, its bottom just in."""
@@ -713,6 +791,17 @@ class GagHandler:
         sink = HOLD_SINK.get(name, PALM_SINK)
         shift = Vec3(-centre[0], -centre[1], -low[2] - sink * (high[2] - low[2]))
         prop.setPos(hand, prop.getPos(hand) + shift)
+        if name in HOLD_NUDGE:
+            prop.setPos(camera, prop.getPos(camera) + HOLD_NUDGE[name])
+        # Nothing of the glove pokes up through the gag: its bottom is
+        # lifted to the highest bit of glove under its middle.
+        low, high = prop.getTightBounds(hand)
+        half = (high - low) * 0.5 * CLEAR_FOOT
+        mid = (low + high) * 0.5
+        under = [v[2] for v in self.arms.gloveVerts(RIGHT, hand)
+                 if abs(v[0] - mid[0]) <= half[0] and abs(v[1] - mid[1]) <= half[1]]
+        if under and max(under) > low[2] and name not in CLEAR_SKIP:
+            prop.setPos(hand, prop.getPos(hand) + Vec3(0, 0, max(under) - low[2] + CLEAR_GAP))
 
     def seatOnPalm(self, prop):
         """Rest the prop on the glove: its bottom on the palm, centred over
@@ -773,13 +862,13 @@ class GagHandler:
                 megaphone.setScale(megaphone.getScale() * MEGAPHONE_SCALE)
             else:
                 prop.reparentTo(self.arms.hand(RIGHT))
-                if gag.prop == 'firehose':
-                    # Posed on the toon's hold frame; PROP_IN_HAND is where
-                    # MovieSquirt's hydrant and hose put it against the glove.
-                    prop.pose('firehose', HOSE_FRAME)
                 pos, hpr = PROP_IN_HAND.get(gag.prop, (Point3(0, 0, 0), (0, 0, 0)))
                 prop.setPosHpr(pos, Vec3(*hpr))
                 prop.setScale(HAND_SCALE.get(gag.prop, 1.0) / self.arms.grow)
+                if gag.prop in BATTLE_GRIP:
+                    # Gripped exactly as the battle's hand holds it, at its size.
+                    prop.pose(gag.prop, BATTLE_GRIP[gag.prop])
+                    prop.setScale(1.0)
                 if gag.track in FIT_TRACKS or gag.prop in FIT_PROPS:
                     self.arms.toon.update(force=True)
                     prop.setScale(1.0)
@@ -806,7 +895,10 @@ class GagHandler:
                     prop.setHpr(camera, PIE_IN_VIEW_HPR)
                     self.seatInHold(prop, gag.prop) if PALM_HOLD else self.seatOnPalm(prop)
                 if gag.prop == 'firehose':
-                    self.aimHose(prop)
+                    # The hose keeps the battle's grip (its size the glove's)
+                    # and the arm and hose turn together to aim it.
+                    prop.setTransform(hoseInHand())
+                    self.arms.aimNozzle(prop)
                 if gag.prop in VIEW_NUDGE:
                     self.arms.toon.update(force=True)
                     prop.setPos(camera, prop.getPos(camera) + VIEW_NUDGE[gag.prop])
