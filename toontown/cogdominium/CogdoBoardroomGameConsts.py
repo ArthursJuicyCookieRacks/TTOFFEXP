@@ -226,7 +226,7 @@ ClearStart = 10.0
 ClearEnd = 24.0
 MemosPerSegment = (2, 4)
 # How likely a stretch gets a second obstacle (easiest, hardest).
-DoubleObstacleRange = (0.15, 0.5)
+DoubleObstacleRange = (0.1, 0.75)
 PileHeight = (5.0, 7.5)
 PencilHeight = 1.25
 NumInvulnerable = 2 * NumHalls
@@ -358,7 +358,7 @@ GolfElevatorStep = 2.5
 NumBarrels = 10
 LaffPerBarrel = 3
 GolfCogNames = ('f', 'p', 'ym', 'mm', 'ds', 'hh', 'cr')
-GolfMaxCogsRange = (6, 12)
+GolfMaxCogsRange = (7, 12)
 GolfSpawnPeriodRange = (1.8, 0.7)
 GolfCogSpeedRange = (5.5, 8.5)
 GolfPickupTime = 1.2

@@ -752,7 +752,7 @@ class DistributedBuilding(DistributedObject.DistributedObject):
         localToonIsVictor = self.localToonIsVictor()
         if localToonIsVictor:
             camTrack = self.walkOutCameraTrack()
-        victoryRunTrack, delayDeletes = self.getVictoryRunTrack()
+        victoryRunTrack, delayDeletes = self.getVictoryRunTrack(farOut=True)
         trackName = self.taskName('toToonFromCogdoTrack')
         self._deleteTransitionTrack()
         if localToonIsVictor:
@@ -785,7 +785,7 @@ class DistributedBuilding(DistributedObject.DistributedObject):
 
         return retVal
 
-    def getVictoryRunTrack(self):
+    def getVictoryRunTrack(self, farOut=False):
         origPosTrack = Sequence()
         delayDeletes = []
         i = 0
@@ -811,7 +811,11 @@ class DistributedBuilding(DistributedObject.DistributedObject):
             self.notify.error('Could not find door origin!')
 
         toonDoorPos = doorNodePath.getPos(NodePath())
-        useFarExitPoints = toonDoorPos.getZ() > 1.0
+        # Out of a field office the toons stop well clear of the toon
+        # building's door that comes back: the near points put a toon on the
+        # door's trigger, and the first step after the walk-out took them
+        # inside (found in the Bossbot office test runs).
+        useFarExitPoints = farOut or toonDoorPos.getZ() > 1.0
         runOutAll = Parallel()
         i = 0
         for victor in self.victorList:
@@ -838,7 +842,7 @@ class DistributedBuilding(DistributedObject.DistributedObject):
         localToonIsVictor = self.localToonIsVictor()
         if localToonIsVictor:
             camTrack = self.walkOutCameraTrack()
-        victoryRunTrack, delayDeletes = self.getVictoryRunTrack()
+        victoryRunTrack, delayDeletes = self.getVictoryRunTrack(farOut=True)
         trackName = self.taskName('toToonFromCogdoTrack')
         self._deleteTransitionTrack()
         if localToonIsVictor:

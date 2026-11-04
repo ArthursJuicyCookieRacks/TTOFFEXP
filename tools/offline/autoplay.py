@@ -587,6 +587,8 @@ def scenarioHelpMode():
     book.doneStatus = {"mode": "close"}
     messenger.send(book.doneEvent)
     yield until(walking, 60, 'walking after the book')
+    if placeState() != 'walk' or base.cr.playGame.getPlace().__class__.__name__ != 'Street':
+        log('BUG: after the summons the toon is in %s' % base.cr.playGame.getPlace().__class__.__name__)
     if NPCSettings.helpMode() != NPCSettings.HELP_TURN_BASED:
         raise StepFailed('Setup did not keep Turn based')
 
@@ -983,6 +985,49 @@ def startVideoGrab():
     taskMgr.add(grab, 'autoplayVideo', priority=60)
 
 
+def keyTest(dist, phase):
+    # Real key presses and a real (simulated) controller stick, not the
+    # autoplay's own inputState forcing: what the game reads for each.
+    from panda3d.core import ButtonRegistry
+    from direct.showbase.InputStateGlobal import inputState
+    device = base.win.getInputDevice(0)
+    names = ('turnLeft', 'turnRight', 'slideLeft', 'slideRight', 'forward', 'reverse', 'jump')
+    results = []
+    for key in ('a', 'd', 'w', 's', 'space', 'arrow_left', 'arrow_right', 'arrow_up', 'arrow_down'):
+        button = ButtonRegistry.ptr().findButton(key)
+        device.buttonDown(button)
+        yield sleep(0.4)
+        on = [n for n in names if inputState.isSet(n)]
+        x0 = localAvatar.getX(render); a0 = getattr(dist, 'aimH', 0)
+        yield sleep(0.6)
+        moved = localAvatar.getX(render) - x0 if phase == 'slide' else getattr(dist, 'aimH', 0) - a0
+        device.buttonUp(button)
+        yield sleep(0.4)
+        results.append('%s->%s (%s %+.1f)' % (key, '/'.join(on) or 'nothing', 'x' if phase == 'slide' else 'aim', moved))
+    pad = getattr(base, 'gamepad', None)
+    if pad is not None:
+        for label, (x, y) in (('stick left', (-1.0, 0.0)), ('stick right', (1.0, 0.0)), ('stick up', (0.0, 1.0))):
+            pad._Gamepad__walk(x, y)
+            yield sleep(0.4)
+            on = [n for n in names if inputState.isSet(n)]
+            x0 = localAvatar.getX(render); a0 = getattr(dist, 'aimH', 0)
+            yield sleep(0.6)
+            moved = localAvatar.getX(render) - x0 if phase == 'slide' else getattr(dist, 'aimH', 0) - a0
+            pad._Gamepad__walk(0.0, 0.0)
+            yield sleep(0.4)
+            results.append('%s->%s (%s %+.1f)' % (label, '/'.join(on) or 'nothing', 'x' if phase == 'slide' else 'aim', moved))
+        # The A button (jump: hop in the slide, swing in golf).
+        try:
+            pad._Gamepad__buttons({'face_a'})
+            yield sleep(0.5)
+            on = [n for n in names if inputState.isSet(n)]
+            pad._Gamepad__buttons(set())
+            results.append('A button->%s' % ('/'.join(on) or 'nothing'))
+        except Exception as e:
+            results.append('A button: %r' % e)
+    log('KEYTEST %s: %s' % (phase, '; '.join(results)))
+
+
 def playCogdoBoardroom(dist):
     # The Bossbot field office: slides the length of the table as a player
     # would, steering round piles to the memos, hopping the pencils, with
@@ -995,6 +1040,30 @@ def playCogdoBoardroom(dist):
     video = os.environ.get('AUTOPLAY_VIDEO')
     base.screenshot(os.path.join(shots, 'boss-10-start.png'), defaultFilename=0)
     layout = dist.layout
+
+    def stats(air, doId):
+        from toontown.cogdominium import CogdoBoardroomGameConsts as C
+        game = air.doId2do.get(doId)
+        bldg = getattr(game.interior, 'bldg', None)
+        lay = game.layout
+        d = lay.difficulty
+        kinds = {}
+        for ob in lay.obstacles:
+            kinds[ob.kind] = kinds.get(ob.kind, 0) + 1
+        L = C.lerpDifficulty
+        return ('office level %s (bldg difficulty %s), game difficulty %.2f | slide: %d boss seats, %d minions, %d oil cans, '
+                'obstacles %s, %d memos, %d power-ups, boss attack every %.2fs, volley %.0f%%, aim spread %.1f, minion drop every %.2fs, '
+                'oil spill every %.1fs, swipe dmg %d, obstacle dmg %d | golf: max cogs %d, spawn every %.2fs, cog speed %.1f' % (
+                    bldg and int(bldg.difficulty) // 2 + 1, bldg and bldg.difficulty, d, len(lay.bossSeats()),
+                    len(lay.minions), len(lay.oilCans), kinds, len(lay.memos), len(lay.powerUps),
+                    L(C.BossAttackPeriodRange, d), 100 * L(C.VolleyChanceRange, d), L(C.AimSpreadRange, d),
+                    L(C.MinionDropPeriodRange, d), L(C.OilSpillPeriodRange, d),
+                    C.hazardDamage(C.Swipe, d), C.hazardDamage(C.Obstacle, d),
+                    int(round(L(C.GolfMaxCogsRange, d))), L(C.GolfSpawnPeriodRange, d), L(C.GolfCogSpeedRange, d)))
+    try:
+        log('LEVELSTATS ' + onDistrict(stats, dist.doId))
+    except Exception as e:
+        log('LEVELSTATS failed: %r' % e)
     tokens = {}
 
     def press(name, on):
@@ -1006,8 +1075,20 @@ def playCogdoBoardroom(dist):
     n = 0
     nextShot = time.time() + 4
     lastLog = 0
+    keyTested = set()
     while cogdoGameState(dist) == 'Game':
         pos = localAvatar.getPos(render)
+        if os.environ.get('AUTOPLAY_KEYTEST'):
+            if 'slide' not in keyTested and getattr(dist, 'slideState', None) == 'slide' and pos[1] > Consts.TableStart + 30:
+                keyTested.add('slide')
+                for t in list(tokens):
+                    press(t, False)
+                yield from keyTest(dist, 'slide')
+            if 'golf' not in keyTested and getattr(dist, 'phase', None) == 'golf' and dist.golfTime() > 3:
+                keyTested.add('golf')
+                for t in list(tokens):
+                    press(t, False)
+                yield from keyTest(dist, 'golf')
         if os.environ.get('AUTOPLAY_GOLF_SKIP') and getattr(dist, '_golfIntro', None) is not None \
                 and not getattr(dist, '_golfSkipAsked', False) and dist.golfTime() < -8:
             log('pressing the golf intro\'s green button at golf time %.1f' % dist.golfTime())
@@ -1149,6 +1230,11 @@ def playCogdoBoardroom(dist):
     for name in list(tokens):
         press(name, False)
     log('boardroom over: banked %d memos, laff %d/%d' % (dist.banked, localAvatar.getHp(), localAvatar.getMaxHp()))
+    try:
+        log('GAMESTATS ' + onDistrict(lambda air, doId: 'barrels home %s, lost %s, banked %s' % (
+            air.doId2do[doId].barrelsHome, air.doId2do[doId].barrelsLost, air.doId2do[doId].banked), dist.doId))
+    except Exception as e:
+        log('GAMESTATS failed: %r' % e)
     yield sleep(4 if video else 1)
     base.screenshot(os.path.join(shots, 'boss-90-finish.png'), defaultFilename=0)
     if not os.environ.get('AUTOPLAY_VIDEO_INTRO'):
@@ -1270,6 +1356,9 @@ def scenarioCogdo(track='s'):
             yield from boardElevator('DistributedCogdoElevatorInt')
             yield until(lambda: interior.fsm.getCurrentState().getName() != 'Resting', 120, 'the elevator up')
         elif placeState() == 'battle':
+            from toontown.suit.DistributedSuitBase import DistributedSuitBase
+            cogs = [do for do in base.cr.doId2do.values() if isinstance(do, DistributedSuitBase) and not do.isEmpty()]
+            log('BATTLECOGS %d: %s' % (len(cogs), ', '.join('%s lvl %d' % (c.dna.name, c.getActualLevel()) for c in cogs)))
             yield from fightBattle()
         elif state == 'Reward':
             # Reading the shopkeeper's thank-you.
@@ -1285,7 +1374,21 @@ def scenarioCogdo(track='s'):
             yield sleep(0.5)
     yield until(walking, 180, 'walking after the field office')
     log('back outside in zone %d with %d SOS cards' % (localAvatar.zoneId, len(localAvatar.NPCFriendsDict)))
+    try:
+        near = []
+        for trig in render.findAllMatches('**/door_trigger*'):
+            b = trig.getBounds()
+            if b.isEmpty():
+                continue
+            c = trig.getRelativePoint(trig, b.getCenter()) if False else render.getRelativePoint(trig, b.getCenter())
+            near.append(((localAvatar.getPos(render) - c).length(), trig.getName()))
+        near.sort()
+        log('DOORCHECK nearest door triggers: %s' % ', '.join('%s %.1f ft' % (n, d) for d, n in near[:3]))
+    except Exception as e:
+        log('DOORCHECK failed: %r' % e)
     log('unites: %s' % localAvatar.resistanceMessages)
+    if os.environ.get('AUTOPLAY_USE_SUMMONS'):
+        yield from useCogSummons(os.environ.get('AUTOPLAY_SHOTS', '/tmp'))
     if os.environ.get('AUTOPLAY_UNITE_SHOTS'):
         # The SpeedChat Unites menu, then a mini Toon-up said out loud.
         from toontown.chat import ResistanceChat
@@ -4872,6 +4975,83 @@ def scenarioDoubleXp():
     log('Double XP checks passed')
 
 
+def useCogSummons(shots, prefix='summons'):
+    # A field office reward in use: the Shticker Book's Cog Gallery, the
+    # summoned cog's panel, Issue Summons, a single cog, Yes; then out on
+    # the street find that cog and fight it.
+    from toontown.suit import SuitDNA
+    from toontown.toonbase import ToontownGlobals as TG
+    from direct.gui import DirectGuiGlobals as DGG
+    have = [i for i in range(len(SuitDNA.suitHeadTypes)) if localAvatar.hasCogSummons(i, 'single')]
+    log('single summons held: %s' % ', '.join(SuitDNA.suitHeadTypes[i] for i in have))
+    if not have:
+        raise StepFailed('no single summons to use')
+    index = have[0]
+    name = SuitDNA.suitHeadTypes[index]
+    yield until(walking, 60, 'walking before opening the book')
+    before = set(s.doId for s in suitsNearby())
+    place().fsm.request('stickerBook')
+    yield until(lambda: place().isAccepting('bookDone'), 30, 'the Shticker Book open')
+    book = localAvatar.book
+    page = book.pages[[p.__class__.__name__ for p in book.pages].index('SuitPage')]
+    book.setPage(page)
+    yield sleep(1.5)
+    panel = page.panels[index]
+    try:
+        page.showPanel(panel) if hasattr(page, 'showPanel') else None
+    except Exception:
+        pass
+    base.screenshot(os.path.join(shots, '%s-1-gallery.png' % prefix), defaultFilename=0)
+    if not getattr(panel, 'summonButton', None):
+        page.addSummonButton(panel)
+    page.summonButtonPressed(panel)
+    yield sleep(1.5)
+    base.screenshot(os.path.join(shots, '%s-2-dialog.png' % prefix), defaultFilename=0)
+    dialog = page.summonDialog
+    dialog.issueSummons('single')
+    yield sleep(1.2)
+    base.screenshot(os.path.join(shots, '%s-3-confirm.png' % prefix), defaultFilename=0)
+    responses = []
+    localAvatar.accept('cog-summons-response', lambda *a: responses.append(a))
+    dialog.popup['command'](DGG.DIALOG_OK)
+    yield until(lambda: responses, 30, 'the summons answer')
+    yield sleep(1.5)
+    base.screenshot(os.path.join(shots, '%s-4-answer.png' % prefix), defaultFilename=0)
+    log('summons %s answer: %s' % (name, responses[0]))
+    if responses[0][0] != 'success':
+        raise StepFailed('summons failed: %s' % (responses[0],))
+    # Done: close the dialog and the book.
+    try:
+        dialog.cogSummonsDone(*responses[0]) if False else None
+        messenger.send(dialog.doneEvent)
+    except Exception as e:
+        log('closing summons dialog: %r' % e)
+    yield sleep(0.5)
+    book.doneStatus = {'mode': 'close'}
+    messenger.send(book.doneEvent)
+    yield until(walking, 60, 'walking after the book')
+    yield until(lambda: [s for s in suitsNearby() if s.doId not in before and s.dna.name == name], 60, 'the summoned %s' % name)
+    suit = [s for s in suitsNearby() if s.doId not in before and s.dna.name == name][0]
+    log('summoned %s (level %d) is here' % (name, suit.getActualLevel() if hasattr(suit, 'getActualLevel') else -1))
+    yield sleep(3)
+    base.screenshot(os.path.join(shots, '%s-5-cog.png' % prefix), defaultFilename=0)
+    end = time.time() + 40
+    while placeState() == 'walk' and not suit.isEmpty() and time.time() < end:
+        localAvatar.setPos(render, suit.getPos(render))
+        yield sleep(0.1)
+    yield from fightBattle()
+    yield until(walking, 120, 'walking after the summoned cog battle')
+    log('beat the summoned %s' % name)
+
+
+def scenarioUseSummons():
+    street = ToontownGlobals.SillyStreet
+    yield from teleport(street - street % 1000, firstVisgroup(street))
+    onDistrict(restock, localAvatar.doId)
+    onDistrict(lambda air, avId: air.doId2do[avId].assignNewCogSummons(3, 'single', 0), localAvatar.doId)
+    yield sleep(2)
+    yield from useCogSummons(os.environ.get('AUTOPLAY_SHOTS', '/tmp'))
+
 def scenarioBattleWith(during):
     street = ToontownGlobals.SillyStreet
     if ZoneUtil.getBranchZone(localAvatar.zoneId) != street:
@@ -5007,6 +5187,7 @@ SCENARIOS = [
     ('cogdolaw', lambda: scenarioCogdo('l')),
     ('cogdocash', lambda: scenarioCogdo('m')),
     ('cogdoboss', lambda: scenarioCogdo('c')),
+    ('usesummons', lambda: scenarioUseSummons()),
     ('minigames', scenarioMinigames),
     ('factory', scenarioFactory),
     ('mint', scenarioMint),
