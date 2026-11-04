@@ -27,13 +27,6 @@ from direct.fsm import State
 from toontown.hood import ZoneUtil
 from toontown.toontowngui import TeaserPanel
 
-def dualScreenShowsCatch():
-    """True when a dual-screen handheld's bottom screen is up: it shows
-    what was caught, and the top screen keeps only the fishing controls."""
-    from toontown.dualscreen import SecondScreen
-    return SecondScreen.showing()
-
-
 class DistributedFishingSpot(DistributedObject.DistributedObject):
     notify = DirectNotifyGlobal.directNotify.newCategory('DistributedFishingSpot')
     vZeroMax = 25.0
@@ -540,11 +533,7 @@ class DistributedFishingSpot(DistributedObject.DistributedObject):
         self.fishPanel.setSwimBounds(-0.3, 0.3, -0.235, 0.25)
         self.fishPanel.setSwimColor(1.0, 1.0, 0.74901, 1.0)
         self.fishPanel.load()
-        if dualScreenShowsCatch():
-            # The bottom screen shows the catch instead (with its X).
-            DirectFrame.hide(self.fishPanel)
-        else:
-            self.fishPanel.show(code)
+        self.fishPanel.show(code)
         self.__updateFishTankGui()
 
     def __setFishItemPos(self):
@@ -1037,12 +1026,6 @@ class DistributedFishingSpot(DistributedObject.DistributedObject):
                 self.__hideCastGui()
             else:
                 self.__showFailureReason(code)
-            if code in (FishGlobals.QuestItem, FishGlobals.FishItem, FishGlobals.FishItemNewEntry, FishGlobals.FishItemNewRecord,
-                        FishGlobals.BootItem, FishGlobals.JellybeanItem):
-                fish = None
-                if code in (FishGlobals.FishItem, FishGlobals.FishItemNewEntry, FishGlobals.FishItemNewRecord):
-                    fish = FishBase.FishBase(itemDesc1, itemDesc2, itemDesc3)
-                messenger.send('dualScreenCatch', [self, code, fish])
         self.track = Sequence(Parallel(ActorInterval(self.av, 'reel'), ActorInterval(self.pole, 'cast', startFrame=63, endFrame=127)), ActorInterval(self.av, 'reel-neutral'), Func(self.__hideLine), Func(self.__hideBob), ActorInterval(self.av, 'fish-again'), Func(self.av.loop, 'pole-neutral'))
         self.track.start()
 
@@ -1059,7 +1042,6 @@ class DistributedFishingSpot(DistributedObject.DistributedObject):
 
     def exitReward(self):
         if self.localToonFishing:
-            messenger.send('dualScreenCatchGone', [self])
             self.itemGui.detachNode()
             self.cleanupFishPanel()
         self.track.finish()

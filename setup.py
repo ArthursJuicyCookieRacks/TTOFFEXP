@@ -12,14 +12,30 @@ Actions workflow in .github/workflows/build.yml does all of this.
 """
 
 import os
+import re
+import sys
 
 from setuptools import setup
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(ROOT, 'tools', 'offline'))
+import version as gameversion  # noqa: E402
+
+# The game's full name: the Windows program and its window title.
+GAME_TITLE = 'Toontown - The Offline Experience'
+# The version comes from TT_VERSION, which the build workflow sets from the
+# VERSION file and the earlier builds' tags (see tools/offline/version.py).
+# VERSION is for the packaging tools, which want plain numbers (3.1);
+# VERSION_LABEL is what players see (3.1, or 3.1-test for a pull request's
+# build, or dev).
+VERSION, VERSION_LABEL = gameversion.gameVersion()
 # The game's version, as it shows in game and in the phone's app info.
-GAME_VERSION = 'TT-OFFEXP-1.0'
-# For the packaging tools, which want plain numbers.
-VERSION = '1.0'
+GAME_VERSION = 'TT-OFFEXP-' + VERSION_LABEL
+
+# The packaged game reads its version from this file (OfflineStart loads it
+# after release.prc), so the version is set in one place only.
+with open(os.path.join(ROOT, 'config', 'version.prc'), 'w', encoding='utf-8') as versionFile:
+    versionFile.write('# Written by setup.py for each build; do not edit.\nserver-version %s\n' % GAME_VERSION)
 
 
 def gameModules():
@@ -111,8 +127,8 @@ def keepActivityOnConfigChanges():
         assert old in manifest
         manifest = manifest.replace(old, old + 'mcc|mnc|touchscreen|density|colorMode|')
         # The phone shows the game as plain "Toontown".
-        assert 'android:label="TTR-Offline"' in manifest
-        manifest = manifest.replace('android:label="TTR-Offline"', 'android:label="%s"' % APP_LABEL)
+        assert 'android:label="' in manifest
+        manifest = re.sub(r'android:label="[^"]*"', 'android:label="%s"' % APP_LABEL, manifest)
         old = 'android:versionName="%s"' % VERSION
         assert old in manifest
         manifest = manifest.replace(old, 'android:versionName="%s"' % GAME_VERSION)
@@ -126,13 +142,18 @@ if 'android' in PLATFORMS:
     keepActivityOnConfigChanges()
 
 setup(
+    # The packaging name stays TTR-Offline: build_apps names the player's
+    # cache folders after it. The finished files are renamed by the workflow
+    # (tt_offline-<version>_windows.zip, tt_offline-<version>_android.apk).
     name='TTR-Offline',
     version=VERSION,
     options={
         'build_apps': {
             'application_id': APP_ID,
+            # On Windows this is the program's name. Android names its
+            # library after it and shows APP_LABEL, so it keeps a plain name.
             'gui_apps': {
-                'TTR-Offline': 'toontown/toonbase/OfflineStart.py',
+                ('TTR-Offline' if 'android' in PLATFORMS else GAME_TITLE): 'toontown/toonbase/OfflineStart.py',
             },
             'icons': {'*': ICONS},
             # The Panda3D wheels are our own builds, found through PIP_FIND_LINKS.
@@ -147,6 +168,7 @@ setup(
             ]},
             'include_patterns': [
                 'config/release.prc',
+                'config/version.prc',
                 'config/ttroff.dc',
                 'assets/*',
                 'phase_*.mf',
@@ -159,7 +181,9 @@ setup(
             'platforms': PLATFORMS,
             'android_abis': ['arm64-v8a', 'armeabi-v7a', 'x86_64'],
             'android_app_category': 'game',
-            'android_version_code': 1,
+            # Goes up with every build (3.1 is 3001), so a phone takes the
+            # new APK as an update.
+            'android_version_code': gameversion.androidVersionCode(VERSION),
             **LOG_OPTIONS,
         },
         'bdist_apps': {

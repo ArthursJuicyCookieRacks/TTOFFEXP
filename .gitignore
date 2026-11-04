@@ -24,3 +24,4 @@ autoplay-db/
 /dist/*.apk
 turnip/
 turnip-runtime/
+/config/version.prc

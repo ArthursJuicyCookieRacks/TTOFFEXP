@@ -2,9 +2,8 @@
 
 Fishing (Arthur): the bottom screen is the fishing rod's control, a big
 cast pad to drag back and let go of like the top screen's Cast button.
-Each catch is shown there (the same panel the top screen shows, with its X)
-instead of on the top screen, and closing it brings the cast pad back. A
-small Fish Bingo card in the top right corner brings up the whole bingo
+Catches show on the top screen as usual (Arthur took the bottom
+screen's catch panel out again). A yellow Bingo button in the top right corner brings up the whole bingo
 card on the bottom screen, cells and BINGO! button working by touch.
 
 Golf: aim left and right, a Swing button to hold and let go of (with the
@@ -124,8 +123,6 @@ class ActivityPages:
         self.activityModels = {}
 
     def clearActivity(self):
-        self.ignore('dualScreenCatch')
-        self.ignore('dualScreenCatchGone')
         self.closeOverlay()
         self.controls = None
 
@@ -276,8 +273,6 @@ class ActivityPages:
         pond = getattr(spot, 'pond', None) if spot else None
         if pond is not None and pond.hasPondBingoManager():
             self.makeBingoIcon()
-        self.accept('dualScreenCatch', self.showCatch)
-        self.accept('dualScreenCatchGone', self.catchGone)
         self.refreshFishing()
 
     def makeBingoIcon(self):
@@ -347,101 +342,6 @@ class ActivityPages:
         spot = localFishingSpot()
         if spot is not None and spot.madeGui and spot.exitButton['command']:
             spot.exitButton['command']()
-
-    def showCatch(self, spot, code, fish):
-        if self.pageName != 'fishing' or spot is not localFishingSpot():
-            return
-        from toontown.fishing import FishGlobals
-        overlay = self.openOverlay('catch')
-        if fish is None:
-            # Jellybeans, a boot or a ToonTask item: the top screen's own
-            # "You found" panel, moved down here.
-            holder = overlay.attachNewNode('item')
-            self.borrow(spot.itemGui, holder)
-            self.fitInto(holder, spot.itemFrame)
-            self.tap(spot.itemGuiCloseButton, self.closeCatch)
-            return
-        from toontown.fishing import FishPanel
-        holder = overlay.attachNewNode('fish')
-        panel = FishPanel.FishPanel(fish, parent=holder)
-        panel.load()
-        if code == FishGlobals.FishItemNewEntry:
-            panel.extraLabel['text_fg'] = (0.2, 0.8, 0.4, 1)
-            panel.extraLabel['text'] = TTLocalizer.FishingNewEntry
-            panel.extraLabel['text_scale'] = TTLocalizer.FPnewEntry
-        elif code == FishGlobals.FishItemNewRecord:
-            panel.extraLabel['text_fg'] = (1, 0.5, 0, 1)
-            panel.extraLabel['text'] = TTLocalizer.FishingNewRecord
-            panel.extraLabel['text_scale'] = TTLocalizer.FPnewRecord
-        else:
-            panel.extraLabel.hide()
-        # Where the fish swims (FishPanel's swim bounds and color).
-        cards = CardMaker('swim')
-        cards.setFrame(-0.3, 0.3, -0.235, 0.25)
-        swim = panel.attachNewNode(cards.generate())
-        swim.setColor(1.0, 1.0, 0.74901, 1.0)
-        swim.setY(-0.1)
-        panel.mystery.hide()
-        self.fitInto(holder, panel)
-        self.catchPanel = panel
-        self.tap(panel.cancel, self.closeCatch)
-        self.showCatchFish(fish, swim)
-
-    def showCatchFish(self, fish, swim):
-        from toontown.fishing import FishGlobals
-        low, high = swim.getTightBounds(self.aspect) or (Point3(-0.3, 0, -0.3), Point3(0.3, 0, 0.3))
-        actor = fish.getActor()
-        actor.setTwoSided(1)
-        actor.setDepthTest(True)
-        actor.setDepthWrite(True)
-        scene = self.screen.sceneRoot()
-        root = scene.attachNewNode('catchFish')
-        pitch = root.attachNewNode('pitch')
-        rotate = pitch.attachNewNode('rotate')
-        scale = rotate.attachNewNode('scale')
-        actor.reparentTo(scale)
-        genus = fish.getGenus()
-        info = FishGlobals.FishFileDict.get(genus, FishGlobals.FishFileDict[-1])
-        rotate.setH(info[7])
-        pitch.setP(info[8])
-        bounds = actor.getTightBounds(root)
-        if bounds:
-            a, b = bounds
-            margin = 0.62
-            size = min((high[0] - low[0]) * margin / max(0.001, b[0] - a[0]), (high[2] - low[2]) * margin / max(0.001, b[2] - a[2]))
-            root.setScale(size)
-            root.setPos((low[0] + high[0]) / 2.0 - (a[0] + b[0]) / 2.0 * size, 0,
-                        (low[2] + high[2]) / 2.0 - (a[2] + b[2]) / 2.0 * size)
-        self.catchActor = actor
-        self.catchRoot = root
-        # Plays its intro and then swims, as in the top screen's panel.
-        try:
-            sound, loop, delay, playRate = fish.getSound()
-            if playRate is not None:
-                actor.setPlayRate(playRate, 'intro')
-                actor.setPlayRate(playRate, 'swim')
-            actor.play('intro')
-            track = Sequence(Wait(actor.getDuration('intro')), Func(actor.loop, 'swim'))
-            if sound:
-                track = Sequence(Func(track.start), Wait(delay), Func(sound.play))
-            track.start()
-            self.catchSound = track
-        except Exception:
-            actor.loop('swim')
-        root.reparentTo(scene)
-
-    def closeCatch(self):
-        if self.overlayKind != 'catch':
-            return
-        spot = localFishingSpot()
-        self.closeOverlay()
-        if spot is not None and spot.madeGui:
-            # As the top screen's X does.
-            spot.itemGui.detachNode()
-
-    def catchGone(self, spot):
-        if self.overlayKind == 'catch':
-            self.closeOverlay()
 
     def openBingo(self):
         manager = self.bingoManager()

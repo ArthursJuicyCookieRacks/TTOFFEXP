@@ -591,8 +591,12 @@ class DistributedBuilding(DistributedObject.DistributedObject):
             frontNP = suitBuildingNP.find('**/*_front;+s')
         backgroundNP.wrtReparentTo(frontNP)
         frontNP.node().setEffect(DecalEffect.make())
+        # A gold star right of the name sign shows the field office's level.
+        # It is not a decal: it stands just off the wall instead.
+        starNP = self.makeFieldOfficeLevelStar(signOrigin, level, backgroundNP.getZ(signOrigin))
         suitBuildingNP.setName('cb' + str(self.block) + ':_landmark__DNARoot')
         suitBuildingNP.setPosHprScale(nodePath, 15.463, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0)
+        self.layOutFieldOfficeSign(signOrigin, backgroundNP, starNP, signTextNodePath, textNode.getWidth())
         if chr(self.track) == 'm':
             self.retextureCashbotFieldOffice(suitBuildingNP)
         elif chr(self.track) == 'c':
@@ -601,6 +605,142 @@ class DistributedBuilding(DistributedObject.DistributedObject):
         suitBuildingNP.setColorScale(0.6, 0.6, 0.6, 1.0)
         self.loadElevator(suitBuildingNP, cogdo=True)
         return suitBuildingNP
+
+    # Where the level star sits beside the field office sign: just past the
+    # sign's right edge (half its width is 20 * 0.267), out in front of the
+    # wall and the eyebrow beam so they never hide it, and its size in feet.
+    FieldOfficeStarX = 6.75
+    FieldOfficeStarY = -3.5
+    FieldOfficeStarZ = -0.7
+    FieldOfficeStarSize = 2.5
+
+    # Sign and star layout, in feet: the gap between them, and how far right
+    # the star may reach (on an unsqueezed lot) before the beam covers it.
+    FieldOfficeSignHalfWidth = 20.0 * 0.266667
+    FieldOfficeStarGap = 0.17
+    FieldOfficeStarRightLimit = 8.0
+    FieldOfficeNarrowStarScale = 0.9
+    FieldOfficeNarrowStarZ = -0.12
+    FieldOfficeNarrowShift = 0.6
+    FieldOfficeNarrowTextScale = 1.3
+    FieldOfficeNarrowSignScale = 1.22
+    FieldOfficeNarrowSignRaise = 0.28
+    FieldOfficeNarrowSignTaller = 1.6
+    FieldOfficeTextDrop = 0.35
+    FieldOfficeMidStarScale = 0.9
+    FieldOfficeWideStarScale = 0.93
+    FieldOfficeWideStarZ = -0.6
+    FieldOfficeMidStarZ = -0.62
+    FieldOfficeMidStarShift = 0.35
+    FieldOfficeMidSignScale = 1.08
+
+    def layOutFieldOfficeSign(self, signOrigin, signNP, starNP, textNP=None, textWidth=0.0):
+        # Street lots stretch or squeeze the whole field office sideways, by a
+        # different amount on each lot. The sign and the star keep their true
+        # shape on every lot: they sit side by side, centred over the door,
+        # and the sign shrinks where the front is too narrow for both.
+        netScale = signOrigin.getScale(render)
+        squeeze = netScale[0] / netScale[2] if netScale[2] > 0.001 else 1.0
+        if squeeze < 0.001:
+            return
+        half = self.FieldOfficeSignHalfWidth
+        radius = self.FieldOfficeStarSize / 2.0
+        starWidth = self.FieldOfficeStarGap + 2 * radius
+        room = 2 * self.FieldOfficeStarRightLimit * squeeze
+        # The star is always full size; only the sign shrinks to make room.
+        fit = max(0.4, min(1.0, (room - starWidth) / (2 * half)))
+        left = -(2 * half * fit + starWidth) / 2.0
+        signScale = signNP.getScale(signOrigin)
+        signNP.setScale(signOrigin, signScale[0] * fit / squeeze, signScale[1], signScale[2] * fit)
+        signNP.setX(signOrigin, (left + half * fit) / squeeze)
+        starX = left + 2 * half * fit + self.FieldOfficeStarGap + radius
+        signZ = signNP.getZ(signOrigin)
+        starNP.setScale(1.0 / squeeze, 1.0, 1.0)
+        starNP.setX(starX / squeeze)
+        starNP.setZ(signZ + self.FieldOfficeStarZ)
+        if fit < 0.7:
+            # On the narrowest fronts the star would sit on the elevator's
+            # door frame: a little smaller, and a little higher.
+            small = self.FieldOfficeNarrowStarScale
+            starNP.setScale(small / squeeze, 1.0, small)
+            starNP.setX((starX - radius * (1 - small)) / squeeze)
+            starNP.setZ(signZ + self.FieldOfficeNarrowStarZ)
+            # ...and the sign and star sit a little further right.
+            shift = self.FieldOfficeNarrowShift / squeeze
+            starNP.setX(starNP.getX() + shift)
+            signNP.setX(signOrigin, signNP.getX(signOrigin) + shift)
+            # The sign is small there: make it a little bigger, growing to
+            # the left so it keeps its gap from the star.
+            bigger = self.FieldOfficeNarrowSignScale
+            sx, sy, sz = signNP.getScale(signOrigin)
+            signNP.setScale(signOrigin, sx * bigger, sy, sz * bigger)
+            signNP.setX(signOrigin, signNP.getX(signOrigin) - half * fit * (bigger - 1.0) / squeeze)
+            # A little taller plate, top and bottom; the writing keeps its size.
+            taller = self.FieldOfficeNarrowSignTaller
+            signNP.setSz(signNP.getSz() * taller)
+            if textNP is not None:
+                textNP.setSz(textNP.getSz() / taller)
+                textNP.setZ(textNP.getZ() / taller)
+            # Its middle lines up with the star's as seen from the street
+            # (the star stands out from the wall, so it looks higher).
+            # Taller than the first 25% grows upward only, so the bottom stays
+            # clear of the elevator's door frame.
+            plateHalf = signNP.getScale(signOrigin)[2] * 0.133333
+            grewUp = plateHalf * (1.0 - 1.25 / taller)
+            signNP.setZ(signOrigin, signZ + self.FieldOfficeNarrowSignRaise + grewUp)
+            # ...and its writing fills more of it.
+            if textNP is not None and textWidth > 0:
+                # Text units are 0.8 ft across the full-size sign; keep the
+                # screws at the ends clear.
+                grow = min(self.FieldOfficeNarrowTextScale, (2 * half - 2.0) / (textWidth * 0.8))
+                if grow > 1.0:
+                    textNP.setSx(textNP.getSx() * grow)
+                    textNP.setSz(textNP.getSz() * grow)
+                    textNP.setZ(textNP.getZ() - self.FieldOfficeTextDrop * (grow - 1.0) * textNP.getSz() / grow)
+        elif fit >= 0.95:
+            # Wide fronts: the star a tiny bit smaller and a tiny bit higher.
+            small = self.FieldOfficeWideStarScale
+            starNP.setScale(small / squeeze, 1.0, small)
+            starNP.setX((starX - radius * (1 - small)) / squeeze)
+            starNP.setZ(signZ + self.FieldOfficeWideStarZ)
+        elif fit < 0.95:
+            # Middling fronts: the star a little smaller and a little higher.
+            small = self.FieldOfficeMidStarScale
+            starNP.setScale(small / squeeze, 1.0, small)
+            starNP.setX((starX - radius * (1 - small)) / squeeze)
+            starNP.setZ(signZ + self.FieldOfficeMidStarZ)
+            # ...a little further right, with a little bigger sign.
+            starNP.setX(starNP.getX() + self.FieldOfficeMidStarShift / squeeze)
+            bigger = self.FieldOfficeMidSignScale
+            sx, sy, sz = signNP.getScale(signOrigin)
+            signNP.setScale(signOrigin, sx * bigger, sy, sz * bigger)
+        starNP.setPythonTag('foSignLayout', (round(squeeze, 3), round(fit, 3)))
+
+    @classmethod
+    def makeFieldOfficeLevelStar(cls, signOrigin, level, z=0.0):
+        star = signOrigin.attachNewNode('fieldOfficeLevelStar')
+        star.setPos(cls.FieldOfficeStarX, cls.FieldOfficeStarY, z + cls.FieldOfficeStarZ)
+        star.setDepthOffset(2)
+        outline = loader.loadModel('phase_3.5/models/gui/name_star')
+        outline.reparentTo(star)
+        outline.setScale(cls.FieldOfficeStarSize * 1.12)
+        outline.setColor(0.35, 0.22, 0.02, 1.0)
+        face = loader.loadModel('phase_3.5/models/gui/name_star')
+        face.reparentTo(star)
+        face.setScale(cls.FieldOfficeStarSize)
+        face.setY(-0.03)
+        face.setColor(1.0, 0.82, 0.15, 1.0)
+        textNode = TextNode('fieldOfficeLevel')
+        textNode.setFont(ToontownGlobals.getSignFont())
+        textNode.setAlign(TextNode.ACenter)
+        textNode.setTextColor(0.3, 0.12, 0.0, 1.0)
+        textNode.setText(str(level))
+        text = star.attachNewNode(textNode.generate())
+        text.setScale(cls.FieldOfficeStarSize * 0.55)
+        text.setPos(0, -0.06, -cls.FieldOfficeStarSize * 0.2)
+        # The rest of the field office is darkened; the star stays bright.
+        star.setColorScaleOff(1)
+        return star
 
     # A Cashbot field office shares the Mover & Shaker building: it gets
     # Arthur's green Loan Shark poster and trim in place of the Sellbot ones.

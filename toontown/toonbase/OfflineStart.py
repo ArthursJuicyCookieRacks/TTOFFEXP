@@ -80,6 +80,10 @@ def main():
     print('OfflineStart: game files in %s, player files in %s' % (gameDir, dataDir))
 
     loadPrcFile(Filename(gameDir, 'config/release.prc'))
+    # The build's version (TT-OFFEXP-3.1), written by setup.py for each build.
+    versionPrc = Filename(gameDir, 'config/version.prc')
+    if versionPrc.exists():
+        loadPrcFile(versionPrc)
     loadPrcFileData('OfflineStart', '\n'.join([
         'offline-release 1',
         'auto-start-server 1',
