@@ -1809,7 +1809,20 @@ class CogdoBoardroomPlayer(CogdoPlayer):
         if t < self.memo.get('dodgeUntil', 0):
             goal = self.memo['dodgeX']
         steer = max(-1.0, min(1.0, (goal - x) / 2.0))
-        want = BoardroomConsts.SlideFastSpeed if not ahead else BoardroomConsts.SlideSpeed
+        # The fast speed only now and then, as a player holds forward on a
+        # clear stretch (the NPCs held it whenever no memo was near, so they
+        # beat the player down the table by over a minute: Arthur).
+        if t >= self.memo.get('paceUntil', 0):
+            self.memo['paceUntil'] = t + random.uniform(2.0, 5.0)
+            self.memo['fast'] = random.random() < 0.3
+        want = BoardroomConsts.SlideFastSpeed if self.memo.get('fast') and not ahead else BoardroomConsts.SlideSpeed
+        crashed = t < self.memo.get('crashUntil', 0)
+        if crashed:
+            # Knocked flat by a pile or a pencil, as the player is: stopped
+            # dead till it is up again.
+            want = 0.0
+            self.memo['speed'] = 0.0
+            self.memo['steerVel'] = 0.0
         speed = self.memo['speed']
         speed += max(-BoardroomConsts.SlideAccel * dt, min(BoardroomConsts.SlideAccel * dt, want - speed))
         if game.lastHit.get(self.npc.doId, -99) > t - BoardroomConsts.SpinTime:
@@ -1817,8 +1830,17 @@ class CogdoBoardroomPlayer(CogdoPlayer):
         # Never past the goal in one step: on a slow tick the full steer
         # carried an NPC beside a pile across into it, every tick, so it sat
         # there for minutes (root cause of the NPCs falling far behind).
-        step = steer * BoardroomConsts.SteerSpeed * dt
-        nx = x + (max(-abs(goal - x), min(abs(goal - x), step)))
+        # On an oil slick the steering barely grips and the NPC drifts, as
+        # the player does (the NPCs used to ignore the slicks).
+        slick = self._onSlick(x, y, t)
+        grip = BoardroomConsts.SlickGrip if slick else 1.0
+        vel = self.memo.get('steerVel', 0.0)
+        vel += (steer * BoardroomConsts.SteerSpeed - vel) * min(1.0, grip * dt * 10.0)
+        if crashed:
+            vel = 0.0
+        self.memo['steerVel'] = vel
+        step = vel * dt
+        nx = x + (step if slick else max(-abs(goal - x), min(abs(goal - x), step)))
         nx = max(-BoardroomConsts.TableHalfWidth + 1, min(BoardroomConsts.TableHalfWidth - 1, nx))
         ny = y + speed * dt
         here = layout.heightAt(x, y)
@@ -1829,6 +1851,8 @@ class CogdoBoardroomPlayer(CogdoPlayer):
             # side for a moment (steering straight back into it kept the
             # NPCs stuck behind piles until the time ran out).
             ob = bumped[0]
+            if speed > 3.0 and not crashed:
+                self._crashInto(t)
             speed = 0.0
             ny = y
             # Still free to edge sideways round it (dropping the sideways
@@ -1838,7 +1862,9 @@ class CogdoBoardroomPlayer(CogdoPlayer):
             sides = [g for g in (ob.x - ob.w - 2.0, ob.x + ob.w + 2.0) if abs(g) < BoardroomConsts.TableHalfWidth - 1.0]
             if sides:
                 self.memo['dodgeX'] = min(sides, key=lambda g: abs(g - x))
-                self.memo['dodgeUntil'] = t + 1.5
+                # Past the crash too: steering back for the memo behind the
+                # pile as soon as it was up again ran it straight back in.
+                self.memo['dodgeUntil'] = t + BoardroomConsts.CrashTime + 1.5
         # Not moving on for a while (wedged between piles): scoot over to a
         # clear spot across the table, as a player would wriggle free.
         if ny > self.memo.get('progressY', -99) + 1.0:
@@ -1858,9 +1884,25 @@ class CogdoBoardroomPlayer(CogdoPlayer):
         self.memo['speed'] = speed
         self.memo['x'], self.memo['y'] = nx, ny
         z = BoardroomConsts.TableTop
-        # Along the (crooked) pencil where the NPC is, not its middle.
-        hop = any(ob.kind == BoardroomLayout.PENCIL and -0.5 < ob.y + (nx - ob.x) * math.tan(math.radians(ob.angle)) - ny < 1.5
-                  and abs(ob.x - nx) < ob.w + 1 for ob in layout.obstacles)
+        # Along the (crooked) pencil where the NPC is, not its middle. Now
+        # and then it hops too late, as a player does, and runs into it.
+        hop = False
+        for k, ob in enumerate(layout.obstacles):
+            if ob.kind != BoardroomLayout.PENCIL:
+                continue
+            line = ob.y + (nx - ob.x) * math.tan(math.radians(ob.angle))
+            if -0.5 < line - ny < 1.5:
+                misses = self.memo.setdefault('pencilMiss', {})
+                if k not in misses:
+                    misses[k] = random.random() < 0.15
+                if not misses[k]:
+                    hop = True
+                elif not crashed and line - BoardroomConsts.PencilHeight / 2.0 - 0.9 <= ny:
+                    ny = line - BoardroomConsts.PencilHeight / 2.0 - 1.0
+                    self.memo['y'] = ny
+                    self.memo['speed'] = 0.0
+                    misses[k] = False
+                    self._crashInto(t)
         if hop:
             z += 2.0
         z = max(z, layout.heightAt(nx, ny))
@@ -1875,6 +1917,20 @@ class CogdoBoardroomPlayer(CogdoPlayer):
         if ny > BoardroomConsts.TableEnd - BoardroomConsts.JumpOffAt:
             side = 1 if nx >= 0 else -1
             self.memo['jump'] = (now, nx, ny, z, side * BoardroomConsts.JumpOffX, BoardroomConsts.TableEnd + 2.5)
+
+    def _crashInto(self, t):
+        # Stopped dead and hurt, as the player is by a pile or a pencil.
+        self.memo['crashUntil'] = t + BoardroomConsts.CrashTime
+        self.send('requestHit', BoardroomConsts.Obstacle)
+
+    def _onSlick(self, x, y, t):
+        # The oil slicks are the client's (it hears where the cans spill and
+        # the jugs land); offline it runs in this same process.
+        try:
+            game = getClientBuiltin('base').cr.doId2do.get(self.game.doId)
+            return bool(game) and game._onSlick((x, y, BoardroomConsts.TableTop), game.gameTime())
+        except Exception:
+            return False
 
     def golf(self, now):
         game = self.game

@@ -508,7 +508,14 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
                 self._checkPickups(pos)
                 self._checkLandings(pos, now)
                 self._powerUps(toon, now)
-                self._slide(toon, pos, dt, now)
+                # In steps of at most 0.1 s, but for all the time that really
+                # passed: with dt capped at 0.1, below 10 FPS the player slid
+                # slower than the NPCs (at 6 FPS only 60% of the speed).
+                left = min(globalClock.getDt(), 0.4)
+                while left > 1e-4 and self.slideState in ('wait', 'slide'):
+                    step = min(left, 0.1)
+                    left -= step
+                    self._slide(toon, toon.getPos(render), step, now)
             elif self.slideState == 'off':
                 self._walkToExit(toon, pos, dt)
             if pos[2] < -4:
@@ -638,7 +645,17 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
             else:
                 self.stuckTime = 0.0
             if self.stuckTime > 0.12:
-                self._crash(toon, now)
+                if self._realObstacleAhead(pos):
+                    self._crash(toon, now)
+                else:
+                    # Held up by nothing the toon should crash into (the
+                    # ramps' slope, after a knock-back took it off its
+                    # launch): lifted onto what is under it and on it goes.
+                    # (Crashing here again and again kept a toon stuck and
+                    # hit at the foot of a ramp: Arthur.)
+                    self.stuckTime = 0.0
+                    lift = self.layout.heightAt(pos[0], pos[1] + 1.0)
+                    toon.setZ(render, max(pos[2], lift + 0.2))
         new = PM.Point3(pos[0] + self.steerVel * dt, pos[1] + self.slideSpeed * dt, pos[2])
         hw = Consts.TableHalfWidth - 1.0
         new.setX(max(-hw, min(hw, new[0])))
@@ -868,10 +885,28 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         track.start()
         self.ivals.append(track)
 
+    def _realObstacleAhead(self, pos):
+        # A pile's side or a pencil just ahead, low enough to run into.
+        for ob in self.layout.obstacles:
+            if ob.kind == Layout.PILE and ob.contains(pos[0], pos[1] + 1.2, 0.6) \
+                    and pos[2] < Consts.TableTop + ob.h - 0.5 and not self._onRamp(pos):
+                return True
+        return self._pencilInWay(PM.Point3(pos[0], pos[1] + 0.8, pos[2])) is not None
+
+    def _onRamp(self, pos):
+        return any(ob.kind == Layout.RAMP and ob.contains(pos[0], pos[1], 0.3) for ob in self.layout.obstacles)
+
     def _launchRamps(self, toon, pos):
         # Up a ramp and off its top: into the air.
         for i, ob in enumerate(self.layout.obstacles):
-            if ob.kind != Layout.RAMP or i in self.launched:
+            if ob.kind != Layout.RAMP:
+                continue
+            if i in self.launched:
+                # Knocked back down it (or off it): it launches again next
+                # time up (once only, a toon knocked back down a ramp could
+                # never get up onto its pile).
+                if pos[1] < ob.y - ob.l + 0.5 or abs(pos[0] - ob.x) > ob.w + 1.0:
+                    self.launched.discard(i)
                 continue
             if abs(pos[0] - ob.x) < ob.w and ob.y + ob.l - 1.2 < pos[1] < ob.y + ob.l + 0.8:
                 self.launched.add(i)
@@ -1301,7 +1336,8 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         if getattr(toon, '_smartCamEnabled', False):
             toon.stopUpdateSmartCamera()
             self._stoppedSmartCam = True
-        toon.setSystemMessage(0, '')
+        # (This cleared the margin whisper with an empty one, which can
+        # build a NaN-sized balloon and threw from startGolf: removed.)
         self._golfArrival = self._makeGolfArrival()
         self._golfArrival.start(min(elapsed, Consts.GolfLeadIn - 0.1))
 
@@ -1681,7 +1717,7 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
             self.leftOrder.append(avId)
         if not self._golfWaiting() and self.golf is not None:
             # All in: the doors close for the ride up.
-            base.localAvatar.setSystemMessage(0, '')
+            pass  # (no empty whisper: it can build a NaN-sized balloon)
             doors = ElevatorUtils.getCloseInterval(self, self.golf.toonLeftDoor, self.golf.toonRightDoor,
                                                    self.closeSfx, None, type=ELEVATOR_NORMAL)
             doors.start()
