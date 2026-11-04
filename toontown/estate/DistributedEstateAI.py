@@ -163,7 +163,10 @@ class DistributedEstateAI(DistributedObjectAI):
 
         for petId in self.pets:
             pet = self.air.doId2do.get(petId)
-            if pet:
+            # (Only the doodle itself: once it has gone to its owner's
+            # battle, the stand-in there has the same id, and taking that
+            # away made the doodle's trick heal nothing.)
+            if pet and pet.__class__.__name__ == 'DistributedPetAI':
                 pet.requestDelete()
         del self.pets[:]
 

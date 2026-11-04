@@ -825,7 +825,12 @@ class NPCPlayerManagerAI:
                 ground = nav.groundZ(spot[0], spot[1], pos[2] + 1.5)
                 if ground is None or abs(ground - pos[2]) > 1.0 or not nav.clearLine(pos, Point3(spot[0], spot[1], ground)):
                     continue
-                npc.moveTo(spot[0], spot[1], ground, npc.getH())
+                h = npc.getH()
+                if getattr(npc, 'walk', None) is None:
+                    # A standing toon steps aside facing the way it goes,
+                    # so the clients draw a step, not a slide in a stand.
+                    h = -math.degrees(math.atan2(push[0], push[1]))
+                npc.moveTo(spot[0], spot[1], ground, h)
                 toons[i] = (npc, Point3(spot[0], spot[1], ground))
 
     def walkNPC(self, area, npc, dt):
