@@ -623,7 +623,7 @@ class DistributedBuilding(DistributedObject.DistributedObject):
     FieldOfficeNarrowTextScale = 1.3
     FieldOfficeNarrowSignScale = 1.15
     FieldOfficeNarrowSignRaise = 0.4
-    FieldOfficeNarrowSignTaller = 1.25
+    FieldOfficeNarrowSignTaller = 1.4
     FieldOfficeTextDrop = 0.35
     FieldOfficeMidStarScale = 0.85
     FieldOfficeWideStarScale = 0.93
@@ -679,7 +679,11 @@ class DistributedBuilding(DistributedObject.DistributedObject):
                 textNP.setZ(textNP.getZ() / taller)
             # Its middle lines up with the star's as seen from the street
             # (the star stands out from the wall, so it looks higher).
-            signNP.setZ(signOrigin, signZ + self.FieldOfficeNarrowSignRaise)
+            # Taller than the first 25% grows upward only, so the bottom stays
+            # clear of the elevator's door frame.
+            plateHalf = signNP.getScale(signOrigin)[2] * 0.133333
+            grewUp = plateHalf * (1.0 - 1.25 / taller)
+            signNP.setZ(signOrigin, signZ + self.FieldOfficeNarrowSignRaise + grewUp)
             # ...and its writing fills more of it.
             if textNP is not None and textWidth > 0:
                 # Text units are 0.8 ft across the full-size sign; keep the
