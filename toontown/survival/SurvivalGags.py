@@ -146,13 +146,22 @@ CENTRE_PULL = 1.0
 # PALM_EDGE_ROOM of the glove's width in from its edge all round, at the
 # first of FIT_SIZES (of its size) that fits somewhere.
 KEEP_ON_GLOVE = ('ship',)
-# Where on the glove such a gag's middle goes, from the roomiest spot, in
-# glove widths along the hand's x and y (-y is the side nearer the eye).
+# Parts of a prop that are not the thing itself: the ship carries a flat
+# drop shadow bigger than its hull, which kept it off the near side of the
+# palm (Arthur: "move it down towards the left a little more").
+NOT_SOLID = ('shadow',)
+# Where on the glove such a gag's middle goes, from the middle of the palm,
+# in glove widths along the hand's x and y (-x toward the fingers, -y the
+# side nearer the eye).
 # Tall, the ship hid the far half of the palm and seemed to sit up on its
-# far edge (Arthur: "it should sit where the blue dot is", the middle of
-# the palm as seen). It still never goes nearer the edge than PALM_EDGE_ROOM.
-GLOVE_AIM = {'ship': (0.0, -0.12)}
+# far edge (Arthur: "it should sit where the blue dot is", then "down
+# towards the left a little more"). It never goes nearer the glove's edge
+# than AIM_EDGE_ROOM, and is drawn smaller (FIT_SIZES) only when it cannot
+# come within AIM_REACH of the wanted spot.
+GLOVE_AIM = {'ship': (-0.15, -0.2)}
 AIM_EDGE_ROOM = 0.02
+# How near the wanted spot it must come before it is drawn smaller.
+AIM_REACH = 0.03
 PALM_EDGE_ROOM = 0.1
 # The turns (degrees about the palm's up) it may take to fit, first first.
 FIT_TURNS = (-90,)
@@ -344,7 +353,7 @@ def propTriangles(prop, space):
     from panda3d.core import GeomVertexReader
     tris = []
     for np in prop.findAllMatches('**/+GeomNode'):
-        if np.isHidden():
+        if np.isHidden() or np.getName() in NOT_SOLID:
             continue
         mat = np.getMat(space)
         node = np.node()
@@ -1279,7 +1288,7 @@ class GagHandler:
         # corners (the glove's shape is not convex).
         own = []
         for np in prop.findAllMatches('**/+GeomNode'):
-            if np.isHidden():
+            if np.isHidden() or np.getName() in NOT_SOLID:
                 continue
             mat = np.getMat(hand)
             node = np.node()
@@ -1318,19 +1327,33 @@ class GagHandler:
             return found
 
         best = None
-        for size in FIT_SIZES:
-            fits = [f for turn in FIT_TURNS for f in spots(size, turn, need, 2)]
-            if fits:
-                best = max(fits)
-                break
-        if best is not None and aim:
-            # As big as it fits with all the room, there is one place for it;
-            # to go where it is wanted it may come nearer the edge, never
-            # nearer than AIM_EDGE_ROOM of the glove's width.
-            have, x, y, size, turn = best
-            tx, ty = x + aim[0] * width, y + aim[1] * width
-            near = spots(size, turn, AIM_EDGE_ROOM * width, 1) or [best]
-            best = min(near, key=lambda f: (f[1] - tx) ** 2 + (f[2] - ty) ** 2)
+        if aim:
+            # The middle of the palm (the deepest spot of the glove's shape),
+            # moved by the aim: as big as it still fits there (Arthur: "move
+            # it down towards the left a little more"), it goes as near to it
+            # as it can with AIM_EDGE_ROOM of the glove's width to spare.
+            deep = max((grid[r][k], r, k) for r in range(rows) for k in range(cols))
+            tx = x0 + (deep[2] + 0.5) * cell + aim[0] * width
+            ty = y0 + (deep[1] + 0.5) * cell + aim[1] * width
+            reach = AIM_REACH * width
+            for size in FIT_SIZES:
+                if not any(spots(size, turn, need, 2) for turn in FIT_TURNS):
+                    continue
+                near = [f for turn in FIT_TURNS for f in spots(size, turn, AIM_EDGE_ROOM * width, 1)]
+                if not near:
+                    continue
+                spot = min(near, key=lambda f: (f[1] - tx) ** 2 + (f[2] - ty) ** 2)
+                if best is None:
+                    best = spot
+                if (spot[1] - tx) ** 2 + (spot[2] - ty) ** 2 <= reach * reach:
+                    best = spot
+                    break
+        else:
+            for size in FIT_SIZES:
+                fits = [f for turn in FIT_TURNS for f in spots(size, turn, need, 2)]
+                if fits:
+                    best = max(fits)
+                    break
         best = best or closest[0]
         # Fitting nowhere, it goes where it comes nearest (above).
         if best is None:
