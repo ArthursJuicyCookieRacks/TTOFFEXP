@@ -15,6 +15,7 @@ from panda3d.core import (AmbientLight, CardMaker, DirectionalLight, Fog, Geom, 
 from toontown.dna import DNAParser
 from toontown.dna.DNAStorage import DNAStorage
 from toontown.toonbase import ToontownGlobals
+from toontown.survival.previewmaps.MapKit import JUMP_BLOCK, JUMP_CLEAR
 
 BASE_STORAGE = ('phase_4/dna/storage.xml', 'phase_4/dna/storage_TT.xml', 'phase_4/dna/storage_TT_sz.xml',
                 'phase_5/dna/storage_town.xml', 'phase_5/dna/storage_TT_town.xml')
@@ -371,7 +372,22 @@ class MapKit:
             node.addSolid(CollisionCapsule(Point3(a[0], a[1], z0 + z), Point3(b[0], b[1], z0 + z), radius))
         node.setIntoCollideMask(ToontownGlobals.WallBitmask)
         node.setFromCollideMask(BitMask32.allOff())
-        return (parent or self.root).attachNewNode(node)
+        path = (parent or self.root).attachNewNode(node)
+        if height < JUMP_CLEAR:
+            # A low wall (a picket fence, a kart, a crate) a toon could jump
+            # over or into: it landed on the fence line and slid along inside
+            # it, or dropped into the hollow box round a model (Arthur,
+            # Downsizer Drive). Rails above it up to JUMP_CLEAR that only the
+            # player's wall sphere sees; cogs and shots pass over.
+            block = CollisionNode('jumpBlock')
+            z = height + 0.6
+            while z < JUMP_CLEAR - 0.3:
+                block.addSolid(CollisionCapsule(Point3(a[0], a[1], z0 + z), Point3(b[0], b[1], z0 + z), max(thin, 0.45)))
+                z += 0.9
+            block.setIntoCollideMask(JUMP_BLOCK)
+            block.setFromCollideMask(BitMask32.allOff())
+            path.attachNewNode(block)
+        return path
 
     def solid(self, np, shrink=0.9, name='mapSolid', minSize=None):
         """Make a model without collisions of its own solid: a wall

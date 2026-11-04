@@ -14,12 +14,14 @@ from direct.controls import GravityWalker
 from direct.directnotify import DirectNotifyGlobal
 from direct.showbase.DirectObject import DirectObject
 from direct.showbase.InputStateGlobal import inputState
-from panda3d.core import NodePath, Point3, Vec3, WindowProperties
+from panda3d.core import CollisionCapsule, NodePath, Point3, Vec3, WindowProperties
 
 from toontown.survival import SurvivalGlobals as G
 from toontown.toonbase import ToontownGlobals, TouchControls
 
 SOURCE = 'survival'
+# The tops the previewmaps put on low rings of posts (MapKit.JUMP_BLOCK).
+from toontown.survival.previewmaps.MapKit import JUMP_BLOCK
 # Frames the toon can try to walk without moving before the plain pusher
 # frees it, and how many frames the plain pusher then has.
 STUCK_FRAMES = 3
@@ -32,6 +34,25 @@ GUARD_TRIES = 3
 # Walking into something this squarely (the cosine against its face) is
 # being blocked by it, not stuck.
 WALL_FACING = 0.3
+# Steps the guard has taken back, walking every way, before the toon is
+# taken as wedged into a wall for good and set down on the nearest free
+# ground (see __freeSpot).
+WEDGED_UNDONE = 8
+# A toon's middle nearer a wall than DEPENETRATE_GAP is pushed back out to
+# DEPENETRATE_TO (the walker's ball is 1.4 across from its middle).
+DEPENETRATE_GAP = 1.0
+DEPENETRATE_TO = 1.3
+# A frame's step shorter than this that crosses a wall's line is undone
+# (longer ones are the game setting the toon down somewhere). A sprint with
+# Sprint Soda covers over 3.4 feet a frame at 10 fps (a slow phone): one
+# went clean through a lamp post on Farewell Fair.
+CROSS_UNDO_STEP = 8.0
+# This many frames in a row undone: the toon is set down nearby (__freeSpot).
+CROSS_UNDO_RESCUE = 8
+# Every ENCLOSED_EVERY frames: walled off from all open ground near it this
+# many checks in a row, the toon is set down outside (__enclosed).
+ENCLOSED_EVERY = 5
+ENCLOSED_RESCUE = 3
 MOUSE_SENSITIVITY = 0.12
 # Camera sensitivity 1 (very slow) to 10 (very fast), from the pause
 # menu's Settings; 5 is the turn speed the game always had.
@@ -154,7 +175,9 @@ class SurvivalPlayer(DirectObject):
         self.lookDelta = Vec3(0)
         self.touchLook = None
         self.walker = GravityWalker.GravityWalker(legacyLifter=False)
-        self.walker.setWallBitMask(ToontownGlobals.WallBitmask)
+        # The walls, and the tops the previewmaps put on low rings of posts
+        # so a toon can't jump over into the hollow (MapKit.JUMP_BLOCK).
+        self.walker.setWallBitMask(ToontownGlobals.WallBitmask | JUMP_BLOCK)
         self.walker.setFloorBitMask(ToontownGlobals.FloorBitmask)
         # The fluid pusher: it sweeps the toon's wall sphere along the whole
         # step of a frame, not only where the step ends. With the plain
@@ -195,7 +218,7 @@ class SurvivalPlayer(DirectObject):
         from panda3d.core import BitMask32, CollisionHandlerQueue, CollisionNode, CollisionSphere
         touchNode = CollisionNode('survivalTouch')
         touchNode.addSolid(CollisionSphere(0, 0, self.walker.avatarRadius, self.walker.avatarRadius + 0.15))
-        touchNode.setFromCollideMask(ToontownGlobals.WallBitmask)
+        touchNode.setFromCollideMask(ToontownGlobals.WallBitmask | JUMP_BLOCK)
         touchNode.setIntoCollideMask(BitMask32.allOff())
         self.touchPath = self.body.attachNewNode(touchNode)
         self.touchQueue = CollisionHandlerQueue()
@@ -205,6 +228,11 @@ class SurvivalPlayer(DirectObject):
         self.plainFrames = 0
         self.lastFlat = Point3(self.body.getPos())
         self.guardFrom = None
+        # Where the toon was when the last frame was drawn (__depenetrate).
+        self.lastFinal = None
+        self.crossUndone = 0
+        self.enclosedTick = 0
+        self.enclosedCount = 0
         self.guardUndone = 0
         self.mayForce = False
         self.mouseCentered = False
@@ -243,6 +271,8 @@ class SurvivalPlayer(DirectObject):
         if gamepad is not None:
             gamepad.setGame(self)
         taskMgr.add(self.__tick, 'survivalPlayer', priority=24)
+        # After the collision pass and the unstick guard (sort 35).
+        taskMgr.add(self.__depenetrate, 'survivalDepenetrate', sort=36)
 
     def acceptKeys(self):
         """Listen for the keys, as the player has bound them (Settings >
@@ -289,6 +319,7 @@ class SurvivalPlayer(DirectObject):
         self.__footsteps(off=True)
         self.__usePlainPusher(False)
         taskMgr.remove('survivalPlayer')
+        taskMgr.remove('survivalDepenetrate')
 
     def destroy(self):
         self.disable()
@@ -617,6 +648,16 @@ class SurvivalPlayer(DirectObject):
             if moved > speed * dt * 0.5:
                 # Walking freely again.
                 self.guardUndone = 0
+        if self.stuckFrames >= STUCK_FRAMES and self.guardUndone >= WEDGED_UNDONE and self.__straddling():
+            # Straddling a ring of posts with walls on both sides (a jump
+            # against Farewell Fair's balloon basket rode up a post's round
+            # top and came down on the line of posts): every way out
+            # crosses a wall, so the guard took back every step and the
+            # toon stood there for good. Out to the nearest free ground.
+            self.stuckFrames = 0
+            if self.__freeSpot():
+                self.guardUndone = 0
+                return
         if self.stuckFrames >= STUCK_FRAMES:
             self.stuckFrames = 0
             # The plain pusher frees it either way; a toon walking into a
@@ -625,6 +666,217 @@ class SurvivalPlayer(DirectObject):
             self.mayForce = self.__walkingAway()
             self.plainFrames = PLAIN_FRAMES
             self.__usePlainPusher(True)
+
+    def __touching(self):
+        self.touchQueue.clearEntries()
+        self.touchTrav.traverse(render)
+        return any(self.touchQueue.getEntry(i).getInto().isTangible() for i in range(self.touchQueue.getNumEntries()))
+
+    def __depenetrate(self, task):
+        """Push the toon's middle back out to arm's length from a wall it
+        sank into. The walker's pusher sometimes stops a long step (a
+        landing, a sprint) only partway back: a toon landed beside a
+        garage on Downsizer Drive with its middle a few inches from the
+        wall and ran along half inside it. Not while it touches walls
+        facing opposite ways (on a fence line: the wedge rescue's job)."""
+        if self.game.paused:
+            return task.cont
+        arena = getattr(self.game, 'arena', None)
+        here = Point3(self.body.getPos(render))
+        last = self.lastFinal
+        if (last is not None and arena is not None and 0.02 < (here - last).length() < CROSS_UNDO_STEP
+                and not arena.bodyClear(last, here)):
+            # This frame's step went across a wall's line (the pusher let
+            # a long step through, or put it back out on the far side): a
+            # toon got into a garage on Downsizer Drive that way. Undone.
+            self.body.setPos(render, last)
+            here = Point3(last)
+            if self.guardFrom is not None:
+                self.guardFrom = Point3(here)
+            self.crossUndone += 1
+            if self.crossUndone >= CROSS_UNDO_RESCUE:
+                # Every step from here goes through something (the toon
+                # stands right on a wall's line): set it down nearby.
+                self.crossUndone = 0
+                if self.__freeSpot():
+                    return task.cont
+        elif last is not None and (here - last).length() > 0.02:
+            # A step that went somewhere (not one the guard took back).
+            self.crossUndone = 0
+        self.enclosedTick += 1
+        if arena is not None and self.enclosedTick >= ENCLOSED_EVERY:
+            self.enclosedTick = 0
+            if self.__enclosed(arena, here):
+                self.enclosedCount += 1
+                if self.enclosedCount >= ENCLOSED_RESCUE:
+                    # Shut in (inside a model's walls): set down outside.
+                    self.enclosedCount = 0
+                    if self.__freeSpot():
+                        return task.cont
+            else:
+                self.enclosedCount = 0
+        self.touchQueue.clearEntries()
+        self.touchTrav.traverse(render)
+        center = Point3(here[0], here[1], here[2] + self.walker.avatarRadius)
+        push = Vec3(0)
+        normals = []
+        for i in range(self.touchQueue.getNumEntries()):
+            entry = self.touchQueue.getEntry(i)
+            if not entry.getInto().isTangible():
+                continue
+            if not entry.getIntoNode().getIntoCollideMask() & ToontownGlobals.WallBitmask:
+                continue
+            if not isinstance(entry.getInto(), CollisionCapsule):
+                # Only the maps' own rails and posts: a model's boxes and
+                # polygons give odd contact points from inside (the crates
+                # by Downsizer Drive's construction sign pushed the toon in).
+                continue
+            surface = entry.getSurfacePoint(render)
+            if surface[2] < here[2] + 0.4 or abs(surface[2] - center[2]) > 1.1:
+                # What the toon stands on (a floor, a ramp, a step's edge),
+                # or something over its head.
+                continue
+            # Which way, seen from above, the wall is from the toon's middle
+            # (a rail beside a toon in the air touches it from below or
+            # above, so its surface normal points mostly up or down).
+            away = Vec3(center[0] - surface[0], center[1] - surface[1], 0)
+            gap = away.length()
+            if gap < 0.02:
+                continue
+            away /= gap
+            if any(away.dot(other) < -0.3 for other in normals):
+                self.lastFinal = Point3(here)
+                return task.cont
+            normals.append(away)
+            if gap < DEPENETRATE_GAP:
+                need = DEPENETRATE_TO - gap
+                if push.dot(away) < need:
+                    push += away * (need - push.dot(away))
+        if push.lengthSquared() > 1e-6:
+            dest = here + push
+            if arena is None or arena.bodyClear(here, dest):
+                self.body.setPos(render, dest)
+                if self.guardFrom is not None:
+                    self.guardFrom = Point3(dest)
+        self.lastFinal = Point3(self.body.getPos(render))
+        return task.cont
+
+    def __openFrom(self, arena, spot):
+        """Whether open ground (a reach cell within 6 ft, on its level) can
+        be walked to from spot. Not just the nearest cell: that one can
+        lie right on a wall's line."""
+        reach = getattr(arena, 'reach', None) or {}
+        step = arena.REACH_STEP
+        n = int(6.0 / step) + 1
+        ci, cj = int(round(spot[0] / step)), int(round(spot[1] / step))
+        near = []
+        for di in range(-n, n + 1):
+            for dj in range(-n, n + 1):
+                pt = reach.get((ci + di, cj + dj))
+                if pt is None or abs(pt[2] - spot[2]) > 3.0:
+                    continue
+                d = (pt[0] - spot[0]) ** 2 + (pt[1] - spot[1]) ** 2
+                if d <= 36.0:
+                    near.append((d, pt))
+        near.sort(key=lambda e: e[0])
+        for d, pt in near[:6]:
+            if arena.bodyClear(Point3(pt), spot):
+                return True
+        return False
+
+    def __enclosed(self, arena, here):
+        """Whether the toon is walled off from every open-ground cell near
+        it on its level (inside a model's walls, such as the picnic
+        table's on Downsizer Drive). No cell near on its level at all is
+        not this (that is off the ground the cogs walk)."""
+        reach = getattr(arena, 'reach', None)
+        if not reach:
+            return False
+        step = arena.REACH_STEP
+        radius = max(4.0, step * 1.5)
+        n = int(radius / step) + 1
+        ci, cj = int(round(here[0] / step)), int(round(here[1] / step))
+        level = False
+        for di in range(-n, n + 1):
+            for dj in range(-n, n + 1):
+                pt = reach.get((ci + di, cj + dj))
+                if pt is None or abs(pt[2] - here[2]) > 3.0:
+                    continue
+                if (pt[0] - here[0]) ** 2 + (pt[1] - here[1]) ** 2 > radius * radius:
+                    continue
+                level = True
+                if arena.bodyClear(Point3(pt), here):
+                    return False
+        return level
+
+    def mayBePushedTo(self, pos):
+        """Whether a shove (a cog crowding the toon) may move the toon to
+        pos: not into any wall it would touch there. A crowd sliding the
+        toon along a picket fence at a slant crept it a little nearer each
+        frame until its middle was inside the fence (Downsizer Drive)."""
+        here = Point3(self.body.getPos(render))
+        move = Vec3(pos[0] - here[0], pos[1] - here[1], 0)
+        self.body.setPos(render, pos)
+        self.touchQueue.clearEntries()
+        self.touchTrav.traverse(render)
+        self.body.setPos(render, here)
+        for i in range(self.touchQueue.getNumEntries()):
+            entry = self.touchQueue.getEntry(i)
+            if not entry.getInto().isTangible():
+                continue
+            normal = Vec3(entry.getSurfaceNormal(render))
+            normal.setZ(0)
+            if normal.dot(move) < -1e-4:
+                return False
+        return True
+
+    def __straddling(self):
+        """Whether the toon touches walls facing opposite ways (it is on
+        the line of a ring or a fence, not just pressed against one)."""
+        self.touchQueue.clearEntries()
+        self.touchTrav.traverse(render)
+        normals = []
+        for i in range(self.touchQueue.getNumEntries()):
+            entry = self.touchQueue.getEntry(i)
+            if not entry.getInto().isTangible():
+                continue
+            normal = Vec3(entry.getSurfaceNormal(render))
+            normal.setZ(0)
+            if normal.lengthSquared() < 1e-6:
+                continue
+            normal.normalize()
+            if any(normal.dot(other) < -0.3 for other in normals):
+                return True
+            normals.append(normal)
+        return False
+
+    def __freeSpot(self):
+        """Set the toon down on the nearest open ground it touches
+        nothing at, on the open playground (never inside a ring). Whether
+        one was found."""
+        arena = getattr(self.game, 'arena', None)
+        if arena is None:
+            return False
+        here = Point3(self.body.getPos())
+        for radius in (0.75, 1.5, 2.25, 3.0, 4.0, 5.0, 6.5):
+            for i in range(16):
+                a = math.radians(i * 22.5)
+                x, y = here[0] + radius * math.cos(a), here[1] + radius * math.sin(a)
+                z = arena.groundZ(x, y, here[2] + 3.0)
+                if z is None or abs(z - here[2]) > 2.5:
+                    continue
+                spot = Point3(x, y, z)
+                if not self.__openFrom(arena, spot):
+                    continue
+                self.body.setPos(spot)
+                if self.__touching():
+                    continue
+                self.lastFlat = Point3(spot)
+                self.lastFinal = None
+                self.notify.info('wedged at %s: set down at %s' % (here, spot))
+                return True
+        self.body.setPos(here)
+        return False
 
     def __walkingAway(self):
         """Whether the way the toon is walking leads away from everything

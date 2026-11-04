@@ -71,6 +71,12 @@ WAY_OUT_MIN = 1.5
 # where it was) gets no shorter for this long is getting nowhere.
 NO_HEADWAY_TIME = 6.0
 STEPS_GOAL_MOVE = 10.0
+# A cog pressed up against another near the toon is queueing in the
+# crowd, not stuck (for this long after, up to QUEUE_TIME in all).
+QUEUE_GRACE = 1.0
+QUEUE_TIME = 20.0
+# Only near the toon: a jam on the far side of the map still flies in.
+QUEUE_NEAR = 30.0
 GROUND_EVERY = 0.1
 HEAD_FRACTION = 0.72
 # The neck counts as the head, a little below where the head joint is.
@@ -136,6 +142,8 @@ class SurvivalCog:
         self.stepsGoal = None
         self.bestSteps = None
         self.stepsSince = None
+        # When the cog last stood pressed in the crowd round a toon.
+        self.queuedAt = -100.0
         self.stepPhase = random.random()
         self.stepSound = None
         self.nextVoice = globalClock.getFrameTime() + random.uniform(*VOICE_EVERY)
@@ -355,7 +363,19 @@ class SurvivalCog:
         if self.boxedSince is not None:
             boxed = now - self.boxedSince > STILL_TIME or (
                 self.noWayOut and now - self.boxedSince > BOXED_TIME and now - self.stillSince > BOXED_TIME)
-        if self.stepsSince is not None and now - self.stepsSince > NO_HEADWAY_TIME:
+        # Waiting behind the crowd round a toon is no lack of headway: the
+        # cogs at the back of a crowd flew off and back in every few
+        # seconds (Survival soak on Downsizer Drive and Farewell Fair),
+        # while the ones in front stood hitting the toon. A queue that
+        # never moves on still counts, after QUEUE_TIME.
+        if dist < QUEUE_NEAR and self.stepsSince is not None and now - self.stepsSince > NO_HEADWAY_TIME:
+            for other in self.game.cogs:
+                if other is not self and not other.dead and other.state in ('chase', 'swing') and \
+                        (other.pos[0] - self.pos[0]) ** 2 + (other.pos[1] - self.pos[1]) ** 2 < (CROWD_RADIUS + 1.5) ** 2:
+                    self.queuedAt = now
+                    break
+        queued = now - self.queuedAt < QUEUE_GRACE and self.stepsSince is not None and now - self.stepsSince < QUEUE_TIME
+        if self.stepsSince is not None and now - self.stepsSince > NO_HEADWAY_TIME and not queued:
             boxed = True
         if self.lure is None and dist > reach + STUCK_NEAR and (boxed or now - self.stillSince > STILL_TIME):
             self.__reland(goal)

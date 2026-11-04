@@ -42,6 +42,8 @@ STATION_RADIUS = 1.6
 # The player's body can't go into a cog's: it is pushed out to this far
 # past the cog's radius.
 PLAYER_RADIUS = 1.3
+# How far the player's wall sphere (GravityWalker, 1.4) reaches past its middle.
+PLAYER_WALL_REACH = 1.4
 # Two cogs keep at least this share of their two radii between them.
 COG_SPACING = 0.85
 # Only the nearest few cogs are heard stepping.
@@ -495,8 +497,18 @@ class SurvivalGame(DirectObject):
             # against the clock tower on Toybox Terrace pushed it inside
             # the tower, where its walls then held it for good. A push the
             # wall stops is left undone (the toon stays rubbing the cog).
+            # Tested out to the toon's far side, not just its middle: a cog
+            # pushed the toon's middle up to a picket fence's thin rail
+            # (Downsizer Drive), past what its wall sphere allows, and it
+            # then slid along inside the fence.
             start = body.getPos(render)
-            if not self.arena.bodyClear(start, pos):
+            push = Vec3(pos - start)
+            push.setZ(0)
+            if push.length() > 0.001:
+                push.normalize()
+            if not self.arena.bodyClear(start, pos + push * PLAYER_WALL_REACH):
+                return
+            if hasattr(player, 'mayBePushedTo') and not player.mayBePushedTo(pos):
                 return
             body.setPos(render, pos)
 
