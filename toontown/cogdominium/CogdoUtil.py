@@ -84,6 +84,14 @@ def addElevatorHousing(model, color=(0.16, 0.16, 0.17, 1)):
     frame = model.find('**/frame')
     fy = frame.getTightBounds(model)[1][1] if not frame.isEmpty() else y0 + 0.3
     x0, x1, y0, y1, z0, z1 = x0 + 0.02, x1 - 0.02, fy, y1 + 0.3, 0.0, z1 - 0.02
+    # The doorway: the car's floor is as wide as it, its lintel as high.
+    floor = [c for c in model.findAllMatches('**/+GeomNode') if c.getTightBounds(model)
+             and abs(c.getTightBounds(model)[1][2] - c.getTightBounds(model)[0][2]) < 0.05]
+    dw = 4.2
+    dh = 9.9
+    if floor:
+        fb = floor[0].getTightBounds(model)
+        dw = max(abs(fb[0][0]), abs(fb[1][0])) + 0.15
     fmt = PM.GeomVertexFormat.getV3n3()
     vdata = PM.GeomVertexData('housing', fmt, PM.Geom.UHStatic)
     vw = PM.GeomVertexWriter(vdata, 'vertex')
@@ -92,7 +100,13 @@ def addElevatorHousing(model, color=(0.16, 0.16, 0.17, 1)):
     faces = (((x1, y1, z0), (x0, y1, z0), (x0, y1, z1), (x1, y1, z1), (0, 1, 0)),
              ((x0, y1, z0), (x0, y0, z0), (x0, y0, z1), (x0, y1, z1), (-1, 0, 0)),
              ((x1, y0, z0), (x1, y1, z0), (x1, y1, z1), (x1, y0, z1), (1, 0, 0)),
-             ((x0, y0, z1), (x1, y0, z1), (x1, y1, z1), (x0, y1, z1), (0, 0, 1)))
+             ((x0, y0, z1), (x1, y0, z1), (x1, y1, z1), (x0, y1, z1), (0, 0, 1)),
+             # And a front just behind the door frame round the doorway:
+             # the frame leans in towards its top, so beside it there was a
+             # gap to see in through (Arthur).
+             ((x0, y0, z0), (-dw, y0, z0), (-dw, y0, z1), (x0, y0, z1), (0, -1, 0)),
+             ((dw, y0, z0), (x1, y0, z0), (x1, y0, z1), (dw, y0, z1), (0, -1, 0)),
+             ((-dw, y0, dh), (dw, y0, dh), (dw, y0, z1), (-dw, y0, z1), (0, -1, 0)))
     for i, face in enumerate(faces):
         for v in face[:4]:
             vw.addData3(*v)
@@ -107,6 +121,12 @@ def addElevatorHousing(model, color=(0.16, 0.16, 0.17, 1)):
     gn.addGeom(geom)
     node = model.attachNewNode(gn)
     node.setColor(*color)
+    # The car's front wall, either side of the doors, faces in only too:
+    # from outside, beside the frame, you looked through it into the car.
+    # Drawn from both sides it closes that gap.
+    car = model.find('**/elevator')
+    if not car.isEmpty():
+        car.setTwoSided(True)
     return node
 
 
