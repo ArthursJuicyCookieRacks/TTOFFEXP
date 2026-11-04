@@ -973,6 +973,12 @@ class KartShopGuiMgr(DirectObject.DirectObject):
             self.__doDialog(MENUS.BuyAccessory)
             self.accID = -1
         elif exitType == CBA_OPTIONS.BuyAccessory:
+            if len(base.localAvatar.getKartAccessoriesOwned()) >= KartShopGlobals.MAX_KART_ACC:
+                # The trunk is full: the shop won't sell it, so don't take the
+                # tickets or add it here either.
+                self.accID = -1
+                self.__doDialog(MENUS.BuyAccessory)
+                return
             if self.accID != -1:
                 messenger.send(self.eventDict['buyAccessory'], [self.accID])
             oldTickets = base.localAvatar.getTickets()

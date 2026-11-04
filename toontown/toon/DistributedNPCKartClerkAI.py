@@ -96,6 +96,12 @@ class DistributedNPCKartClerkAI(DistributedNPCToonBaseAI):
             movieType = NPCToons.SELL_MOVIE_COMPLETE
             extraArgs = []
             cost = getAccCost(whichAcc)
+            if not isinstance(cost, int) or cost < 0 or whichAcc in av.getKartAccessoriesOwned():
+                # Not for sale (the default rims cost nothing to have and
+                # aren't in the shop), not an accessory, or already owned:
+                # no tickets change hands.
+                self.air.writeServerEvent('suspicious', avId=avId, issue='DistributedNPCKartClerkAI.buyAcc of %s (cost %s) not for sale or already owned' % (whichAcc, cost))
+                return
             if cost > av.getTickets():
                 self.air.writeServerEvent('suspicious', avId=avId, issue="DistributedNPCKartClerkAI.buyAcc and toon doesn't have enough tickets!")
                 self.notify.warning("somebody called buyAcc and didn't have enough tickets to purchase! avId: %s" % avId)

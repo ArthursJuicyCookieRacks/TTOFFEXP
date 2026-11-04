@@ -466,7 +466,8 @@ class DistributedEstateAI(DistributedObjectAI):
         av.addMoney(value)
         newBonus = len(collection) // GardenGlobals.FLOWERS_PER_BONUS
         if newBonus > oldBonus:
-            av.b_setMaxHp(av.getMaxHp() + newBonus - oldBonus)
+            # Capped at the most laff a toon can have, like every other boost.
+            av.b_setMaxHp(min(ToontownGlobals.MaxHpLimit, av.getMaxHp() + newBonus - oldBonus))
             av.toonUp(av.getMaxHp())
             av.b_setGardenTrophies(list(range(min(newBonus, len(GardenGlobals.TrophyDict)))))
             self.sendUpdate('awardedTrophy', [avId])
