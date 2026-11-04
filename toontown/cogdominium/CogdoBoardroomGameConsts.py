@@ -61,6 +61,8 @@ ElevatorPosHpr = (0, 46, 0, 180, 0, 0)
 ExitFloor = 2.05
 ExitPosHpr = (0, 385 + (NumHalls - 1) * HallLength, ExitFloor, 0, 0, 0)
 ExitRadius = 6.0
+# The step's near edge, this far before the exit (the floor is at 0 before it).
+ExitStepDepth = 15.5
 ChairmanPos = (0, TableEnd + 5.5, 0)
 
 # --- Who is at the meeting ---

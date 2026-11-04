@@ -323,18 +323,27 @@ class CogdoBoardroomRoom:
         hw = Consts.TableHalfWidth
         # The table itself: walk on its top, not through its sides.
         walls.addSolid(CollisionBox(Point3(-hw, Consts.TableStart, 0), Point3(hw, Consts.TableEnd, Consts.TableTop)))
-        for ob in self.layout.obstacles:
+        self.walls = self.root.attachNewNode(walls)
+        self.walls.node().setIntoCollideMask(mask)
+        # Each pile and pencil gets its own collision node, so the one that
+        # just knocked a toon down can be let through (stashed) on its own.
+        self.obstacleColl = {}
+        for k, ob in enumerate(self.layout.obstacles):
             if ob.kind == Layout.PILE:
-                walls.addSolid(CollisionBox(Point3(ob.x - ob.w, ob.y - ob.l, Consts.TableTop),
-                                            Point3(ob.x + ob.w, ob.y + ob.l, Consts.TableTop + ob.h)))
+                solid = CollisionBox(Point3(ob.x - ob.w, ob.y - ob.l, Consts.TableTop),
+                                     Point3(ob.x + ob.w, ob.y + ob.l, Consts.TableTop + ob.h))
             elif ob.kind == Layout.PENCIL:
                 a = math.radians(ob.angle)
                 dx, dy = math.cos(a) * ob.w, math.sin(a) * ob.w
                 r = Consts.PencilHeight / 2.0
                 z = Consts.TableTop + r
-                walls.addSolid(CollisionCapsule(Point3(ob.x - dx, ob.y - dy, z), Point3(ob.x + dx, ob.y + dy, z), r))
-        self.walls = self.root.attachNewNode(walls)
-        self.walls.node().setIntoCollideMask(mask)
+                solid = CollisionCapsule(Point3(ob.x - dx, ob.y - dy, z), Point3(ob.x + dx, ob.y + dy, z), r)
+            else:
+                continue
+            node = CollisionNode('obstacle-%d' % k)
+            node.addSolid(solid)
+            node.setIntoCollideMask(mask)
+            self.obstacleColl[k] = self.walls.attachNewNode(node)
         # Ramps are walked up: floor only.
         ramps = CollisionNode('ramps')
         rampList = [(0, Consts.TableStart - Consts.RampLength / 2.0, hw * 0.5, Consts.RampLength / 2.0, 0.0, Consts.TableTop)]

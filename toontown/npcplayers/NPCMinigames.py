@@ -1785,7 +1785,10 @@ class CogdoBoardroomPlayer(CogdoPlayer):
         if self.memo.get('off'):
             # Off the table: run into the exit.
             ex, ey = BoardroomConsts.ExitPosHpr[:2]
-            if self.moveTo(Point3(ex, ey - 1.0, 0), speed=RUN_SPEED * 0.6):
+            # Up onto the 2 ft step the exit stands on: the NPCs ran in at
+            # floor height and walked into the elevator sunk in the step.
+            z = BoardroomConsts.ExitFloor if self.npc.getPos()[1] > ey - BoardroomConsts.ExitStepDepth else 0
+            if self.moveTo(Point3(ex, ey - 1.0, z), speed=RUN_SPEED * 0.6):
                 self.send('requestExit')
                 # In the exit elevator, at its spot, facing out.
                 from toontown.building.ElevatorConstants import ElevatorPoints
@@ -1851,15 +1854,25 @@ class CogdoBoardroomPlayer(CogdoPlayer):
         nx = max(-BoardroomConsts.TableHalfWidth + 1, min(BoardroomConsts.TableHalfWidth - 1, nx))
         ny = y + speed * dt
         here = layout.heightAt(x, y)
-        bumped = [ob for ob in layout.obstacles if ob.kind == BoardroomLayout.PILE and ob.contains(nx, ny, 0.6)
-                  and here < ob.h + BoardroomConsts.TableTop - 0.5]
+        # Through the obstacle that last knocked it down, as the player
+        # goes (Arthur), till it is clear past it.
+        passOb = self.memo.get('passOb')
+        if passOb is not None:
+            pob = layout.obstacles[passOb]
+            far = pob.y + (abs(pob.w * math.sin(math.radians(pob.angle))) + BoardroomConsts.PencilHeight
+                           if pob.kind == BoardroomLayout.PENCIL else pob.l)
+            if ny > far + 1.5:
+                passOb = self.memo['passOb'] = None
+        bumped = [(k, ob) for k, ob in enumerate(layout.obstacles) if k != passOb and ob.kind == BoardroomLayout.PILE
+                  and ob.contains(nx, ny, 0.6) and here < ob.h + BoardroomConsts.TableTop - 0.5]
         if bumped:
             # Bumped a pile: stopped, and off round it by its nearer free
             # side for a moment (steering straight back into it kept the
             # NPCs stuck behind piles until the time ran out).
-            ob = bumped[0]
+            k, ob = bumped[0]
             if speed > 3.0 and not crashed:
                 self._crashInto(t)
+                self.memo['passOb'] = k
             speed = 0.0
             ny = y
             # Still free to edge sideways round it (dropping the sideways
@@ -1886,7 +1899,7 @@ class CogdoBoardroomPlayer(CogdoPlayer):
         if os.environ.get('AUTOPLAY_NPC_DEBUG') and now > self.memo.get('dbgAt', 0):
             self.memo['dbgAt'] = now + 4.0
             print('NPCDBG %d t %.1f x %.1f y %.1f speed %.1f want %.1f bumped %s dt %.2f hit %.1f' % (
-                self.npc.doId, t, nx, ny, speed, want, [(b.kind, round(b.x, 1), round(b.y, 1), round(b.w, 1), round(b.h, 1)) for b in bumped],
+                self.npc.doId, t, nx, ny, speed, want, [(b.kind, round(b.x, 1), round(b.y, 1), round(b.w, 1), round(b.h, 1)) for _, b in bumped],
                 dt, t - game.lastHit.get(self.npc.doId, -99)), flush=True)
         self.memo['speed'] = speed
         self.memo['x'], self.memo['y'] = nx, ny
@@ -1895,7 +1908,7 @@ class CogdoBoardroomPlayer(CogdoPlayer):
         # and then it hops too late, as a player does, and runs into it.
         hop = False
         for k, ob in enumerate(layout.obstacles):
-            if ob.kind != BoardroomLayout.PENCIL:
+            if ob.kind != BoardroomLayout.PENCIL or k == self.memo.get('passOb'):
                 continue
             line = ob.y + (nx - ob.x) * math.tan(math.radians(ob.angle))
             if -0.5 < line - ny < 1.5:
@@ -1910,6 +1923,7 @@ class CogdoBoardroomPlayer(CogdoPlayer):
                     self.memo['speed'] = 0.0
                     misses[k] = False
                     self._crashInto(t)
+                    self.memo['passOb'] = k
         if hop:
             z += 2.0
         z = max(z, layout.heightAt(nx, ny))

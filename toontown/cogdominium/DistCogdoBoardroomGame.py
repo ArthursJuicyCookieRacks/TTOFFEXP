@@ -324,6 +324,9 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         self.slideSpeed = 0.0
         self.steerVel = 0.0
         self.crashUntil = -1
+        # The obstacle that last knocked the toon down: it slides on through
+        # that one (Arthur), till it is past it.
+        self.passOb = None
         self.spinUntil = -1
         self.stuckTime = 0.0
         self.launched = set()
@@ -646,8 +649,10 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
             else:
                 self.stuckTime = 0.0
             if self.stuckTime > 0.12:
-                if self._realObstacleAhead(pos):
+                hit = self._realObstacleAhead(pos)
+                if hit is not None:
                     self._crash(toon, now)
+                    self._letThrough(hit)
                 else:
                     # Held up by nothing the toon should crash into (the
                     # ramps' slope, after a knock-back took it off its
@@ -665,13 +670,16 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
             # back on top.
             new.setZ(Consts.TableTop)
         if now >= self.crashUntil:
-            back = self._pencilInWay(new)
-            if back is not None:
+            hit = self._pencilInWay(new, which=True)
+            if hit is not None:
+                back, k = hit
                 # Into a pencil without hopping it: as good as a pile. Stopped
                 # dead short of it, hurt, and it still has to be hopped.
                 new.setY(back)
                 toon.setFluidPos(render, new)
                 self._crash(toon, now)
+                self._letThrough(k)
+        self._checkPass(new)
         toon.setFluidPos(render, new)
         self._launchRamps(toon, new)
         lean = -self.steerVel / Consts.SteerSpeed * 18.0
@@ -849,21 +857,24 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         for torso in toon.findAllMatches('**/__Actor_torso'):
             torso.setP(0)
 
-    def _pencilInWay(self, pos):
+    def _pencilInWay(self, pos, which=False):
         # Where to put a toon that has run into a pencil lying across the
-        # table (low enough to touch it: not hopping over), or None.
+        # table (low enough to touch it: not hopping over), or None. Not the
+        # one it was just knocked down by: it goes on through that.
         r = Consts.PencilHeight / 2.0
         if pos[2] > Consts.TableTop + Consts.PencilHeight * 0.8:
             return None
-        for ob in self._pencils():
+        for k, ob in self._pencils():
+            if k == self.passOb:
+                continue
             line = ob.y + (pos[0] - ob.x) * math.tan(math.radians(ob.angle))
             if line - r - 0.9 <= pos[1] <= line + r * 0.5:
-                return line - r - 1.0
+                return (line - r - 1.0, k) if which else line - r - 1.0
         return None
 
     def _pencils(self):
         if getattr(self, '_pencilList', None) is None:
-            self._pencilList = [ob for ob in self.layout.obstacles if ob.kind == Layout.PENCIL]
+            self._pencilList = [(k, ob) for k, ob in enumerate(self.layout.obstacles) if ob.kind == Layout.PENCIL]
         return self._pencilList
 
     def _crash(self, toon, now):
@@ -887,12 +898,42 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         self.ivals.append(track)
 
     def _realObstacleAhead(self, pos):
-        # A pile's side or a pencil just ahead, low enough to run into.
-        for ob in self.layout.obstacles:
-            if ob.kind == Layout.PILE and ob.contains(pos[0], pos[1] + 1.2, 0.6) \
+        # The pile's side or pencil just ahead, low enough to run into (its
+        # index in the layout), or None. Not the one being passed through.
+        for k, ob in enumerate(self.layout.obstacles):
+            if k != self.passOb and ob.kind == Layout.PILE and ob.contains(pos[0], pos[1] + 1.2, 0.6) \
                     and pos[2] < Consts.TableTop + ob.h - 0.5 and not self._onRamp(pos):
-                return True
-        return self._pencilInWay(PM.Point3(pos[0], pos[1] + 0.8, pos[2])) is not None
+                return k
+        hit = self._pencilInWay(PM.Point3(pos[0], pos[1] + 0.8, pos[2]), which=True)
+        return hit[1] if hit else None
+
+    def _letThrough(self, k):
+        # After a hit the toon can go through that obstacle (only that one):
+        # it was hitting the same pencil again and again (Arthur).
+        self._closePass()
+        self.passOb = k
+        coll = getattr(self.room, 'obstacleColl', {}).get(k)
+        if coll is not None:
+            coll.stash()
+
+    def _closePass(self):
+        if self.passOb is None:
+            return
+        coll = getattr(self.room, 'obstacleColl', {}).get(self.passOb)
+        if coll is not None:
+            coll.unstash()
+        self.passOb = None
+
+    def _checkPass(self, pos):
+        # Solid again once the toon is clear past it.
+        if self.passOb is None:
+            return
+        ob = self.layout.obstacles[self.passOb]
+        far = ob.y + ob.l
+        if ob.kind == Layout.PENCIL:
+            far = ob.y + abs(ob.w * math.sin(math.radians(ob.angle))) + Consts.PencilHeight
+        if pos[1] > far + 1.5:
+            self._closePass()
 
     def _onRamp(self, pos):
         return any(ob.kind == Layout.RAMP and ob.contains(pos[0], pos[1], 0.3) for ob in self.layout.obstacles)
