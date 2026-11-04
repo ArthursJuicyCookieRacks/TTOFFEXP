@@ -799,17 +799,17 @@ class ToyboxTerrace(PreviewMap):
             f = heading(th)
             right = Vec3(f[1], -f[0], 0)
             origin = Vec3(mouth[0], mouth[1], 0) - right * 60.0 - f * 95.0
-            # Straight lines, sized to sit inside the plaque's border
-            # (Arthur): a long name is squeezed across, as the Punchline
-            # Place sign is, rather than run off the edges.
+            # Curved round the plaque like the other playgrounds' signs
+            # (Arthur), sized to stay inside its border: a long name is
+            # squeezed across, as the Punchline Place sign is.
             sx = min(1.5, maxW / max(tn.calcWidth(street.upper()), 0.01))
             sz = min(1.5, max(sx, 1.15))
             ink = '<color r="%.3f" g="%.3f" b="%.3f" a="1" />' % SIGN_INK[theme]
             out.append('<prop name="linktunnel_toy_%s_DNARoot" code="prop_safe_zone_tunnel">%s'
                        '<sign code="tunnel_sign_orange"><scale x="1.5" y="1" z="1.5" />'
-                       '<baseline code="mickey">%s<pos x="0" y="0" z="-0.62" />'
+                       '<baseline code="mickey" width="33.3333" height="33.3333">%s<pos x="0" y="0" z="-0.76" />'
                        '<scale x="%.3f" y="1" z="%.3f" /><text>%s</text></baseline>'
-                       '<baseline code="mickey">%s<pos x="0" y="0" z="-1.9" />'
+                       '<baseline code="mickey" width="44.0567" height="44.0567">%s<pos x="-0.08" y="0" z="-1.98" />'
                        '<scale x="0.8" y="1" z="0.8" /><text>TOYBOX TERRACE</text></baseline>'
                        '<baseline><pos x="0" y="0" z="1.75" /><scale x="2.5" y="1" z="2.5" /><graphic code="mickeySZ" /></baseline>'
                        '</sign></prop>'
