@@ -126,7 +126,8 @@ PALM_ARM_FROM = Vec3(0.85, -0.5, -0.12)
 # Gags rest in the hold joint (the palm) as the battle puts a pie there.
 PALM_HOLD = True
 # Heading in the palm per gag, and how deep it sinks (fraction of height).
-HOLD_HPR = {'squirting-flower': (0, 0, 70)}
+# The piano model lies on its back (it drops keys first): stood on its legs.
+HOLD_HPR = {'squirting-flower': (0, 0, 70), 'piano': (0, 90, 0)}
 HOLD_SINK = {'stormcloud': 0.35, 'geyser': 0.2}
 # Gags held another way, moved in the view (camera space) off the glove.
 VIEW_NUDGE = {}
@@ -138,6 +139,8 @@ BATTLE_GRIP = {'glass': 20}
 HOLD_NUDGE = {'squirting-flower': Vec3(0, -0.15, -0.03), 'fruitpie-slice': Vec3(-0.15, 0, -0.1),
               'creampie-slice': Vec3(-0.15, 0, -0.1)}
 CLEAR_GAP = 0.005
+# Gags centred on the glove's own middle rather than the hold joint.
+CENTRE_ON_GLOVE = ('ship',)
 # The storm cloud's bounds reach below what shows (HOLD_SINK sets it).
 CLEAR_SKIP = ('stormcloud',)
 # Where the hose nozzle points: out at the cogs past the crosshair (camera space).
@@ -234,6 +237,8 @@ MEGAPHONE_ROLL = 0
 # Where along the fist's grip line (the hose's, in the nozzle's frame) the
 # megaphone is held: the fist closes round the line about here.
 FIST_ON_LINE = -0.77
+# The megaphone slid in the view (camera space) so the glove holds its right side.
+MEGAPHONE_VIEW_SHIFT = Vec3(-0.2, 0, 0)
 
 
 def megaphoneInFist(scale):
@@ -863,6 +868,21 @@ class GagHandler:
         sink = HOLD_SINK.get(name, PALM_SINK)
         shift = Vec3(-centre[0], -centre[1], -low[2] - sink * (high[2] - low[2]))
         prop.setPos(hand, prop.getPos(hand) + shift)
+        if name in CENTRE_ON_GLOVE:
+            # A long gag lying across the glove is slid along its length so
+            # it overhangs the glove equally at both ends (centred on the
+            # hold joint, which sits to one side of the glove, it hung off
+            # one side).
+            low, high = prop.getTightBounds(prop)
+            mid = (low + high) * 0.5
+            size = high - low
+            along, across = (0, 1) if size[0] >= size[1] else (1, 0)
+            under = [v[along] for v in self.arms.gloveVerts(RIGHT, prop)
+                     if abs(v[across] - mid[across]) <= size[across] * 0.5]
+            if under:
+                shift = Vec3(0, 0, 0)
+                shift[along] = (min(under) + max(under)) * 0.5 - mid[along]
+                prop.setPos(prop, shift)
         if name in HOLD_NUDGE:
             prop.setPos(camera, prop.getPos(camera) + HOLD_NUDGE[name])
         # Nothing of the glove pokes up through the gag: its bottom is
@@ -930,6 +950,9 @@ class GagHandler:
                 megaphone.setTransform(megaphoneInFist(megaphone.getScale()[0] * MEGAPHONE_SCALE))
                 self.arms.aimHeld(RIGHT, SOUND_GLOVE_AT,
                                   lambda parent: parent.getRelativeVector(megaphone, MEGAPHONE_AXIS), SOUND_ARM_SIZE)
+                # Slid over in the view so the glove holds its right side.
+                self.arms.toon.update(force=True)
+                megaphone.setPos(camera, megaphone.getPos(camera) + MEGAPHONE_VIEW_SHIFT)
                 # Smaller than in a battle so the arm holding it shows.
                 megaphone.setScale(megaphone.getScale() * MEGAPHONE_SCALE / SOUND_ARM_SIZE)
             else:
