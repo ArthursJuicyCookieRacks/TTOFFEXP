@@ -1089,8 +1089,9 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         here = toon.getPos(render)
         d = (spot - here).length()
         toon.headsUp(render, spot)
-        track = Sequence(Func(toon.loop, 'run'),
-                         LerpPosInterval(toon, max(0.3, min(1.2, d / 14.0)), spot, other=render),
+        # Walked in to its spot, not run (Arthur).
+        track = Sequence(Func(toon.loop, 'walk'),
+                         LerpPosInterval(toon, max(0.4, min(2.0, d / 7.0)), spot, other=render),
                          LerpHprInterval(toon, 0.35, PM.VBase3(180, 0, 0), other=render),
                          Func(toon.loop, 'neutral'))
         if toon.isLocal():
@@ -1328,10 +1329,15 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
                 want = 'neutral'
             elif Consts.TableStart - 2 < pos[1] < Consts.TableEnd - Consts.JumpOffAt and pos[2] > Consts.TableTop - 0.6:
                 want = 'slide'
-            elif pos[1] >= Consts.TableEnd - Consts.JumpOffAt - 1 and pos[2] > 0.4:
+            elif pos[1] >= Consts.TableEnd - Consts.JumpOffAt - 1 and pos[2] > self._floorAt(pos[1]) + 0.4:
+                # In the air off the end of the table. (Not just higher than
+                # the floor: up on the exit's 2 ft step the NPCs went on in
+                # the jump pose, floating into the elevator: Arthur.)
                 want = 'jump-idle'
             elif last is not None and (pos - last).length() > 0.02:
-                want = 'run'
+                # Walking the last stretch in, running before.
+                dt = max(1e-3, globalClock.getDt())
+                want = 'walk' if (pos - last).length() / dt < 9.0 else 'run'
             else:
                 want = 'neutral'
             if getattr(toon, '_boardroomAnim', None) == want:
@@ -1342,6 +1348,10 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
             else:
                 self._standUp(toon)
                 toon.loop(want)
+
+    def _floorAt(self, y):
+        # The floor past the end of the table: the exit stands on a step.
+        return Consts.ExitFloor if y > Consts.ExitPosHpr[1] - Consts.ExitStepDepth else 0.0
 
     # --- The golf office ---
 
@@ -1892,14 +1902,14 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
             z = suit.getRelativePoint(head, PM.Point3(0, 0, 0))[2]
             suit.nametag3d.setZ(z + 2.2)
 
-    def _say(self, suit, keys, extra=()):
+    def _say(self, suit, keys, extra=(), answering=False):
         # A line from what the cog would say in battle, in a speech bubble
         # (the name shows while it talks, as on the streets).
         if suit is None or suit.isEmpty() or suit.isStashed():
             return
         now = globalClock.getFrameTime()
-        if now - getattr(suit, '_lastSaid', -99) < 6.0 or now - getattr(self, '_lastSaid', -99) < 0.3:
-            return
+        if (now - getattr(suit, '_lastSaid', -99) < (2.0 if answering else 6.0)) or now - getattr(self, '_lastSaid', -99) < 0.3:
+            return False
         lines = []
         for key in keys:
             lines.extend(TTL.SuitAttackTaunts.get(key, ()))
@@ -1935,7 +1945,19 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         near = [s for s in pool if not s.isStashed() and -10 < s.getY(render) - y < 110]
         if not near:
             return
+        # A cog talking shop with another answers it, back and forth, as
+        # in a real conversation.
+        reply = [s for s in near if 0 < getattr(s, '_replyAt', 0) <= now]
         quiet = [s for s in near if now - getattr(s, '_lastSaid', -99) > 6.0]
-        if quiet:
+        if reply:
+            suit = reply[0]
+        elif quiet:
             suit = min(quiet, key=lambda s: getattr(s, '_lastSaid', -99) + random.uniform(0, 2))
-            self._say(suit, self.ChatterKeys)
+        else:
+            return
+        answering = bool(getattr(suit, '_replyAt', 0))
+        suit._replyAt = 0
+        self._say(suit, self.ChatterKeys, answering=answering)
+        partner = getattr(suit, 'talkPartner', None)
+        if partner is not None and not partner.isEmpty() and random.random() < 0.8:
+            partner._replyAt = now + random.uniform(2.2, 3.2)

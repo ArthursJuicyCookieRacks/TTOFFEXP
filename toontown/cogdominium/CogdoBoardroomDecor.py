@@ -13,8 +13,12 @@ IdleAnims = {'f': ('phone', 'shredder'), 'p': ('pencil-sharpener', 'finger-wag',
              'ds': ('magic1', 'magic2'), 'hh': ('roll-o-dex', 'glower'), 'cr': ('glower', 'pickpocket'),
              'tbc': ('cigar-smoke', 'song-and-dance')}
 # Cogs roaming the open floor, per side of each hall, and where.
-RoamersPerSide = 5
+RoamersPerSide = 8
 RoamX = (40, 92)
+# How much floor each body type takes up (for standing pairs apart).
+BodyRadius = {'a': 2.2, 'b': 1.7, 'c': 1.6}
+# How fast a cog turns round, degrees a second.
+TurnRate = 220.0
 WalkerNames = ('f', 'p', 'ym', 'mm', 'ds', 'hh', 'cr')
 DinerNames = ('ym', 'mm', 'hh', 'cr', 'tbc', 'f')
 # The round banquet table's chairs, and which way each faces (as the CEO
@@ -90,23 +94,38 @@ class CogdoBoardroomDecor:
                                          'anim': None})
                 suit = self.makeSuit(rng.choice(WalkerNames))
                 suit.reparentTo(self.root)
-                suit.setPos(side * rng.uniform(26, 40), y0 + rng.uniform(40, 300), 0)
+                suit.setPos(*self._standSpot(rng, side, 26, 40, y0 + 40, y0 + 300, 1.5))
                 suit.setH(90 * side + rng.uniform(-40, 40))
+                self.blockers.append((suit.getX(), suit.getY(), 3.0))
                 anims = IdleAnims.get(suit.style.name, ('neutral',))
                 suit.decorAnim = rng.choice(anims)
                 self.standers.append(suit)
-                # Cogs stopped to talk shop, face to face: a pair, and a
-                # second pair further down.
-                for lo, hi in ((60, 180), (200, 320)):
-                    px, py = side * rng.uniform(24, 38), y0 + rng.uniform(lo, hi)
-                    for k, dx in enumerate((-1.6, 1.6)):
-                        suit = self.makeSuit(rng.choice(WalkerNames))
+                # Cogs stopped to talk shop, face to face: three groups of
+                # two or three along each side, taking turns to speak.
+                for lo, hi in ((40, 140), (150, 240), (250, 330)):
+                    group = [self.makeSuit(rng.choice(WalkerNames)) for k in range(rng.choice((2, 2, 3)))]
+                    # Far enough apart for their sizes (a big A-body and a
+                    # small one stood inside each other), round a spot, and
+                    # turned to face each other (the pairs were turned away
+                    # from each other: Arthur).
+                    big = max(BodyRadius.get(g.style.body, 1.8) for g in group)
+                    ring = big + 0.4 if len(group) == 2 else big * 1.25 + 0.6
+                    px, py, pz = self._standSpot(rng, side, 24, 40, y0 + lo, y0 + hi, ring + 2.0)
+                    start = rng.uniform(0, 360)
+                    for k, suit in enumerate(group):
+                        ang = math.radians(start + k * 360.0 / len(group))
                         suit.reparentTo(self.root)
-                        suit.setPos(px + dx, py, 0)
-                        suit.setH(90 if dx < 0 else -90)
+                        suit.setPos(px + math.cos(ang) * ring, py + math.sin(ang) * ring, 0)
                         suit.decorAnim = 'neutral'
-                        suit.talkPartner = True
                         self.standers.append(suit)
+                    for k, suit in enumerate(group):
+                        other = group[(k + 1) % len(group)]
+                        if len(group) == 2:
+                            suit.headsUp(other)
+                        else:
+                            suit.headsUp(PM.Point3(px, py, 0))
+                        suit.talkPartner = other
+                    self.blockers.append((px, py, ring + 2.0))
                 self._bossbotProps(rng, props, side, y0)
         for hall in range(Consts.NumHalls):
             for side in (-1, 1):
@@ -174,6 +193,17 @@ class CogdoBoardroomDecor:
             gb.setScale(1.2)
         self.blockers.append((gx, gy, 3.0))
 
+    def _standSpot(self, rng, side, x0, x1, y0, y1, r):
+        # Somewhere to stand that is out of the walkers' beats (they walked
+        # straight through the cogs stood talking) and clear of the props.
+        for tries in range(40):
+            x, y = side * rng.uniform(x0, x1), rng.uniform(y0, y1)
+            if any(abs(w['x'] - x) < r + 1.8 and w['a'] - r - 2 < y < w['b'] + r + 2 for w in self.walkers):
+                continue
+            if self._clear((x, y), (x, y), r):
+                return x, y, 0
+        return x, y, 0
+
     def _clear(self, a, b, pad=2.0):
         # Is the straight walk from a to b clear of every blocker?
         ax, ay = a
@@ -206,19 +236,35 @@ class CogdoBoardroomDecor:
         legs = []
         for i, a in enumerate(pts):
             b = pts[(i + 1) % len(pts)]
-            legs.append((a, b, math.hypot(b[0] - a[0], b[1] - a[1]), rng.uniform(0.8, 3.0)))
+            idle = self._idle(rng, suit)
+            legs.append((a, b, math.hypot(b[0] - a[0], b[1] - a[1]), rng.uniform(3.0, 6.0) if idle != 'neutral' else rng.uniform(0.8, 3.0), idle))
         speed = rng.uniform(4.0, 5.5)
-        cycle = sum(d / speed + pause for a, b, d, pause in legs)
+        cycle = sum(d / speed + pause for a, b, d, pause, idle in legs)
         self.roamers.append({'suit': suit, 'legs': legs, 'speed': speed, 'cycle': cycle,
                              'phase': rng.uniform(0, cycle), 'anim': None})
 
-    def _updateRoamers(self, now):
+    def _turn(self, suit, h, dt):
+        # Turned round over a moment, not snapped to the new heading.
+        cur = suit.getH()
+        d = (h - cur + 180.0) % 360.0 - 180.0
+        step = TurnRate * dt
+        suit.setH(cur + max(-step, min(step, d)))
+
+    def _idle(self, rng, suit):
+        # Now and then a cog stopped on its walk does something (a call on
+        # its phone, a look at its rolodex...), or else just looks about.
+        anims = [a for a in IdleAnims.get(suit.style.name, ()) if a not in ('golf-club-swing', 'magic1', 'magic2', 'pickpocket')]
+        return rng.choice(anims) if anims and rng.random() < 0.45 else 'neutral'
+
+    def _updateRoamers(self, now, dt):
         for w in self.roamers:
             suit = w['suit']
             if suit.isStashed():
                 continue
             t = (now + w['phase']) % w['cycle']
-            for a, b, d, pause in w['legs']:
+            legs = w['legs']
+            h = None
+            for i, (a, b, d, pause, idle) in enumerate(legs):
                 walk = d / w['speed']
                 h = -math.degrees(math.atan2(b[0] - a[0], b[1] - a[1]))
                 if t < walk:
@@ -227,13 +273,17 @@ class CogdoBoardroomDecor:
                     break
                 t -= walk
                 if t < pause:
-                    x, y, anim = b[0], b[1], 'neutral'
+                    x, y, anim = b[0], b[1], idle
+                    if t > 0.6 * pause or idle == 'neutral':
+                        # Turning to set off on the next leg.
+                        n = legs[(i + 1) % len(legs)]
+                        h = -math.degrees(math.atan2(n[1][0] - n[0][0], n[1][1] - n[0][1]))
                     break
                 t -= pause
             else:
-                (x, y), anim = w['legs'][0][0], 'neutral'
+                (x, y), anim = legs[0][0], 'neutral'
             suit.setPos(x, y, 0)
-            suit.setH(h)
+            self._turn(suit, h, dt)
             if w['anim'] != anim:
                 w['anim'] = anim
                 suit.loop(anim)
@@ -269,7 +319,9 @@ class CogdoBoardroomDecor:
     def update(self, now):
         # The walkers go back and forth along their beat, stopping at each
         # end a moment to look about.
-        self._updateRoamers(now)
+        dt = max(0.0, min(0.5, now - getattr(self, '_lastUpdate', now)))
+        self._lastUpdate = now
+        self._updateRoamers(now, dt)
         for w in self.walkers:
             suit = w['suit']
             if suit.isStashed():
@@ -287,7 +339,7 @@ class CogdoBoardroomDecor:
             else:
                 y, h, anim = w['a'], 0, 'neutral'
             suit.setPos(w['x'], y, 0)
-            suit.setH(h)
+            self._turn(suit, h, dt)
             if w['anim'] != anim:
                 w['anim'] = anim
                 suit.loop(anim)

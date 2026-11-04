@@ -1788,7 +1788,10 @@ class CogdoBoardroomPlayer(CogdoPlayer):
             # Up onto the 2 ft step the exit stands on: the NPCs ran in at
             # floor height and walked into the elevator sunk in the step.
             z = BoardroomConsts.ExitFloor if self.npc.getPos()[1] > ey - BoardroomConsts.ExitStepDepth else 0
-            if self.moveTo(Point3(ex, ey - 1.0, z), speed=RUN_SPEED * 0.6):
+            # Walks the last stretch in, as a player slows to go through the
+            # doors (Arthur: walking in, not floating in at a run).
+            near = math.hypot(self.npc.getPos()[0] - ex, self.npc.getPos()[1] - ey) < 22.0
+            if self.moveTo(Point3(ex, ey - 1.0, z), speed=RUN_SPEED * (0.4 if near else 0.85)):
                 self.send('requestExit')
                 # In the exit elevator, at its spot, facing out.
                 from toontown.building.ElevatorConstants import ElevatorPoints
