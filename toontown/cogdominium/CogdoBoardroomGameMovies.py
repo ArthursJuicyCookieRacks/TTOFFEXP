@@ -55,7 +55,7 @@ class CogdoBoardroomGameIntro(CogdoGameMovie):
         return CogdoUtil.getRandomDialogueLine(lineList, self._rng)
 
     def displayLine(self, who, text):
-        self._dialogueLabel.node().setText(text)
+        self._fitLine(text)
         if who == 'toon':
             self.toonHead.reparentTo(aspect2d)
             self.cogHead.reparentTo(hidden)
@@ -71,6 +71,21 @@ class CogdoBoardroomGameIntro(CogdoGameMovie):
             # wide shoulders stuck out of its sides. Cut at the sides too.
             self.cogHead.getGeomNode().setEffect(ScissorEffect.makeNode(Point3(BoxLeft, 0, CogdoUtil.BOX_CLIP_Z),
                                                             Point3(BoxRight, 0, 10), aspect2d))
+
+    def _fitLine(self, text):
+        # The speech bubble holds two lines at the stock size: a longer line
+        # ran out past the panel's border (Arthur). Smaller and wider until
+        # it fits in two lines' height.
+        node = self._dialogueLabel.node()
+        if not hasattr(self, '_lineScale'):
+            self._lineScale = self._dialogueLabel.getScale()[0]
+            self._lineWrap = node.getWordwrap()
+        node.setText(text)
+        for f in (1.0, 0.92, 0.85, 0.78, 0.72, 0.66):
+            node.setWordwrap(self._lineWrap / f)
+            self._dialogueLabel.setScale(self._lineScale * f)
+            if node.getNumRows() * f <= 2.05:
+                break
 
     def makeSuit(self, suitType):
         # The Toon Resistance's toon, in a cog suit.
@@ -207,14 +222,32 @@ class CogdoBoardroomGolfIntro(CogdoBoardroomGameIntro):
         self._panel = CogdoGameRulesPanel('BoardroomGolfPanel', TTLocalizer.BoardroomGolfTitle, '',
                                           'boardroomGolfPanelDone', timeout=Consts.GolfIntroDuration + 2)
         self._panel.load()
-        self._panel.playButton.hide()
+        # The green button skips the intro, as on the slide's panel (once
+        # every player has pressed it).
+        self._panel.playButton['command'] = self._skip
         centerTitle(self._panel)
+        # The longer golf title ran under the green button now it shows:
+        # smaller, and a touch left, so it ends short of it.
+        title = self._panel.gameTitleText
+        title.setScale(title.getScale() * 0.8)
+        title.setX(aspect2d, title.getX(aspect2d) - 0.075)
         self._root = root
         self._makeIval()
 
     def play(self, elapsedTime=0.0):
         self._panel.enter()
+        self._panel.ignore('enter')
+        self._panel.accept('enter', self._skip)
         CogdoGameMovie.play(self, elapsedTime)
+
+    def _skip(self):
+        if self._game is not None:
+            self._game.requestGolfSkip()
+
+    def waiting(self):
+        # Pressed: waiting for the other players, as the slide's panel does.
+        if self._panel is not None:
+            self._panel.playButton.hide()
 
     def _makeIval(self):
         dialogue = TTLocalizer.BoardroomGolfIntroDialogue

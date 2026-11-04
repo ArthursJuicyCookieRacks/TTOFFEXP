@@ -1735,18 +1735,25 @@ class CogdoBoardroomPlayer(CogdoPlayer):
         if self.npc.doId in game.leftGolf or self.memo.get('leaving'):
             return
         ox, oy, oz = BoardroomConsts.GolfOrigin
-        x, y, h = BoardroomConsts.GolfToonElevator
+        # The elevator in front of the tees (Arthur), round the barrel pile
+        # on its own side.
+        x, y, h = BoardroomConsts.GolfElevators[0]
         if 'leaveAt' not in self.memo:
             self.memo['leaveAt'] = now + random.uniform(0.8, 3.0)
+            self.memo['leaveSide'] = random.choice((-1, 1)) * random.uniform(8.0, 11.0)
         if now < self.memo['leaveAt']:
             return
-        if self.moveTo(Point3(ox + x, oy + y + 1.0, 0), speed=RUN_SPEED * 0.6):
+        if not self.memo.get('pastPile'):
+            if self.moveTo(Point3(ox + self.memo['leaveSide'], oy + BoardroomConsts.BarrelPile[1], 0), speed=RUN_SPEED * 0.6):
+                self.memo['pastPile'] = True
+            return
+        if self.moveTo(Point3(ox + x, oy + y - 1.0, 0), speed=RUN_SPEED * 0.6):
             self.memo['leaving'] = True
             from toontown.building.ElevatorConstants import ElevatorPoints
             p = ElevatorPoints[len(game.leftGolf) % len(ElevatorPoints)]
-            # The elevator faces into the room (heading 180): its inside is
-            # behind the doors, away from the room.
-            self.npc.placeAt(ox + x - p[0], oy + y - p[1], 0, 0)
+            # The elevator faces into the room (heading 0, doors to -y): its
+            # inside is behind the doors, away from the room.
+            self.npc.placeAt(ox + x + p[0], oy + y + p[1], 0, 180)
             self.send('requestGolfLeave')
 
     def index(self):

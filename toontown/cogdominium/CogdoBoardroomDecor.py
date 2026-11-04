@@ -41,36 +41,18 @@ class CogdoBoardroomDecor:
         flag = loader.loadModel('phase_12/models/bossbotHQ/bust_a_cog_golf_flag')
         green = loader.loadModel('phase_12/models/bossbotHQ/bust_a_cog_golf_green')
         food = loader.loadModel('phase_12/models/bossbotHQ/canoffood')
+        props = (loader.loadModel('phase_6/models/golf/golfTrophy'),
+                 loader.loadModel('phase_12/models/bossbotHQ/food_belt1_model'),
+                 loader.loadModel('phase_6/models/golf/golf_ball'),
+                 self._sideTable())
         for hall in range(Consts.NumHalls):
             y0 = hall * Consts.HallLength
             for side in (-1, 1):
-                # A banquet table with cogs at dinner.
-                ty = y0 + rng.uniform(150, 300)
-                tx = side * rng.uniform(48, 62)
-                t = table.copyTo(self.root)
-                t.setPos(tx, ty, 0)
-                t.setH(rng.uniform(0, 90))
-                for k in range(rng.randint(2, 3)):
-                    f = food.copyTo(t)
-                    f.setPos(rng.uniform(-3, 3), rng.uniform(-3, 3), 3.62)
-                    f.setScale(0.6)
-                # A cog in every chair round the table (no empty chairs).
-                for index, heading in DinerSeats:
-                    chair = t.find('**/chair_%d' % (index + 1))
-                    if chair.isEmpty():
-                        continue
-                    suit = self.makeSuit(rng.choice(DinerNames))
-                    # Seated as the meeting's cogs are (CogdoBoardroomRoom):
-                    # the heading is the table's, not the chair's own (the
-                    # chair nodes are turned and scaled, which sat the cogs
-                    # behind their chairs, or sunk in the table).
-                    turn = t.attachNewNode('correctHeading')
-                    turn.setPos(chair.getPos(t))
-                    turn.setH(heading)
-                    CogdoBoardroomRoom.sitCog(suit, turn, suit.style.body)
-                    suit.decorAnim = 'sit-eat-loop' if suit.style.body != 'b' else 'neutral'
-                    CogdoBoardroomRoom.liftOverTable(suit, suit.decorAnim)
-                    self.diners.append(suit)
+                # Banquet tables with cogs at dinner: one, and in every other
+                # hall a second further along (Arthur: more tables).
+                spans = [(150, 300)] + ([(20, 120)] if (hall + (side > 0)) % 2 == 1 else [])
+                for lo, hi in spans:
+                    self._banquetTable(rng, table, food, side, y0 + rng.uniform(lo, hi))
                 # A golf cart parked against the wall, and now and then a
                 # putting green with its flag.
                 c = cart.copyTo(self.root)
@@ -86,7 +68,7 @@ class CogdoBoardroomDecor:
                     fl.setScale(0.45)
                 # Cogs walking up and down the floor on business, and some
                 # standing at their work.
-                for k in range(4):
+                for k in range(6):
                     suit = self.makeSuit(rng.choice(WalkerNames))
                     suit.reparentTo(self.root)
                     a = y0 + rng.uniform(10, 200)
@@ -102,20 +84,86 @@ class CogdoBoardroomDecor:
                 anims = IdleAnims.get(suit.style.name, ('neutral',))
                 suit.decorAnim = rng.choice(anims)
                 self.standers.append(suit)
-                # Two cogs stopped to talk shop, face to face.
-                px, py = side * rng.uniform(24, 38), y0 + rng.uniform(60, 320)
-                for k, dx in enumerate((-1.6, 1.6)):
-                    suit = self.makeSuit(rng.choice(WalkerNames))
-                    suit.reparentTo(self.root)
-                    suit.setPos(px + dx, py, 0)
-                    suit.setH(90 if dx < 0 else -90)
-                    suit.decorAnim = 'neutral'
-                    self.standers.append(suit)
-        for model in (table, cart, flag, green, food):
+                # Cogs stopped to talk shop, face to face: a pair, and a
+                # second pair further down.
+                for lo, hi in ((60, 180), (200, 320)):
+                    px, py = side * rng.uniform(24, 38), y0 + rng.uniform(lo, hi)
+                    for k, dx in enumerate((-1.6, 1.6)):
+                        suit = self.makeSuit(rng.choice(WalkerNames))
+                        suit.reparentTo(self.root)
+                        suit.setPos(px + dx, py, 0)
+                        suit.setH(90 if dx < 0 else -90)
+                        suit.decorAnim = 'neutral'
+                        suit.talkPartner = True
+                        self.standers.append(suit)
+                self._bossbotProps(rng, props, side, y0)
+        for model in (table, cart, flag, green, food) + props:
             model.removeNode()
         for suit in self.diners + self.standers + [w['suit'] for w in self.walkers]:
             suit.stash()
         return self.root
+
+    def _banquetTable(self, rng, table, food, side, ty):
+        tx = side * rng.uniform(48, 62)
+        t = table.copyTo(self.root)
+        t.setPos(tx, ty, 0)
+        t.setH(rng.uniform(0, 90))
+        for k in range(rng.randint(2, 3)):
+            f = food.copyTo(t)
+            f.setPos(rng.uniform(-3, 3), rng.uniform(-3, 3), 3.62)
+            f.setScale(0.6)
+        # A cog in every chair round the table (no empty chairs).
+        for index, heading in DinerSeats:
+            chair = t.find('**/chair_%d' % (index + 1))
+            if chair.isEmpty():
+                continue
+            suit = self.makeSuit(rng.choice(DinerNames))
+            # Seated as the meeting's cogs are (CogdoBoardroomRoom): the
+            # heading is the table's, not the chair's own (the chair nodes
+            # are turned and scaled, which sat the cogs behind their chairs,
+            # or sunk in the table).
+            turn = t.attachNewNode('correctHeading')
+            turn.setPos(chair.getPos(t))
+            turn.setH(heading)
+            CogdoBoardroomRoom.sitCog(suit, turn, suit.style.body)
+            suit.decorAnim = 'sit-eat-loop' if suit.style.body != 'b' else 'neutral'
+            CogdoBoardroomRoom.liftOverTable(suit, suit.decorAnim)
+            self.diners.append(suit)
+
+    def _bossbotProps(self, rng, models, side, y0):
+        # Bossbot things about the hall: a trophy cabinet's worth of golf
+        # trophies on side tables, a food conveyor from the CEO's banquet
+        # along the wall, and buckets of golf balls by the greens.
+        trophy, belt, ball, sideTable = models
+        for k in range(2):
+            ty = y0 + rng.uniform(30, 310)
+            st = sideTable.copyTo(self.root)
+            st.setPos(side * rng.uniform(70, 86), ty, 0)
+            st.setH(90 * side)
+            tr = trophy.copyTo(self.root)
+            tr.setPos(st.getX(), ty, 3.6)
+            tr.setScale(rng.uniform(1.6, 2.2))
+            tr.setH(rng.uniform(0, 360))
+        if rng.random() < 0.6:
+            b = belt.copyTo(self.root)
+            b.setPos(side * 97.0, y0 + rng.uniform(60, 260), 0)
+            b.setH(0)
+            b.setScale(0.6)
+        gx, gy = side * rng.uniform(66, 80), y0 + rng.uniform(20, 320)
+        for k in range(rng.randint(8, 14)):
+            gb = ball.copyTo(self.root)
+            gb.setPos(gx + rng.uniform(-1.2, 1.2), gy + rng.uniform(-1.2, 1.2), 0.25)
+            gb.setScale(1.2)
+
+    def _sideTable(self):
+        # A small dark-wood display table for the trophies.
+        from toontown.cogdominium.CogdoBoardroomGolf import _box
+        root = PM.NodePath('sideTable')
+        _box(root, -1.4, -1.0, 1.4, 1.0, 3.3, 3.6, (0.3, 0.18, 0.1, 1))
+        for x in (-1.2, 1.2):
+            for y in (-0.8, 0.8):
+                _box(root, x - 0.12, y - 0.12, x + 0.12, y + 0.12, 0.0, 3.3, (0.22, 0.13, 0.07, 1))
+        return root
 
     def allSuits(self):
         return self.diners + self.standers + [w['suit'] for w in self.walkers]

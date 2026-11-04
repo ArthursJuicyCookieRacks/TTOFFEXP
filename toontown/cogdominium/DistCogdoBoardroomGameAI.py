@@ -123,6 +123,35 @@ class DistCogdoBoardroomGameAI(DistCogdoGameAI):
         taskMgr.doMethodLater(Consts.GolfLeadIn + Consts.GolfDuration, self.__golfOver, self.uniqueName('golf-over'))
         taskMgr.doMethodLater(Consts.GolfLeadIn + 4.0, self.__golfSpawn, self.uniqueName('golf-spawn'))
 
+    def requestGolfSkip(self):
+        # The green button on the golf intro, as on the slide's: once every
+        # player has pressed it, the golf starts straight away.
+        avId = self.getSenderToon()
+        if not avId or self.phase != 'golf' or self.finished:
+            return
+        now = globalClock.getRealTime()
+        if now > self.golfStart - 1.5 or now < self.golfStart - Consts.GolfIntroDuration - 1.0:
+            return
+        self.golfSkips = getattr(self, 'golfSkips', set())
+        self.golfSkips.add(avId)
+        players = [a for a in self.stillRunning() if not self.isNPCToon(a)]
+        if not all(a in self.golfSkips for a in players):
+            return
+        self.golfStart = now + 1.0
+        taskMgr.remove(self.uniqueName('golf-over'))
+        taskMgr.remove(self.uniqueName('golf-spawn'))
+        taskMgr.doMethodLater(1.0 + Consts.GolfDuration, self.__golfOver, self.uniqueName('golf-over'))
+        taskMgr.doMethodLater(1.0 + 4.0, self.__golfSpawn, self.uniqueName('golf-spawn'))
+        self.sendUpdate('golfSkip', [self.getNetworkTime()])
+
+    def isNPCToon(self, avId):
+        av = self.air.doId2do.get(avId)
+        try:
+            from toontown.npcplayers.NPCBattleCrew import isNPC
+            return isNPC(av)
+        except Exception:
+            return bool(getattr(av, 'isNPCPlayer', False))
+
     def __golfOver(self, task):
         # Time is up: the cogs still about go, the toons' elevator opens,
         # and the toons walk into it themselves (as into the other field

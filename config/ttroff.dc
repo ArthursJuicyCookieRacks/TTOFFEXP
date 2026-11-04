@@ -2387,6 +2387,8 @@ dclass DistCogdoBoardroomGame : DistCogdoGame {
   golfCogHit(uint16 cogId, uint32 avId, uint8 barrelsHome) broadcast;
   golfOver(int16 timestamp) broadcast;
   requestGolfLeave() airecv clsend;
+  requestGolfSkip() airecv clsend;
+  golfSkip(int16 timestamp) broadcast;
   toonLeftGolf(uint32 avId) broadcast;
 };
 

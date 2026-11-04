@@ -37,7 +37,7 @@ TableModel = 'phase_12/models/bossbotHQ/BanquetTableChairs'
 # The table runs up the middle of the hall. The toons run on its top.
 # Three of the banquet halls end to end, the walls between them taken
 # out: each hall is this long from its near wall to its far one.
-NumHalls = 7
+NumHalls = 8
 HallLength = 333.7016
 TableHalfWidth = 13.0
 TableStart = 96.0
@@ -256,7 +256,7 @@ def hazardHits(kind, x, y, z, px, py, pz):
 # barrels. The toons tee off golf balls across a cubicle office at the cogs
 # walking out with them: a cog that is hit drops its barrel back on the
 # pile. Each barrel left at the end is laff for every toon.
-SlideDuration = 240.0
+SlideDuration = 255.0
 GolfDuration = 120.0
 # The slide's clock, then the golf's: GameDuration above is both.
 GameDuration = SlideDuration + GolfDuration
@@ -302,7 +302,7 @@ GolfOrigin = (0.0, 2400.0, 0.0)
 GolfHalfX = 58.0
 GolfHalfY = 40.0
 # Where the toons tee off, at the near end of the tee lane.
-GolfTees = ((-4.5, -26.0), (-1.5, -26.0), (1.5, -26.0), (4.5, -26.0))
+GolfTees = ((-9.0, -26.0), (-3.0, -26.0), (3.0, -26.0), (9.0, -26.0))
 # The elevator the toons ride in by, in the back wall behind the tees
 # (x, y of its doors, heading): the same cog building elevator as the
 # boardroom's exit, with the camera inside it for the ride as between the
@@ -327,6 +327,8 @@ GolfCamLookUp = 0.0
 # After the golf, the toons walk into their elevator; the ride goes on
 # without anyone who hasn't in this long.
 GolfLeaveTime = 40.0
+# The countdown over the way out's doors (pos, hpr, scale on the elevator).
+GolfExitClock = (0, -0.4, 10.0, 0, 0, 0, 2.0, 2.0, 2.0)
 # Where the barrels are piled: where the aisles cross.
 BarrelPile = (0.0, 6.0)
 # The three elevators the cogs come and go by: in the front wall and the

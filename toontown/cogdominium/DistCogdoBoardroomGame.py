@@ -165,6 +165,7 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         for club in self.clubs.values():
             club.removeNode()
         self.clubs = {}
+        self._stopExitClock()
         self.golf.destroy()
         self.golf = None
         self.room.destroy()
@@ -1341,6 +1342,29 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         self._golfArrival = self._makeGolfArrival()
         self._golfArrival.start(min(elapsed, Consts.GolfLeadIn - 0.1))
 
+    def requestGolfSkip(self):
+        # The golf intro's green button.
+        if self.phase == 'golf' and not getattr(self, '_golfSkipAsked', False):
+            self._golfSkipAsked = True
+            self.sendUpdate('requestGolfSkip', [])
+            intro = getattr(self, '_golfIntro', None)
+            if intro is not None:
+                intro.waiting()
+
+    def golfSkip(self, timestamp):
+        # Every player pressed it: the golf starts now (after a moment's
+        # beat), as the slide does when everyone has pressed play.
+        if self.golf is None or self.golfStartTime is None:
+            return
+        elapsed = globalClockDelta.localElapsedTime(timestamp, bits=16)
+        self.golfStartTime = globalClock.getFrameTime() - elapsed + 1.0
+        if self._golfArrival is not None:
+            self._golfArrival.pause()
+            self._golfArrival = None
+        if getattr(self, 'elevatorMusic', None):
+            self.elevatorMusic.stop()
+        self._beginGolf()
+
     def _makeGolfArrival(self):
         from toontown.building import ElevatorUtils
         from toontown.building.ElevatorConstants import ELEVATOR_NORMAL
@@ -1439,6 +1463,9 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
             self._golfIntro = None
 
     def _beginGolf(self):
+        if getattr(self, '_golfBegun', False):
+            return
+        self._golfBegun = True
         self._endGolfIntro()
         self._camInElevator = False
         self._fixFov()
@@ -1645,7 +1672,9 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
             self.timer.stash()
         for club in self.clubs.values():
             club.stash()
-        doors = ElevatorUtils.getOpenInterval(self, self.golf.toonLeftDoor, self.golf.toonRightDoor, self.openSfx, None,
+        self.golf.holdExit()
+        self._startExitClock(globalClockDelta.localElapsedTime(timestamp, bits=16))
+        doors = ElevatorUtils.getOpenInterval(self, self.golf.exitLeftDoor, self.golf.exitRightDoor, self.openSfx, None,
                                               type=ELEVATOR_NORMAL)
         doors.start()
         self.ivals.append(doors)
@@ -1673,9 +1702,40 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
                                        text_fg=(1, 1, 0.6, 1), text_shadow=(0, 0, 0, 1),
                                        text_font=ToontownGlobals.getSignFont(), text_wordwrap=24, pos=(0, 0, 0.72))
 
+    def _startExitClock(self, elapsed):
+        # The countdown over the elevator's doors, as over the other
+        # buildings' and field offices' elevators: the ride goes on without
+        # anyone not in when it runs out.
+        self._stopExitClock()
+        node = PM.TextNode('golfExitClock')
+        node.setFont(ToontownGlobals.getSignFont())
+        node.setAlign(PM.TextNode.ACenter)
+        node.setTextColor(0.5, 0.5, 0.5, 1)
+        self._exitClockNode = node
+        self._exitClock = self.golf.exitElevator.attachNewNode(node)
+        self._exitClock.setPosHprScale(*Consts.GolfExitClock)
+        self._exitClock.setLightOff()
+        end = globalClock.getFrameTime() - elapsed + Consts.GolfLeaveTime
+
+        def tick(task):
+            left = max(0, int(math.ceil(end - globalClock.getFrameTime())))
+            text = str(left)
+            if node.getText() != text:
+                node.setText(text)
+            return Task.cont if left > 0 else Task.done
+
+        taskMgr.add(tick, self.uniqueName('golfExitClock'))
+
+    def _stopExitClock(self):
+        taskMgr.remove(self.uniqueName('golfExitClock'))
+        clock = getattr(self, '_exitClock', None)
+        if clock is not None:
+            clock.removeNode()
+        self._exitClock = None
+
     def _checkGolfLeave(self, toon):
         # Walked in through the doors?
-        local = self.golf.toonElevator.getRelativePoint(render, toon.getPos(render))
+        local = self.golf.exitElevator.getRelativePoint(render, toon.getPos(render))
         if abs(local[0]) < 3.6 and local[1] > -1.5 and toon.doId not in self.leftGolf:
             self.leftGolf.add(toon.doId)
             self.leftOrder.append(toon.doId)
@@ -1688,20 +1748,20 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
                 self._leaveLabel = None
             toon.setSystemMessage(0, TTL.CogdoMazeGameWaitingForToons if self._golfWaiting() else '')
             self._intoGolfElevator(toon)
-            self._cameraInElevator(self.golf.toonElevator)
+            self._cameraInElevator(self.golf.exitElevator)
 
     def _golfWaiting(self):
         return [avId for avId in self.getToonIds() if avId not in self.leftGolf]
 
     def _intoGolfElevator(self, toon):
         k = self.leftOrder.index(toon.doId) if toon.doId in self.leftOrder else len(self.leftOrder)
-        spot = self.golf.toonElevatorSpot(k)
+        spot = self.golf.exitElevatorSpot(k)
         old = self._elevatorTracks.pop(toon.doId, None)
         if old is not None:
             old.finish()
         here = toon.getPos(render)
         toon.headsUp(render, spot)
-        heading = self.golf.toonElevator.getH(render) + 180
+        heading = self.golf.exitElevator.getH(render) + 180
         track = Sequence(Func(toon.loop, 'run'),
                          LerpPosInterval(toon, max(0.3, min(1.2, (spot - here).length() / 14.0)), spot, other=render),
                          LerpHprInterval(toon, 0.35, PM.VBase3(heading, 0, 0), other=render),
@@ -1717,8 +1777,9 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
             self.leftOrder.append(avId)
         if not self._golfWaiting() and self.golf is not None:
             # All in: the doors close for the ride up.
+            self._stopExitClock()
             pass  # (no empty whisper: it can build a NaN-sized balloon)
-            doors = ElevatorUtils.getCloseInterval(self, self.golf.toonLeftDoor, self.golf.toonRightDoor,
+            doors = ElevatorUtils.getCloseInterval(self, self.golf.exitLeftDoor, self.golf.exitRightDoor,
                                                    self.closeSfx, None, type=ELEVATOR_NORMAL)
             doors.start()
             self.ivals.append(doors)
@@ -1796,7 +1857,7 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         if suit is None or suit.isEmpty() or suit.isStashed():
             return
         now = globalClock.getFrameTime()
-        if now - getattr(suit, '_lastSaid', -99) < 6.0 or now - getattr(self, '_lastSaid', -99) < 1.2:
+        if now - getattr(suit, '_lastSaid', -99) < 6.0 or now - getattr(self, '_lastSaid', -99) < 0.3:
             return
         lines = []
         for key in keys:
@@ -1819,15 +1880,21 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
             suit.nametag3d.stash()
 
     def _chatter(self, now):
-        # Now and then a cog in view says something.
+        # The cogs in view talk, every one of them in turn (Arthur: all the
+        # cogs talking): the one quiet longest speaks next, about twice a
+        # second, the diners and the cogs talking shop among themselves,
+        # the Boss Cogs at the table and the flyers overhead too.
         if now < getattr(self, '_nextChatter', 3.0):
             return
-        self._nextChatter = now + random.uniform(1.0, 2.2)
+        self._nextChatter = now + random.uniform(0.35, 0.7)
         y = base.localAvatar.getY(render)
-        decor = [s for s in (self.decor.allSuits() if self.decor else [])
-                 if not s.isStashed() and 5 < s.getY(render) - y < 90]
-        bosses = [s for s in self.bosses.values() if not s.isStashed() and 5 < s.getY(render) - y < 70]
-        # Mostly the cogs about the hall, chatting among themselves.
-        near = decor if decor and (not bosses or random.random() < 0.7) else bosses
-        if near:
-            self._say(random.choice(near), self.ChatterKeys)
+        pool = (self.decor.allSuits() if self.decor else []) + list(self.bosses.values()) + list(self.minions)
+        if self.chairman is not None:
+            pool.append(self.chairman)
+        near = [s for s in pool if not s.isStashed() and -10 < s.getY(render) - y < 110]
+        if not near:
+            return
+        quiet = [s for s in near if now - getattr(s, '_lastSaid', -99) > 6.0]
+        if quiet:
+            suit = min(quiet, key=lambda s: getattr(s, '_lastSaid', -99) + random.uniform(0, 2))
+            self._say(suit, self.ChatterKeys)

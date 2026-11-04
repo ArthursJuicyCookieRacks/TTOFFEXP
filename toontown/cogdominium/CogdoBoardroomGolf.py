@@ -191,7 +191,16 @@ class CogdoBoardroomGolf:
             _box(holder, -9.4, -0.3, 9.4, depth, 12.3, 13.6, (0.46, 0.48, 0.52, 1))
             left = e.find('**/left_door')
             right = e.find('**/right_door')
-            self.elevators.append({'left': left, 'right': right, 'open': 0.0})
+            self.elevators.append({'left': left, 'right': right, 'open': 0.0, 'held': False})
+            if len(self.elevators) == 1:
+                # The one in front of the tees is the toons' way out to the
+                # executive suite after the golf (Arthur: through the
+                # elevator in front of them, not the one behind), with the
+                # car's back filled in, so its inside isn't a grey void.
+                CogdoUtil.addElevatorShell(e)
+                self.exitElevator = e
+                self.exitLeftDoor = left
+                self.exitRightDoor = right
             self._setDoors(self.elevators[-1], 0.0)
         # The toons' elevator, in the back wall behind the tees: they ride
         # in from the boardroom in it.
@@ -229,6 +238,10 @@ class CogdoBoardroomGolf:
     def updateElevators(self, dt):
         # An elevator's doors open when a cog is at them, and shut after.
         for index, elevator in enumerate(self.elevators):
+            if elevator.get('held'):
+                # The toons' way out, once the golf is over: left to the
+                # game's door intervals.
+                continue
             dx, dy = Consts.golfElevatorDoor(index)
             near = any(c['alive'] and (c['suit'].getPos() - PM.Point3(dx, dy, 0)).length() < 9.0
                        for c in self.cogs.values())
@@ -308,6 +321,14 @@ class CogdoBoardroomGolf:
         from toontown.building.ElevatorConstants import ElevatorPoints
         p = ElevatorPoints[index % len(ElevatorPoints)]
         return render.getRelativePoint(self.toonElevator, PM.Point3(p[0], p[1], 0))
+
+    def holdExit(self):
+        self.elevators[0]['held'] = True
+
+    def exitElevatorSpot(self, index):
+        from toontown.building.ElevatorConstants import ElevatorPoints
+        p = ElevatorPoints[index % len(ElevatorPoints)]
+        return render.getRelativePoint(self.exitElevator, PM.Point3(p[0], p[1], 0))
 
     def teePos(self, index):
         x, y = Consts.GolfTees[index % len(Consts.GolfTees)]

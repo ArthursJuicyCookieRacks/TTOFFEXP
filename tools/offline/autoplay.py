@@ -1008,13 +1008,20 @@ def playCogdoBoardroom(dist):
     lastLog = 0
     while cogdoGameState(dist) == 'Game':
         pos = localAvatar.getPos(render)
+        if os.environ.get('AUTOPLAY_GOLF_SKIP') and getattr(dist, '_golfIntro', None) is not None \
+                and not getattr(dist, '_golfSkipAsked', False) and dist.golfTime() < -8:
+            log('pressing the golf intro\'s green button at golf time %.1f' % dist.golfTime())
+            dist.requestGolfSkip()
         if not idle and getattr(dist, 'golfLeaving', False) and dist.golf is not None:
-            # Time is up: walk into the elevator in the back wall.
+            # Time is up: walk into the elevator in front, round the barrels.
             if localAvatar.doId in dist.leftGolf:
                 for name in list(tokens):
                     press(name, False)
             else:
-                door = render.getRelativePoint(dist.golf.toonElevator, Point3(0, 1.0, 0))
+                door = render.getRelativePoint(dist.golf.exitElevator, Point3(0, 1.0, 0))
+                local = dist.golf.toLocal(pos)
+                if local[1] < Consts.BarrelPile[1] + 5.0 and abs(local[0]) < 7.0:
+                    door = dist.golf.root.getPos(render) + Vec3(9.0 if local[0] >= 0 else -9.0, Consts.BarrelPile[1], 0)
                 d = door - pos
                 want = -math.degrees(math.atan2(d[0], d[1]))
                 diff = (want - localAvatar.getH(render) + 180) % 360 - 180
