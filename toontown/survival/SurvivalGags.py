@@ -140,6 +140,16 @@ CLEAR_SKIP = ('stormcloud',)
 HOSE_AIM_AT = Point3(0, 30, 0.5)
 # Where the glove on the hose sits in the view (camera space).
 HOSE_GLOVE_AT = Point3(0.8, 3.4, -0.9)
+# The same for the squirt gun and the sound gags' megaphone.
+GUN_GLOVE_AT = Point3(0.9, 4.0, -1.05)
+SOUND_GLOVE_AT = Point3(0.7, 3.2, -0.75)
+SOUND_ARM_SIZE = 1.5
+# The arm comes in from the right more than from below, so it does not
+# cover the megaphone it holds.
+SOUND_ARM_FROM = Vec3(0.8, -0.2, -0.6)
+# The gun aims at a nearer point, turned in so its side shows.
+GUN_AIM_AT = Point3(0, 8, 0.6)
+GUN_ARM_SIZE = 1.0
 # The shoulder must end up at least this far outside the frame (film units,
 # the frame is -1..1).
 SHOULDER_OUT = 1.15
@@ -218,15 +228,12 @@ INSTRUMENT_IN_HAND = {0: ((-1.1, -1.4, 0.1), (145, 0, 0), 0.65), 1: ((-1.2, -1.3
                       6: ((-1.04, -1.17, 0.26), (145, 0, 90), 1.1)}
 # Sound gags ride inside the megaphone the way the battle shows them.
 INSTRUMENT_IN_MEGAPHONE = (Point3(-1.1, -1.4, 0.1), (145, 0, 0))
-# A last turn of the megaphone in the view, so its mouth faces a little
-# in toward the crosshair.
-MEGAPHONE_TURN = Vec3(0, 0, 0)
 # The megaphone is a big prop; this close to the camera it is shrunk.
 MEGAPHONE_SCALE = 0.7
 INSTRUMENT_SCALE = {'bikehorn': 0.5, 'whistle': 0.6, 'bugle': 0.6, 'aoogah': 0.6, 'elephant': 0.5, 'fog_horn': 0.5, 'singing': 0.5}
 HAND_SCALE = {'ship': 0.05, 'piano': 0.1, 'safe': 0.22, 'weight': 0.25, 'anvil': 0.3, 'sandbag': 0.6, 'flowerpot': 0.6,
               'geyser': 0.1, 'stormcloud': 0.25, 'firehose': 1.0, 'wedding-cake': 1.0, 'birthday-cake': 1.0,
-              '1dollar': 0.8, 'glass': 1.0, 'bottle': 1.0, 'water-gun': 1.0, 'squirting-flower': 1.0}
+              '1dollar': 0.8, 'fruitpie-slice': 1.25, 'creampie-slice': 1.25, 'glass': 1.0, 'bottle': 1.0, 'water-gun': 1.0, 'squirting-flower': 1.0}
 LEFT_ARM_JOINTS = ('def_left_shoulder', 'def_left_elbow', 'def_left_forearm', 'def_left_wrist', 'def_left_palm',
                    'def_left_sleeve_short', 'def_left_sleeve_long', 'def_left_forSleeve', 'def_left_neg_sleeve',
                    'def_left_collar', 'def_left_midA', 'def_left_midB', 'def_left_thumbB', 'def_left_thumbC',
@@ -409,25 +416,34 @@ class ToonArms:
         self.toon.update(force=True)
 
     def aimNozzle(self, hose, side=RIGHT):
-        """Turn the arm, with the hose in its battle grip, about the glove
-        so the nozzle points out at the cogs (HOSE_AIM_AT, camera space),
-        then roll it about that line so the arm still comes in from the
-        lower right."""
-        parent = self.toon.getParent()
+        """The fire hose, in its battle grip: its nozzle out at the cogs."""
         nozzle = hose.find('**/joint_water_stream')
+        if nozzle.isEmpty():
+            return
+        glove = self.hand(side)
+        self.aimHeld(side, HOSE_GLOVE_AT, lambda parent: nozzle.getPos(parent) - glove.getPos(parent))
+
+    def aimHeld(self, side, gloveAt, pointing, size=1.0, aimAt=None, upright=None, armFrom=None, rollBy='shoulder'):
+        """Turn the arm, with its gag in the battle's grip, about the glove
+        so the gag points out at the cogs (HOSE_AIM_AT, camera space),
+        then roll it about that line so the arm still comes in from the
+        lower right (or, given upright(parent), so the gag's up is the
+        view's up), and grow it until its shoulder is out of view. size
+        draws the arm (and so the gag) that much bigger.
+        pointing(parent) is the way the gag points, in the toon's parent's
+        coordinates."""
+        parent = self.toon.getParent()
         glove = self.hand(side)
         shoulder = self.joint(side, 'shoulder')
-        if nozzle.isEmpty() or shoulder is None or shoulder.isEmpty():
+        if shoulder is None or shoulder.isEmpty():
             return
-        # Low and close, as a hose is held at the hip: the arm, reaching
-        # back up to the shoulder, leaves the view behind the camera.
-        self.toon.setScale(ARMS_SCALE)
-        self.grow = 1.0
-        self.placeGlove(side, HOSE_GLOVE_AT)
+        self.toon.setScale(ARMS_SCALE * size)
+        self.grow = size
+        self.placeGlove(side, gloveAt)
         pivot = glove.getPos(parent)
-        want = parent.getRelativePoint(camera, HOSE_AIM_AT) - pivot
+        want = parent.getRelativePoint(camera, aimAt or HOSE_AIM_AT) - pivot
         want.normalize()
-        have = nozzle.getPos(parent) - pivot
+        have = Vec3(pointing(parent))
         if have.length() < 1e-4:
             return
         have.normalize()
@@ -441,13 +457,16 @@ class ToonArms:
                 return None
             v.normalize()
             return v
-        # Rolled about the nozzle line so the arm comes in from the lower
-        # right; the straight hose runs back past it out of the view.
-        arm = flat(shoulder.getPos(parent) - pivot)
-        goal = flat(parent.getRelativeVector(camera, ARM_FROM))
+        if upright is not None:
+            # Rolled so the gag's own up is the view's up.
+            arm = flat(upright(parent))
+            goal = flat(parent.getRelativeVector(camera, Vec3(0, 0, 1)))
+        else:
+            # The shoulder, or the elbow when the forearm is what shows.
+            arm = flat(self.joint(side, rollBy).getPos(parent) - pivot)
+            goal = flat(parent.getRelativeVector(camera, armFrom or ARM_FROM))
         if arm is not None and goal is not None:
             self.turnAbout(pivot, math.degrees(math.atan2(arm.cross(goal).dot(want), arm.dot(goal))), want)
-        # The arm grows about the glove until its shoulder is out of view.
         at = glove.getPos(camera)
         while self.shoulderInView(side) and self.grow < MAX_ARM_GROW:
             self.grow *= 1.08
@@ -855,11 +874,17 @@ class GagHandler:
                 # inside it.
                 self.arms.toon.update(force=True)
                 prop.wrtReparentTo(megaphone)
-                aim = megaphone.getQuat(self.arms.toon)
-                megaphone.setQuat(camera, aim)
-                megaphone.setHpr(megaphone, MEGAPHONE_TURN)
+                # The glove keeps the battle's grip on the megaphone and the
+                # arm turns with it to point it where the toon faces in the
+                # battle (the toon's forward) out at the cogs. The arm is
+                # drawn bigger (a toon's arm is a thin tube, and seen this
+                # long it looked a stick), the megaphone kept its size.
+                toon = self.arms.toon
+                self.arms.aimHeld(RIGHT, SOUND_GLOVE_AT, lambda parent: parent.getRelativeVector(toon, Vec3(0, 1, 0)),
+                                  SOUND_ARM_SIZE, armFrom=SOUND_ARM_FROM,
+                                  rollBy='elbow')
                 # Smaller than in a battle so the arm holding it shows.
-                megaphone.setScale(megaphone.getScale() * MEGAPHONE_SCALE)
+                megaphone.setScale(megaphone.getScale() * MEGAPHONE_SCALE / SOUND_ARM_SIZE)
             else:
                 prop.reparentTo(self.arms.hand(RIGHT))
                 pos, hpr = PROP_IN_HAND.get(gag.prop, (Point3(0, 0, 0), (0, 0, 0)))
@@ -894,6 +919,11 @@ class GagHandler:
                     self.arms.toon.update(force=True)
                     prop.setHpr(camera, PIE_IN_VIEW_HPR)
                     self.seatInHold(prop, gag.prop) if PALM_HOLD else self.seatOnPalm(prop)
+                if gag.prop == 'water-gun':
+                    # The battle's grip, its barrel (the gun's forward) out at the cogs.
+                    prop.setScale(1.0)
+                    self.arms.aimHeld(RIGHT, GUN_GLOVE_AT, lambda parent: parent.getRelativeVector(prop, Vec3(0, 1, 0)), GUN_ARM_SIZE,
+                                      GUN_AIM_AT, lambda parent: parent.getRelativeVector(prop, Vec3(0, 0, 1)))
                 if gag.prop == 'firehose':
                     # The hose keeps the battle's grip (its size the glove's)
                     # and the arm and hose turn together to aim it.
