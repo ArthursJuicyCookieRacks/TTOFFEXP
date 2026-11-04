@@ -81,7 +81,10 @@ class DistCogdoBoardroomGameAI(DistCogdoGameAI):
 
     def startGame(self):
         d = self.layout.difficulty
-        taskMgr.doMethodLater(Consts.SlideDuration, self.__slideOver, self.uniqueName('game-over'))
+        # (A test run can go straight on to the golf: AUTOPLAY_GOLF_ONLY.)
+        import os
+        slide = 6.0 if os.environ.get('AUTOPLAY_GOLF_ONLY') else Consts.SlideDuration
+        taskMgr.doMethodLater(slide, self.__slideOver, self.uniqueName('game-over'))
         # A moment for the toons to get up the ramp before the meeting
         # notices them.
         taskMgr.doMethodLater(3.0, self.__bossAttack, self.uniqueName('boss'))
@@ -158,6 +161,9 @@ class DistCogdoBoardroomGameAI(DistCogdoGameAI):
         # offices' exits) to ride on up to the executive suite.
         if self.finished or self.phase != 'golf':
             return task.done
+        stats = getattr(self, 'golfStats', {})
+        self.notify.info('golf over: %s cogs came, swings %s, hits %s, barrels home %d, lost %d' % (
+            stats.get('spawned'), stats.get('swings'), stats.get('hits'), self.barrelsHome, self.barrelsLost))
         self.phase = 'leave'
         self.leftGolf = set()
         taskMgr.remove(self.uniqueName('golf-spawn'))
@@ -213,6 +219,8 @@ class DistCogdoBoardroomGameAI(DistCogdoGameAI):
     def __makeGolfCog(self, d):
         cogId = self.nextGolfCog
         self.nextGolfCog += 1
+        self.golfStats = getattr(self, 'golfStats', {'spawned': 0, 'swings': {}, 'hits': {}})
+        self.golfStats['spawned'] += 1
         top = max(2, int(round(2 + d * (len(Consts.GolfCogNames) - 2))))
         name = random.randrange(top)
         # Out of one of the three elevators, and away by another.
@@ -268,6 +276,8 @@ class DistCogdoBoardroomGameAI(DistCogdoGameAI):
         if now - self.lastSwing.get(avId, -99) < Consts.SwingCooldown:
             return
         self.lastSwing[avId] = now
+        self.golfStats = getattr(self, 'golfStats', {'spawned': 0, 'swings': {}, 'hits': {}})
+        self.golfStats['swings'][avId] = self.golfStats['swings'].get(avId, 0) + 1
         power = max(0.0, min(1.0, power))
         self.sendUpdate('golfSwing', [avId, h, power, self.getNetworkTime()])
         av = self.air.doId2do.get(avId)
@@ -316,6 +326,8 @@ class DistCogdoBoardroomGameAI(DistCogdoGameAI):
         if self.phase != 'golf' or self.finished or not cog or not cog['alive']:
             return
         cog['alive'] = False
+        self.golfStats = getattr(self, 'golfStats', {'spawned': 0, 'swings': {}, 'hits': {}})
+        self.golfStats['hits'][avId] = self.golfStats['hits'].get(avId, 0) + 1
         taskMgr.remove(self.uniqueName('golfcog-pick-%d' % cogId))
         taskMgr.remove(self.uniqueName('golfcog-out-%d' % cogId))
         if cog['carrying']:

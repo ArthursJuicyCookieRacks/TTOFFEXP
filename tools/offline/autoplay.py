@@ -703,12 +703,6 @@ def pickGag():
                       ToontownBattleGlobals.SQUIRT_TRACK, ToontownBattleGlobals.DROP_TRACK):
             if inventory.numItem(track, level) > 0:
                 return track, level
-    if os.environ.get('AUTOPLAY_GAGS'):
-        # A long level 5 battle can use a whole gag pouch: restocked, as a
-        # player would arrive with gags bought for it.
-        log('out of gags mid-battle: restocking')
-        onDistrict(restock, localAvatar.doId)
-        return ToontownBattleGlobals.THROW_TRACK, 4
     raise StepFailed('the toon is out of sound, throw, squirt and drop gags')
 
 
@@ -726,6 +720,11 @@ def fightBattle(timeout=1800, during=None):
             log('still in battle: round %d, gag panel %s' % (rounds, townBattleState()))
         if townBattleState() == 'Attack':
             rounds += 1
+            if os.environ.get('AUTOPLAY_GAGS') and rounds % 3 == 0:
+                # A long level 5 battle can use up a whole gag pouch: topped
+                # up, as a player arrives with gags bought for it.
+                onDistrict(restock, localAvatar.doId)
+                yield sleep(1.0)
             track, level = pickGag()
             messenger.send(townBattle().battleEvent,
                            [{'mode': 'Attack', 'track': track, 'level': level, 'target': 0}])
