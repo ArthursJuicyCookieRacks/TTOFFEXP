@@ -10,6 +10,9 @@ PILE = 'pile'          # A pile of paperwork: go round it, or up a ramp.
 PENCIL = 'pencil'      # A giant pencil lying across the table: hop it.
 RAMP = 'ramp'          # A ramp up onto a pile, with memos on top.
 
+# No two memos closer than this (ft): no heaps.
+MemoSpacing = 3.5
+
 INVULNERABLE = 0
 HOP = 1
 
@@ -239,56 +242,40 @@ class BoardroomLayout:
             nxt = ok[i + 1]
             ok[i] = [walk[i][j] and any(nxt[k] and leg(i, j, k) for k in range(max(0, j - step), min(cols, j + step + 1)))
                      for j in range(cols)]
-        route = []
-        starts = [j for j in range(cols) if ok[0][j]]
-        if not starts:
-            # (Never seen: every stretch has a way through.)
-            starts = [cols // 2]
-            ok = walk = [[True] * cols for i in range(rows)]
-        j = rng.choice(starts)
-        aim = rng.randrange(cols)
-        aimUntil = 0
-        for i in range(rows):
-            if i >= aimUntil:
-                # Wander: a new spot across the table to drift towards
-                # every 10 to 30 ft.
-                aim = rng.randrange(cols)
-                aimUntil = i + int(rng.uniform(10.0, 30.0) / DY)
-            if i > 0:
-                choices = [k for k in range(max(0, j - step), min(cols, j + step + 1))
-                           if ok[i][k] and leg(i - 1, j, k)]
-                if choices:
-                    j = min(choices, key=lambda k: abs(k - aim) + rng.random() * 0.5)
-            route.append((xs[j], ys[i]))
-        # Smoothed a touch, so the line doesn't zigzag.
-        smooth = list(route)
-        for i in range(1, len(route) - 1):
-            near = [route[k][0] for k in range(max(0, i - 2), min(len(route), i + 3))]
-            sx = sum(near) / len(near)
-            y = route[i][1]
-            px, py = smooth[i - 1]
-            nx, ny = route[i + 1]
-            if self._clearLeg(px, py, sx, y) and self._clearLeg(sx, y, nx, ny):
-                smooth[i] = (sx, y)
-        route = smooth
-        self.route = route
+        # And forward from the start: a spot is reachable if a toon can get
+        # to it from the start AND still go on to the end from it. Only those
+        # spots get memos or power-ups (none behind a wall of piles, none up
+        # on a pile with no ramp to it).
+        good = [None] * rows
+        good[0] = ok[0]
+        for i in range(1, rows):
+            prev = good[i - 1]
+            good[i] = [ok[i][k] and any(prev[j] and leg(i - 1, j, k) for j in range(max(0, k - step), min(cols, k + step + 1)))
+                       for k in range(cols)]
+        self._reach = (start, DY, DX, half, good)
+        self.route = []
+        # The memos: scattered across the table stretch by stretch, as they
+        # were (Arthur liked that spread: every toon in the party finds its
+        # own), each stretch its own random count and spots, never two right
+        # on top of each other. Memos wait on the ramped piles' tops too.
         self.memos = []
-        y = start + rng.uniform(1.0, 4.0)
-        while y < end:
-            # Either side of the line, within pick-up reach of a toon on it.
-            x = self.routeX(y) + rng.uniform(-2.0, 2.0)
-            if not self._walkable(x, y):
-                x = self.routeX(y)
-            if not self._walkable(x, y):
-                y += 0.5
-                continue
-            if self._nearPencil(x, y, 1.8):
-                # Not inside a pencil: just past it, for the landing.
-                y += 2.0
-                continue
-            self.memos.append((x, y, self.heightAt(x, y)))
-            y += rng.uniform(5.0, 10.0)
-        # The power-ups: spread evenly along the table, on the line too,
+        y0 = start
+        while y0 < end:
+            y1 = min(end, y0 + Consts.SegmentLength)
+            for k in range(rng.randint(*Consts.MemosPerSegment)):
+                for tries in range(40):
+                    mx = rng.uniform(-half, half)
+                    my = rng.uniform(y0 + 1.0, y1 - 1.0)
+                    if self.reachable(mx, my) and not self._nearPencil(mx, my, 1.8) \
+                            and not self._nearMemo(mx, my, MemoSpacing):
+                        self.memos.append((mx, my, self.heightAt(mx, my)))
+                        break
+            for ob in self._pilesNear((y0 + y1) / 2.0):
+                if y0 <= ob.y < y1 and self._rampPile(ob, ob.x) and rng.random() < 0.85 \
+                        and self.reachable(ob.x, ob.y) and not self._nearMemo(ob.x, ob.y, MemoSpacing):
+                    self.memos.append((ob.x, ob.y, Consts.TableTop + ob.h))
+            y0 = y1
+        # The power-ups: spread evenly along the table, out in the open,
         # away from the memos.
         kinds = [INVULNERABLE] * Consts.NumInvulnerable + [HOP] * Consts.NumHop
         rng.shuffle(kinds)
@@ -297,12 +284,21 @@ class BoardroomLayout:
         for i, kind in enumerate(kinds):
             base = start + span * (i + 1)
             for tries in range(80):
-                py = base + rng.uniform(-span * 0.45, span * 0.45)
-                px = self.routeX(py) + rng.uniform(-0.8, 0.8)
-                if self._walkable(px, py) and not self._nearMemo(px, py, 2.8) and not self._nearPencil(px, py, 2.0) \
+                py = base + rng.uniform(-span * 0.4, span * 0.4)
+                px = rng.uniform(-half + 1.0, half - 1.0)
+                if self.reachable(px, py) and not self._nearMemo(px, py, 2.8) and not self._nearPencil(px, py, 2.0) \
                         and abs(self.heightAt(px, py) - Consts.TableTop) < 0.01:
                     self.powerUps.append((kind, px, py))
                     break
+
+    def reachable(self, x, y):
+        # On the table where a sliding toon can get to (see _layRoute).
+        start, DY, DX, half, good = self._reach
+        i = int(round((y - start) / DY))
+        j = int(round((x + half) / DX))
+        if not (0 <= i < len(good) and 0 <= j < len(good[0])):
+            return False
+        return good[i][j] and self._walkable(x, y)
 
     def _nearPencil(self, x, y, r):
         for ob in self.obstacles:
