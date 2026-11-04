@@ -4996,6 +4996,9 @@ def useCogSummons(shots, prefix='summons'):
     sc = localAvatar.chatMgr.chatInputSpeedChat
     sc.show()
     yield sleep(0.5)
+    # Laid out as a hover would find it (opening submenus straight from code
+    # skips the frame where SpeedChat places them).
+    sc.speedChat.finalizeAll()
     base.screenshot(os.path.join(shots, '%s-1-speedchat.png' % prefix), defaultFilename=0)
     terminal = None
     for holder in list(sc.speedChat):
@@ -5058,7 +5061,7 @@ def useCogSummons(shots, prefix='summons'):
 
 def scenarioUseSummons():
     street = ToontownGlobals.SillyStreet
-    yield from teleport(street - street % 1000, firstVisgroup(street))
+    yield from teleport(street - street % 1000, int(os.environ.get('AUTOPLAY_SUMMON_ZONE', 0)) or firstVisgroup(street))
     onDistrict(restock, localAvatar.doId)
     lvl, dept = [int(v) for v in os.environ.get('AUTOPLAY_SUMMON_COG', '3,0').split(',')]
     onDistrict(lambda air, avId: air.doId2do[avId].addMiniSummons(dept * 8 + lvl), localAvatar.doId)

@@ -3620,6 +3620,8 @@ class DistributedToonAI(DistributedPlayerAI.DistributedPlayerAI, DistributedSmoo
                 points = map[zoneId][:]
                 suit = sp.createNewSuit([], points, suitName=suitName)
                 if suit:
+                    suit.summonedBy = self.doId
+                    self.notify.info('summoned %s %s in zone %s (toon in %s)' % (suitName, suit.doId, suit.zoneId, self.zoneId))
                     return ['success', suitIndex, 0]
         return ['badlocation', suitIndex, 0]
 

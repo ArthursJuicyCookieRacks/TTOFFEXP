@@ -970,6 +970,12 @@ class NPCPlayerManagerAI:
         for suit in planner.suitList:
             if suit.isDeleted() or suit.pathState != 1 or suit.legType != SuitLeg.TWalk:
                 continue
+            # A cog a player summoned is that player's to fight: the NPCs
+            # left it alone and beat it before the player got there (found
+            # in the field office reward test runs). They still join the
+            # player's battle with it.
+            if getattr(suit, 'summonedBy', None) and suit.summonedBy in self.air.doId2do:
+                continue
             legs = suit.legList
             elapsed = now - suit.pathStartTime
             index = legs.getLegIndexAtTime(elapsed, suit.currentLeg)

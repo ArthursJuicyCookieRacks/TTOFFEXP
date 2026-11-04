@@ -371,8 +371,8 @@ NumBarrels = 10
 LaffPerBarrel = 3
 GolfCogNames = ('f', 'p', 'ym', 'mm', 'ds', 'hh', 'cr')
 GolfMaxCogsRange = (7, 12)
-GolfSpawnPeriodRange = (1.8, 0.7)
-GolfCogSpeedRange = (5.5, 8.5)
+GolfSpawnPeriodRange = (1.8, 0.85)
+GolfCogSpeedRange = (5.5, 8.0)
 GolfPickupTime = 1.2
 GolfCogRadius = 2.4
 # The swing: Left/Right aims, holding Jump (Control) winds up, letting go
