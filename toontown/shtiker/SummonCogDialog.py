@@ -16,7 +16,7 @@ class SummonCogDialog(DirectFrame, StateData.StateData):
     notify.setInfo(True)
 
     def __init__(self, suitIndex):
-        DirectFrame.__init__(self, parent=aspect2dp, pos=(0, 0, 0.3), relief=None, image=DGG.getDefaultDialogGeom(), image_scale=(1.6, 1, 0.78), image_pos=(0, 0, 0.15), image_color=ToontownGlobals.GlobalDialogColor, text=TTL.SummonDlgTitle, text_scale=0.12, text_pos=(0, 0.4), borderWidth=(0.01, 0.01))
+        DirectFrame.__init__(self, parent=aspect2dp, pos=(0, 0, -0.15), relief=None, image=DGG.getDefaultDialogGeom(), image_scale=(1.6, 1, 0.78), image_pos=(0, 0, 0.15), image_color=ToontownGlobals.GlobalDialogColor, text=TTL.SummonDlgTitle, text_scale=0.12, text_pos=(0, 0.4), borderWidth=(0.01, 0.01))
         StateData.StateData.__init__(self, 'summon-cog-done')
         self.initialiseoptions(SummonCogDialog)
         self.suitIndex = suitIndex
