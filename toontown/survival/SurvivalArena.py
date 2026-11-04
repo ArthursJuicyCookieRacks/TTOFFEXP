@@ -138,13 +138,12 @@ MAPS['farewell_fair'] = {
     'picture': 'phase_4/maps/survival_map_farewell_fair.jpg',
     'preview': 'farewell_fair',
 }
-# Test only (not in MAP_ORDER until Arthur says): pick it with
-# survival-map toybox_terrace in a prc.
+# In Map Select after its tests (Arthur, 2026-11-04).
 MAPS['toybox_terrace'] = {
     'title': 'Toybox Terrace',
     'description': 'A playground built from giant wooden toys round a board-game plaza. Jack pops out of the clock tower, '
                    'Mickey waits in front of it, Fisherman Freddy by the marble pond, and the trunk on the spinner in the middle of the plaza.',
-    'picture': 'phase_4/maps/survival_map_farewell_fair.jpg',
+    'picture': 'phase_4/maps/survival_map_toybox_terrace.jpg',
     'preview': 'toybox_terrace',
 }
 # The other playgrounds, straight from their DNA like Toontown Central,
@@ -156,7 +155,7 @@ MAPS.update(HOOD_MAPS)
 MAP_STATION_CLEAR = 10.0
 
 # The order the Map Select menu lists them in.
-MAP_ORDER = ('ttc', 'beta_ttc', 'downsizer', 'farewell_fair', 'brrrgh', 'melodyland', 'dock', 'sellbot_hq', 'bossbot_hq')
+MAP_ORDER = ('ttc', 'beta_ttc', 'downsizer', 'farewell_fair', 'toybox_terrace', 'brrrgh', 'melodyland', 'dock', 'sellbot_hq', 'bossbot_hq')
 
 
 def mapName():
