@@ -24,20 +24,6 @@ FO_DICT = {'s': 'tt_m_ara_cbe_fieldOfficeMoverShaker',
  'm': 'tt_m_ara_cbe_fieldOfficeMoverShaker',
  'c': 'tt_m_ara_cbe_fieldOfficeMoverShaker'}
 
-# Arthur's Bossbot field office textures: the Mover & Shaker office's
-# palettes with Bossbot art (its portrait and trim), on the Bossbot offices
-# only; the Sellbot and Cashbot ones keep theirs.
-BOSSBOT_FO_TEXTURES = {'cogdominium_palette_3cmla_4': 'phase_5/maps/ttoff_bossbot_fo_palette_3cmla_4.jpg',
-                       'cogdominium_palette_3cmla_5': 'phase_5/maps/ttoff_bossbot_fo_palette_3cmla_5.jpg'}
-
-
-def retextureBossbotOffice(np):
-    for tex in np.findAllTextures():
-        for old, path in BOSSBOT_FO_TEXTURES.items():
-            if old in tex.getName() or old in tex.getFilename().getBasename():
-                np.replaceTexture(tex, loader.loadTexture(path))
-
-
 def isToonFlat(name):
     return name[0] == 't' and name.find('_landmark_') == -1
 
@@ -577,8 +563,6 @@ class DistributedBuilding(DistributedObject.DistributedObject):
         zoneId = ZoneUtil.getTrueZoneId(zoneId, self.interiorZoneId)
         newParentNP = base.cr.playGame.hood.loader.zoneDict[zoneId]
         suitBuildingNP = suitNP.copyTo(newParentNP)
-        if chr(self.track) == 'c':
-            retextureBossbotOffice(suitBuildingNP)
         buildingTitle = dnaData.getBlock(self.block).title
         if not buildingTitle:
             buildingTitle = TTLocalizer.Cogdominiums
@@ -631,8 +615,8 @@ class DistributedBuilding(DistributedObject.DistributedObject):
                 np.replaceTexture(old, new)
 
     # A Bossbot field office shares the Mover & Shaker building too: it gets
-    # Arthur's Big Cheese poster and brown trim (his texture pack, added
-    # under new names: the shared textures themselves are left alone).
+    # Arthur's Bossbot poster and trim (his texture pack, updated 2026-11-04,
+    # added under new names: the shared textures themselves are left alone).
     BossbotFieldOfficeTextures = {'cogdominium_palette_3cmla_4': 'phase_5/maps/ttoff_cogdominium_palette_bossbot_4.jpg',
                                   'cogdominium_palette_3cmla_5': 'phase_5/maps/ttoff_cogdominium_palette_bossbot_5.jpg'}
 
