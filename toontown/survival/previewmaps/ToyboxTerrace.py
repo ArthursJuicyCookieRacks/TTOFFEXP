@@ -86,6 +86,7 @@ TUNNELS = ((Point3(0, -HALF, 0), 0, 'Wind-Up Way', 'key'),
            (Point3(HALF, 0, 0), 90, 'Loose Marble Lane', 'marble'),
            (Point3(-HALF, 0, 0), -90, 'Building Block Boulevard', 'blocks'))
 # Each tunnel sign's lettering (Arthur: pink, red and blue).
+SIGN_LIFT = {'marble': 0.14, 'blocks': 0.14}
 SIGN_INK = {'key': (0.93, 0.33, 0.62), 'marble': (0.86, 0.1, 0.12), 'blocks': (0.12, 0.36, 0.86)}
 TUNNEL_GAP = 23.0
 
@@ -804,16 +805,18 @@ class ToyboxTerrace(PreviewMap):
             # squeezed across, as the Punchline Place sign is.
             sx = min(1.5, maxW / max(tn.calcWidth(street.upper()), 0.01))
             sz = min(1.5, max(sx, 1.15))
+            # A long name sits a touch higher (Arthur).
+            up = SIGN_LIFT.get(theme, 0.0)
             ink = '<color r="%.3f" g="%.3f" b="%.3f" a="1" />' % SIGN_INK[theme]
             out.append('<prop name="linktunnel_toy_%s_DNARoot" code="prop_safe_zone_tunnel">%s'
                        '<sign code="tunnel_sign_orange"><scale x="1.5" y="1" z="1.5" />'
-                       '<baseline code="mickey" width="33.3333" height="33.3333">%s<pos x="0" y="0" z="-0.76" />'
+                       '<baseline code="mickey" width="33.3333" height="33.3333">%s<pos x="0" y="0" z="%.3f" />'
                        '<scale x="%.3f" y="1" z="%.3f" /><text>%s</text></baseline>'
-                       '<baseline code="mickey" width="44.0567" height="44.0567">%s<pos x="-0.08" y="0" z="-1.98" />'
+                       '<baseline code="mickey" width="44.0567" height="44.0567">%s<pos x="-0.08" y="0" z="%.3f" />'
                        '<scale x="0.8" y="1" z="0.8" /><text>TOYBOX TERRACE</text></baseline>'
                        '<baseline><pos x="0" y="0" z="1.75" /><scale x="2.5" y="1" z="2.5" /><graphic code="mickeySZ" /></baseline>'
                        '</sign></prop>'
-                       % (theme, place((origin[0], origin[1], -6.6666), th), ink, sx, sz, street.upper(), ink))
+                       % (theme, place((origin[0], origin[1], -6.6666), th), ink, -0.76 + up, sx, sz, street.upper(), ink, -1.98 + up))
         return ('<?xml version="1.0" encoding="utf-8"?><scene zone="2000"><group name="toyboxTerrace">'
                 '<visgroup zone="2000:safe_zone" vis="2000:safe_zone">%s</visgroup></group></scene>' % ''.join(out))
 
