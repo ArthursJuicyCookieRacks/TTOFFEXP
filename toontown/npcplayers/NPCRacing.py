@@ -47,6 +47,7 @@ ROAD_STEP = 1.0
 ROAD_WIDTH = 40.0
 ROAD_AHEAD = 40.0
 ROAD_MARGIN = 2.6
+ROAD_REACH = 40.0
 ROAD_STEER_SPEED = 25.0
 import os as _os
 ROAD_DEBUG = bool(_os.environ.get('NPC_ROAD_DEBUG'))
@@ -266,21 +267,68 @@ class NPCDriver:
         h = math.radians(heading)
         fwd = Vec3(-math.sin(h), math.cos(h), 0)
         right = Vec3(math.cos(h), math.sin(h), 0)
+        # Where the road was last found against the curve: on some tracks
+        # the curve runs several feet above or below the road, and a kart
+        # sank into the ground when a wheel's ray missed the road there.
+        expect = self.roadZ(self.distance) if self.distance is not None and self.track is not None else None
+        if expect is None:
+            expect = pos[2] + getattr(self, 'lift', 0.0)
         heights = []
         for dx, dy in ((1.5, 2.0), (-1.5, 2.0), (1.5, -2.0), (-1.5, -2.0)):
             at = pos + right * dx + fwd * dy
-            z = self.floorZ(base, at)
-            if z is None:
-                return pos, 0.0, 0.0
-            heights.append(z)
-        rf, lf, rr, lr = heights
-        z = sum(heights) / 4.0
-        if abs(z - pos[2]) > 12.0:
-            # Something else under it (a bridge over the road): keep the curve.
-            return pos, 0.0, 0.0
+            heights.append(self.floorZ(base, Point3(at[0], at[1], expect)))
+        found = [z for z in heights if z is not None]
+        if not found:
+            return Point3(pos[0], pos[1], expect), 0.0, 0.0
+        z = sum(found) / len(found)
+        if abs(z - expect) > 12.0:
+            # Something else under it (a bridge over the road): keep on.
+            return Point3(pos[0], pos[1], expect), 0.0, 0.0
+        rf, lf, rr, lr = [h if h is not None else z for h in heights]
+        z = (rf + lf + rr + lr) / 4.0
+        self.lift = z - pos[2]
         pitch = math.degrees(math.atan2((rf + lf) / 2 - (rr + lr) / 2, 4.0))
         roll = math.degrees(math.atan2((lf + lr) / 2 - (rf + rr) / 2, 3.0))
         return Point3(pos[0], pos[1], z), pitch, roll
+
+    def roadZ(self, distance):
+        """How high the road is this far round, under the curve. The curve
+        can run tens of feet above or below the road (Rural B backwards
+        starts 30 ft over it), so the road's height is followed from the
+        starting grid on, bit by bit, each piece within a few feet of the
+        last; over a jump's gap it keeps the height it had. Kept for every
+        racer on the track. None where the road isn't loaded yet."""
+        track = self.track
+        if distance < 0:
+            return self.startPos[2]
+        profile = track.__dict__.setdefault('roadZ', [])
+        key = int((distance % track.length) // ROAD_BIN)
+        if key < len(profile):
+            return profile[key]
+        base = getClientBuiltin('base')
+        if base is None:
+            return None
+        if getattr(self, 'rayNP', None) is None:
+            self.ground(Point3(0, 0, 0), 0)
+            if getattr(self, 'rayNP', None) is None:
+                return None
+        last = profile[-1] if profile else self.startPos[2]
+        while len(profile) <= key:
+            point, heading, t = track.at(len(profile) * ROAD_BIN + ROAD_BIN / 2.0)
+            hit = self.floorHit(base, Point3(point[0], point[1], last), 6.0)
+            if hit is None:
+                # Off the road's edge here, over a gap, or not loaded:
+                # look across the track for the road at about this height.
+                right = Vec3(math.cos(math.radians(heading)), math.sin(math.radians(heading)), 0)
+                for x in range(2, int(ROAD_WIDTH) + 1, 2):
+                    hit = self.floorHit(base, Point3(point[0], point[1], last) + right * x, 6.0) or \
+                        self.floorHit(base, Point3(point[0], point[1], last) - right * x, 6.0)
+                    if hit is not None:
+                        break
+            if hit is not None:
+                last = hit[0]
+            profile.append(last)
+        return profile[key]
 
     def roadBounds(self, distance, side):
         """The road's edges (as offsets right of the curve) where this
@@ -318,13 +366,26 @@ class NPCDriver:
             if getattr(self, 'rayNP', None) is None:
                 return None
         point, heading, t = self.track.at(key * ROAD_BIN + ROAD_BIN / 2.0)
+        roadZ = self.roadZ(key * ROAD_BIN + ROAD_BIN / 2.0)
+        if roadZ is None:
+            return None
+        point = Point3(point[0], point[1], roadZ)
         right = Vec3(math.cos(math.radians(heading)), math.sin(math.radians(heading)), 0)
-        offsets = [x * ROAD_STEP for x in range(-int(ROAD_WIDTH / ROAD_STEP), int(ROAD_WIDTH / ROAD_STEP) + 1)]
-        road, anyHit = [], False
-        for x in offsets:
-            hit = self.floorHit(base, point + right * x)
-            anyHit = anyHit or hit is not None
-            road.append(hit is not None and hit[1] not in OFF_ROAD and hit[2] not in OFF_ROAD_FLOORS)
+        steps = int(ROAD_WIDTH / ROAD_STEP)
+        offsets = [x * ROAD_STEP for x in range(-steps, steps + 1)]
+        road, anyHit = [False] * len(offsets), False
+        # Out from the middle each way, following the road's height across
+        # (the banked turns), so the ground far under a jump or a bridge
+        # above isn't taken for it.
+        for sign in (1, -1):
+            ref = roadZ
+            for x in range(0 if sign == 1 else 1, steps + 1):
+                at = point + right * (x * ROAD_STEP * sign)
+                hit = self.floorHit(base, Point3(at[0], at[1], ref), 6.0)
+                if hit is not None:
+                    anyHit = True
+                    ref = hit[0]
+                road[steps + x * sign] = hit is not None and hit[1] not in OFF_ROAD and hit[2] not in OFF_ROAD_FLOORS
         if not anyHit:
             # This stretch isn't loaded (far from the player): ask again later.
             return None
@@ -340,14 +401,16 @@ class NPCDriver:
         else:
             edges = min(runs, key=lambda r: 0 if r[0] <= 0 <= r[1] else min(abs(r[0]), abs(r[1])))
         if ROAD_DEBUG:
-            self.notify.info('road edges %d ft round: %s (runs %s)' % (key * ROAD_BIN, edges, runs))
+            mid = self.floorHit(base, point, ROAD_REACH)
+            self.notify.info('road edges %d ft round: %s (runs %s; under the curve %s)' % (
+                key * ROAD_BIN, edges, runs, mid and (round(mid[0] - point[2], 1),) + mid[1:]))
         cache[key] = edges
         return edges
 
-    def floorHit(self, base, at):
+    def floorHit(self, base, at, reach=12.0):
         """The road surface under a point: (height, surface kind, floor), the one
-        nearest the point's height."""
-        self.rayNP.setPos(base.render, at[0], at[1], at[2] + 10.0)
+        nearest the point's height, within reach of it."""
+        self.rayNP.setPos(base.render, at[0], at[1], at[2] + reach - 2.0)
         self.queue.clearEntries()
         self.trav.traverse(base.render)
         best = None
@@ -356,7 +419,7 @@ class NPCDriver:
             if not entry.hasSurfacePoint():
                 continue
             z = entry.getSurfacePoint(base.render)[2]
-            if abs(z - at[2]) > 12.0:
+            if abs(z - at[2]) > reach:
                 continue
             if best is None or abs(z - at[2]) < abs(best[0] - at[2]):
                 into = entry.getIntoNodePath()
@@ -365,7 +428,7 @@ class NPCDriver:
 
     def floorZ(self, base, at):
         # The road nearest the curve's height there (not a bridge above).
-        self.rayNP.setPos(base.render, at[0], at[1], at[2] + 10.0)
+        self.rayNP.setPos(base.render, at[0], at[1], at[2] + 12.0)
         self.queue.clearEntries()
         self.trav.traverse(base.render)
         best = None
@@ -374,7 +437,7 @@ class NPCDriver:
             if not entry.hasSurfacePoint():
                 continue
             z = entry.getSurfacePoint(base.render)[2]
-            if best is None or abs(z - at[2]) < abs(best - at[2]):
+            if abs(z - at[2]) <= 12.0 and (best is None or abs(z - at[2]) < abs(best - at[2])):
                 best = z
         return best
 
