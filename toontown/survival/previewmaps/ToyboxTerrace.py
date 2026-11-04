@@ -467,7 +467,11 @@ class ToyboxTerrace(PreviewMap):
             # The solid line, unbroken: the tunnels are walled off too, and a
             # gap left for each let a toon slip in beside the tunnel's face
             # and round behind the boundary.
-            k.wallSegment(a - inward * 1.0, b - inward * 1.0, -1, 30, name='toyWall', thick=2.4)
+            # Run on past each corner, and a post at the corner: at a bare
+            # corner a sprinting toon (Sprint Soda, a slow frame) got out
+            # between the two walls' ends.
+            k.wallSegment(a - along * 4.0 - inward * 1.0, b + along * 4.0 - inward * 1.0, -1, 30, name='toyWall', thick=2.4)
+            k.wallTube((a[0] - inward[0] * 1.0, a[1] - inward[1] * 1.0, -1), 2.5, 31, name='toyWallCorner')
             size = 12.0
             n = int(length / size)
             step = length / n
