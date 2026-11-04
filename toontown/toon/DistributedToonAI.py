@@ -3542,7 +3542,7 @@ class DistributedToonAI(DistributedPlayerAI.DistributedPlayerAI, DistributedSmoo
             self.kart.start()
 
     def reqCogSummons(self, type, suitIndex):
-        if type not in ('single', 'building', 'invasion'):
+        if type not in ('single', 'building', 'invasion', 'fieldoffice'):
             self.air.writeServerEvent('suspicious', avId=self.doId, issue='invalid cog summons type: %s' % type)
             self.sendUpdate('cogSummonsResponse', ['fail', suitIndex, 0])
             return
@@ -3564,6 +3564,8 @@ class DistributedToonAI(DistributedPlayerAI.DistributedPlayerAI, DistributedSmoo
             returnCode = self.doBuildingTakeover(suitIndex)
         elif type == 'invasion':
             returnCode = self.doCogInvasion(suitIndex)
+        elif type == 'fieldoffice':
+            returnCode = self.doFieldOfficeTakeover(suitIndex)
         if returnCode:
             if returnCode[0] == 'success':
                 self.air.writeServerEvent('cogSummoned', avId=self.doId, cogType=type, suitIndex=suitIndex, zoneId=self.zoneId)
@@ -3650,6 +3652,26 @@ class DistributedToonAI(DistributedPlayerAI.DistributedPlayerAI, DistributedSmoo
          self.zoneId))
         return ['success', suitIndex, building.doId]
 
+    # A field office summons (Arthur): one of the cog's department lands on
+    # the nearest toon building, its level from how high up the cog is
+    # (Flunky-like cogs a level 1 office, the top cogs a level 5).
+    FieldOfficeLevelForType = (1, 1, 2, 2, 3, 4, 4, 5)
+
+    def doFieldOfficeTakeover(self, suitIndex):
+        from toontown.building.DistributedBuildingAI import FieldOfficeLevels
+        streetId = ZoneUtil.getBranchZone(self.zoneId)
+        if streetId not in self.air.suitPlanners or ZoneUtil.isPlayground(self.zoneId) or ZoneUtil.isInterior(self.zoneId):
+            return ['badlocation', suitIndex, 0]
+        building = self.findClosestDoor()
+        if building == None or 'shop' in building.__class__.__name__.lower():
+            return ['badlocation', suitIndex, 0]
+        suitName = SuitDNA.suitHeadTypes[suitIndex]
+        track = SuitDNA.getSuitDept(suitName)
+        level = self.FieldOfficeLevelForType[SuitDNA.getSuitType(suitName) - 1]
+        building.cogdoTakeOver(track, FieldOfficeLevels[level], None)
+        self.notify.info('field office summons: level %d %s office on block %d, zone %d' % (level, track, building.block, self.zoneId))
+        return ['success', suitIndex, building.doId]
+
     def doCogInvasion(self, suitIndex):
         invMgr = self.air.suitInvasionManager
         if invMgr.getInvading():
@@ -3681,7 +3703,7 @@ class DistributedToonAI(DistributedPlayerAI.DistributedPlayerAI, DistributedSmoo
 
     def restockAllCogSummons(self):
         numSuits = len(SuitDNA.suitHeadTypes)
-        fullSetForSuit = 1 | 2 | 4
+        fullSetForSuit = 1 | 2 | 4 | 8
         allSummons = numSuits * [fullSetForSuit]
         self.b_setCogSummonsEarned(allSummons)
 
@@ -3694,6 +3716,8 @@ class DistributedToonAI(DistributedPlayerAI.DistributedPlayerAI, DistributedSmoo
             curSetting |= 2
         elif type == 'invasion':
             curSetting |= 4
+        elif type == 'fieldoffice':
+            curSetting |= 8
         summons[suitIndex] = curSetting
         self.b_setCogSummonsEarned(summons)
 
@@ -3707,6 +3731,8 @@ class DistributedToonAI(DistributedPlayerAI.DistributedPlayerAI, DistributedSmoo
                 curSetting &= -3
             elif type == 'invasion':
                 curSetting &= -5
+            elif type == 'fieldoffice':
+                curSetting &= ~8
             summons[suitIndex] = curSetting
             self.b_setCogSummonsEarned(summons)
             if hasattr(self, 'autoRestockSummons') and self.autoRestockSummons:
@@ -3724,6 +3750,8 @@ class DistributedToonAI(DistributedPlayerAI.DistributedPlayerAI, DistributedSmoo
             return curSetting & 2
         elif type == 'invasion':
             return curSetting & 4
+        elif type == 'fieldoffice':
+            return curSetting & 8
         return curSetting
 
     def hasParticularCogSummons(self, deptIndex, level, type):
@@ -3751,10 +3779,11 @@ class DistributedToonAI(DistributedPlayerAI.DistributedPlayerAI, DistributedSmoo
         else:
             numSuits = len(SuitDNA.suitHeadTypes)
             suitIndex = random.randrange(0, numSuits)
-        if summonType in ['single', 'building', 'invasion']:
+        if summonType in ['single', 'building', 'invasion', 'fieldoffice']:
             type = summonType
         else:
-            typeWeights = ['single'] * 70 + ['building'] * 25 + ['invasion'] * 5
+            # Field office summons too (Arthur): rarer than a building.
+            typeWeights = ['single'] * 65 + ['building'] * 22 + ['fieldoffice'] * 9 + ['invasion'] * 4
             type = random.choice(typeWeights)
         if suitIndex >= len(SuitDNA.suitHeadTypes):
             self.notify.warning('Bad suit index: %s' % suitIndex)

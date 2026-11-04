@@ -1999,6 +1999,8 @@ class DistributedToon(DistributedPlayer.DistributedPlayer, Toon.Toon, Distribute
             return curSetting & 2
         elif type == 'invasion':
             return curSetting & 4
+        elif type == 'fieldoffice':
+            return curSetting & 8
         return curSetting
 
     def setFlowerCollection(self, speciesList, varietyList):

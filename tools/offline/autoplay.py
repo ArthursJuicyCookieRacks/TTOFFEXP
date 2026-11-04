@@ -703,6 +703,12 @@ def pickGag():
                       ToontownBattleGlobals.SQUIRT_TRACK, ToontownBattleGlobals.DROP_TRACK):
             if inventory.numItem(track, level) > 0:
                 return track, level
+    if os.environ.get('AUTOPLAY_GAGS'):
+        # A long level 5 battle can use a whole gag pouch: restocked, as a
+        # player would arrive with gags bought for it.
+        log('out of gags mid-battle: restocking')
+        onDistrict(restock, localAvatar.doId)
+        return ToontownBattleGlobals.THROW_TRACK, 4
     raise StepFailed('the toon is out of sound, throw, squirt and drop gags')
 
 
@@ -5068,6 +5074,62 @@ def scenarioUseSummons():
     yield sleep(2)
     yield from useCogSummons(os.environ.get('AUTOPLAY_SHOTS', '/tmp'))
 
+def scenarioSummonFieldOffice():
+    # The Shticker Book's Issue a Cog Summons panel with its new Summon a
+    # Field Office button, used: one of the cog's department lands nearby.
+    from toontown.suit import SuitDNA
+    from direct.gui import DirectGuiGlobals as DGG
+    shots = os.environ.get('AUTOPLAY_SHOTS', '/tmp')
+    os.makedirs(shots, exist_ok=True)
+    street = ToontownGlobals.SillyStreet
+    yield from teleport(street - street % 1000, int(os.environ.get('AUTOPLAY_SUMMON_ZONE', 0)) or firstVisgroup(street))
+    onDistrict(restock, localAvatar.doId)
+    onDistrict(lambda air, avId: air.doId2do[avId].restockAllCogSummons(), localAvatar.doId)
+    yield sleep(2)
+    index = SuitDNA.suitHeadTypes.index(os.environ.get('AUTOPLAY_SUMMON_NAME', 'hh'))
+    name = SuitDNA.suitHeadTypes[index]
+    place().fsm.request('stickerBook')
+    yield until(lambda: place().isAccepting('bookDone'), 30, 'the Shticker Book open')
+    book = localAvatar.book
+    page = book.pages[[p.__class__.__name__ for p in book.pages].index('SuitPage')]
+    book.setPage(page)
+    yield sleep(1.5)
+    panel = page.panels[index]
+    if not getattr(panel, 'summonButton', None):
+        page.addSummonButton(panel)
+    page.summonButtonPressed(panel)
+    yield sleep(1.5)
+    base.screenshot(os.path.join(shots, 'fosummon-1-dialog-%s.png' % name), defaultFilename=0)
+    dialog = page.summonDialog
+    dialog.issueSummons('fieldoffice')
+    yield sleep(1.2)
+    base.screenshot(os.path.join(shots, 'fosummon-2-confirm-%s.png' % name), defaultFilename=0)
+    responses = []
+    localAvatar.accept('cog-summons-response', lambda *a: responses.append(a))
+    dialog.popup['command'](DGG.DIALOG_OK)
+    yield until(lambda: responses, 30, 'the summons answer')
+    yield sleep(1.5)
+    base.screenshot(os.path.join(shots, 'fosummon-3-answer-%s.png' % name), defaultFilename=0)
+    log('field office summons %s answer: %s' % (name, responses[0]))
+    if responses[0][0] != 'success':
+        raise StepFailed('field office summons failed: %s' % (responses[0],))
+    messenger.send(dialog.doneEvent)
+    yield sleep(0.5)
+    book.doneStatus = {'mode': 'close'}
+    messenger.send(book.doneEvent)
+    yield until(walking, 60, 'walking after the book')
+    bldg = base.cr.doId2do.get(responses[0][2])
+    yield until(lambda: bldg and bldg.fsm.getCurrentState().getName() == 'cogdo', 90, 'the field office landed')
+    door = getattr(bldg, 'elevatorNodePath', None)
+    yield sleep(2)
+    if door is not None and not door.isEmpty():
+        localAvatar.setPos(door, 0, -30, 0)
+        localAvatar.setZ(render, door.getZ(render))
+        localAvatar.headsUp(door)
+    yield sleep(2)
+    base.screenshot(os.path.join(shots, 'fosummon-4-office-%s.png' % name), defaultFilename=0)
+    log('field office %s is on block %s, track %s, difficulty %s' % (name, bldg.block, chr(bldg.track), bldg.difficulty))
+
 def scenarioBattleWith(during):
     street = ToontownGlobals.SillyStreet
     if ZoneUtil.getBranchZone(localAvatar.zoneId) != street:
@@ -5204,6 +5266,7 @@ SCENARIOS = [
     ('cogdocash', lambda: scenarioCogdo('m')),
     ('cogdoboss', lambda: scenarioCogdo('c')),
     ('usesummons', lambda: scenarioUseSummons()),
+    ('summonfo', lambda: scenarioSummonFieldOffice()),
     ('minigames', scenarioMinigames),
     ('factory', scenarioFactory),
     ('mint', scenarioMint),

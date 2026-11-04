@@ -16,7 +16,7 @@ class SummonCogDialog(DirectFrame, StateData.StateData):
     notify.setInfo(True)
 
     def __init__(self, suitIndex):
-        DirectFrame.__init__(self, parent=aspect2dp, pos=(0, 0, 0.3), relief=None, image=DGG.getDefaultDialogGeom(), image_scale=(1.6, 1, 0.7), image_pos=(0, 0, 0.18), image_color=ToontownGlobals.GlobalDialogColor, text=TTL.SummonDlgTitle, text_scale=0.12, text_pos=(0, 0.4), borderWidth=(0.01, 0.01))
+        DirectFrame.__init__(self, parent=aspect2dp, pos=(0, 0, 0.3), relief=None, image=DGG.getDefaultDialogGeom(), image_scale=(1.6, 1, 0.78), image_pos=(0, 0, 0.15), image_color=ToontownGlobals.GlobalDialogColor, text=TTL.SummonDlgTitle, text_scale=0.12, text_pos=(0, 0.4), borderWidth=(0.01, 0.01))
         StateData.StateData.__init__(self, 'summon-cog-done')
         self.initialiseoptions(SummonCogDialog)
         self.suitIndex = suitIndex
@@ -47,11 +47,17 @@ class SummonCogDialog(DirectFrame, StateData.StateData):
         closeButtonImage = (gui.find('**/CloseBtn_UP'), gui.find('**/CloseBtn_DN'), gui.find('**/CloseBtn_Rllvr'))
         buttonImage = (guiButton.find('**/QuitBtn_UP'), guiButton.find('**/QuitBtn_DN'), guiButton.find('**/QuitBtn_RLVR'))
         disabledColor = Vec4(0.5, 0.5, 0.5, 1)
-        self.summonSingleButton = DirectButton(parent=self, relief=None, text=TTL.SummonDlgButton1, image=buttonImage, image_scale=(1.7, 1, 1), image3_color=disabledColor, text_scale=0.06, text_pos=(0, -0.01), pos=(0.3, 0, 0.25), command=self.issueSummons, extraArgs=['single'])
-        self.summonBuildingButton = DirectButton(parent=self, relief=None, text=TTL.SummonDlgButton2, image=buttonImage, image_scale=(1.7, 1, 1), image3_color=disabledColor, text_scale=0.06, text_pos=(0, -0.01), pos=(0.3, 0, 0.125), command=self.issueSummons, extraArgs=['building'])
-        self.summonInvasionButton = DirectButton(parent=self, relief=None, text=TTL.SummonDlgButton3, image=buttonImage, image_scale=(1.7, 1, 1), image3_color=disabledColor, text_scale=0.06, text_pos=(0, -0.01), pos=(0.3, 0, 0.0), command=self.issueSummons, extraArgs=['invasion'])
+        # Four buttons now (Arthur's Summon a Field Office): a little
+        # smaller and closer together, so all four sit inside the panel.
+        bScale = (1.7, 1, 0.82)
+        bText = 0.053
+        bZ = (0.27, 0.165, 0.06, -0.045)
+        self.summonSingleButton = DirectButton(parent=self, relief=None, text=TTL.SummonDlgButton1, image=buttonImage, image_scale=bScale, image3_color=disabledColor, text_scale=bText, text_pos=(0, -0.012), pos=(0.3, 0, bZ[0]), command=self.issueSummons, extraArgs=['single'])
+        self.summonBuildingButton = DirectButton(parent=self, relief=None, text=TTL.SummonDlgButton2, image=buttonImage, image_scale=bScale, image3_color=disabledColor, text_scale=bText, text_pos=(0, -0.012), pos=(0.3, 0, bZ[1]), command=self.issueSummons, extraArgs=['building'])
+        self.summonInvasionButton = DirectButton(parent=self, relief=None, text=TTL.SummonDlgButton3, image=buttonImage, image_scale=bScale, image3_color=disabledColor, text_scale=bText, text_pos=(0, -0.012), pos=(0.3, 0, bZ[2]), command=self.issueSummons, extraArgs=['invasion'])
+        self.summonFieldOfficeButton = DirectButton(parent=self, relief=None, text=TTL.SummonDlgButton4, image=buttonImage, image_scale=bScale, image3_color=disabledColor, text_scale=bText, text_pos=(0, -0.012), pos=(0.3, 0, bZ[3]), command=self.issueSummons, extraArgs=['fieldoffice'])
         self.statusLabel = DirectLabel(parent=self, relief=None, text='', text_wordwrap=12, pos=(0.3, 0, 0.25), scale=0.07)
-        self.cancel = DirectButton(parent=self, relief=None, image=closeButtonImage, pos=(0.7, 0, -0.1), command=self.__cancel)
+        self.cancel = DirectButton(parent=self, relief=None, image=closeButtonImage, pos=(0.7, 0, -0.15), command=self.__cancel)
         gui.removeNode()
         guiButton.removeNode()
         self.hide()
@@ -114,6 +120,13 @@ class SummonCogDialog(DirectFrame, StateData.StateData):
                 self.statusLabel['text'] = TTL.SummonDlgBldgBadLoc
             elif returnCode == 'fail':
                 self.statusLabel['text'] = TTL.SummonDlgInvasionFail
+        elif self.summonsType == 'fieldoffice':
+            if returnCode == 'success':
+                self.statusLabel['text'] = TTL.SummonDlgFieldOfficeSuccess
+            elif returnCode == 'badlocation':
+                self.statusLabel['text'] = TTL.SummonDlgFieldOfficeBadLoc
+            else:
+                self.statusLabel['text'] = TTL.SummonDlgInvasionFail
         elif self.summonsType == 'invasion':
             if returnCode == 'success':
                 self.statusLabel['text'] = TTL.SummonDlgInvasionSuccess
@@ -126,6 +139,7 @@ class SummonCogDialog(DirectFrame, StateData.StateData):
         self.summonSingleButton.hide()
         self.summonBuildingButton.hide()
         self.summonInvasionButton.hide()
+        self.summonFieldOfficeButton.hide()
 
     def issueSummons(self, summonsType):
         if summonsType == 'single':
@@ -134,6 +148,8 @@ class SummonCogDialog(DirectFrame, StateData.StateData):
             text = TTL.SummonDlgBuildingConf
         elif summonsType == 'invasion':
             text = TTL.SummonDlgInvasionConf
+        elif summonsType == 'fieldoffice':
+            text = TTL.SummonDlgFieldOfficeConf
         text = text % self.suitFullName
 
         def handleResponse(resp):
@@ -162,6 +178,7 @@ class SummonCogDialog(DirectFrame, StateData.StateData):
         self.summonSingleButton['state'] = DGG.DISABLED
         self.summonBuildingButton['state'] = DGG.DISABLED
         self.summonInvasionButton['state'] = DGG.DISABLED
+        self.summonFieldOfficeButton['state'] = DGG.DISABLED
 
     def enableButtons(self):
         if base.localAvatar.hasCogSummons(self.suitIndex, 'single'):
@@ -170,6 +187,8 @@ class SummonCogDialog(DirectFrame, StateData.StateData):
             self.summonBuildingButton['state'] = DGG.NORMAL
         if base.localAvatar.hasCogSummons(self.suitIndex, 'invasion'):
             self.summonInvasionButton['state'] = DGG.NORMAL
+        if base.localAvatar.hasCogSummons(self.suitIndex, 'fieldoffice'):
+            self.summonFieldOfficeButton['state'] = DGG.NORMAL
 
     def __cancel(self):
         self.exit()

@@ -370,9 +370,9 @@ GolfElevatorStep = 2.5
 NumBarrels = 10
 LaffPerBarrel = 3
 GolfCogNames = ('f', 'p', 'ym', 'mm', 'ds', 'hh', 'cr')
-GolfMaxCogsRange = (7, 12)
-GolfSpawnPeriodRange = (1.8, 0.85)
-GolfCogSpeedRange = (5.5, 8.0)
+GolfMaxCogsRange = (7, 10)
+GolfSpawnPeriodRange = (1.8, 1.0)
+GolfCogSpeedRange = (5.5, 7.5)
 GolfPickupTime = 1.2
 GolfCogRadius = 2.4
 # The swing: Left/Right aims, holding Jump (Control) winds up, letting go
