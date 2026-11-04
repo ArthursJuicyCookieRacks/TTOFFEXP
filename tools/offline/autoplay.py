@@ -805,6 +805,16 @@ def scenarioBuilding():
             raise StepFailed('still inside the cog building after 20 minutes (place state %s)' % placeState())
         if placeState() == 'battle':
             yield from fightBattle()
+            continue
+        # Between floors the elevator opens; a toon not on it when the
+        # countdown ends is sent home, so on it the player goes.
+        inner = findObject('DistributedElevatorInt')
+        fsm = getattr(inner, 'fsm', None) if inner else None
+        if walking() and fsm is not None and fsm.getCurrentState().getName() in ('waitEmpty', 'waitCountdown') \
+                and localAvatar.doId not in getattr(inner, 'boardedAvIds', {}):
+            log('into the elevator to the next floor')
+            messenger.send(inner.uniqueName('enterelevatorSphere'), [None])
+            yield sleep(3)
         else:
             yield sleep(0.5)
     yield until(walking, 180, 'walking after the cog building')
@@ -2016,7 +2026,9 @@ def scenarioNPCMintRide():
         yield sleep(0.1)
     # Down to the floor beside it, and a wait for the stragglers.
     p = top(second)
-    floor = Point3(p[0] + 6, p[1] + 6, 3.0)
+    # Down onto open floor beside it (not into the crates round the mixers).
+    spot = onDistrict(lambda air, x, y, z: tuple(air.npcPlayerManager.party.spotNear(Point3(x, y, z), 7.0)), p[0], p[1], p[2])
+    floor = Point3(*spot) if spot else Point3(p[0] + 6, p[1] + 6, 3.0)
     log('jumping down')
     yield from arc(p, floor, 1.0)
     for i in range(160):

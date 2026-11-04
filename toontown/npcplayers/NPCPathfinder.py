@@ -354,6 +354,8 @@ class Grid:
         self.floors = {}
         # (bx, by) -> walls whose footprint reaches that bucket.
         self.walls = {}
+        # Closed boxes (noteBox): (lo, hi) corners.
+        self.solids = []
         self.ready = False
         self.links = {}
         self.movers, gears = findMovers(levels)
@@ -414,6 +416,7 @@ class Grid:
                 self.curName = '/'.join(str(np).split('/')[-4:])
                 # A mirrored node turns its polygons' winding around.
                 flipped = mat.getUpper3().determinant() < 0
+                boxWalls = []
                 for i in range(node.getNumSolids()):
                     solid = node.getSolid(i)
                     if not solid.isTangible():
@@ -435,6 +438,7 @@ class Grid:
                             self.addFloor(points, normal)
                         elif mask & WALL:
                             self.addWallPolygon(points, normal, facing)
+                            boxWalls.append((points, facing))
                     elif mask & WALL and isinstance(solid, CollisionCapsule):
                         self.addCapsule(mat.xformPoint(solid.getPointA()), mat.xformPoint(solid.getPointB()),
                                         solid.getRadius() * mat.getRow3(0).length())
@@ -445,6 +449,45 @@ class Grid:
                     count += 1
                     if count % 25 == 0:
                         yield
+                self.noteBox(boxWalls)
+
+    def noteBox(self, walls):
+        """Walls of one collision node that close round a box (the mints'
+        big metal crates): the inside is solid. A platform's top that slides
+        into it (a paint mixer down at its foot) is no place to stand."""
+        if len(walls) < 4:
+            return
+        pts = [p for poly, f in walls for p in poly]
+        lo = [min(p[k] for p in pts) for k in range(3)]
+        hi = [max(p[k] for p in pts) for k in range(3)]
+        if hi[0] - lo[0] < 2.0 or hi[1] - lo[1] < 2.0 or hi[2] - lo[2] < 2.0:
+            return
+        c = Vec3((lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0, 0)
+        sides = set()
+        for poly, facing in walls:
+            m = Vec3(sum(p[0] for p in poly) / len(poly), sum(p[1] for p in poly) / len(poly), 0) - c
+            f = Vec3(facing[0], facing[1], 0)
+            if m.length() < 0.5 or f.length() < 0.5:
+                continue
+            mx, my = m[0] + c[0], m[1] + c[1]
+            if min(abs(mx - lo[0]), abs(mx - hi[0]), abs(my - lo[1]), abs(my - hi[1])) > 0.5:
+                # A wall in the middle: several things in one node (posts
+                # round a yard), not one box.
+                return
+            m.normalize(); f.normalize()
+            if m.dot(f) < 0.7:
+                # Facing in: a room's walls, not a box's.
+                return
+            sides.add((round(m[0]), round(m[1])))
+        if len(sides) >= 4:
+            self.solids.append((lo, hi))
+
+    def inSolid(self, x, y, z, margin=0.0):
+        """Whether a toon standing at the spot is inside one of the boxes."""
+        for lo, hi in self.solids:
+            if lo[0] - margin < x < hi[0] + margin and lo[1] - margin < y < hi[1] + margin and lo[2] - 3.0 < z < hi[2] - 0.5:
+                return True
+        return False
 
     # --- Floors ---
 
@@ -491,6 +534,7 @@ class Grid:
             allPts = [p for poly in pts for p in poly]
             mover.centerLocal = Point3(sum(p[0] for p in allPts) / len(allPts), sum(p[1] for p in allPts) / len(allPts),
                                        max(p[2] for p in allPts))
+            mover.grid = self
             if mover.liftDoId is None:
                 # A platform: a toon takes about 5 by 5 of it, so a paint
                 # mixer's top holds two (players take it in turns).
@@ -503,6 +547,7 @@ class Grid:
             for stop in mover.stops:
                 world = parentMat.xformPoint(stop.local + Vec3(mover.centerLocal))
                 stop.z = world[2]
+                cellsBefore = set()
                 for poly in pts:
                     wpoly = [parentMat.xformPoint(stop.local + Vec3(p)) for p in poly]
                     xs = [p[0] for p in wpoly]
@@ -511,7 +556,16 @@ class Grid:
                     x1, y1 = cellOf(max(xs), max(ys))
                     for ix in range(x0, x1 + 1):
                         for iy in range(y0, y1 + 1):
+                            cellsBefore.add((ix, iy))
+                            if mover.liftDoId is None and self.inSolid(ix * CELL, iy * CELL, stop.z, 0.5):
+                                # (Inside a crate it slides into.)
+                                continue
                             stop.cells.add((ix, iy))
+                stop.capacity = mover.capacity
+                if mover.liftDoId is None and stop.cells and len(stop.cells) < len(cellsBefore):
+                    # (Part of the top in a crate at this stop: one at a
+                    # time on the rest, never two squeezed side by side.)
+                    stop.capacity = 1
                 cx, cy = cellOf(world[0], world[1])
                 stop.node = (cx, cy, stop.z, 'stop%d-%d' % (id(mover), stop.index))
                 self.stops[stop.node] = stop
@@ -542,6 +596,26 @@ class Grid:
             self.floors[key] = [z for i, z in enumerate(merged)
                                 if i + 1 >= len(merged) or merged[i + 1] - z > HEADROOM]
         self.blockPosts()
+        self.blockSolids()
+
+    def blockSolids(self):
+        """The floor inside a closed box (the room's floor runs on under a
+        crate) is no floor: nobody walks, lands or waits in there."""
+        for lo, hi in self.solids:
+            x0, y0 = cellOf(lo[0], lo[1])
+            x1, y1 = cellOf(hi[0], hi[1])
+            for ix in range(x0, x1 + 1):
+                for iy in range(y0, y1 + 1):
+                    if not (lo[0] < ix * CELL < hi[0] and lo[1] < iy * CELL < hi[1]):
+                        continue
+                    heights = self.floors.get((ix, iy))
+                    if not heights:
+                        continue
+                    kept = [z for z in heights if not lo[2] - 3.0 < z < hi[2] - 0.5]
+                    if kept:
+                        self.floors[(ix, iy)] = kept
+                    else:
+                        del self.floors[(ix, iy)]
 
     def blockPosts(self):
         """A platform that goes up and down on a post (the mints' paint

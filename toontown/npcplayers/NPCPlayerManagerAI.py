@@ -373,7 +373,8 @@ class NPCPlayerManagerAI:
                 continue
             if now - max(area.lastSeen, getattr(area, 'lastKept', 0)) > LINGER:
                 for npc in area.npcs[:]:
-                    if getattr(npc, 'crew', None) is None:
+                    # (Not one on its way into an elevator with the player.)
+                    if getattr(npc, 'crew', None) is None and not npc.busy:
                         self.despawn(npc, quietly=True)
                 if not area.npcs:
                     del self.areas[areaId]
@@ -706,6 +707,9 @@ class NPCPlayerManagerAI:
         taskMgr.doMethodLater(TELEPORT_TIME, landed, 'npcTeleportIn-%d' % npc.doId)
 
     def despawn(self, npc, quietly=False):
+        if npc.busy and not npc.isDeleted():
+            import traceback
+            self.notify.info('DESPAWN busy %s from %s' % (npc.doId, [f[2] for f in traceback.extract_stack()[-4:-1]]))
         area = getattr(npc, 'area', None)
         if area is not None and npc in area.npcs:
             area.npcs.remove(npc)

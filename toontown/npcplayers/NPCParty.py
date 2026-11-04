@@ -27,7 +27,7 @@ from toontown.npcplayers.NPCSettings import wantsTrolleyCompany, wantsHelp, forg
 from toontown.npcplayers.NPCBattleCrew import isNPC
 from toontown.suit.DistributedBossCogAI import DistributedBossCogAI
 from toontown.npcplayers.NPCNav import getNav
-from toontown.npcplayers.NPCPathfinder import getPathfinder, WALK, JUMP, DROP, BOARD, RIDE
+from toontown.npcplayers.NPCPathfinder import getPathfinder, WALK, JUMP, DROP, BOARD, RIDE, CELL
 from toontown.minigame.DistributedMinigameAI import DistributedMinigameAI
 from toontown.safezone.DistributedGolfKartAI import DistributedGolfKartAI
 from toontown.racing.DistributedRaceAI import DistributedRaceAI
@@ -187,6 +187,7 @@ class NPCParty:
                 continue
             if npcs and not players:
                 # The player got off; so do they.
+                self.notify.info('elevator %d: no player aboard (seats %s); its NPCs get off' % (elevator.doId, seats))
                 for npc in npcs:
                     npc.asSender(elevator.requestExit)
                     npc.busy = False
@@ -324,10 +325,18 @@ class NPCParty:
         def getOn(task):
             getattr(elevator, 'npcOnTheWay', set()).discard(npc.doId)
             if npc.isDeleted() or elevator.isDeleted():
+                self.notify.info('NPC %s boarding %s: gone (%s, %s)' % (npc.doId, elevator.doId, npc.isDeleted(), elevator.isDeleted()))
                 return Task.done
             npc.b_setAnimState('Happy', 1.0)
             if isAccepting(elevator) and None in seatsOf(elevator):
                 npc.asSender(elevator.requestBoard)
+            if npc.doId in seatsOf(elevator):
+                self.notify.info('NPC %s is on %s: seats %s' % (npc.doId, elevator.doId, seatsOf(elevator)))
+            if npc.doId not in seatsOf(elevator):
+                self.notify.info('NPC %s did not get on %s: accepting %s, seats %s, check %s, zone %s/%s, hp %s/%s' % (
+                    npc.doId, elevator.doId, isAccepting(elevator), seatsOf(elevator),
+                    getattr(elevator, 'checkBoard', lambda av: None)(npc), npc.zoneId, elevator.zoneId,
+                    npc.hp, getattr(elevator, 'minLaff', None)))
             # The boarding is over; a seated toon stays put (see follow)
             # until the elevator leaves, and one left standing goes back
             # to what it was doing.
@@ -556,7 +565,11 @@ class NPCParty:
         spot is inside a crate or a post (whose walls only face out), or
         under a table, not where a toon can stand."""
         ground = getNav().groundZ(x, y, z + 5.0)
-        return ground is not None and ground > z + 1.0
+        if ground is not None and ground > z + 1.0:
+            return True
+        # (A crate taller than that: its walls close round the spot.)
+        from toontown.npcplayers.NPCPathfinder import getPathfinder
+        return any(g.inSolid(x, y, z, 0.3) for g in list(getPathfinder().grids.values()))
 
     def smallTop(self, pos):
         """Whether pos is on a top with room for about two (a post's cap):
@@ -850,13 +863,19 @@ class NPCParty:
                         mates = sorted(m.doId for m in self.members if getattr(m, 'party', None) == getattr(npc, 'party', None))
                         index = mates.index(npc.doId) if npc.doId in mates else npc.doId % 5
                         side = Vec3(-d[1], d[0], 0) * (((index // 2) + 1) * 1.4 * (1 if index % 2 == 0 else -1))
-                        edge = Point3(a[0], a[1], p[2]) + d * max(0.0, rA - 2.0) + side
+                        if here.mover.capacity <= 3:
+                            # A small top (crates up to its rim): only a
+                            # little way toward the next one, never to the rim.
+                            side = side * (0.6 / side.length())
+                            edge = Point3(a[0], a[1], p[2]) + d * max(0.0, min(1.0, here.mover.halfSize - 2.0)) + side
+                        else:
+                            edge = Point3(a[0], a[1], p[2]) + d * max(0.0, rA - 2.0) + side
                         npc.walk = [[edge], self.paceOf(npc) * 0.5, None, None]
                         npc.atHopEdge = True
                 if not bothWaiting and not close and (math.hypot(c[0] - p[0], c[1] - p[1]) > HOP_REACH or abs(c[2] - p[2]) > 3.0):
                     return
                 npc.atHopEdge = False
-            elif not data.present() or len(self.aboard(npc, data)) >= data.mover.capacity:
+            elif not data.present() or len(self.aboard(npc, data)) >= getattr(data, 'capacity', data.mover.capacity):
                 # Not here yet, or full (a paint mixer's top holds two:
                 # players take it in turns): waits beside it, clear of where
                 # it comes down (its post is no wall on the NPCs' map).
@@ -1021,11 +1040,14 @@ class NPCParty:
     def aboard(self, npc, stop):
         """Who else is on a platform now: the party's NPCs riding it, and
         the player when standing on it."""
-        riders = [m for m in self.members if m is not npc and getattr(m, 'onMover', None) is stop.mover]
+        c = stop.center()
+        def on(p):
+            return math.hypot(p[0] - c[0], p[1] - c[1]) <= stop.mover.halfSize + 0.5 and abs(p[2] - c[2]) < 2.5
+        # (Ones it carried and that have since got off do not count.)
+        riders = [m for m in self.members if m is not npc and getattr(m, 'onMover', None) is stop.mover and (on(m.getPos()) or m.walk is not None)]
         player = self.air.doId2do.get(getattr(npc, 'party', None))
         if player is not None:
             pos = self.manager.getPlayerPos(player)
-            c = stop.center()
             if math.hypot(pos[0] - c[0], pos[1] - c[1]) <= stop.mover.halfSize + 0.5 and abs(pos[2] - c[2]) < 2.5:
                 riders.append(player)
         return riders
@@ -1046,7 +1068,40 @@ class NPCParty:
             if others:
                 p = others[0]
                 angle = math.atan2(p[1] - center[1], p[0] - center[0]) + math.pi
-            r = max(0.6, min(2.0, stop.mover.halfSize - 1.6))
+            # Alone on it: in the middle. With another: each just off the
+            # middle, on opposite sides (a toon is about 2.8 wide, and the
+            # crates come right up to its rim).
+            r = 0.3 if not others else max(0.6, min(1.5, stop.mover.halfSize - 2.0))
+            # A top that slides into a crate at this stop (a paint mixer at
+            # its foot, half under the crate beside it): only the part
+            # sticking out is stood on, never the part in the crate.
+            grid = getattr(stop.mover, 'grid', None)
+            solid = grid is not None and grid.solids and stop.cells and \
+                any(grid.inSolid(center[0] + 1.5 * math.cos(a), center[1] + 1.5 * math.sin(a), center[2], 1.0)
+                    for a in [k * math.pi / 4 for k in range(8)] + [0.0]) or False
+            if solid:
+                home = stop.worldOf(stop.mover.centerLocal)
+                ox = sum(c[0] for c in stop.cells) * CELL / len(stop.cells) - home[0]
+                oy = sum(c[1] for c in stop.cells) * CELL / len(stop.cells) - home[1]
+                best = None
+                for rr in (0.0, 0.5, 1.0, 1.5, 2.0):
+                    for k in range(8):
+                        a = angle + k * math.pi / 4
+                        spot = Point3(center[0] + ox + rr * math.cos(a), center[1] + oy + rr * math.sin(a), center[2])
+                        if math.hypot(spot[0] - center[0], spot[1] - center[1]) > stop.mover.halfSize - 0.6:
+                            continue
+                        if grid.inSolid(spot[0], spot[1], spot[2], 0.9):
+                            continue
+                        apart = min([math.hypot(spot[0] - o[0], spot[1] - o[1]) for o in others] or [9.0])
+                        score = (apart >= 2.2, -rr, apart)
+                        if best is None or score > best[0]:
+                            best = (score, spot)
+                    if best is not None and best[0][0]:
+                        break
+                if best is not None:
+                    return best[1]
+                # (No room clear of the crate: as far out of it as it goes.)
+                return Point3(center[0] + ox, center[1] + oy, center[2])
             # Its side away from the crates and walls it passes, so the
             # toon stands on it, not half in a crate beside it.
             nav = getNav()
