@@ -66,7 +66,43 @@ def addElevatorShell(model):
         coll.removeNode()
     shell.setY(car, 5.9)
     shell.setSy(car, 1.75)
+    # The car's own back wall stays where it was, 6 ft in, between the ride
+    # camera and the toons: drawn from both sides (addElevatorHousing) it
+    # filled the whole view (Arthur). The shell has the back wall now, so
+    # take the car's out.
+    _dropBackWall(car)
     return shell
+
+
+def _dropBackWall(car):
+    from panda3d import core as PM
+    b = car.getTightBounds(car)
+    if not b:
+        return
+    back = b[1][1] - 0.15
+    nodes = [car] if car.node().isGeomNode() else list(car.findAllMatches('**/+GeomNode'))
+    for gnp in nodes:
+        gn = gnp.node()
+        for gi in range(gn.getNumGeoms()):
+            geom = gn.modifyGeom(gi)
+            reader = PM.GeomVertexReader(geom.getVertexData(), 'vertex')
+            for pi in range(geom.getNumPrimitives()):
+                prim = geom.getPrimitive(pi).decompose()
+                keep = PM.GeomTriangles(prim.getUsageHint())
+                keep.setIndexType(prim.getIndexType())
+                dropped = 0
+                for t in range(prim.getNumPrimitives()):
+                    vs = [prim.getVertex(prim.getPrimitiveStart(t) + j) for j in range(3)]
+                    ys = []
+                    for v in vs:
+                        reader.setRow(v)
+                        ys.append(reader.getData3()[1])
+                    if min(ys) > back:
+                        dropped += 1
+                        continue
+                    keep.addVertices(*vs)
+                if dropped:
+                    geom.setPrimitive(pi, keep)
 
 
 def addElevatorHousing(model, color=(0.16, 0.16, 0.17, 1)):

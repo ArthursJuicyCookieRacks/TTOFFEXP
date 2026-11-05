@@ -140,7 +140,12 @@ OilThrowChanceRange = (0.15, 0.3)
 # The swing at a toon sliding past a Boss Cog's chair: it reaches this far
 # in over the table, this long after the warning.
 SwipeReach = 8.0
-SwipeTime = 0.8
+# (0.8 s left a toon sliding along the edge no time to get out of reach at
+# the hardest office: 1 in 6 swings could not be dodged.)
+SwipeTime = 1.0
+# How long a toon takes to see a warning and start steering, for checking
+# that every throw and swing can be dodged (CogdoBoardroomLayout.canDodge).
+DodgeReact = 0.5
 
 # --- Sliding ---
 # The toons don't walk the table: they belly-slide down it, steering left

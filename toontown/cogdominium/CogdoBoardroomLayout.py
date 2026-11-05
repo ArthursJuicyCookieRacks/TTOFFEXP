@@ -398,6 +398,33 @@ class BoardroomLayout:
         side = 1 if cx > 0 else -1
         return (side * (Consts.TableHalfWidth - Consts.SlickRadius), cy, Consts.SlickRadius)
 
+    def canDodge(self, x0, y0, flight, hits, react=None):
+        """Whether a toon sliding at the normal speed from (x0, y0) can keep
+        clear of something landing `flight` seconds from now, which hits
+        where hits(x, y) says: after a moment to react, some steer and some
+        speed (slow, normal or fast) that keeps it off the piles and out of
+        the hit when it comes down. The Boss Cogs only throw what can be
+        dodged (Arthur: harder, never impossible)."""
+        react = Consts.DodgeReact if react is None else react
+        dt = 0.05
+        for speed in (Consts.SlideSpeed, Consts.SlideSlowSpeed, Consts.SlideFastSpeed):
+            for k in (0, -8, 8, -4, 4, -6, 6, -2, 2, -7, 7, -5, 5, -3, 3, -1, 1):
+                steer = Consts.SteerSpeed * k / 8.0
+                x, y, v, t = x0, y0, Consts.SlideSpeed, 0.0
+                clear = True
+                while t < flight - 1e-6:
+                    if t >= react:
+                        v = min(speed, v + Consts.SlideAccel * dt) if v < speed else max(speed, v - Consts.SlideAccel * dt)
+                        x += steer * dt
+                    y += v * dt
+                    t += dt
+                    if not self._walkable(x, y):
+                        clear = False
+                        break
+                if clear and not hits(x, y):
+                    return True
+        return False
+
     def laneClear(self, slicks, y0, y1, lane=None):
         """Whether every row of the table from y0 to y1 still has a dry,
         clear stretch at least `lane` ft wide across: not under any of the

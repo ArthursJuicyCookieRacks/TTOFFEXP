@@ -39,6 +39,7 @@ class DistCogdoBoardroomGameAI(DistCogdoGameAI):
         self.lastHit = {}
         self.spilled = {}
         self.thrownSlicks = []
+        self.pendingHits = []
         self.nextCan = 0
         # The golf office after the slide.
         self.phase = 'slide'
@@ -427,11 +428,16 @@ class DistCogdoBoardroomGameAI(DistCogdoGameAI):
             # gets the golf club; otherwise the nearest one up the table
             # tees off a golf ball at it, or throws paperwork.
             side = 1 if px > 0 else -1
-            # (The toon slides on about 14 feet while the club comes round.)
-            close = [i for i in seats if self.layout.seats[i][0] == side and 8 < self.layout.seats[i][1] - py < 22
+            # (The toon slides on about 20 feet while the club comes round.)
+            lead = Consts.SwipeTime * Consts.SlideSpeed
+            close = [i for i in seats if self.layout.seats[i][0] == side and lead - 7 < self.layout.seats[i][1] - py < lead + 7
                      and abs(px) > Consts.TableHalfWidth - Consts.SwipeReach]
-            if close and random.random() < 0.7:
-                seat = min(close, key=lambda i: self.layout.seats[i][1])
+            seat = min(close, key=lambda i: self.layout.seats[i][1]) if close else None
+            # Only a swing the toon can get out of the way of: not one with a
+            # pile keeping it against the edge (Arthur: never impossible).
+            if seat is not None and random.random() < 0.7 and self.layout.canDodge(
+                    px, py, Consts.SwipeTime, lambda x, y, sx=side * Consts.TableHalfWidth, sy=self.layout.seats[seat][1]:
+                    Consts.hazardHits(Consts.Swipe, sx, sy, 0, x, y, 0)):
                 self.__launch(Consts.Swipe, seat, (side * Consts.TableHalfWidth, self.layout.seats[seat][1]), Consts.SwipeTime)
             else:
                 seat = min(seats, key=lambda i: abs(self.layout.seats[i][1] - ty) + random.uniform(0, 12))
@@ -443,7 +449,25 @@ class DistCogdoBoardroomGameAI(DistCogdoGameAI):
                                               tx, ty, Consts.ThrownSlickRadius))
                 else:
                     kind = random.choice((Consts.GolfBall, Consts.GolfBall, Consts.Paper))
+                    # Never one that can't be dodged, with whatever else is
+                    # coming down then: thrown somewhere it can be.
+                    r = Consts.Hazards[kind][3]
+                    if not self.__dodgeable(px, py, tx, ty, r, Consts.ThrowFlightTime):
+                        for dx, dy in ((0, 4), (0, -4), (4, 0), (-4, 0), (0, 8), (0, -8)):
+                            if self.__dodgeable(px, py, tx + dx, ty + dy, r, Consts.ThrowFlightTime):
+                                tx, ty = tx + dx, ty + dy
+                                break
+                        else:
+                            return
+                    self.pendingHits.append((self.now() + Consts.ThrowFlightTime, tx, ty, r))
                 self.__launch(kind, seat, (tx, ty), Consts.ThrowFlightTime)
+
+    def __dodgeable(self, px, py, tx, ty, r, flight):
+        # With the other throws landing about then too (a volley).
+        lands = self.now() + flight
+        self.pendingHits = [h for h in self.pendingHits if h[0] > self.now()]
+        near = [(x, y, rr) for at, x, y, rr in self.pendingHits if abs(at - lands) < 0.35] + [(tx, ty, r)]
+        return self.layout.canDodge(px, py, flight, lambda x, y: any(math.hypot(x - a, y - b) < rr for a, b, rr in near))
 
     def __minionDrop(self, task):
         if self.finished:
