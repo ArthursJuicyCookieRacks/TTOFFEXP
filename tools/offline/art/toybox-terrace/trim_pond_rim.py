@@ -287,7 +287,14 @@ def caps(root):
                 continue
             # An end runs across the rim (inner edge to outer edge); the
             # long sides run along it.
-            if abs(math.sqrt(q(pa)) - math.sqrt(q(pb))) < 0.05:
+            # (Judged by direction, since a short piece of an end barely
+            # changes the distance out from the pond's middle.)
+            mx, my = (pa[0] + pb[0]) * 0.5, (pa[1] + pb[1]) * 0.5
+            gx, gy = mx / (RX * RX), my / (RY * RY)
+            gl = math.hypot(gx, gy) or 1.0
+            dx, dy = pb[0] - pa[0], pb[1] - pa[1]
+            dl = math.hypot(dx, dy) or 1.0
+            if abs(dx * gx + dy * gy) / (gl * dl) < 0.6:
                 continue
             poly = EggPolygon(t)
             poly.clear()
