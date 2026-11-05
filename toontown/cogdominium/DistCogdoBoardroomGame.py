@@ -1834,7 +1834,9 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         return [avId for avId in self.getToonIds() if avId not in self.leftGolf]
 
     def _intoGolfElevator(self, toon):
-        k = self.leftOrder.index(toon.doId) if toon.doId in self.leftOrder else len(self.leftOrder)
+        # By its place in the party, as the NPCs take theirs.
+        order = list(self.getToonIds())
+        k = order.index(toon.doId) if toon.doId in order else len(order)
         spot = self.golf.exitElevatorSpot(k)
         old = self._elevatorTracks.pop(toon.doId, None)
         if old is not None:

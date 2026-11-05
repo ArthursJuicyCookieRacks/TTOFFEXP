@@ -1743,18 +1743,36 @@ class CogdoBoardroomPlayer(CogdoPlayer):
             self.memo['leaveSide'] = random.choice((-1, 1)) * random.uniform(8.0, 11.0)
         if now < self.memo['leaveAt']:
             return
+        wdt = self._walkDt(now)
         if not self.memo.get('pastPile'):
-            if self.moveTo(Point3(ox + self.memo['leaveSide'], oy + BoardroomConsts.BarrelPile[1], 0), speed=RUN_SPEED * 0.6):
+            if self.moveTo(Point3(ox + self.memo['leaveSide'], oy + BoardroomConsts.BarrelPile[1], 0), speed=RUN_SPEED * 0.6, dt=wdt):
                 self.memo['pastPile'] = True
             return
-        if self.moveTo(Point3(ox + x, oy + y - 1.0, 0), speed=RUN_SPEED * 0.6):
+        from toontown.building.ElevatorConstants import ElevatorPoints
+        if 'golfSpot' not in self.memo:
+            # Its spot inside by its place in the party, as the player's is
+            # (by arrival order two toons could be given the same spot). The
+            # elevator faces into the room (heading 0, doors to -y): its
+            # inside is behind the doors.
+            p = ElevatorPoints[self.index() % len(ElevatorPoints)]
+            self.memo['golfSpot'] = (ox + x + p[0], oy + y + p[1])
+        sx, sy = self.memo['golfSpot']
+        if not self.memo.get('atDoor'):
+            # To the doors in front of its spot, then walked in (it used to
+            # pop from the doors to its spot).
+            if self.moveTo(Point3(sx * 0.4 + (ox + x) * 0.6, oy + y - 2.5, 0), speed=RUN_SPEED * 0.6, dt=wdt):
+                self.memo['atDoor'] = True
+            return
+        if self.moveTo(Point3(sx, sy, 0), speed=RUN_SPEED * 0.45, dt=wdt):
             self.memo['leaving'] = True
-            from toontown.building.ElevatorConstants import ElevatorPoints
-            p = ElevatorPoints[len(game.leftGolf) % len(ElevatorPoints)]
-            # The elevator faces into the room (heading 0, doors to -y): its
-            # inside is behind the doors, away from the room.
-            self.npc.placeAt(ox + x + p[0], oy + y + p[1], 0, 180)
+            self.npc.moveTo(sx, sy, 0, 180)
+            self.npc.stopMoving()
             self.send('requestGolfLeave')
+
+    def _walkDt(self, now):
+        last = self.memo.get('walkTick')
+        self.memo['walkTick'] = now
+        return TICK if last is None else max(0.02, min(0.5, now - last))
 
     def index(self):
         toons = list(self.game.toons)
@@ -1802,14 +1820,18 @@ class CogdoBoardroomPlayer(CogdoPlayer):
             stage = self.memo.get('elevStage', 0)
             here = self.npc.getPos()
             near = math.hypot(here[0] - ex, here[1] - ey) < 22.0
+            # Stepped by the time really passed: at a low frame rate the
+            # fixed 0.1 s step had the NPCs shuffling into the elevator at a
+            # fraction of a walk, for several seconds (Arthur).
+            wdt = self._walkDt(now)
             if stage == 0:
                 door = Point3(ex + p[0] * 0.6, ey - 4.0, z)
-                if self.moveTo(door, speed=RUN_SPEED * (0.4 if near else 0.85)):
+                if self.moveTo(door, speed=RUN_SPEED * (0.5 if near else 0.85), dt=wdt):
                     self.memo['elevStage'] = 1
                     self.send('requestExit')
             else:
                 spot = Point3(ex + p[0], ey + p[1], BoardroomConsts.ExitFloor)
-                if self.moveTo(spot, speed=RUN_SPEED * 0.4):
+                if self.moveTo(spot, speed=RUN_SPEED * 0.45, dt=wdt):
                     # In at its spot: turns round to face out.
                     self.npc.moveTo(spot[0], spot[1], spot[2], 180)
                     self.npc.stopMoving()
