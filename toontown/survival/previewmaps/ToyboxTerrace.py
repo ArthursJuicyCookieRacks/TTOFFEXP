@@ -95,6 +95,10 @@ TUNNELS = ((Point3(0, -HALF, 0), 0, 'Wind-Up Way', 'key'),
 SIGN_LIFT = {'marble': 0.14, 'blocks': 0.14}
 SIGN_INK = {'key': (0.93, 0.33, 0.62), 'marble': (0.86, 0.1, 0.12), 'blocks': (0.12, 0.36, 0.86)}
 TUNNEL_GAP = 23.0
+# The tunnel face's half width (prop_safe_zone_tunnel, measured), and the
+# block that fills from its side to the wall's first block (at 36 ft).
+TUNNEL_FACE_HALF = 20.05
+TUNNEL_SIDE_BLOCK = 16.0
 
 
 def facing(pos, target):
@@ -542,18 +546,28 @@ class ToyboxTerrace(PreviewMap):
             out = Vec3(mouth[0], mouth[1], 0)
             out.normalize()
             side = Vec3(-out[1], out[0], 0)
+            # Building Block Boulevard's own block stacks stand just in front
+            # of the mouth: these go a little further back there.
+            back = 2.1 if theme == 'blocks' else 0.0
             for sx in (-1, 1):
-                for lat, size, stack in ((24.2, 12.0, True), (33.1, 6.0, False)):
-                    c = Vec3(mouth[0], mouth[1], 0) + side * (sx * lat) + out * (size * 0.5)
-                    h = facing((c[0], c[1]), (0, 0)) + 180
+                # Flush: square to the tunnel, the inner face on the tunnel
+                # face's side (TUNNEL_FACE_HALF out from the middle), the
+                # front face level with the tunnel's front, and wide enough
+                # to meet the wall's first block.
+                for lat, size, stack in ((TUNNEL_FACE_HALF + TUNNEL_SIDE_BLOCK * 0.5, TUNNEL_SIDE_BLOCK, True),):
+                    c = Vec3(mouth[0], mouth[1], 0) + side * (sx * lat) + out * (size * 0.5 + back)
+                    h = mh + 180
                     col = BRIGHT[(n + sx) % 3]
-                    geo = self.place((c[0], c[1], 0), h + r.uniform(-3, 3))
-                    self.letterBlock(geo, size * r.uniform(0.96, 1.0), col, letters[n % len(letters)], letterFaces='sn',
+                    geo = self.place((c[0], c[1], 0), h)
+                    self.letterBlock(geo, size, col, letters[n % len(letters)], letterFaces='sn',
                                      worldFrame=((c[0], c[1]), h))
                     n += 1
                     if stack:
                         s2 = size * r.uniform(0.62, 0.72)
-                        g2 = self.place((c[0] + r.uniform(-0.8, 0.8), c[1] + r.uniform(-0.8, 0.8), size), h + r.uniform(-14, 14))
+                        # Set a little away from the tunnel, so even turned its
+                        # corners stay clear of the tunnel's face.
+                        c2 = c + side * (sx * 1.5)
+                        g2 = self.place((c2[0], c2[1], size), h + r.uniform(-8, 8))
                         self.letterBlock(g2, s2, BRIGHT[(n + 1) % 3], letters[n % len(letters)], letterFaces='sn',
                                          worldFrame=((c[0], c[1]), h))
                         n += 1

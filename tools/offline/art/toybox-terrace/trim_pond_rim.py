@@ -254,35 +254,56 @@ def hull(ps):
         up.append(p)
     return lo[:-1] + up[:-1]
 
-def caps():
-    # Close each cut end of the rim with a flat face toward the dock.
-    for (di, side), cut in CUTS.items():
-        (ex, ey), (rx_, ry_), (fx, fy) = docks[di]
-        u0 = side * W
-        byKey = {}
-        for vv in cut['pts']:
-            p = vv.getPos3()
-            byKey[(round((p[0] - ex) * fx + (p[1] - ey) * fy, 4), round(p[2], 4))] = vv
-        ps = list(byKey)
-        h = hull(ps)
-        if len(h) < 3:
-            continue
-        tpl = cut['poly']
-        poly = EggPolygon(tpl)
-        poly.clear()
-        nx, ny = -side * rx_, -side * ry_
-        # (along, z) is right-handed seen from +right; facing -side*right flips it.
-        if side < 0:
-            h = list(reversed(h))
-        h = list(reversed(h))
-        pool = cut['pool']
-        for key in h:
-            v = EggVertex(byKey[key])
-            v.setNormal(LVector3d(nx, ny, 0))
-            poly.addVertex(pool.createUniqueVertex(v))
-        poly.setBfaceFlag(True)
-        tpl.getParent().addChild(poly)
-        stats['caps'] = stats.get('caps', 0) + 1
+def caps(root):
+    """Close every open end of the rim: wherever its top stops (a dock cut,
+    or where the build left a gap by a dock) a face goes down to the ground,
+    so no end is see-through (Arthur)."""
+    tops = []
+    def collect(node, inMarble):
+        for c in node.getChildren():
+            if isinstance(c, EggPolygon):
+                if not inMarble and isRim(c):
+                    ps = [c.getVertex(k) for k in range(c.getNumVertices())]
+                    if all(v.getPos3()[2] > 1.5 for v in ps):
+                        tops.append(c)
+            elif isinstance(c, EggGroupNode):
+                collect(c, inMarble or isMarbleGroup(c.getName()))
+    collect(root, False)
+    key = lambda p: (round(p[0], 2), round(p[1], 2))
+    count = {}
+    for t in tops:
+        n = t.getNumVertices()
+        for k in range(n):
+            a, b = key(t.getVertex(k).getPos3()), key(t.getVertex((k + 1) % n).getPos3())
+            e = (min(a, b), max(a, b))
+            count[e] = count.get(e, 0) + 1
+    for t in tops:
+        n = t.getNumVertices()
+        for k in range(n):
+            va, vb = t.getVertex(k), t.getVertex((k + 1) % n)
+            pa, pb = va.getPos3(), vb.getPos3()
+            a, b = key(pa), key(pb)
+            if count[(min(a, b), max(a, b))] != 1:
+                continue
+            # An end runs across the rim (inner edge to outer edge); the
+            # long sides run along it.
+            if abs(math.sqrt(q(pa)) - math.sqrt(q(pb))) < 0.05:
+                continue
+            poly = EggPolygon(t)
+            poly.clear()
+            pool = va.getPool()
+            nx, ny = pb[1] - pa[1], -(pb[0] - pa[0])
+            ln = math.hypot(nx, ny) or 1.0
+            for v, z in ((vb, None), (va, None), (va, 0.0), (vb, 0.0)):
+                nv = EggVertex(v)
+                if z is not None:
+                    p = v.getPos3()
+                    nv.setPos(Point3D(p[0], p[1], z))
+                nv.setNormal(LVector3d(nx / ln, ny / ln, 0))
+                poly.addVertex(pool.createUniqueVertex(nv))
+            poly.setBfaceFlag(True)
+            t.getParent().addChild(poly)
+            stats['caps'] = stats.get('caps', 0) + 1
 
-e = EggData(); e.read(Filename.fromOsSpecific(src)); findGone(e); print('marbles dropped', sorted(gone)); walk(e); caps(); collectTops(e); fitMarbles(e)
+e = EggData(); e.read(Filename.fromOsSpecific(src)); findGone(e); print('marbles dropped', sorted(gone)); walk(e); caps(e); collectTops(e); fitMarbles(e)
 e.writeEgg(Filename.fromOsSpecific(dst)); print(stats)
