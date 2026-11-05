@@ -200,6 +200,9 @@ GUN_ARM_SIZE = 1.0
 GUN_IN_FIST = Vec3(0, 0.05, -0.15)
 GUN_SCALE = 0.75
 GUN_CANT = 0
+# How far (camera units) the gun goes back along the line of sight into the
+# fist; further and the fingertips poke out over the barrel.
+GUN_SINK = 0.05
 # The arms' kick when an aimed gag fires: (pos, hpr) of the swing, camera space.
 KICKS = {'shout': ((0, 0.15, 0.03), (0, 3, 0)), 'gun': ((0, -0.1, 0.04), (0, 5, 0))}
 # The shoulder must end up at least this far outside the frame (film units,
@@ -1547,6 +1550,14 @@ class GagHandler:
                     # Slid in its own frame so its grip sits inside the fist
                     # rather than poking out in front of the glove.
                     prop.setPos(prop, GUN_IN_FIST)
+                    # Then pushed back along the line of sight (the same
+                    # place and size on screen) so the thumb wraps in front
+                    # of the grip rather than the grip's edge cutting across
+                    # it (Arthur: "it clips ever so slightly into the glove").
+                    at = prop.getPos(camera)
+                    ray = Vec3(at)
+                    ray.normalize()
+                    prop.setPos(camera, at + ray * GUN_SINK)
                 if gag.prop == 'firehose':
                     # The hose keeps the battle's grip (its size the glove's)
                     # and the arm and hose turn together to aim it.
