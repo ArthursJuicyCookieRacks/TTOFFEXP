@@ -1836,8 +1836,18 @@ class CogdoBoardroomPlayer(CogdoPlayer):
                 left, right = ob.x - ob.w - 2.5, ob.x + ob.w + 2.5
                 free = [g for g in (left, right) if abs(g) < BoardroomConsts.TableHalfWidth - 1.5 and not layout.blockedAt(g, ob.y, 0.5)]
                 goal = min(free, key=lambda g: abs(g - x)) if free else goal
+        # Steering along the table's reachable grid (Layout.lineAhead), as a
+        # player looks down the table: round the piles, never boxed in.
+        # (In the level 5 test runs the NPCs crashed 5 to 9 times each and
+        # most went sad before the golf.)
+        hazard = self._dodgeHazard(layout, x, y, t, self.memo.get('speed', BoardroomConsts.SlideSpeed))
+        if hazard is not None:
+            self.memo['dodgeX'], self.memo['dodgeUntil'] = hazard
         if t < self.memo.get('dodgeUntil', 0):
             goal = self.memo['dodgeX']
+        # Planned as far ahead as it will move before the next look (on a
+        # slow frame 6 to 9 ft: it slid past a short plan into the piles).
+        goal = layout.lineAhead(x, y, goal, 2 + int(self.memo.get('speed', BoardroomConsts.SlideSpeed) * dt / 1.5))
         steer = max(-1.0, min(1.0, (goal - x) / 2.0))
         # The fast speed only now and then, as a player holds forward on a
         # clear stretch (the NPCs held it whenever no memo was near, so they
@@ -1893,13 +1903,21 @@ class CogdoBoardroomPlayer(CogdoPlayer):
             if ny > far + 1.5:
                 passOb = self.memo['passOb'] = None
         bumped = [(k, ob) for k, ob in enumerate(layout.obstacles) if k != passOb and ob.kind == BoardroomLayout.PILE
-                  and ob.contains(nx, ny, 0.6) and here < ob.h + BoardroomConsts.TableTop - 0.5]
+                  and ob.contains(nx, ny, 0.6) and here < ob.h + BoardroomConsts.TableTop - 0.5
+                  # Up its ramp is no bump: the height was taken a tick back,
+                  # still partway up the ramp (on a slow tick 2 ft down it), so
+                  # NPCs sliding up a ramp crashed into the pile on top.
+                  and not layout._rampPile(ob, nx, 0.0)]
         if bumped:
             # Bumped a pile: stopped, and off round it by its nearer free
             # side for a moment (steering straight back into it kept the
             # NPCs stuck behind piles until the time ran out).
             k, ob = bumped[0]
             if speed > 3.0 and not crashed:
+                if os.environ.get('AUTOPLAY_NPC_DEBUG'):
+                    print('NPCCRASH %d pile at (%.1f, %.1f) w %.1f ramp %s from (%.1f, %.1f) to (%.1f, %.1f) goal %.1f dodge %s slick %s dt %.2f' % (
+                        self.npc.doId, ob.x, ob.y, ob.w, layout._rampPile(ob, nx), x, y, nx, ny, goal,
+                        t < self.memo.get('dodgeUntil', 0), bool(slick), dt), flush=True)
                 self._crashInto(t)
                 self.memo['passOb'] = k
             speed = 0.0
@@ -1943,7 +1961,7 @@ class CogdoBoardroomPlayer(CogdoPlayer):
             if -0.5 < line - ny < 1.5:
                 misses = self.memo.setdefault('pencilMiss', {})
                 if k not in misses:
-                    misses[k] = random.random() < 0.15
+                    misses[k] = random.random() < 0.08
                 if not misses[k]:
                     hop = True
                 elif not crashed and line - BoardroomConsts.PencilHeight / 2.0 - 0.9 <= ny:
@@ -1951,6 +1969,8 @@ class CogdoBoardroomPlayer(CogdoPlayer):
                     self.memo['y'] = ny
                     self.memo['speed'] = 0.0
                     misses[k] = False
+                    if os.environ.get('AUTOPLAY_NPC_DEBUG'):
+                        print('NPCCRASH %d pencil (missed hop)' % self.npc.doId, flush=True)
                     self._crashInto(t)
                     self.memo['passOb'] = k
         if hop:
@@ -1969,6 +1989,30 @@ class CogdoBoardroomPlayer(CogdoPlayer):
         if ny > BoardroomConsts.TableEnd - BoardroomConsts.JumpOffAt:
             side = 1 if nx >= 0 else -1
             self.memo['jump'] = (now, nx, ny, z, side * BoardroomConsts.JumpOffX, BoardroomConsts.JumpLandY)
+
+    def _dodgeHazard(self, layout, x, y, t, speed):
+        # A red mark where it is headed: after a moment to see it, off to
+        # the nearer clear side. Not every time (players miss some too).
+        seen = self.memo.setdefault('hazardsSeen', {})
+        for at, thrown, kind, hx, hy in getattr(self.game, 'incoming', ()):
+            key = (round(at, 2), round(hx, 1), round(hy, 1))
+            if at <= t or t - thrown < 0.45 or key in seen or kind not in BoardroomConsts.Hazards:
+                continue
+            py = y + speed * (at - t)
+            if not BoardroomConsts.hazardHits(kind, hx, hy, 0, x, py, 0):
+                continue
+            seen[key] = True
+            if random.random() < 0.15:
+                continue
+            if kind == BoardroomConsts.Swipe:
+                sides = [hx - math.copysign(BoardroomConsts.SwipeReach + 1.5, hx)]
+            else:
+                r = BoardroomConsts.Hazards[kind][3] + 1.5
+                sides = sorted((hx - r, hx + r), key=lambda g: abs(g - x))
+            for g in sides:
+                if abs(g) < BoardroomConsts.TableHalfWidth - 1.6 and layout._clearLeg(x, y + 0.5, g, py):
+                    return g, at + 0.3
+        return None
 
     def _crashInto(self, t):
         # Stopped dead and hurt, as the player is by a pile or a pencil.

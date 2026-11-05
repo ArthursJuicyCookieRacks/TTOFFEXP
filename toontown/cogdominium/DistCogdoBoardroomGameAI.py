@@ -213,9 +213,15 @@ class DistCogdoBoardroomGameAI(DistCogdoGameAI):
             return task.done
         d = self.layout.difficulty
         walking = [c for c in self.golfCogs.values() if c['alive']]
-        if len(walking) < int(round(Consts.lerpDifficulty(Consts.GolfMaxCogsRange, d))):
+        # Fewer cogs at once, and further apart, for fewer golfers (toons
+        # who went sad on the slide can't swing): at the hardest office two
+        # toons lost every barrel in the level 5 test runs, four lost none.
+        golfers = max(1, len([a for a in self.toons if a not in self.sadToons]))
+        share = min(1.0, golfers / float(Consts.GolfFullParty))
+        most = max(3, int(round(Consts.lerpDifficulty(Consts.GolfMaxCogsRange, d) * share ** 0.5)))
+        if len(walking) < most:
             self.__makeGolfCog(d)
-        task.delayTime = Consts.lerpDifficulty(Consts.GolfSpawnPeriodRange, d) * random.uniform(0.8, 1.2)
+        task.delayTime = Consts.lerpDifficulty(Consts.GolfSpawnPeriodRange, d) / share ** 0.6 * random.uniform(0.8, 1.2)
         return task.again
 
     def __makeGolfCog(self, d):
@@ -526,6 +532,10 @@ class DistCogdoBoardroomGameAI(DistCogdoGameAI):
 
     def __launch(self, kind, source, target, flight):
         x, y = target
+        # What is coming down where and when: the NPC toons watch the red
+        # marks and get out of the way, as a player does.
+        now = self.now()
+        self.incoming = [h for h in getattr(self, 'incoming', []) if h[0] > now] + [(now + flight, now, kind, x, y)]
         self.sendUpdate('attack', [kind, source, x, y, self.getNetworkTime()])
         # The NPC toons have no client to tell us they were hit: see for
         # them when it lands.

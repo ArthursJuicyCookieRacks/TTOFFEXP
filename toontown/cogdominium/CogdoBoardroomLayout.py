@@ -194,13 +194,15 @@ class BoardroomLayout:
                         grid.setdefault(k, []).append(ob)
         return grid.get(int(y // 10), ())
 
-    def _rampPile(self, pile, x):
-        # A pile with a ramp up to it, and x within the ramp's width.
+    def _rampPile(self, pile, x, edge=1.2):
+        # A pile with a ramp up to it, and x within the ramp's width (`edge`
+        # in from its sides: planning keeps well in, NPCs bump only out past
+        # the ramp, so one sliding up its edge isn't knocked flat).
         ramp = getattr(pile, 'ramp', 0)
         if ramp == 0:
             ramp = pile.ramp = next((ob for ob in self.obstacles if ob.kind == RAMP and abs(ob.x - pile.x) < 0.01
                                      and abs(ob.y - pile.y) < 10.0), None)
-        return ramp is not None and abs(x - ramp.x) <= ramp.w - 0.6
+        return ramp is not None and abs(x - ramp.x) <= ramp.w - edge
 
     def _clearLeg(self, x0, y0, x1, y1):
         n = max(2, int(abs(y1 - y0) / 0.5))
@@ -299,6 +301,36 @@ class BoardroomLayout:
         if not (0 <= i < len(good) and 0 <= j < len(good[0])):
             return False
         return good[i][j] and self._walkable(x, y)
+
+    def lineAhead(self, x, y, goal, rows=6):
+        """Where across the table to steer for, a few rows ahead, to get
+        towards `goal` and still be on the reachable grid (_layRoute): each
+        row stepping no further than a toon can steer, round the piles.
+        Followed, it never ends boxed in behind piles. For the NPC toons."""
+        start, DY, DX, half, good = self._reach
+        i = int(round((y - start) / DY))
+        if not 0 <= i < len(good) - 1:
+            return goal
+        cols = len(good[0])
+        reach = Consts.SteerSpeed * 0.55 / Consts.SlideSpeed
+        step = max(1, int(reach * DY / DX))
+        j = int(round((x + half) / DX))
+        j = max(0, min(cols - 1, j))
+        if not good[i][j]:
+            near = [k for k in range(cols) if good[i][k]]
+            if not near:
+                return goal
+            j = min(near, key=lambda k: abs(k - j))
+        for r in range(rows):
+            if i + 1 >= len(good):
+                break
+            nxt = [k for k in range(max(0, j - step), min(cols, j + step + 1)) if good[i + 1][k]
+                   and (k == j or self._clearLeg(-half + j * DX, start + i * DY, -half + k * DX, start + (i + 1) * DY))]
+            if not nxt:
+                break
+            j = min(nxt, key=lambda k: (abs(-half + k * DX - goal), abs(k - j)))
+            i += 1
+        return -half + j * DX
 
     def _nearPencil(self, x, y, r):
         for ob in self.obstacles:
