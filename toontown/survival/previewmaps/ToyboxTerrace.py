@@ -45,6 +45,8 @@ CLOCK = 'gen:clock'
 ART = 'phase_4/models/props/toybox_'
 # How far the duck's wheels' outer edges are from its middle.
 DUCK_WHEEL_X = 2.15
+# How far the duck's key leans back toward its tail (degrees).
+DUCK_KEY_TILT = 32.0
 DARK = 'gen:tunnel_dark'
 PLAIN = None
 
@@ -1201,9 +1203,13 @@ class ToyboxTerrace(PreviewMap):
             np.find('**/duck_key').stash()
             if keyArt is None:
                 keyArt = loader.loadModel(ART + 'wind_up_key.bam').find('**/windKey')
-            knp = keyArt.copyTo(np)
+            # Tilted back along the slope of the back, as if wound into it
+            # (Arthur); the key turns about its own shaft inside the tilt.
+            tilt = np.attachNewNode('duckKeyTilt')
+            tilt.setPos(0, -1.9, 4.7)
+            tilt.setP(DUCK_KEY_TILT)
+            knp = keyArt.copyTo(tilt)
             knp.clearTransform()
-            knp.setPos(0, -1.6, 4.9)
             knp.setScale(0.2)
             # Wheels on the paving, not in it: the plaza's tiles and track
             # sit a little above the grass (up to 0.13 ft), the walks 0.04.
