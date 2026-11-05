@@ -1276,6 +1276,25 @@ def playCogdoBoardroom(dist):
         taskMgr.remove('autoplayVideo')
 
 
+def questPosterShot(name):
+    # The ToonTasks page of the Shticker Book.
+    yield until(walking, 120, 'walking before opening the book')
+    place().fsm.request('stickerBook')
+    yield until(lambda: place().isAccepting('bookDone'), 30, 'the Shticker Book open')
+    book = localAvatar.book
+    book.setPage(book.pages[[p.__class__.__name__ for p in book.pages].index('QuestPage')])
+    yield sleep(2)
+    shots = os.environ.get('AUTOPLAY_SHOTS', '/tmp')
+    os.makedirs(shots, exist_ok=True)
+    base.screenshot(os.path.join(shots, name), defaultFilename=0)
+    # The task picture takes turns: the cog building, then the field office.
+    yield sleep(2)
+    base.screenshot(os.path.join(shots, name.replace('.png', '-b.png')), defaultFilename=0)
+    book.doneStatus = {"mode": "close"}
+    messenger.send(book.doneEvent)
+    yield until(walking, 60, 'walking after the book')
+
+
 def scenarioCogdo(track='s'):
     # A field office: a Sellbot one is a maze, a Lawbot one a flying game,
     # then the executive suite battle that frees the shopkeeper.
@@ -1292,7 +1311,53 @@ def scenarioCogdo(track='s'):
         building.cogdoTakeOver(track, int(os.environ.get('AUTOPLAY_FO_DIFFICULTY', 0)), 0)
         return block, building.getExteriorAndInteriorZoneId()[0]
 
-    block, zoneId = onDistrict(takeOver)
+    questId = int(os.environ.get('AUTOPLAY_FO_QUEST', 0))
+    if questId:
+        # A building task for this department (2157: one Bossbot building),
+        # to see the field office count for it.
+        def giveQuest(air, avId):
+            from toontown.quest import Quests
+            toon = air.doId2do[avId]
+            toon.b_setQuests([])
+            toon.addQuest([questId, Quests.ToonHQ, Quests.ToonHQ, 100, 0], 0, recordHistory=0)
+            return toon.quests
+        log('QUEST given: %s' % (onDistrict(giveQuest, localAvatar.doId),))
+        yield sleep(1)
+        yield from questPosterShot('quest-before.png')
+    if os.environ.get('AUTOPLAY_FO_NATURAL'):
+        # The way the game does it on its own: a cog of this department
+        # flies in to take a building over, the street's suit planner
+        # makes that a field office (its CogdoRatio, set to always here so
+        # the test needn't wait), and the cog walks to the door.
+        def sendCog(air):
+            planner = air.suitPlanners[street]
+            planner.CogdoRatio = 1.0
+            planner.newSuitShouldAttemptTakeover = lambda: 1
+            before = len(planner.suitList)
+            planner.createNewSuit([], planner.streetPointList, suitTrack=track,
+                                  buildingHeight=int(os.environ.get('AUTOPLAY_FO_HEIGHT', 0)))
+            del planner.newSuitShouldAttemptTakeover
+            cogs = planner.suitList[before:]
+            return [(c.doId, c.dna.name, c.attemptingTakeover, getattr(c, 'buildingDestinationIsCogdo', None),
+                     c.buildingDestination) for c in cogs]
+        log('NATURAL cog sent: %s' % (onDistrict(sendCog),))
+
+        def fieldOffice(air):
+            manager = air.buildingManagers[street]
+            for block in manager.getSuitBlocks() if hasattr(manager, 'getSuitBlocks') else manager.buildings:
+                building = manager.getBuilding(block)
+                if building and building.isCogdo() and building.fsm.getCurrentState().getName() == 'cogdo':
+                    return block, building.getExteriorAndInteriorZoneId()[0], building.track, building.difficulty
+        started = time.time()
+        while not onDistrict(fieldOffice):
+            if time.time() - started > 900:
+                raise StepFailed('no field office after 15 minutes')
+            yield sleep(2)
+        block, zoneId, foTrack, difficulty = onDistrict(fieldOffice)
+        log('NATURAL field office: block %d zone %d track %s difficulty %d after %.0f s' % (
+            block, zoneId, foTrack, difficulty, time.time() - started))
+    else:
+        block, zoneId = onDistrict(takeOver)
     log('the %s cogs made block %d in zone %d a field office' % (track, block, zoneId))
     if os.environ.get('AUTOPLAY_MUSIC_LOG') and not getattr(base, '_musicLogged', False):
         # Which music starts and stops, for checking the field office's.
@@ -1408,6 +1473,9 @@ def scenarioCogdo(track='s'):
             yield sleep(0.5)
     yield until(walking, 180, 'walking after the field office')
     log('back outside in zone %d with %d SOS cards' % (localAvatar.zoneId, len(localAvatar.NPCFriendsDict)))
+    if questId:
+        log('QUEST after: %s' % (localAvatar.quests,))
+        yield from questPosterShot('quest-after.png')
     try:
         near = []
         for trig in render.findAllMatches('**/door_trigger*'):

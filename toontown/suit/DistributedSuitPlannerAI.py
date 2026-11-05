@@ -20,8 +20,9 @@ import random
 from .SuitLegList import *
 from toontown.dna import *
 from otp.ai.MagicWordGlobal import *
-# The departments that have field offices (Cashbot: the Vend-A-Stomper crane game).
-CogdoTracks = ('s', 'l', 'm')
+# The departments that have field offices (Cashbot: the Vend-A-Stomper crane game;
+# Bossbot: Boardroom Hijinks).
+CogdoTracks = ('s', 'l', 'm', 'c')
 
 
 class DistributedSuitPlannerAI(DistributedObjectAI.DistributedObjectAI, SuitPlannerBase.SuitPlannerBase):
@@ -808,7 +809,7 @@ class DistributedSuitPlannerAI(DistributedObjectAI.DistributedObjectAI, SuitPlan
         newSuit.setupSuitDNA(suitLevel, suitType, suitTrack)
         newSuit.buildingHeight = buildingHeight
         if cogdoTakeover is None and newSuit.attemptingTakeover and toonBlockTakeover is None:
-            # Sellbots, Lawbots and Cashbots take some buildings over as field offices.
+            # Sellbots, Lawbots, Cashbots and Bossbots take some buildings over as field offices.
             cogdoTakeover = (self.air.wantCogdominiums and suitTrack in CogdoTracks and
                              random.random() < self.CogdoRatio)
         gotDestination = self.chooseDestination(newSuit, startTime, toonBlockTakeover=toonBlockTakeover, cogdoTakeover=cogdoTakeover, minPathLen=minPathLen, maxPathLen=maxPathLen)

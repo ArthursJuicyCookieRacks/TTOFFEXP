@@ -223,6 +223,10 @@ class QuestPoster(DirectFrame):
             # its own green textures (as on the street).
             from toontown.building.DistributedBuilding import DistributedBuilding
             DistributedBuilding.retextureCashbotFieldOffice(DistributedBuilding, geom)
+        elif track == 'c':
+            # The Bossbot office too, with Arthur's Bossbot poster and trim.
+            from toontown.building.DistributedBuilding import DistributedBuilding
+            DistributedBuilding.retextureBossbotFieldOffice(DistributedBuilding, geom)
         geom.setH(180)
         self.fitGeometry(geom, fFlip=0)
         return geom, IMAGE_SCALE_SMALL

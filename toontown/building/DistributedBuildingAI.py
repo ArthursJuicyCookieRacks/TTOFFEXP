@@ -569,9 +569,9 @@ class DistributedBuildingAI(DistributedObjectAI.DistributedObjectAI):
 # levels 1-3 for a level 1 office, up to 9-11 for a level 5.
 FieldOfficeLevels = {1: 0, 2: 2, 3: 4, 4: 6, 5: 8}
 # 'c' is Cashbot here (Arthur's ~fo c), though cog department 'c' is
-# Bossbot: Bossbot is 'b'. Bossbot field offices (Boardroom Hijinks) are a
-# prototype for testing: only this word makes one. Cashbot field offices also
-# land on the streets on their own (DistributedSuitPlannerAI.CogdoTracks).
+# Bossbot: Bossbot is 'b'. Every kind of field office, Bossbot (Boardroom
+# Hijinks) included, also lands on the streets on its own
+# (DistributedSuitPlannerAI.CogdoTracks).
 FieldOfficeTracks = {'s': 's', 'sellbot': 's', 'l': 'l', 'lawbot': 'l', 'c': 'm', 'm': 'm', 'cashbot': 'm',
                      'b': 'c', 'bossbot': 'c'}
 FieldOfficeNames = {'s': 'Sellbot', 'l': 'Lawbot', 'm': 'Cashbot', 'c': 'Bossbot'}
