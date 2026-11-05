@@ -1354,8 +1354,7 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
             toon._boardroomLast = PM.Point3(pos)
             if avId in self.exited:
                 # Walking on in to its spot, then stood there.
-                moving = last is not None and (pos - last).length() > 0.02
-                want = 'walk' if moving else 'neutral'
+                want = 'walk' if self._stillMoving(toon, pos, last) else 'neutral'
             elif Consts.TableStart - 2 < pos[1] < Consts.TableEnd - Consts.JumpOffAt and pos[2] > Consts.TableTop - 0.6:
                 want = 'slide'
             elif pos[1] >= Consts.TableEnd - Consts.JumpOffAt - 1 and pos[2] > self._floorAt(pos[1]) + 0.4:
@@ -1363,10 +1362,9 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
                 # the floor: up on the exit's 2 ft step the NPCs went on in
                 # the jump pose, floating into the elevator: Arthur.)
                 want = 'jump-idle'
-            elif last is not None and (pos - last).length() > 0.02:
+            elif self._stillMoving(toon, pos, last):
                 # Walking the last stretch in, running before.
-                dt = max(1e-3, globalClock.getDt())
-                want = 'walk' if (pos - last).length() / dt < 9.0 else 'run'
+                want = 'walk' if getattr(toon, '_boardroomSpeed', 0.0) < 9.0 else 'run'
             else:
                 want = 'neutral'
             if getattr(toon, '_boardroomAnim', None) == want:
@@ -1376,6 +1374,34 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
                 self._bellyFlop(toon)
             else:
                 self._standUp(toon)
+                toon.loop(want)
+
+    def _stillMoving(self, toon, pos, last):
+        # An NPC's moves come a few times a second, not every frame: judged
+        # frame by frame it flicked between walking and standing, so its
+        # walk never got going and it seemed to glide or jump in (Arthur).
+        now = globalClock.getFrameTime()
+        if last is not None:
+            d = (PM.Vec3(pos) - PM.Vec3(last)).length()
+            if d > 0.02:
+                was = getattr(toon, '_boardroomMovedAt', None)
+                if was is not None and now - was < 0.6:
+                    toon._boardroomSpeed = d / max(globalClock.getDt(), now - was)
+                toon._boardroomMovedAt = now
+        return now - getattr(toon, '_boardroomMovedAt', -99) < 0.4
+
+    def _animateGolfLeavers(self):
+        # After the golf: the others walk to the elevator, then stand.
+        for avId in self.getToonIds():
+            toon = self.getToon(avId)
+            if toon is None or toon.isLocal() or toon.isEmpty():
+                continue
+            pos = toon.getPos(render)
+            last = getattr(toon, '_boardroomLast', None)
+            toon._boardroomLast = PM.Point3(pos)
+            want = 'walk' if self._stillMoving(toon, pos, last) else 'neutral'
+            if getattr(toon, '_boardroomAnim', None) != want:
+                toon._boardroomAnim = want
                 toon.loop(want)
 
     def _floorAt(self, y):
@@ -1636,6 +1662,7 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         if toon.isEmpty() or toon.doId not in self.getToonIds():
             return Task.cont
         if self.golfLeaving:
+            self._animateGolfLeavers()
             self._checkGolfLeave(toon)
             return Task.cont
         from direct.showbase.InputStateGlobal import inputState
@@ -1765,6 +1792,7 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
             other = self.getToon(avId)
             if other is not None and not other.isEmpty() and not other.isLocal():
                 other.loop('neutral')
+                other._boardroomAnim = 'neutral'
         # Free to walk, with the usual camera, for the walk to the doors.
         self._holdStill(toon, False)
         place = base.cr.playGame.getPlace()

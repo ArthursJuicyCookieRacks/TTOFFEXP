@@ -1744,30 +1744,105 @@ class CogdoBoardroomPlayer(CogdoPlayer):
         if now < self.memo['leaveAt']:
             return
         wdt = self._walkDt(now)
+        from toontown.building.ElevatorConstants import ElevatorPoints
+        k = self.index()
+        ids = list(game.toons)
+        p = ElevatorPoints[k % len(ElevatorPoints)]
+        # Its spot inside by its place in the party, as the player's is (by
+        # arrival order two toons could be given the same spot). The
+        # elevator faces into the room (heading 0, doors to -y): its inside
+        # is behind the doors.
+        sx, sy = ox + x + p[0], oy + y + p[1]
         if not self.memo.get('pastPile'):
-            if self.moveTo(Point3(ox + self.memo['leaveSide'], oy + BoardroomConsts.BarrelPile[1], 0), speed=RUN_SPEED * 0.6, dt=wdt):
+            # Round the barrel pile on its spot's side, each toon its own
+            # line (they took the same random ones and walked in a heap).
+            side = (1 if p[0] > 0 else -1) * (8.0 + 2.2 * (k // 2))
+            if self._walkApart(Point3(ox + side, oy + BoardroomConsts.BarrelPile[1], 0), RUN_SPEED * 0.6, wdt):
                 self.memo['pastPile'] = True
             return
-        from toontown.building.ElevatorConstants import ElevatorPoints
-        if 'golfSpot' not in self.memo:
-            # Its spot inside by its place in the party, as the player's is
-            # (by arrival order two toons could be given the same spot). The
-            # elevator faces into the room (heading 0, doors to -y): its
-            # inside is behind the doors.
-            p = ElevatorPoints[self.index() % len(ElevatorPoints)]
-            self.memo['golfSpot'] = (ox + x + p[0], oy + y + p[1])
-        sx, sy = self.memo['golfSpot']
         if not self.memo.get('atDoor'):
-            # To the doors in front of its spot, then walked in (it used to
+            # To the doors in line with its spot, then walked in (it used to
             # pop from the doors to its spot).
-            if self.moveTo(Point3(sx * 0.4 + (ox + x) * 0.6, oy + y - 2.5, 0), speed=RUN_SPEED * 0.6, dt=wdt):
+            if self._walkApart(Point3(sx, oy + y - 3.0 - (2.5 if p[1] < 4 else 0.0), 0), RUN_SPEED * 0.6, wdt):
                 self.memo['atDoor'] = True
+                self.memo['atDoorAt'] = now
             return
-        if self.moveTo(Point3(sx, sy, 0), speed=RUN_SPEED * 0.45, dt=wdt):
+        if not self._turnToGoIn(k, ids, now, lambda q: Point3(ox + x + q[0], oy + y + q[1], 0)):
+            here = self.npc.getPos()
+            self.npc.moveTo(here[0], here[1], here[2], 0)
+            return
+        if self._walkApart(Point3(sx, sy, 0), RUN_SPEED * 0.45, wdt, near=0.6):
             self.memo['leaving'] = True
             self.npc.moveTo(sx, sy, 0, 180)
             self.npc.stopMoving()
             self.send('requestGolfLeave')
+
+    def _partyNPCs(self):
+        out = []
+        for avId in getattr(self.game, 'toons', ()):
+            av = self.npc.air.doId2do.get(avId)
+            if av is not None and av is not self.npc and isNPC(av):
+                out.append(av)
+        return out
+
+    def _walkApart(self, target, speed, dt, near=0.0):
+        # A step to target that keeps out of the other NPC toons' way: eased
+        # off sideways from anyone within a body's width, and waiting a
+        # moment behind one right in its path (the one later in the party
+        # gives way, so two never wait on each other). Toons never stand in
+        # each other (Arthur). Returns True there.
+        cur = self.npc.getPos()
+        to = Vec3(target) - cur
+        to.setZ(0)
+        dist = to.length()
+        if dist <= max(speed * dt, 0.05):
+            return self.moveTo(target, speed=speed, dt=dt)
+        way = to / dist
+        push = Vec3(0, 0, 0)
+        mine = self.index()
+        for other in self._partyNPCs():
+            off = cur - other.getPos()
+            off.setZ(0)
+            r = off.length()
+            if r < 1e-3 or r > 3.0:
+                continue
+            if r < 2.4:
+                push += off / r * (2.4 - r)
+            ahead = -off.dot(way)
+            across = abs(off[0] * way[1] - off[1] * way[0])
+            theirs = list(self.game.toons).index(other.doId) if other.doId in self.game.toons else 99
+            if 0 < ahead < 2.2 and across < 1.5 and theirs < mine and dist > near + 1.0:
+                # Right in its way: hold back a little, edging round.
+                speed *= 0.25
+        step = way + push * 0.8
+        if step.length() < 1e-3:
+            return False
+        step.normalize()
+        move = min(dist, speed * dt)
+        goal = cur + step * move
+        h = -math.degrees(math.atan2(way[0], way[1]))
+        self.npc.moveTo(goal[0], goal[1], target[2], h)
+        return (Vec3(target) - goal).length() < 0.1
+
+    def _turnToGoIn(self, k, ids, now, spotOf):
+        # A toon for a front spot waits at the doors for the one going to
+        # the back spot behind it, so nobody walks through anybody (or 4 s).
+        from toontown.building.ElevatorConstants import ElevatorPoints
+        if now - self.memo.get('atDoorAt', now) > 4.0:
+            return True
+        p = ElevatorPoints[k % len(ElevatorPoints)]
+        for j, avId in enumerate(ids):
+            if j == k:
+                continue
+            q = ElevatorPoints[j % len(ElevatorPoints)]
+            if q[1] > p[1] and (q[0] > 0) == (p[0] > 0):
+                av = self.npc.air.doId2do.get(avId)
+                if av is None or not isNPC(av):
+                    continue
+                spot = spotOf(q)
+                if (av.getPos() - spot).length() > 0.6:
+                    return False
+        return True
 
     def _walkDt(self, now):
         last = self.memo.get('walkTick')
@@ -1825,13 +1900,21 @@ class CogdoBoardroomPlayer(CogdoPlayer):
             # fraction of a walk, for several seconds (Arthur).
             wdt = self._walkDt(now)
             if stage == 0:
-                door = Point3(ex + p[0] * 0.6, ey - 4.0, z)
-                if self.moveTo(door, speed=RUN_SPEED * (0.5 if near else 0.85), dt=wdt):
+                # To the doors in line with its own spot (each toon its own
+                # way in: they all made for the middle and stood in each
+                # other, Arthur), keeping apart from the others.
+                # (Front spots wait a step further out, clear of the doors.)
+                door = Point3(ex + p[0], ey - 4.0 - (2.5 if p[1] < 4 else 0.0), z)
+                if self._walkApart(door, RUN_SPEED * (0.5 if near else 0.85), wdt):
                     self.memo['elevStage'] = 1
+                    self.memo['atDoorAt'] = now
                     self.send('requestExit')
             else:
                 spot = Point3(ex + p[0], ey + p[1], BoardroomConsts.ExitFloor)
-                if self.moveTo(spot, speed=RUN_SPEED * 0.45, dt=wdt):
+                if not self._turnToGoIn(k, ids, now, lambda q: Point3(ex + q[0], ey + q[1], BoardroomConsts.ExitFloor)):
+                    self.npc.moveTo(here[0], here[1], here[2], 0)
+                    return
+                if self._walkApart(spot, RUN_SPEED * 0.45, wdt, near=0.6):
                     # In at its spot: turns round to face out.
                     self.npc.moveTo(spot[0], spot[1], spot[2], 180)
                     self.npc.stopMoving()
