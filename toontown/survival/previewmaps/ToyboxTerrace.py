@@ -43,6 +43,8 @@ MARBLES = ('gen:marble_red', 'gen:marble_blue', 'gen:marble_yellow', 'gen:marble
 CLOCK = 'gen:clock'
 # Arthur's painted models (2026-11-05) for the pond, ducks, tops and key.
 ART = 'phase_4/models/props/toybox_'
+# How far the duck's wheels' outer edges are from its middle.
+DUCK_WHEEL_X = 2.15
 DARK = 'gen:tunnel_dark'
 PLAIN = None
 
@@ -993,12 +995,9 @@ class ToyboxTerrace(PreviewMap):
             self.kit.wallSegment(a, b, -1, 26, name='toyTunnelBlock', thick=2.4)
 
     def __keyGate(self, mouth, th):
-        """Wind-Up Way: a giant winding key turning in the hill over the
-        tunnel, as if the hill were a wind-up toy (Arthur's painted key and
-        its brass plate)."""
-        top = self.world(mouth, th, (0, 52, 0))
-        key = self.artModel('wind_up_key', (top[0], top[1], 28.0), th)
-        self.windKey = key.find('**/windKey')
+        """Wind-Up Way: no giant key on the hill any more (Arthur: it
+        looked like it was floating there); the ducks wear the keys."""
+        self.windKey = None
 
     def __marbleGate(self, mouth, th):
         """Loose Marble Lane: an arch of big marbles over the path just
@@ -1193,10 +1192,24 @@ class ToyboxTerrace(PreviewMap):
 
     def __ducks(self):
         self.ducks = []
+        keyArt = None
         for i, (x, y, h) in enumerate(((-42, -40, 110), (36, 70, -150), (-70, -96, 160))):
             np = self.artModel('wind_up_duck', (x, y, 0), h)
-            knp = np.find('**/duck_key')
-            self.ducks.append((np, knp, Point3(x, y, 0), h, i * 1.7))
+            # Arthur: the wind-up key (his painted one from the hill over
+            # Wind-Up Way) stands on top of the duck's back and turns there;
+            # the duck model's own key, out of its back, is hidden.
+            np.find('**/duck_key').stash()
+            if keyArt is None:
+                keyArt = loader.loadModel(ART + 'wind_up_key.bam').find('**/windKey')
+            knp = keyArt.copyTo(np)
+            knp.clearTransform()
+            knp.setPos(0, -1.6, 4.9)
+            knp.setScale(0.2)
+            # Wheels on the paving, not in it: the plaza's tiles and track
+            # sit a little above the grass (up to 0.13 ft), the walks 0.04.
+            floor = 0.14 if math.hypot(x, y) < PLAZA_R + 2.2 else 0.06
+            np.setZ(floor)
+            self.ducks.append((np, knp, Point3(x, y, floor), h, i * 1.7))
             self.kit.wallTube((x, y, 0), 3.0, 5)
 
     def __top(self, name, colors):
@@ -1336,10 +1349,13 @@ class ToyboxTerrace(PreviewMap):
             self.windKey.setH(t * 30.0)
         for np, key, home, h, phase in self.ducks:
             s = math.sin(t * 1.4 + phase)
-            np.setR(5.0 * math.sin(t * 6.0 + phase))
+            roll = 5.0 * math.sin(t * 6.0 + phase)
+            np.setR(roll)
             f = heading(h)
-            np.setPos(home + f * (s * 1.8))
-            key.setR(t * 160.0)
+            # Rocking side to side it rides up on one pair of wheels (2.15 ft
+            # out from the middle), so the lower ones never sink in.
+            np.setPos(home + f * (s * 1.8) + Vec3(0, 0, DUCK_WHEEL_X * math.sin(math.radians(abs(roll)))))
+            key.setH(t * 160.0)
         for holder, np, phase, rate in self.tops:
             np.setH(t * 540.0 * rate)
             holder.setP(5.0 * math.sin(t * 1.3 + phase))
