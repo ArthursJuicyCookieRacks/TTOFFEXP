@@ -36,23 +36,153 @@ def lerpV(pool, a, b, t):
     return pool.createUniqueVertex(v)
 
 stats = {'trimmed': 0, 'removed': 0, 'marblePolys': 0}
-# Marbles set in the rim (every third of 72 rim pieces, ToyboxTerrace.__pond):
-# drop the ones that would sit over a dock's edge.
-gone = []
-for i in range(0, 72, 3):
-    a0, a1 = 2 * math.pi * i / 72, 2 * math.pi * (i + 1) / 72
-    pts = [(RX + rr) * math.cos(a) for a, rr in ((a0, 0), (a1, 0), (a1, 3), (a0, 3))], [(RY + rr * RY / RX) * math.sin(a) for a, rr in ((a0, 0), (a1, 0), (a1, 3), (a0, 3))]
-    mx, my = sum(pts[0]) / 4, sum(pts[1]) / 4
+# Marbles set in the rim: each marble is found from its own polygons (joined
+# where they share corners), not from where the build placed it.
+gone = set()
+MARBLE = {}
+
+# A marble this close to a cut rim end bulges over the end's face.
+END_CLEAR = 1.0
+
+def crossesDock(p):
     for (ex, ey), (rx_, ry_), (fx, fy) in docks:
-        u = (mx - ex) * rx_ + (my - ey) * ry_
-        al = (mx - ex) * fx + (my - ey) * fy
-        if abs(u) < W + 1.3 and -6 < al < 16:
-            gone.append((mx, my))
-print('marbles dropped', len(gone))
+        u = (p[0] - ex) * rx_ + (p[1] - ey) * ry_
+        al = (p[0] - ex) * fx + (p[1] - ey) * fy
+        if abs(u) < W + END_CLEAR and -6 < al < 16:
+            return True
+    return False
+
+def findGone(root):
+    """Every marble that reaches past a cut rim end (over a dock) goes, so
+    each marble left is seen only from above the rim (Arthur)."""
+    polys = []
+    def collect(node, inMarble):
+        for c in node.getChildren():
+            if isinstance(c, EggPolygon):
+                if inMarble:
+                    polys.append(c)
+            elif isinstance(c, EggGroupNode):
+                collect(c, inMarble or c.getName().startswith('kit-gen:marble') or 'marble_sheen' in c.getName())
+    collect(root, False)
+    # Marbles stand several feet apart along the rim: every polygon goes
+    # with the marble whose middle (in plan) is within 2 ft of its own.
+    seeds = []
+    big = {}
+    for poly in polys:
+        n = poly.getNumVertices()
+        cx_ = sum(poly.getVertex(k).getPos3()[0] for k in range(n)) / n
+        cy_ = sum(poly.getVertex(k).getPos3()[1] for k in range(n)) / n
+        for si, (sx, sy) in enumerate(seeds):
+            if math.hypot(cx_ - sx, cy_ - sy) < 2.0:
+                big[si].append(poly)
+                break
+        else:
+            seeds.append((cx_, cy_))
+            big[len(seeds) - 1] = [poly]
+    comps = big
+    mids = {}
+    for r, ps in big.items():
+        for p in ps:
+            MARBLE[pkey(p)] = r
+        if any(crossesDock(p.getVertex(k).getPos3()) for p in ps for k in range(p.getNumVertices())):
+            gone.add(r)
+    print('marbles', len(big), 'pieces', len(comps))
+    for r, ps in sorted(big.items()):
+        pts = [p.getVertex(k).getPos3() for p in ps for k in range(p.getNumVertices())]
+        print('  ', r, len(ps), 'mid', [round(v, 1) for v in mids.get(r, (0, 0))], 'z', round(min(q[2] for q in pts), 2), round(max(q[2] for q in pts), 2), 'gone' if r in gone else '')
+
+def pkey(poly):
+    return tuple((round(p[0], 3), round(p[1], 3), round(p[2], 3)) for p in (poly.getVertex(k).getPos3() for k in range(poly.getNumVertices())))
+
+RIM_TOP = 1.6
+
+def insideRim(p):
+    a = math.atan2(p[1] / RY, p[0] / RX)
+    r = math.hypot(p[0], p[1])
+    ri = math.hypot(RX * math.cos(a), RY * math.sin(a))
+    ro = math.hypot((RX + 3) * math.cos(a), (RY + 3 * RY / RX) * math.sin(a))
+    return ri + 0.04 <= r <= ro - 0.04
+
+TOPS = []
+
+def collectTops(node, inMarble=False):
+    """The rim's top faces as they are after the trim (plan outlines)."""
+    for c in node.getChildren():
+        if isinstance(c, EggPolygon):
+            if not inMarble and isRim(c):
+                ps = [c.getVertex(k).getPos3() for k in range(c.getNumVertices())]
+                if all(p[2] > 1.5 for p in ps):
+                    TOPS.append([(p[0], p[1]) for p in ps])
+        elif isinstance(c, EggGroupNode):
+            collectTops(c, inMarble or isMarbleGroup(c.getName()))
+
+def inPoly(x, y, poly):
+    inside = False
+    n = len(poly)
+    for k in range(n):
+        x1, y1 = poly[k]
+        x2, y2 = poly[(k + 1) % n]
+        if (y1 > y) != (y2 > y) and x < x1 + (y - y1) * (x2 - x1) / (y2 - y1):
+            inside = not inside
+    return inside
+
+def underTop(p):
+    """Whether a point is under the rim's top, a little in from every edge."""
+    if not insideRim(p):
+        return False
+    for dx, dy in ((0, 0), (0.05, 0), (-0.05, 0), (0, 0.05), (0, -0.05)):
+        if not any(inPoly(p[0] + dx, p[1] + dy, t) for t in TOPS):
+            return False
+    return True
+
+def fitMarbles(root):
+    """Shrink each marble left about the middle of its top until nothing of
+    it below the rim's top pokes out of the rim's inner or outer face: from
+    the side only the rim shows, the marble only from above (Arthur)."""
+    groups = {}
+    def collect(node):
+        for c in node.getChildren():
+            if isinstance(c, EggPolygon):
+                r = MARBLE.get(pkey(c))
+                if r is not None and r not in gone:
+                    groups.setdefault(r, []).append(c)
+            elif isinstance(c, EggGroupNode):
+                collect(c)
+    collect(root)
+    for r, polys in groups.items():
+        verts = {}
+        for p in polys:
+            for k in range(p.getNumVertices()):
+                v = p.getVertex(k)
+                verts[(v.getPool().getName(), v.getIndex())] = v
+        vs = list(verts.values())
+        pos = [Point3D(v.getPos3()) for v in vs]
+        cx_ = sum(p[0] for p in pos) / len(pos)
+        cy_ = sum(p[1] for p in pos) / len(pos)
+        scale = 1.0
+        while scale >= 0.6:
+            ok = True
+            for p in pos:
+                q_ = Point3D(cx_ + (p[0] - cx_) * scale, cy_ + (p[1] - cy_) * scale, RIM_TOP + (p[2] - RIM_TOP) * scale)
+                if q_[2] < RIM_TOP - 0.05 and not underTop(q_):
+                    ok = False
+                    break
+            if ok:
+                break
+            scale -= 0.02
+        if scale < 0.6:
+            # It can't sit inside the rim here (by a cut end): it goes.
+            for p in polys:
+                p.getParent().removeChild(p)
+            stats['marblesNoRoom'] = stats.get('marblesNoRoom', 0) + 1
+            continue
+        for v, p in zip(vs, pos):
+            v.setPos(Point3D(cx_ + (p[0] - cx_) * scale, cy_ + (p[1] - cy_) * scale, RIM_TOP + (p[2] - RIM_TOP) * scale))
+        stats.setdefault('scales', []).append(round(scale, 2))
 
 def isGoneMarble(poly):
-    ps = [poly.getVertex(i).getPos3() for i in range(poly.getNumVertices())]
-    return any(all(math.sqrt((p[0] - mx) ** 2 + (p[1] - my) ** 2 + (p[2] - 1.5) ** 2) < 1.75 for p in ps) for mx, my in gone)
+    return MARBLE.get(pkey(poly)) in gone
+
 def clip(poly):
     pts = [poly.getVertex(i) for i in range(poly.getNumVertices())]
     for (ex, ey), (rx_, ry_), (fx, fy) in docks:
@@ -87,10 +217,13 @@ def clip(poly):
         stats['trimmed'] += 1
     return pts
 
-def walk(node):
+def isMarbleGroup(name):
+    return name.startswith('kit-gen:marble') or 'marble_sheen' in name
+
+def walk(node, inMarble=False):
     for c in list(node.getChildren()):
         if isinstance(c, EggPolygon):
-            if not isRim(c):
+            if inMarble or not isRim(c):
                 if isGoneMarble(c):
                     node.removeChild(c); stats['marblePolys'] += 1
                 continue
@@ -102,7 +235,7 @@ def walk(node):
                 for v in pts:
                     c.addVertex(v)
         elif isinstance(c, EggGroupNode):
-            walk(c)
+            walk(c, inMarble or isMarbleGroup(c.getName()))
 
 def hull(ps):
     ps = sorted(set(ps))
@@ -151,5 +284,5 @@ def caps():
         tpl.getParent().addChild(poly)
         stats['caps'] = stats.get('caps', 0) + 1
 
-e = EggData(); e.read(Filename.fromOsSpecific(src)); walk(e); caps()
+e = EggData(); e.read(Filename.fromOsSpecific(src)); findGone(e); print('marbles dropped', sorted(gone)); walk(e); caps(); collectTops(e); fitMarbles(e)
 e.writeEgg(Filename.fromOsSpecific(dst)); print(stats)
