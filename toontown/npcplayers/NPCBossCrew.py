@@ -32,6 +32,8 @@ SLOW_JOBS = (('l', 'BattleTwo'), ('c', 'BattleTwo'))
 CRANE_TIME = (4.0, 7.0)
 # Aiming a banquet table's water pitcher at the CEO.
 PITCHER_TIME = (4.0, 6.0)
+PITCHER_TIME_EVEN = (2.5, 4.0)
+PITCHER_TIME_BEHIND = (1.4, 2.4)
 PITCHER_HIT_CHANCE = 0.45
 # How many NPCs take a pitcher; the rest golf, fetch toon-up food or keep
 # out of his way.
@@ -94,6 +96,7 @@ STATION_REACH = 5.0
 # how near the CFO's head a swinging magnet lets go (wide: far off, a miss).
 CRANE_GRAB_REACH = 3.0
 CRANE_LET_GO = 14.0
+CRANE_HOLD_MAX = 12.0
 CRANE_LET_GO_WIDE = 30.0
 # The CFO's floor toons: they jump on the goons' heads to stun them for the
 # craners, and pick up the treasures the stunned goons leave when hurt.
@@ -642,6 +645,14 @@ class NPCBossCrew:
                 if speed is not None:
                     npc.walk[1] = speed
                 return True
+        # Round the tables, belts and walls in the way.
+        path = nav.findPath(pos, Point3(target[0], target[1], pos[2]))
+        if path:
+            self.count('boss walks round')
+            self.startWalk(npc, path)
+            if speed is not None:
+                npc.walk[1] = speed
+            return True
         return False
 
     def closeIn(self, npc, now):
@@ -1324,6 +1335,11 @@ class NPCBossCrew:
             return True
         work = self.craneWork.setdefault(npc.doId, {'next': 0, 'last': None})
         magnet = NPCCraneOperator.magnetPos(client)
+        if now - work.get('logged', 0) > 10:
+            work['logged'] = now
+            self.notify.info('crane %d (NPC %d): magnet (%.1f, %.1f, %.1f), arm y %.1f h %.1f, target %s, after %s, next in %.1f' % (
+                crane.doId, npc.doId, magnet[0], magnet[1], magnet[2], client.crane.getY(), client.arm.getH(),
+                NPCCraneOperator.targets.get(crane.doId), work.get('obj'), work['next'] - now))
         held = None
         for obj in list(boss.safes or []) + list(boss.goons or []):
             if getattr(obj, 'avId', 0) == npc.doId and obj.state == 'Grabbed':
@@ -1332,13 +1348,28 @@ class NPCBossCrew:
             head = self.bossPos()
             if head is None:
                 return True
+            if work.get('heldObj') != held.doId:
+                work['heldObj'] = held.doId
+                work['heldSince'] = now
+                work['closest'] = None
+                work['closestAt'] = now
+            if held in (boss.goons or []) and boss.heldObject is not None:
+                # A goon does nothing to a helmet: put it down, as a player
+                # would, and go for a safe.
+                npc.asSender(held.requestDrop)
+                self.count('cfo goons put down')
+                work['next'] = now + random.uniform(0.5, 1.2)
+                return True
             d = math.hypot(magnet[0] - head[0], magnet[1] - head[1])
             last = work.get('last')
             work['last'] = d
+            if work['closest'] is None or d < work['closest'] - 0.3:
+                work['closest'] = d
+                work['closestAt'] = now
             # Knocking his helmet off with a safe does him no harm; a hit
-            # that hurts waits for the NPCs' share (let go wide instead).
+            # that hurts waits for the NPCs' share (let go wide instead),
+            # decided once per swing: the share is a chance now.
             helmetOff = boss.heldObject is not None and held in (boss.safes or [])
-            # (Decided once per swing: the share is a chance now.)
             if work.get('wideFor') != held.doId:
                 work['wideFor'] = held.doId
                 work['wide'] = not self.mayHurt()
@@ -1350,11 +1381,15 @@ class NPCBossCrew:
             NPCCraneOperator.targets[crane.doId] = reach
             closing = last is not None and d < last - 0.05
             letGo = CRANE_LET_GO_WIDE if wide else CRANE_LET_GO
-            if closing and d < letGo:
+            # The arm as near as it gets (no closer for a second and a half):
+            # let it swing in from there; and nobody holds on for ever.
+            settled = now - work['closestAt'] > 1.5
+            if (closing and d < letGo) or (settled and d < CRANE_LET_GO_WIDE) or now - work['heldSince'] > CRANE_HOLD_MAX:
                 npc.asSender(held.requestDrop)
                 self.count('cfo crane swings' if not wide else 'cfo crane wide swings')
                 work['last'] = None
                 work['wideFor'] = None
+                work['heldObj'] = None
                 work['next'] = now + random.uniform(1.0, 2.5)
             return True
         work['last'] = None
@@ -1508,6 +1543,9 @@ class NPCBossCrew:
         if self.walkToward(npc, pos, Point3(target[0], target[1], pos[2]), ToontownGlobals.ToonForwardSpeed):
             return True
         self.count('ceo waiter detours')
+        if self.manager.stats.get('ceo waiter detours', 0) % 50 == 1:
+            self.notify.info('waiter %d: no way from (%.1f, %.1f, %.1f) to (%.1f, %.1f): %s' % (
+                npc.doId, pos[0], pos[1], pos[2], target[0], target[1], getNav().whyNot(pos, Point3(target[0], target[1], pos[2]))))
         return False
 
     def waiterReach(self, npc, bossClient):
@@ -1669,7 +1707,12 @@ class NPCBossCrew:
                 if self.approach(npc, target):
                     npc.asSender(target.requestControl)
             return
-        self.nextAction[npc.doId] = globalClock.getFrameTime() + random.uniform(*PITCHER_TIME)
+        # As often as a player squirts when the NPCs are behind their
+        # share, slower once they're past it (never stopping).
+        share = self.share()
+        pace = PITCHER_TIME_BEHIND if share < self.npcShare - 0.05 else (
+            PITCHER_TIME if share > self.npcShare + 0.03 else PITCHER_TIME_EVEN)
+        self.nextAction[npc.doId] = globalClock.getFrameTime() + random.uniform(*pace)
         # Turned and fired on the player's screen (NPCBanquetOperator):
         # only the water that reaches him counts. Past their share they aim
         # wide.

@@ -7,6 +7,8 @@ at chest height tells whether a wall is in the way. Without a loaded scene
 (the player is elsewhere) nothing can be checked, so the NPCs stand still.
 """
 
+import math
+
 from panda3d.core import (BitMask32, CollisionHandlerQueue, CollisionNode, CollisionRay,
                           CollisionSegment, CollisionTraverser, NodePath, Point3)
 
@@ -262,6 +264,89 @@ class NPCNav:
         if self.covered(points[-1][0], points[-1][1], points[-1][2]):
             return None
         return points
+
+    def findPath(self, a, b, cell=5.0, maxNodes=600):
+        """A way round what stands between a and b (tables, belts, walls):
+        a search over ground cells, straightened where it can be. Returns the
+        ground-snapped points like walkable, or None."""
+        import heapq
+        a = Point3(a)
+        b = Point3(b)
+        if self.getScene() is None:
+            return None
+        def h(p):
+            return math.hypot(b[0] - p[0], b[1] - p[1])
+        start = (0, 0)
+        zs = {start: a[2]}
+        came = {start: None}
+        cost = {start: 0.0}
+        frontier = [(h(a), start)]
+        goal = None
+        steps = ((1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1))
+        expanded = 0
+        while frontier and expanded < maxNodes:
+            _, node = heapq.heappop(frontier)
+            expanded += 1
+            here = Point3(a[0] + node[0] * cell, a[1] + node[1] * cell, zs[node])
+            if h(here) <= cell * 1.5 and self.walkable(here, Point3(b[0], b[1], here[2])):
+                goal = node
+                break
+            for dx, dy in steps:
+                nxt = (node[0] + dx, node[1] + dy)
+                c = cost[node] + cell * (1.414 if dx and dy else 1.0)
+                if nxt in cost and cost[nxt] <= c:
+                    continue
+                there = Point3(a[0] + nxt[0] * cell, a[1] + nxt[1] * cell, here[2])
+                path = self.walkable(here, there, step=cell)
+                if not path:
+                    continue
+                cost[nxt] = c
+                zs[nxt] = path[-1][2]
+                came[nxt] = node
+                heapq.heappush(frontier, (c + h(there), nxt))
+        if goal is None:
+            return None
+        cells = []
+        node = goal
+        while node is not None:
+            cells.append(Point3(a[0] + node[0] * cell, a[1] + node[1] * cell, zs[node]))
+            node = came[node]
+        cells.reverse()
+        cells.append(Point3(b[0], b[1], cells[-1][2]))
+        # Straightened: from each corner, the furthest point it walks to.
+        points = []
+        i = 0
+        here = a
+        while i < len(cells) - 1:
+            j = len(cells) - 1
+            while j > i + 1:
+                seg = self.walkable(here, cells[j])
+                if seg:
+                    break
+                j -= 1
+            seg = self.walkable(here, cells[j]) or [cells[j]]
+            points.extend(seg)
+            here = seg[-1]
+            i = j
+        return points or None
+
+    def whyNot(self, a, b, step=3.0):
+        """For logs: what stops a walk from a to b."""
+        if not self.clearLine(a, b):
+            return 'wall'
+        a = Point3(a)
+        b = Point3(b)
+        steps = max(1, int((b - a).length() / step))
+        z = a[2]
+        for i in range(1, steps + 1):
+            p = a + (b - a) * (float(i) / steps)
+            ground = self.groundZ(p[0], p[1], z)
+            if ground is None:
+                return 'no ground at (%.1f, %.1f) from z %.1f' % (p[0], p[1], z)
+            z = ground
+        if self.covered(b[0], b[1], z):
+            return 'covered'
+        return 'ok'
 
 
 _nav = None
