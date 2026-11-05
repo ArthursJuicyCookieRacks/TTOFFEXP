@@ -261,9 +261,32 @@ def _drive(crane, task):
     return Task.cont
 
 
+def armPoint(crane):
+    """Where the arm's (crane y, arm h) points, on the floor plan: the
+    inverse of reachFor."""
+    from panda3d.core import Point3
+    y = crane.crane.getY()
+    h = math.radians(crane.arm.getH())
+    local = Point3(-y * math.sin(h), y * math.cos(h), 0)
+    return _render().getRelativePoint(crane.arm.getParent(), local)
+
+
 def reachFor(crane, worldPoint):
     """The (crane y, arm h) that puts the magnet over worldPoint, within the
-    crane's reach, or None."""
+    crane's reach, or None. Where the magnet really hangs (the cable's lean,
+    the arm's build) is measured, as a player watches it, and allowed for."""
+    from panda3d.core import Point3
+    aim = armPoint(crane)
+    magnet = magnetPos(crane)
+    # (Only the steady lean counts, not a swing.)
+    lean = getattr(crane, 'npcLean', None)
+    off = Point3(magnet[0] - aim[0], magnet[1] - aim[1], 0)
+    if lean is None or (off - lean).length() > 15:
+        lean = off
+    else:
+        lean = lean * 0.9 + off * 0.1
+    crane.npcLean = lean
+    worldPoint = Point3(worldPoint[0] - lean[0], worldPoint[1] - lean[1], worldPoint[2])
     p = crane.arm.getParent().getRelativePoint(_render(), worldPoint)
     dist = math.hypot(p[0], p[1])
     h = math.degrees(math.atan2(-p[0], p[1]))

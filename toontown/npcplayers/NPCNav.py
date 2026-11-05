@@ -21,6 +21,8 @@ MAX_DROP = 4.0
 CHEST = 2.0
 # Floor this close over a spot means it is under stairs or a ramp.
 HEADROOM = 12.0
+# How long a path search remembers the steps it tried (s).
+EDGE_CACHE_TIME = 90.0
 
 
 # A staircase changes height within a stride; a level floor with 'stair' in
@@ -265,66 +267,111 @@ class NPCNav:
             return None
         return points
 
-    def findPath(self, a, b, cell=5.0, maxNodes=600):
+    def _edge(self, x, y, z, nx, ny, cell):
+        """A step between grid points, remembered a while (the scenery
+        stays put): the ground z at the far end, or None."""
+        import time
+        now = time.time()
+        cache = getattr(self, '_edges', None)
+        if cache is None or now - self._edgesSince > EDGE_CACHE_TIME:
+            cache = self._edges = {}
+            self._edgesSince = now
+        key = (x, y, nx, ny, int(round(z)))
+        if key in cache:
+            return cache[key]
+        path = self.walkable(Point3(x * cell, y * cell, z), Point3(nx * cell, ny * cell, z), step=cell)
+        result = path[-1][2] if path else None
+        cache[key] = result
+        return result
+
+    def findPath(self, a, b, cell=5.0, maxNodes=1500):
         """A way round what stands between a and b (tables, belts, walls):
-        a search over ground cells, straightened where it can be. Returns the
-        ground-snapped points like walkable, or None."""
+        a search over a ground grid (steps remembered), straightened where it
+        can be. Returns the ground-snapped points like walkable, or None."""
         import heapq
         a = Point3(a)
         b = Point3(b)
         if self.getScene() is None:
             return None
-        def h(p):
-            return math.hypot(b[0] - p[0], b[1] - p[1])
-        start = (0, 0)
-        zs = {start: a[2]}
+        def h(node):
+            return math.hypot(b[0] - node[0] * cell, b[1] - node[1] * cell)
+        # Onto the grid: the nearest grid point the toon can walk to.
+        bx, by = int(math.floor(a[0] / cell)), int(math.floor(a[1] / cell))
+        start = None
+        for gx, gy in sorted(((bx + i, by + j) for i in (0, 1) for j in (0, 1)),
+                             key=lambda n: math.hypot(n[0] * cell - a[0], n[1] * cell - a[1])):
+            seg = self.walkable(a, Point3(gx * cell, gy * cell, a[2]))
+            if seg:
+                start = (gx, gy)
+                startZ = seg[-1][2]
+                break
+        if start is None:
+            return None
+        import time as _t
+        t0 = _t.time()
+        zs = {start: startZ}
         came = {start: None}
         cost = {start: 0.0}
-        frontier = [(h(a), start)]
+        frontier = [(h(start), start)]
         goal = None
         steps = ((1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1))
         expanded = 0
+        closed = set()
         while frontier and expanded < maxNodes:
             _, node = heapq.heappop(frontier)
+            if node in closed:
+                continue
+            closed.add(node)
             expanded += 1
-            here = Point3(a[0] + node[0] * cell, a[1] + node[1] * cell, zs[node])
-            if h(here) <= cell * 1.5 and self.walkable(here, Point3(b[0], b[1], here[2])):
+            here = Point3(node[0] * cell, node[1] * cell, zs[node])
+            if h(node) <= cell * 2 and self.walkable(here, Point3(b[0], b[1], here[2])):
                 goal = node
                 break
             for dx, dy in steps:
                 nxt = (node[0] + dx, node[1] + dy)
+                if nxt in closed:
+                    continue
                 c = cost[node] + cell * (1.414 if dx and dy else 1.0)
                 if nxt in cost and cost[nxt] <= c:
                     continue
-                there = Point3(a[0] + nxt[0] * cell, a[1] + nxt[1] * cell, here[2])
-                path = self.walkable(here, there, step=cell)
-                if not path:
+                z = self._edge(node[0], node[1], zs[node], nxt[0], nxt[1], cell)
+                if z is None:
                     continue
                 cost[nxt] = c
-                zs[nxt] = path[-1][2]
+                zs[nxt] = z
                 came[nxt] = node
-                heapq.heappush(frontier, (c + h(there), nxt))
+                heapq.heappush(frontier, (c + h(nxt), nxt))
+        import time as _t
+        took = _t.time() - t0
+        if took > 0.2:
+            xs = [n[0] for n in closed]
+            ys = [n[1] for n in closed]
+            print(':NPCNav: path search %.2f s, %d cells, %s; from (%.0f, %.0f) to (%.0f, %.0f), searched x %d..%d y %d..%d' % (
+                took, expanded, 'found' if goal else 'none', a[0], a[1], b[0], b[1],
+                min(xs) * cell, max(xs) * cell, min(ys) * cell, max(ys) * cell))
         if goal is None:
             return None
         cells = []
         node = goal
         while node is not None:
-            cells.append(Point3(a[0] + node[0] * cell, a[1] + node[1] * cell, zs[node]))
+            cells.append(Point3(node[0] * cell, node[1] * cell, zs[node]))
             node = came[node]
         cells.reverse()
         cells.append(Point3(b[0], b[1], cells[-1][2]))
         # Straightened: from each corner, the furthest point it walks to.
         points = []
-        i = 0
+        i = -1
         here = a
         while i < len(cells) - 1:
             j = len(cells) - 1
+            seg = None
             while j > i + 1:
                 seg = self.walkable(here, cells[j])
                 if seg:
                     break
                 j -= 1
-            seg = self.walkable(here, cells[j]) or [cells[j]]
+            if not seg:
+                seg = self.walkable(here, cells[j]) or [cells[j]]
             points.extend(seg)
             here = seg[-1]
             i = j

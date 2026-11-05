@@ -14,7 +14,7 @@ import random
 from direct.directnotify import DirectNotifyGlobal
 from direct.distributed.ClockDelta import globalClockDelta
 from direct.task import Task
-from panda3d.core import Point3
+from panda3d.core import Vec3, Point3
 
 from otp.local.ExecutionContext import getClientBuiltin
 from toontown.npcplayers import NPCBanquetOperator, NPCCraneOperator
@@ -94,9 +94,15 @@ CRANE_FOR_PLAYER = 30.0
 STATION_REACH = 5.0
 # At a crane: how near the magnet comes to a safe or goon to pick it up, and
 # how near the CFO's head a swinging magnet lets go (wide: far off, a miss).
-CRANE_GRAB_REACH = 3.0
-CRANE_LET_GO = 14.0
-CRANE_HOLD_MAX = 12.0
+CRANE_GRAB_REACH = 4.0
+CRANE_LET_GO = 16.0
+# How far ahead of the arm the swinging safe is let go (ft).
+CRANE_RELEASE_AHEAD = 1.5
+CRANE_HOLD_MAX = 40.0
+# How near his head the arm's full reach must come before a swing.
+CRANE_SWING_RANGE = 30.0
+# How far along a belt a plate is out of the wall it comes from.
+BELT_IN_WALL = 12.0
 CRANE_LET_GO_WIDE = 30.0
 # The CFO's floor toons: they jump on the goons' heads to stun them for the
 # craners, and pick up the treasures the stunned goons leave when hurt.
@@ -113,8 +119,14 @@ TREASURE_NEAR = 4.0
 CANNON_HIT_CHANCE = 0.3
 # The CEO's banquet: how close a waiter must come to a plate or a chair,
 # and how far beside a belt or chair it walks to.
-WAITER_REACH = 4.5
-WAITER_BESIDE = 3.5
+WAITER_REACH = 7.0
+WAITER_BESIDE = 6.5
+# Where a waiter stands to serve: just outside the chair.
+DINER_BESIDE = 3.5
+# Waiters on a belt keep this far apart.
+WAITER_SPACING = 6.0
+# A player this near a table is working it.
+WAITER_TABLE_NEAR = 16.0
 # The CEO: how many NPCs take a golf spot, and how likely a ball hits him.
 GOLFERS = 2
 GOLF_HIT_CHANCE = 0.45
@@ -228,6 +240,10 @@ class NPCBossCrew:
         self.animRefresh = {}
         self.doorWasOpen = False
         self.waiterTarget = {}
+        self.waiterSide = {}
+        self.waiterTable = {}
+        self.waiterSpot = {}
+        self.unreachable = {}
         self.stomping = {}
         self.craneWork = {}
         if self.dept == 'm':
@@ -1337,15 +1353,22 @@ class NPCBossCrew:
         magnet = NPCCraneOperator.magnetPos(client)
         if now - work.get('logged', 0) > 10:
             work['logged'] = now
-            self.notify.info('crane %d (NPC %d): magnet (%.1f, %.1f, %.1f), arm y %.1f h %.1f, target %s, after %s, next in %.1f' % (
+            self.notify.info('crane %d (NPC %d): magnet (%.1f, %.1f, %.1f), arm y %.1f h %.1f, target %s, after %s (gap %s), next in %.1f' % (
                 crane.doId, npc.doId, magnet[0], magnet[1], magnet[2], client.crane.getY(), client.arm.getH(),
-                NPCCraneOperator.targets.get(crane.doId), work.get('obj'), work['next'] - now))
+                NPCCraneOperator.targets.get(crane.doId), work.get('obj'), work.get('gap'), work['next'] - now))
         held = None
         for obj in list(boss.safes or []) + list(boss.goons or []):
             if getattr(obj, 'avId', 0) == npc.doId and obj.state == 'Grabbed':
                 held = obj
         if held is not None:
-            head = self.bossPos()
+            # His head (where a safe has to land), as the player's screen
+            # has it; his body is far bigger than his middle.
+            bossClient = base.cr.doId2do.get(boss.doId)
+            target = getattr(bossClient, 'headTarget', None)
+            head = target.getPos(base.render) if target is not None and not target.isEmpty() else self.bossPos()
+            if now - work.get('headLogged', 0) > 30:
+                work['headLogged'] = now
+                self.notify.info('CFO head at (%.1f, %.1f, %.1f), middle %s' % (head[0], head[1], head[2], self.bossPos()))
             if head is None:
                 return True
             if work.get('heldObj') != held.doId:
@@ -1360,34 +1383,79 @@ class NPCBossCrew:
                 self.count('cfo goons put down')
                 work['next'] = now + random.uniform(0.5, 1.2)
                 return True
-            d = math.hypot(magnet[0] - head[0], magnet[1] - head[1])
-            last = work.get('last')
-            work['last'] = d
-            if work['closest'] is None or d < work['closest'] - 0.3:
-                work['closest'] = d
-                work['closestAt'] = now
-            # Knocking his helmet off with a safe does him no harm; a hit
-            # that hurts waits for the NPCs' share (let go wide instead),
-            # decided once per swing: the share is a chance now.
+            # A player's swing: draw the arm back facing him, let the cable
+            # settle, then slide out at full speed and let go as it stops, so
+            # the safe flies on into him. Whether it hits is the swing's.
             helmetOff = boss.heldObject is not None and held in (boss.safes or [])
             if work.get('wideFor') != held.doId:
+                # Decided once per swing: the share is a chance now.
                 work['wideFor'] = held.doId
                 work['wide'] = not self.mayHurt()
+                work['phase'] = 'back'
+                work['aimH'] = None
             wide = not helmetOff and work['wide']
-            reach = NPCCraneOperator.reachFor(client, head)
-            if reach is None:
-                # Out of this crane's reach: as near as it goes.
-                reach = (client.craneMaxY, max(min(self.headingTo(client, head), client.armMaxH), client.armMinH))
-            NPCCraneOperator.targets[crane.doId] = reach
-            closing = last is not None and d < last - 0.05
-            letGo = CRANE_LET_GO_WIDE if wide else CRANE_LET_GO
-            # The arm as near as it gets (no closer for a second and a half):
-            # let it swing in from there; and nobody holds on for ever.
-            settled = now - work['closestAt'] > 1.5
-            if (closing and d < letGo) or (settled and d < CRANE_LET_GO_WIDE) or now - work['heldSince'] > CRANE_HOLD_MAX:
+            h = self.headingTo(client, head)
+            if work['aimH'] is None:
+                err = random.gauss(0, 2.5)
+                if wide:
+                    err += random.choice((-1, 1)) * random.uniform(12, 22)
+                work['aimH'] = err
+            aimH = max(min(h + work['aimH'], client.armMaxH), client.armMinH)
+            phase = work['phase']
+            if phase == 'back':
+                NPCCraneOperator.targets[crane.doId] = (client.craneMinY, aimH)
+                if abs(client.arm.getH() - aimH) < 2.5 and client.crane.getY() < client.craneMinY + 0.6:
+                    work['phase'] = 'settle'
+                    work['until'] = now + random.uniform(0.6, 1.2)
+            elif phase == 'settle':
+                # Waits, as a player does, for him to come near enough that
+                # the arm's full reach swings the safe into him.
+                hr = math.radians(aimH)
+                tip = base.render.getRelativePoint(client.arm.getParent(), Point3(
+                    -client.craneMaxY * math.sin(hr), client.craneMaxY * math.cos(hr), 0))
+                near = math.hypot(tip[0] - head[0], tip[1] - head[1])
+                work['near'] = near
+                if now - work.get('nearLogged', 0) > 8:
+                    work['nearLogged'] = now
+                    self.notify.info('NPC %d waits on crane %d: full reach %.0f ft from him' % (npc.doId, crane.doId, near))
+                if now >= work['until'] and near <= CRANE_SWING_RANGE:
+                    work['phase'] = 'swing'
+                    work['until'] = now + random.uniform(0.0, 0.25)
+                    work['outAt'] = None
+                    work['lastOff'] = None
+                    work.pop('stopAt', None)
+            elif phase == 'swing':
+                NPCCraneOperator.targets[crane.doId] = (client.craneMaxY, aimH)
+                d = math.hypot(magnet[0] - head[0], magnet[1] - head[1])
+                if d < CRANE_LET_GO and work.get('outAt') is None:
+                    # Close while still sliding out: let go on the move.
+                    work['outAt'] = now
+                if client.crane.getY() >= client.craneMaxY - 0.5 and work.get('outAt') is None:
+                    # The arm's out; the safe still swings on below it. Let go
+                    # as it swings through under the arm and on forwards (its
+                    # fastest), as a player times a throw.
+                    slider = client.crane.getPos(base.render)
+                    ahead = base.render.getRelativeVector(client.arm, Vec3(0, 1, 0))
+                    off = (magnet[0] - slider[0]) * ahead[0] + (magnet[1] - slider[1]) * ahead[1]
+                    lastOff = work.get('lastOff')
+                    work['lastOff'] = off
+                    work.setdefault('stopAt', now)
+                    if (lastOff is not None and off > lastOff and off >= CRANE_RELEASE_AHEAD) or now - work['stopAt'] > 3.0:
+                        work['outAt'] = now
+                if work.get('outAt') is not None:
+                    if now >= work['outAt']:
+                        npc.asSender(held.requestDrop)
+                        self.count('cfo crane swings' if not wide else 'cfo crane wide swings')
+                        self.notify.info('NPC %d swings %s at the CFO from crane %d (%s), %.0f ft off (reach end %.0f ft off, swing %.1f ft ahead)' % (
+                            npc.doId, held.doId, crane.doId, 'wide' if wide else 'aimed',
+                            math.hypot(magnet[0] - head[0], magnet[1] - head[1]), work.get('near', -1), work.get('lastOff') or 0))
+                        work['wideFor'] = None
+                        work['heldObj'] = None
+                        work['next'] = now + random.uniform(1.0, 2.5)
+                        return True
+            if now - work['heldSince'] > CRANE_HOLD_MAX:
                 npc.asSender(held.requestDrop)
-                self.count('cfo crane swings' if not wide else 'cfo crane wide swings')
-                work['last'] = None
+                self.count('cfo crane give-ups')
                 work['wideFor'] = None
                 work['heldObj'] = None
                 work['next'] = now + random.uniform(1.0, 2.5)
@@ -1425,6 +1493,7 @@ class NPCBossCrew:
         work['obj'] = obj.doId
         NPCCraneOperator.targets[crane.doId] = reach
         where = oc.getPos(base.render)
+        work['gap'] = math.hypot(where[0] - magnet[0], where[1] - magnet[1])
         if math.hypot(where[0] - magnet[0], where[1] - magnet[1]) < CRANE_GRAB_REACH:
             # The magnet over it, as it comes down onto it.
             npc.asSender(obj.requestGrab)
@@ -1543,6 +1612,11 @@ class NPCBossCrew:
         if self.walkToward(npc, pos, Point3(target[0], target[1], pos[2]), ToontownGlobals.ToonForwardSpeed):
             return True
         self.count('ceo waiter detours')
+        plate = self.waiterTarget.get(npc.doId)
+        if plate is not None and not boss.toonFoodStatus.get(npc.doId):
+            # That plate can't be reached from here: another one.
+            self.unreachable[(npc.doId,) + tuple(plate)] = now + 10.0
+            self.waiterTarget.pop(npc.doId, None)
         if self.manager.stats.get('ceo waiter detours', 0) % 50 == 1:
             self.notify.info('waiter %d: no way from (%.1f, %.1f, %.1f) to (%.1f, %.1f): %s' % (
                 npc.doId, pos[0], pos[1], pos[2], target[0], target[1], getNav().whyNot(pos, Point3(target[0], target[1], pos[2]))))
@@ -1568,7 +1642,10 @@ class NPCBossCrew:
                         npc.walk = None
                         return True
             return False
+        mine = self.waiterTableOf(npc)
         for table in boss.tables:
+            if mine is not None and table is not mine:
+                continue
             tableClient = base.cr.doId2do.get(table.doId)
             if tableClient is None:
                 continue
@@ -1576,7 +1653,7 @@ class NPCBossCrew:
                 if table.getDinerStatus(chairIndex) not in (table.HUNGRY, table.ANGRY):
                     continue
                 chair = self.chairPos(tableClient, chairIndex)
-                if chair is not None and math.hypot(chair[0] - pos[0], chair[1] - pos[1]) < WAITER_REACH + 2.0:
+                if chair is not None and math.hypot(chair[0] - pos[0], chair[1] - pos[1]) < DINER_BESIDE + 2.5:
                     npc.asSender(boss.requestServeFood, table.index, chairIndex)
                     if not boss.toonFoodStatus.get(npc.doId):
                         self.count('ceo plates served')
@@ -1602,24 +1679,141 @@ class NPCBossCrew:
                 foods.append((belt.index, foodIndex, foodNum, model.getPos(base.render)))
         return foods
 
+    def tableFinished(self, table):
+        return not [i for i in range(table.numDiners)
+                    if table.getDinerStatus(i) in (table.HUNGRY, table.ANGRY, table.EATING)]
+
+    def tableSide(self, table):
+        base = getClientBuiltin('base')
+        tableClient = base.cr.doId2do.get(table.doId) if base else None
+        if tableClient is None:
+            return None
+        return 0 if tableClient.tableGroup.getX(base.render) < 0 else 1
+
+    def waiterSideOf(self, npc):
+        """Arthur: four toons work each belt (the player counted on the
+        side they're on); each NPC keeps its side."""
+        side = self.waiterSide.get(npc.doId)
+        if side is not None:
+            return side
+        base = getClientBuiltin('base')
+        counts = [0, 0]
+        for k, v in self.waiterSide.items():
+            counts[v] += 1
+        for p in self.players():
+            client = base.cr.doId2do.get(p.doId) if base else None
+            if client is not None:
+                counts[0 if client.getX(base.render) < 0 else 1] += 1
+        if counts[0] != counts[1]:
+            side = 0 if counts[0] < counts[1] else 1
+        else:
+            side = 0 if npc.getX() < 0 else 1
+        self.waiterSide[npc.doId] = side
+        return side
+
+    def waiterTableOf(self, npc):
+        """Arthur: two toons to a table, staying on it until every diner
+        there is done; then the next table on their side."""
+        boss = self.boss
+        side = self.waiterSideOf(npc)
+        current = self.waiterTable.get(npc.doId)
+        base = getClientBuiltin('base')
+
+        def center(t):
+            tc = base.cr.doId2do.get(t.doId) if base else None
+            return tc.tableGroup.getPos(base.render) if tc is not None else None
+
+        def playersAt(t):
+            # Arthur: a real player working a table takes one of its two
+            # spots (near it, or carrying a plate to it).
+            c = center(t)
+            if c is None:
+                return 0
+            n = 0
+            for p in self.players():
+                pc = base.cr.doId2do.get(p.doId)
+                if pc is not None and math.hypot(pc.getX(base.render) - c[0], pc.getY(base.render) - c[1]) < WAITER_TABLE_NEAR:
+                    n += 1
+            return n
+
+        def npcsAt(t):
+            return [k for k, v in self.waiterTable.items() if v == t.index]
+
+        for table in boss.tables:
+            if table.index == current and not self.tableFinished(table):
+                crew = npcsAt(table)
+                if len(crew) + playersAt(table) <= 2:
+                    return table
+                # One too many: the NPC furthest from it moves on.
+                c = center(table)
+                far = max(crew, key=lambda k: math.hypot(self.air.doId2do[k].getX() - c[0], self.air.doId2do[k].getY() - c[1])
+                          if k in self.air.doId2do and c is not None else 0)
+                if far != npc.doId:
+                    return table
+                self.count('ceo waiters moved for the player')
+                self.notify.info('waiter %d: the player took a spot at table %d, moving on' % (npc.doId, table.index))
+        self.waiterTable.pop(npc.doId, None)
+        open_ = [t for t in boss.tables if not self.tableFinished(t)]
+        mine = [t for t in open_ if self.tableSide(t) == side] or open_
+        if not mine:
+            return None
+        def crew(t):
+            return len(npcsAt(t)) + playersAt(t)
+        pos = npc.getPos()
+
+        def dist(t):
+            tc = base.cr.doId2do.get(t.doId)
+            if tc is None:
+                return 999
+            c = tc.tableGroup.getPos(base.render)
+            return math.hypot(c[0] - pos[0], c[1] - pos[1])
+        # A partner first, then an empty table, nearest; only a third when
+        # every table on this side already has two.
+        for want in (1, 0):
+            pick = [t for t in mine if crew(t) == want]
+            if pick:
+                table = min(pick, key=dist)
+                break
+        else:
+            table = min(mine, key=lambda t: (crew(t), dist(t)))
+        self.waiterTable[npc.doId] = table.index
+        self.notify.info('waiter %d: %s belt, table %d (with %s)' % (
+            npc.doId, 'left' if side == 0 else 'right', table.index,
+            [k for k, v in self.waiterTable.items() if v == table.index and k != npc.doId]))
+        return table
+
     def beltSpot(self, npc, pos, bossClient):
         """Beside a belt, a little ahead of the nearest plate coming along
         (on the NPC's side of it); each NPC its own plate."""
         base = getClientBuiltin('base')
         taken = set(v for k, v in self.waiterTarget.items() if k != npc.doId)
         best = None
-        for belt in getattr(bossClient, 'belts', None) or []:
-            if belt is None or belt.state != 'On':
-                continue
+        side = self.waiterSideOf(npc)
+        belts = [belt for belt in getattr(bossClient, 'belts', None) or [] if belt is not None and belt.state == 'On']
+        if [belt for belt in belts if belt.index == side]:
+            belts = [belt for belt in belts if belt.index == side]
+        # Not on top of the others working this belt.
+        others = [v for k, v in self.waiterSpot.items() if k != npc.doId]
+        for belt in belts:
             start = belt.startLocator.getPos(base.render)
             end = belt.endLocator.getPos(base.render)
             along = Point3(end[0] - start[0], end[1] - start[1], 0)
             if along.length() < 1:
                 continue
+            beltLength = along.length()
             along.normalize()
             across = Point3(-along[1], along[0], 0)
+            if not getattr(self, 'beltsLogged', None):
+                self.beltsLogged = set()
+            if belt.index not in self.beltsLogged:
+                self.beltsLogged.add(belt.index)
+                self.notify.info('belt %d runs (%.1f, %.1f) -> (%.1f, %.1f)' % (belt.index, start[0], start[1], end[0], end[1]))
             for b, foodIndex, foodNum, where in self.beltFoods(bossClient):
                 if b != belt.index or (b, foodNum) in taken:
+                    continue
+                # Plates come out of the wall: only once out in the room.
+                gone = (where[0] - start[0]) * along[0] + (where[1] - start[1]) * along[1]
+                if gone < BELT_IN_WALL or self.unreachable.get((npc.doId, b, foodNum), 0) > globalClock.getFrameTime():
                     continue
                 side = 1 if (pos[0] - where[0]) * across[0] + (pos[1] - where[1]) * across[1] >= 0 else -1
                 dist = math.hypot(where[0] - pos[0], where[1] - pos[1])
@@ -1629,12 +1823,15 @@ class NPCBossCrew:
                 # Not past the end of the belt.
                 if (spot[0] - end[0]) * along[0] + (spot[1] - end[1]) * along[1] > 0:
                     continue
+                if [o for o in others if math.hypot(o[0] - spot[0], o[1] - spot[1]) < WAITER_SPACING]:
+                    continue
                 d = math.hypot(spot[0] - pos[0], spot[1] - pos[1])
                 if best is None or d < best[0]:
                     best = (d, spot, (b, foodNum))
         if best is None:
             return None
         self.waiterTarget[npc.doId] = best[2]
+        self.waiterSpot[npc.doId] = best[1]
         return best[1]
 
     def chairPos(self, tableClient, chairIndex):
@@ -1652,7 +1849,10 @@ class NPCBossCrew:
         taken = set(v for k, v in self.waiterTarget.items() if k != npc.doId)
         pos = npc.getPos()
         best = None
+        mine = self.waiterTableOf(npc)
         for table in boss.tables:
+            if mine is not None and table is not mine:
+                continue
             tableClient = base.cr.doId2do.get(table.doId)
             if tableClient is None:
                 continue
@@ -1667,13 +1867,14 @@ class NPCBossCrew:
                 out = Point3(chair[0] - center[0], chair[1] - center[1], 0)
                 if out.length() > 0.1:
                     out.normalize()
-                spot = Point3(chair[0] + out[0] * WAITER_BESIDE, chair[1] + out[1] * WAITER_BESIDE, pos[2])
+                spot = Point3(chair[0] + out[0] * DINER_BESIDE, chair[1] + out[1] * DINER_BESIDE, pos[2])
                 d = math.hypot(spot[0] - pos[0], spot[1] - pos[1]) - (30 if status == table.ANGRY else 0)
                 if best is None or d < best[0]:
                     best = (d, spot, ('diner', table.index, chairIndex))
         if best is None:
             return None
         self.waiterTarget[npc.doId] = best[2]
+        self.waiterSpot[npc.doId] = best[1]
         return best[1]
 
     def playCBattleFour(self, npc):
