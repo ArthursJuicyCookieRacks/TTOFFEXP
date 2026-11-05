@@ -10,6 +10,10 @@ import random
 CLOTHES_MAKETOON = 0
 CLOTHES_TAILOR = 1
 CLOTHES_CLOSET = 2
+# The closet and the tailor pick from one list of whole shirts and one of
+# whole bottoms (two rows); only Make-A-Toon splits them into style and
+# colour (four rows).
+TWO_ROW_TYPES = (CLOTHES_TAILOR, CLOTHES_CLOSET)
 
 class ClothesGUI(StateData.StateData):
     notify = DirectNotifyGlobal.directNotify.newCategory('ClothesGUI')
@@ -42,7 +46,7 @@ class ClothesGUI(StateData.StateData):
         self.parentFrame = DirectFrame(relief=DGG.RAISED, pos=(0.98, 0, 0.416), frameColor=(1, 0, 0, 0))
 
         #Let's use the old GUI for closets.
-        if self.type == CLOTHES_CLOSET:
+        if self.type in TWO_ROW_TYPES:
             self.shirtFrame = DirectFrame(parent=self.parentFrame, image=shuffleFrame, image_scale=halfButtonInvertScale, relief=None, pos=(0, 0, -0.4), hpr=(0, 0, 3), scale=1.2, frameColor=(1, 1, 1, 1), text=TTLocalizer.ClothesShopShirt, text_scale=0.0575, text_pos=(-0.001, -0.015), text_fg=(1, 1, 1, 1))
             self.topLButton = DirectButton(parent=self.shirtFrame, relief=None, image=(shuffleArrowUp,
              shuffleArrowDown,
@@ -124,7 +128,7 @@ class ClothesGUI(StateData.StateData):
         self.topRButton.destroy()
         self.bottomLButton.destroy()
         self.bottomRButton.destroy()
-        if self.type != CLOTHES_CLOSET:          
+        if self.type not in TWO_ROW_TYPES:          
             self.shirtStyleFrame.destroy()
             self.shirtStyleLButton.destroy()
             self.shirtStyleRButton.destroy()
@@ -190,7 +194,7 @@ class ClothesGUI(StateData.StateData):
     def setupButtons(self):
         self.girlInShorts = 0
         if self.gender == 'f':
-            if self.type == CLOTHES_CLOSET:            
+            if self.type in TWO_ROW_TYPES:
                 if self.bottomChoice == -1:
                     botTex = self.bottoms[0][0]
                 else:
@@ -205,13 +209,13 @@ class ClothesGUI(StateData.StateData):
                 if ToonDNA.GirlBottoms[botTex][1] == ToonDNA.SHORTS:
                     self.girlInShorts = 1            
         if self.toon.style.getGender() == 'm':
-            if self.type == CLOTHES_CLOSET:
+            if self.type in TWO_ROW_TYPES:
                 self.bottomFrame['text'] = TTLocalizer.ClothesShopShorts
             else:
                 self.bottomStyleFrame['text'] = TTLocalizer.ClothesShopShortsStyle
                 self.bottomFrame['text'] = TTLocalizer.ClothesShopShortsColor
         else:
-            if self.type == CLOTHES_CLOSET:
+            if self.type in TWO_ROW_TYPES:
                 self.bottomFrame['text'] = TTLocalizer.ClothesShopBottoms
             else:
                 self.bottomStyleFrame['text'] = TTLocalizer.ClothesShopBottomsStyle

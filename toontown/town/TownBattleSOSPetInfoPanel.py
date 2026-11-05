@@ -8,6 +8,8 @@ from toontown.speedchat import TTSCPetTrickMenu
 from otp.speedchat import SpeedChatGlobals, SCSettings
 from otp.otpbase import OTPLocalizer
 
+TRICK_MENU_POS = (-0.78, 0, -0.32)
+
 class TownBattleSOSPetInfoPanel(StateData.StateData):
 
     def __init__(self, doneEvent):
@@ -16,8 +18,9 @@ class TownBattleSOSPetInfoPanel(StateData.StateData):
     def load(self):
         gui = loader.loadModel('phase_3.5/models/gui/PetControlPannel')
         guiScale = 0.116
-        guiPos = (0, 0, 0)
-        self.frame = DirectFrame(image=gui, scale=guiScale, pos=guiPos, relief=None)
+        # Top right, where the doodle's own panel and the friends list are.
+        guiPos = (-0.213, 0, -0.7)
+        self.frame = DirectFrame(parent=base.a2dTopRight, image=gui, scale=guiScale, pos=guiPos, relief=None)
         self.frame.hide()
         disabledImageColor = Vec4(0.6, 0.6, 0.6, 1)
         text0Color = Vec4(1, 1, 1, 1)
@@ -93,7 +96,15 @@ class TownBattleSOSPetInfoPanel(StateData.StateData):
         self.__fillPetInfo(self.petProxy)
         self.frame.show()
         self.accept(self.trickMenuEventName, self.__handleTrickMenuEvent)
-        self.trickMenu.reparentTo(aspect2dp, DGG.FOREGROUND_SORT_INDEX)
+        # The trick to call, picked from a menu beside the panel.
+        self.trickMenu.reparentTo(base.a2dTopRight, DGG.FOREGROUND_SORT_INDEX)
+        self.trickMenu.setPos(TRICK_MENU_POS)
+        # (Trick phrases learned since the battle screens loaded were added
+        # while the menu was hidden, so it was never laid out again: an
+        # empty grey box.) With no phrases at all there is nothing to show.
+        self.trickMenu.finalizeAll()
+        if len(self.trickMenu) == 0:
+            self.trickMenu.reparentTo(hidden)
         localAvatar.chatMgr.chatInputSpeedChat.whisperAvatarId = None
         self.detailButton['state'] = DGG.NORMAL
         return

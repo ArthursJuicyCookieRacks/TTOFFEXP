@@ -369,8 +369,11 @@ class DistributedSuitBase(DistributedAvatar.DistributedAvatar, Suit.Suit, SuitBa
 
     def setSkelecog(self, flag):
         SuitBase.SuitBase.setSkelecog(self, flag)
-        if flag:
+        # A cog brought back from the object cache keeps its skeleton
+        # model (no torso etc. left to strip): make it only once.
+        if flag and not getattr(self, '_skeletonMade', False):
             Suit.Suit.makeSkeleton(self)
+            self._skeletonMade = True
 
     def showHpText(self, number, bonus = 0, scale = 1, attackTrack = -1):
         if number < 0:

@@ -69,6 +69,15 @@ class Mesh:
 
 # How high the posts round any solid reach, at the least (MapKit.__posts).
 POST_MIN_TOP = 2.6
+# A toon jumps 4.5 feet, and a post's round top lifts it a little more.
+# A ring of posts lower than this round something
+# hollow (a crate, a booth, the balloon's basket, a strength tester's
+# base) let it jump over and drop inside, where the ring then held it for
+# good (Farewell Fair). Each such post goes on up to here, on a collide
+# mask only the Survival player's wall ball sees: the cogs' body checks
+# and the gags' aim lines still pass over the low prop as before.
+JUMP_CLEAR = 7.5
+JUMP_BLOCK = BitMask32.bit(24)
 
 
 class MapKit:
@@ -83,6 +92,10 @@ class MapKit:
         self.extra = []
         # The outlines footprint() made solid (for tests).
         self.hulls = []
+        # (x, y, z, radius, height) of each wallTube, and (hull, base) of
+        # each footprint, for filling the notches between them (finish).
+        self.tubes = []
+        self.hullBases = []
 
     # --- Textures and models ---
 
@@ -240,6 +253,17 @@ class MapKit:
                 t = float(j) / count
                 x, y = ax + (bx - ax) * t, ay + (by - ay) * t
                 node.addSolid(CollisionTube(x, y, z0 + r, x, y, top, r))
+                if closed and top + r < z0 + JUMP_CLEAR:
+                    self.jumpBlock().addSolid(CollisionTube(x, y, top, x, y, z0 + JUMP_CLEAR - r, r))
+
+    def jumpBlock(self):
+        """The node for the posts' jump-proof tops (see JUMP_CLEAR)."""
+        node = getattr(self, '_jumpNode', None)
+        if node is None:
+            node = self.__colNode('jumpBlock', JUMP_BLOCK)
+            self._jumpNode = node
+            self.solid.attachNewNode(node)
+        return node
 
     def wallBox(self, lo, hi, name='wallBox'):
         """Solid all round the box lo..hi (seen from above)."""
@@ -253,6 +277,7 @@ class MapKit:
         node = self.__colNode(name, WALL | CAMERA)
         x, y, z = pos
         node.addSolid(CollisionTube(x, y, z + 0.2, x, y, z + height, radius))
+        self.tubes.append((x, y, z, radius, height))
         return self.solid.attachNewNode(node)
 
     def wallSegment(self, a, b, z0, z1, name='wall', thick=0.6):
@@ -282,7 +307,11 @@ class MapKit:
         pts = []
         base = None
         top = None
-        for gnp in np.findAllMatches('**/+GeomNode'):
+        nodes = list(np.findAllMatches('**/+GeomNode'))
+        if np.node().isGeomNode():
+            # One part of a model (a GeomNode itself) counts too.
+            nodes.insert(0, np)
+        for gnp in nodes:
             if any(word in gnp.getName().lower() for word in skip) or gnp.isStashed():
                 continue
             mat = gnp.getMat(self.root)
@@ -313,6 +342,7 @@ class MapKit:
         self.__posts(node, hull, base, base + (height or max(4.0, min(top - base, 14.0))))
         self.solid.attachNewNode(node)
         self.hulls.append(hull)
+        self.hullBases.append((hull, base))
         return hull
 
     # --- Visual pieces ---
@@ -538,9 +568,42 @@ class MapKit:
 
     # --- Finishing ---
 
+    # A gap narrower than a toon (its wall ball is 2.8 feet across) between
+    # two solids is a notch: walking into it the toon sank into both sides
+    # and stuck there (Farewell Fair: a lamp post beside a tent).
+    NOTCH = 3.2
+
+    def fillNotches(self):
+        """Close every notch between a post (wallTube) and another post
+        or a footprint: a solid bar from the post to the other."""
+        def bar(a, b, z, height):
+            self.wallSegment(a, b, z, z + min(height, 6.0), name='notchFill', thick=1.2)
+        tubes = self.tubes
+        for i, (x, y, z, r, h) in enumerate(tubes):
+            for (x2, y2, z2, r2, h2) in tubes[i + 1:]:
+                if abs(z - z2) > 1.0:
+                    continue
+                d = math.hypot(x2 - x, y2 - y)
+                if d - r - r2 < self.NOTCH and d > max(r, r2):
+                    bar((x, y), (x2, y2), max(z, z2), min(h, h2))
+            for hull, base in self.hullBases:
+                if abs(base - z) > 1.0:
+                    continue
+                best = None
+                for (ax, ay), (bx, by) in zip(hull, hull[1:] + hull[:1]):
+                    ex, ey = bx - ax, by - ay
+                    t = max(0.0, min(1.0, ((x - ax) * ex + (y - ay) * ey) / max(ex * ex + ey * ey, 1e-6)))
+                    px, py = ax + ex * t, ay + ey * t
+                    d = math.hypot(px - x, py - y)
+                    if best is None or d < best[0]:
+                        best = (d, px, py)
+                if best is not None and 0.05 < best[0] - r < self.NOTCH - self.POST_RADIUS:
+                    bar((x, y), (best[1], best[2]), z, h)
+
     def finish(self):
         """Write every collected mesh into the scene, one node per texture,
         and flatten the static parts."""
+        self.fillNotches()
         static = self.visual.attachNewNode('kitStatic')
         decals = self.visual.attachNewNode('kitDecals')
         # Other groups stay their own nodes: 'glow' (lamps, lit windows: not

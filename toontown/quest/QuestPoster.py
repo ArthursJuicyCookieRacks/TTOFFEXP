@@ -218,6 +218,11 @@ class QuestPoster(DirectFrame):
     def __fieldOfficeGeom(self, track):
         from toontown.building.DistributedBuilding import FO_DICT
         geom = loader.loadModel('phase_5/models/cogdominium/%s' % FO_DICT[track])
+        if track == 'm':
+            # The Cashbot office shares the Mover & Shaker building, with
+            # its own green textures (as on the street).
+            from toontown.building.DistributedBuilding import DistributedBuilding
+            DistributedBuilding.retextureCashbotFieldOffice(DistributedBuilding, geom)
         geom.setH(180)
         self.fitGeometry(geom, fFlip=0)
         return geom, IMAGE_SCALE_SMALL

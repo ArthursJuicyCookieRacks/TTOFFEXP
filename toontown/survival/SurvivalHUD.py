@@ -71,7 +71,7 @@ class SurvivalHUD:
         self.reloadBar.hide()
         self.reloadTrack = None
         # TNT and Presentations as pictures in a row just over the gag box
-        # (BO1's grenades): TNT from the left, Presentations from the right,
+        # (BO1's grenades): Presentations from the left, TNT from the right,
         # the first of each in full and the rest tucked a little behind it.
         self.grenadeRow = self.gagBox.attachNewNode('grenades')
         self.grenadeRow.setZ(GRENADE_Z)
@@ -173,7 +173,7 @@ class SurvivalHUD:
             icon.removeNode()
         self.grenadeIcons = []
         # Drawn back to front, so the first of each row is on top.
-        for part, count, x0, step in ((TNT_ICON, tnt, -0.64, GRENADE_STEP), (PRESENTATION_ICON, gifts, -0.06, -GRENADE_STEP)):
+        for part, count, x0, step in ((PRESENTATION_ICON, gifts, -0.64, GRENADE_STEP), (TNT_ICON, tnt, -0.06, -GRENADE_STEP)):
             model = self.invModel.find(part)
             if model.isEmpty():
                 continue

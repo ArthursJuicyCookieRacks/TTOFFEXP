@@ -87,6 +87,10 @@ class TownBattleCogPanel(DirectFrame):
 
     def updateHealthBar(self):
         condition = self.cog.healthCondition
+        # (Suit.updateHealthBar counts 4 for nearly gone and 5 for none
+        # left; a panel for a cog with none left read past the colours and
+        # crashed the game.)
+        condition = {4: 9, 5: 10}.get(condition, condition)
         if condition == 9:
             self.blinkTask = Task.loop(Task(self.__blinkRed), Task.pause(0.75), Task.pause(0.1))
             taskMgr.add(self.blinkTask, self.uniqueName('blink-task'))
@@ -124,19 +128,19 @@ class TownBattleCogPanel(DirectFrame):
 
     def __blinkRed(self, task):
         if not self.button.isEmpty():
-            self.button.setColor(self.healthColors[8], 1)
+            self.button.setColor(self.healthColors[3], 1)
 
         if not self.glow.isEmpty():
-            self.glow.setColor(self.healthGlowColors[8], 1)
+            self.glow.setColor(self.healthGlowColors[3], 1)
         
         return Task.done
 		
     def __blinkGray(self, task):
         if not self.button.isEmpty():
-            self.button.setColor(self.healthColors[9], 1)
+            self.button.setColor(self.healthColors[4], 1)
 
         if not self.glow.isEmpty():
-            self.glow.setColor(self.healthGlowColors[9], 1)
+            self.glow.setColor(self.healthGlowColors[4], 1)
         
         return Task.done
 

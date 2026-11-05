@@ -78,6 +78,11 @@ MAPS = {
         'gazebo': GAZEBO,
         'trunkPanelAngle': TRUNK_PANEL_ANGLE,
         'playerStart': PLAYER_START,
+        # The playground reaches about 170 feet out from the middle: with
+        # the usual 150 the sidewalks behind the shops at the back (by the
+        # Clothing Shop) and round the Goofy Speedway tunnel had no cells,
+        # so a toon standing there was out of every cog's reach.
+        'reachSpan': 200.0,
         # Invisible posts filling pockets a toon could walk into and not
         # out of: (where, radius, height). The slot between Freddy and the
         # gazebo steps' side, up on the stringer outside the railing.
@@ -138,6 +143,14 @@ MAPS['farewell_fair'] = {
     'picture': 'phase_4/maps/survival_map_farewell_fair.jpg',
     'preview': 'farewell_fair',
 }
+# In Map Select after its tests (Arthur, 2026-11-04).
+MAPS['toybox_terrace'] = {
+    'title': 'Toybox Terrace',
+    'description': 'A playground built from giant wooden toys round a board-game plaza. Jack pops out of the clock tower, '
+                   'Mickey waits in front of it, Fisherman Freddy by the marble pond, and the trunk on the spinner in the middle of the plaza.',
+    'picture': 'phase_4/maps/survival_map_toybox_terrace.jpg',
+    'preview': 'toybox_terrace',
+}
 # The other playgrounds, straight from their DNA like Toontown Central,
 # and two Cog HQs loaded from their models (toontown/survival/HoodMaps.py
 # has them all). Each names who upgrades the gag there instead of Mickey.
@@ -147,7 +160,7 @@ MAPS.update(HOOD_MAPS)
 MAP_STATION_CLEAR = 10.0
 
 # The order the Map Select menu lists them in.
-MAP_ORDER = ('ttc', 'beta_ttc', 'downsizer', 'farewell_fair', 'brrrgh', 'melodyland', 'dock', 'sellbot_hq', 'bossbot_hq')
+MAP_ORDER = ('ttc', 'beta_ttc', 'downsizer', 'farewell_fair', 'toybox_terrace', 'brrrgh', 'melodyland', 'dock', 'sellbot_hq', 'bossbot_hq')
 
 
 def mapName():
@@ -170,6 +183,21 @@ REACH_SAMPLES = 6
 # A landing cell needs this many rings of open cells round it, so a cog
 # (a big one is 3 feet across) never lands against a wall, fence or tree.
 LANDING_CLEARANCE = 1
+
+# The second wall across a tunnel, flush behind its facade (blockTunnels):
+# how far behind the mouth and how far either side of the middle. It
+# fills the nooks between the facade pieces too: further back (5.5 feet)
+# it left them a toon's width deep, and a toon that jumped into one on Old
+# School Toontown stuck there.
+BEHIND_Y = -1.0
+BEHIND_HALF = 32.0
+
+# How far above or below a point an open cell may be and still be on its
+# level (nearestCell). (Four feet took a cog on Melodyland's bowl floor,
+# right under the mouth of a slide horn three feet up, for one inside the
+# mouth: it walked at the lip with a helper toon standing in there and
+# flew off and back in, over and over.)
+LEVEL_RISE = 2.5
 
 # How far into the ground a blocker post (addBlocker) reaches.
 BLOCKER_BELOW = 3.0
@@ -333,6 +361,7 @@ class SurvivalArena:
         if setup:
             from toontown.survival import HoodMaps
             getattr(HoodMaps, setup)(self)
+        self.__openFountains()
         self.geom.flattenMedium()
         # Every playground's tunnels are walled off (Arthur: Donald's Dock,
         # the Brrrgh, Melodyland and Toontown Central all let toons in).
@@ -439,6 +468,7 @@ class SurvivalArena:
         mickeys = [prop.find('**/tunnel_origin') for prop in self.geom.findAllMatches('**/%s*' % self.map['mickeyTunnel'])] \
             if self.map.get('mickeyTunnel') else []
         for origin in self.geom.findAllMatches('**/tunnel_origin'):
+            self.__twoSided(origin)
             # Where Mickey stands in a tunnel's mouth, the wall goes just
             # behind him.
             y = -1.0 if origin in mickeys else out
@@ -449,7 +479,131 @@ class SurvivalArena:
                 z += 1.6
             node.setIntoCollideMask(ToontownGlobals.WallBitmask | ToontownGlobals.CameraBitmask)
             node.setFromCollideMask(BitMask32.allOff())
+            sides = self.__tunnelSides(origin)
             origin.attachNewNode(node)
+            if sides is None:
+                continue
+            # The tunnel's own inner walls face into the tunnel only. Beside
+            # every tunnel mouth there are nooks between the hill's facade
+            # pieces, and from one a toon walked straight through the back of
+            # the tunnel's side wall and in behind the wall across the mouth
+            # (Arthur: tunnels must be blocked off). Two-sided capsules along
+            # both inner walls, from the mouth to the back, shut that way.
+            left, right, back = sides
+            self.notify.info('tunnel %s: sides %.1f %.1f, back %.1f' % (origin.getParent().getName(), left, right, back))
+            node = CollisionNode('survivalTunnelSide')
+            z = -1.0
+            while z < height:
+                for x in (left, right):
+                    node.addSolid(CollisionTube(x, y, z, x, back, z, radius))
+                # Behind the facade, along the hill on either side of the
+                # tunnel, runs a corridor of open ground; from the nooks a
+                # toon pressed between the end of the wall across the mouth
+                # and a facade piece came out in it and walked on behind the
+                # tunnel. A second wall across, flush behind the facade,
+                # closes the nooks and the way through them.
+                node.addSolid(CollisionTube(-BEHIND_HALF, BEHIND_Y, z, BEHIND_HALF, BEHIND_Y, z, radius))
+                z += 1.6
+            node.setIntoCollideMask(ToontownGlobals.WallBitmask | ToontownGlobals.CameraBitmask)
+            node.setFromCollideMask(BitMask32.allOff())
+            origin.attachNewNode(node)
+
+    def __twoSided(self, origin):
+        """The walls of the tunnel prop round a tunnel_origin made solid
+        from behind too. Its facade is built of pieces with nooks between
+        them beside the mouth, each piece a wall from the front only: a
+        toon in a nook walked through the back of the next piece and on
+        round behind the hill, out of the playground (Arthur: tunnels must
+        be blocked off)."""
+        prop = origin.getParent()
+        while not prop.getName().endswith('_DNARoot') and prop.getParent() != self.geom and not prop.getParent().isEmpty():
+            prop = prop.getParent()
+        for path in prop.findAllMatches('**/+CollisionNode'):
+            node = path.node()
+            if not (node.getIntoCollideMask() & ToontownGlobals.WallBitmask).getWord():
+                continue
+            if node.getName().startswith('survival'):
+                continue
+            backs = []
+            for i in range(node.getNumSolids()):
+                solid = node.getSolid(i)
+                if not isinstance(solid, CollisionPolygon) or not solid.isTangible():
+                    continue
+                points = list(solid.getPoints())
+                points.reverse()
+                for j in range(1, len(points) - 1):
+                    back = CollisionPolygon(points[0], points[j], points[j + 1])
+                    if back.isValid():
+                        backs.append(back)
+            for back in backs:
+                node.addSolid(back)
+
+    def __tunnelSides(self, origin):
+        """Where a tunnel's inner side walls stand (local x left, right) and
+        how deep it goes (local y of its back, a little short of it),
+        found with lines from the middle of the tunnel 3 feet inside its
+        mouth; None if it doesn't look like a tunnel."""
+        trav = CollisionTraverser('survivalTunnelProbe')
+        queue = CollisionHandlerQueue()
+        segment = CollisionSegment()
+        node = CollisionNode('survivalTunnelProbe')
+        node.addSolid(segment)
+        node.setFromCollideMask(ToontownGlobals.WallBitmask)
+        node.setIntoCollideMask(BitMask32.allOff())
+        probe = origin.attachNewNode(node)
+        trav.addCollider(probe, queue)
+
+        def first(a, b):
+            segment.setPointA(a)
+            segment.setPointB(b)
+            queue.clearEntries()
+            trav.traverse(self.geom)
+            best = None
+            for i in range(queue.getNumEntries()):
+                p = queue.getEntry(i).getSurfacePoint(origin)
+                d = (p - a).length()
+                if best is None or d < best[0]:
+                    best = (d, p)
+            return best
+
+        try:
+            out = []
+            for sign in (-1, 1):
+                hits = [first(Point3(0, y, 3), Point3(sign * 20, y, 3)) for y in (-3.0, -6.0)]
+                if None in hits:
+                    return None
+                out.append(sign * max(h[0] for h in hits))
+            back = first(Point3(0, -1, 3), Point3(0, -60, 3))
+            depth = back[0] + 1 if back is not None else 40.0
+            if not 4.0 < -out[0] < 16.0 or not 4.0 < out[1] < 16.0:
+                return None
+            return out[0], out[1], -min(depth, 40.0) + 1.0
+        finally:
+            probe.removeNode()
+
+    def __openFountains(self):
+        """A playground fountain (Toontown Central's) made a basin toons
+        and cogs walk in and out of, round a statue that's solid all the
+        way down. The rim's walls are solid from one side only: crowded by
+        cogs a toon came through them into the basin and then stood stuck
+        there, and cogs walked through them after it (Survival playthrough).
+        The statue's capsule stands on the rim's level with a rounded foot,
+        and a toon in the basin came in under it (as on Downsizer Drive)."""
+        for walls in self.geom.findAllMatches('**/collide_water_walls'):
+            fountain = walls.getParent()
+            walls.stash()
+            for path in fountain.findAllMatches('**/collide_tube'):
+                node = path.node()
+                for i in range(node.getNumSolids()):
+                    tube = node.getSolid(i)
+                    if not isinstance(tube, CollisionTube):
+                        continue
+                    a = render.getRelativePoint(path, tube.getPointA())
+                    b = render.getRelativePoint(path, tube.getPointB())
+                    radius = tube.getRadius() * path.getSx(render)
+                    self.addBlocker(Point3((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, min(a[2], b[2]) - radius),
+                                    radius, max(a[2], b[2]) - min(a[2], b[2]) + 2 * radius + BLOCKER_BELOW)
+                path.stash()
 
     def __makeAnimatedProps(self):
         import importlib
@@ -865,7 +1019,11 @@ class SurvivalArena:
         time. Two cells either side of a low wall (Brrrgh's snow ledges)
         looked joined, both being on the ground, so cogs walked into the
         wall for the toon standing behind it until they flew off."""
-        if abs(b[2] - a[2]) <= REACH_JUMP:
+        # A map whose floor has wider kerbs a toon steps up says so
+        # (Melodyland's pond rim and piano keys are 2.1 feet over the bowl:
+        # toons walked out onto them, and no cog could follow).
+        jump = self.map.get('reachJump', REACH_JUMP)
+        if abs(b[2] - a[2]) <= jump:
             return True
         last = a[2]
         for i in range(1, REACH_SAMPLES + 1):
@@ -874,10 +1032,10 @@ class SurvivalArena:
             if z is None:
                 # A crack between floor pieces: nothing to say there.
                 continue
-            if abs(z - last) > REACH_JUMP:
+            if abs(z - last) > jump:
                 return False
             last = z
-        return abs(b[2] - last) <= REACH_JUMP
+        return abs(b[2] - last) <= jump
 
     def __roomBetween(self, a, b):
         """A cog's body fits from a to b: the middle line and one a little
@@ -892,22 +1050,63 @@ class SurvivalArena:
         key = (a, b) if a < b else (b, a)
         open_ = self.diagonals.get(key)
         if open_ is None:
-            open_ = self.__roomBetween(self.reach[a], self.reach[b])
+            # Only where the two cells beside the corner join both ends: a
+            # diagonal used to need only room for a body, so on Donald's
+            # Dock a cell on the harbour bed joined the boardwalk cell
+            # corner to corner, 18 feet up, and the cogs' routes led them
+            # into the boardwalk's side under the toon until they flew off.
+            sides = ((a[0], b[1]), (b[0], a[1]))
+            open_ = all(s in self.reach and self.linked(a, s) and self.linked(s, b) for s in sides) and \
+                self.__roomBetween(self.reach[a], self.reach[b])
             self.diagonals[key] = open_
         return open_
 
-    def nearestCell(self, p):
+    def levelLine(self, a, b, rise=3.5):
+        """Whether the open cells along the straight line from a to b stay
+        on a's and b's level, a step at a time: no edge to drop off, no
+        dip down into a lower yard and back. Sellbot HQ's courtyard has a
+        sunken yard: a cog at the top of its ramp with the toon across the
+        yard walked straight at it, off the edge, then back up the ramp,
+        to and fro until it flew off."""
+        step = self.REACH_STEP
+        reach = getattr(self, 'reach', None) or {}
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        n = int(math.sqrt(dx * dx + dy * dy) / (step * 0.5)) + 1
+        low = min(a[2], b[2]) - rise
+        last = a[2]
+        for i in range(1, n + 1):
+            t = i / float(n)
+            c = (int(round((a[0] + dx * t) / step)), int(round((a[1] + dy * t) / step)))
+            q = reach.get(c)
+            if q is None:
+                continue
+            z = q[2]
+            if abs(z - last) > 3.6 or z < low:
+                return False
+            last = z
+        return True
+
+    def nearestCell(self, p, level=False):
+        """The open cell at or nearest p; with level, only one on p's own
+        level (a cell is the top floor there: on Donald's Dock the cells
+        along the boardwalk's edge stand over the harbour bed, and a cog
+        down on the bed took them for its own and followed them, walking
+        along under the toon on the boardwalk until it flew off)."""
         step = self.REACH_STEP
         cell = (int(round(p[0] / step)), int(round(p[1] / step)))
         reach = getattr(self, 'reach', None) or {}
-        if cell in reach:
+        if level and len(p) > 2:
+            near = lambda c: c in reach and abs(reach[c][2] - p[2]) <= LEVEL_RISE
+        else:
+            near = lambda c: c in reach
+        if near(cell):
             return cell
         best, bestDist = None, None
         for r in range(1, 4):
             for di in range(-r, r + 1):
                 for dj in range(-r, r + 1):
                     c = (cell[0] + di, cell[1] + dj)
-                    if c in reach:
+                    if near(c):
                         d = di * di + dj * dj
                         if bestDist is None or d < bestDist:
                             best, bestDist = c, d
@@ -984,7 +1183,7 @@ class SurvivalArena:
         reach = getattr(self, 'reach', None)
         if not reach:
             return None, None
-        cell = self.nearestCell(goal)
+        cell = self.nearestCell(goal, level=True)
         if cell is None:
             return None, None
         cached = self.flows.get(cell)

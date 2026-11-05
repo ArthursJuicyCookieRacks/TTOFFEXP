@@ -141,6 +141,14 @@ class DownsizerDrive:
         # to walk up and down either way; the statue in the middle stays solid.
         for walls in self.fountain.findAllMatches('**/collide_water_walls'):
             walls.stash()
+        # The statue's own solid is a capsule standing on the rim's level
+        # with a rounded foot: a toon down in the basin came in under the
+        # curve, which pushed it up instead of out, and it walked right
+        # through the statue to stand inside it. An upright post from
+        # under the basin floor instead.
+        for tube in self.fountain.findAllMatches('**/collide_tube'):
+            tube.stash()
+        kit.collideTube((self.FOUNTAIN[0], self.FOUNTAIN[1], -4.0), 4.2, 15.0, name='fountainStatue')
         # Far away the trolley switched to its low-detail models, which
         # are missing pieces: always draw the full one.
         for lod in self.root.findAllMatches('**/+LODNode'):
@@ -385,9 +393,22 @@ class DownsizerDrive:
         # The street is closed off where it meets the fence.
         for i, y in enumerate((-10, -4, 2, 8)):
             kit.model('phase_6/models/karting/cone', pos=(-104, y, 0), h=i * 30, scale=1.5)
-        kit.prop('prop_construction_sign', pos=(-102, 15, 0), h=90)
-        for pos in ((-108, -8, 0), (-108, 0, 0), (-108, 8, 0), (-108, 4, 4.0)):
-            kit.model('phase_6/models/karting/krate', pos=pos, h=0, scale=2.5)
+        # Its own blocker is one polygon facing the road: a toon walked
+        # through the board from behind. A wall all round it instead.
+        board = kit.prop('prop_construction_sign', pos=(-102, 15, 0), h=90)
+        for col in board.findAllMatches('**/+CollisionNode'):
+            col.stash()
+        kit.solid(board, shrink=1.0, minSize=1.2)
+        # A solid row of crates along the fence: with gaps between them a
+        # toon squeezed into the pocket between two, and the crates' own
+        # boxes push a toon the wrong way from inside (it walked into
+        # them). Walls round each one instead.
+        for pos in ((-108, -8, 0), (-108, -4, 0), (-108, 0, 0), (-108, 4, 0), (-108, 8, 0), (-108, 4, 4.0)):
+            crate = kit.model('phase_6/models/karting/krate', pos=pos, h=0, scale=2.5)
+            for col in crate.findAllMatches('**/+CollisionNode'):
+                col.stash()
+            if pos[2] == 0:
+                kit.solid(crate, shrink=1.0)
         # The Cogs' buildings out in the sand, watching.
         kit.prop('suit_landmark_s1', pos=(-200, 210, 0), h=-135)
         kit.prop('suit_landmark_s3', pos=(220, 190, 0), h=135)

@@ -123,6 +123,13 @@ class NPCBattleCrew:
         if npc not in self.members:
             self.members.append(npc)
             npc.crew = self
+            # A full gag bag at the start of every battle (Arthur), but a
+            # building, factory, mint, office, golf course or boss is one run:
+            # one bag for all its battles, filled again once out of it (see
+            # NPCPlayerManagerAI.refill).
+            if not getattr(npc, 'inRun', False):
+                npc.fullBag()
+                npc.inRun = True
             npc.needsRefill = True
             if ConfigVariableBool('npc-specials', True).getValue():
                 if getattr(npc, 'specialStock', None) is None:

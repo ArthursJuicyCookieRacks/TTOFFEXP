@@ -24,6 +24,8 @@ from toontown.npcplayers import NPCChatReplies, NPCProfiles
 from toontown.npcplayers.NPCSettings import preloadNPCs, keepAreas, npcsPerArea, helpMode, wantsHelp, setHelpAnswer, HELP_SOLO, \
     forceHelp, helpForced, canAskHelp
 from toontown.npcplayers.NPCBattleCrew import NPCBattleCrew, isNPC
+from toontown.npcplayers.NPCPathfinder import getPathfinder
+from toontown.npcplayers.NPCParty import JOIN_REACH
 from toontown.npcplayers.NPCNav import getNav
 from toontown.npcplayers.NPCGolf import NPCGolf
 from toontown.npcplayers.NPCFacilities import NPCFacilities
@@ -56,6 +58,10 @@ MANAGER_TICK = 1.0
 # them (SmoothMover's position age), and the tick lands on a frame, so it
 # has to be well under that even at a low frame rate.
 WALK_TICK = 0.1
+# Toons keep at least this far apart (a toon is about 1.4 across), stepped
+# aside at most this much each walk tick.
+APART = 2.5
+APART_STEP = 0.5
 # How long an area keeps its NPCs once the player has left it.
 LINGER = 60.0
 RUN_SPEED = ToontownGlobals.ToonForwardSpeed
@@ -274,6 +280,11 @@ class NPCPlayerManagerAI:
 
     def __init__(self, air):
         self.air = air
+        # The NPCs' maps take the lifts from the district (see GhostLift).
+        from toontown.npcplayers import NPCPathfinder
+        from toontown.coghq.DistributedLiftAI import DistributedLiftAI
+        NPCPathfinder.aiLiftSource = lambda: [obj for obj in list(air.doId2do.values())
+                                              if isinstance(obj, DistributedLiftAI)]
         self.areas = {}
         self.npcsPerArea = npcsPerArea()
         self.keepAreas = keepAreas()
@@ -362,7 +373,8 @@ class NPCPlayerManagerAI:
                 continue
             if now - max(area.lastSeen, getattr(area, 'lastKept', 0)) > LINGER:
                 for npc in area.npcs[:]:
-                    if getattr(npc, 'crew', None) is None:
+                    # (Not one on its way into an elevator with the player.)
+                    if getattr(npc, 'crew', None) is None and not npc.busy:
                         self.despawn(npc, quietly=True)
                 if not area.npcs:
                     del self.areas[areaId]
@@ -695,6 +707,9 @@ class NPCPlayerManagerAI:
         taskMgr.doMethodLater(TELEPORT_TIME, landed, 'npcTeleportIn-%d' % npc.doId)
 
     def despawn(self, npc, quietly=False):
+        if npc.busy and not npc.isDeleted():
+            import traceback
+            self.notify.info('DESPAWN busy %s from %s' % (npc.doId, [f[2] for f in traceback.extract_stack()[-4:-1]]))
         area = getattr(npc, 'area', None)
         if area is not None and npc in area.npcs:
             area.npcs.remove(npc)
@@ -717,6 +732,7 @@ class NPCPlayerManagerAI:
         now = globalClock.getFrameTime()
         dt = max(0.0, min(1.0, now - getattr(self, 'lastWalkTick', now - WALK_TICK)))
         self.lastWalkTick = now
+        walked = set()
         try:
             for area in list(self.areas.values()):
                 if not area.isActive():
@@ -725,20 +741,97 @@ class NPCPlayerManagerAI:
                     self.findSidewalks(area)
                 suits = self.walkingSuits(area)
                 for npc in area.npcs[:]:
-                    if npc.crew is None and not npc.busy:
+                    if npc.crew is None and not npc.busy and npc.doId not in walked:
+                        walked.add(npc.doId)
                         self.walkNPC(area, npc, dt)
                         if npc.walk is not None and not npc.isDeleted():
                             self.bump(area, npc, suits)
             self.facilities.tick(now, dt)
+            getPathfinder().tick()
             self.party.follow()
             for npc in self.party.members[:]:
-                if npc.crew is None and not npc.busy and not npc.isDeleted():
+                if npc.crew is None and not npc.busy and not npc.isDeleted() and npc.doId not in walked:
+                    # (Once a tick: a party member still listed in an area
+                    # would otherwise go twice as fast.)
+                    walked.add(npc.doId)
                     self.walkNPC(None, npc, dt)
+            self.keepApart()
         except Exception:
             self.notify.warning('walking failed')
             import traceback
             traceback.print_exc()
         return Task.again
+
+    def keepApart(self):
+        """No toon ever stands in (or runs inside) another: an NPC closer
+        than APART to another toon is stepped aside a little each tick,
+        onto floor, the way players keep from overlapping."""
+        nav = getNav()
+        if not nav.available():
+            return
+        byZone = {}
+        movable = set()
+        for npc in list(self.party.members) + [n for area in self.areas.values() if area.isActive() for n in area.npcs]:
+            if npc.isDeleted() or npc.crew is not None or npc.busy or getattr(npc, 'onMover', None) is not None \
+                    or getattr(npc, 'jumping', False) or self.party.isPlaying(npc) \
+                    or any(crew.isStationed(npc) for crew in list(self.bossCrews.values())):
+                # (On a boss's crane, cannon, golf spot or table, the game
+                # holds it in place; a step aside would be drawn as a jump.)
+                continue
+            if npc.doId in movable:
+                continue
+            movable.add(npc.doId)
+            byZone.setdefault(npc.zoneId, []).append((npc, Point3(npc.getPos())))
+        if not byZone:
+            return
+        for obj in list(self.air.doId2do.values()):
+            if isinstance(obj, DistributedToonAI) and not isNPC(obj) and obj.zoneId in byZone:
+                byZone[obj.zoneId].append((obj, Point3(self.getPlayerPos(obj))))
+        for zoneId, toons in byZone.items():
+            if len(toons) < 2:
+                continue
+            for i in range(len(toons)):
+                npc, pos = toons[i]
+                if npc.doId not in movable:
+                    continue
+                push = Vec3(0, 0, 0)
+                for j in range(len(toons)):
+                    if i == j:
+                        continue
+                    other, opos = toons[j]
+                    d = Vec3(pos - opos)
+                    if abs(d[2]) > 3.0:
+                        continue
+                    d.setZ(0)
+                    dist = d.length()
+                    if dist >= APART:
+                        continue
+                    if dist < 0.05:
+                        # Right on top: each goes its own way (from doIds).
+                        angle = ((npc.doId * 7 + other.doId) % 360) * math.pi / 180.0
+                        d = Vec3(math.cos(angle), math.sin(angle), 0)
+                        dist = 0.0
+                    else:
+                        d.normalize()
+                    # The other toon gives way too when it is an NPC.
+                    share = 0.5 if other.doId in movable else 1.0
+                    push += d * (APART - dist) * share
+                if push.length() < 0.02:
+                    continue
+                if push.length() > APART_STEP:
+                    push.normalize()
+                    push *= APART_STEP
+                spot = Point3(pos[0] + push[0], pos[1] + push[1], pos[2])
+                ground = nav.groundZ(spot[0], spot[1], pos[2] + 1.5)
+                if ground is None or abs(ground - pos[2]) > 1.0 or not nav.clearLine(pos, Point3(spot[0], spot[1], ground)):
+                    continue
+                h = npc.getH()
+                if getattr(npc, 'walk', None) is None:
+                    # A standing toon steps aside facing the way it goes,
+                    # so the clients draw a step, not a slide in a stand.
+                    h = -math.degrees(math.atan2(push[0], push[1]))
+                npc.moveTo(spot[0], spot[1], ground, h)
+                toons[i] = (npc, Point3(spot[0], spot[1], ground))
 
     def walkNPC(self, area, npc, dt):
         now = globalClock.getFrameTime()
@@ -1084,9 +1177,20 @@ class NPCPlayerManagerAI:
             party = [npc for p in players for npc in self.party.partyOf(p)
                      if npc.crew is None and not npc.busy and npc.zoneId == p.zoneId]
             if party:
-                npc = party[0]
-                pos = npc.getPos()
-                crew.join(npc, pos[0], pos[1], pos[2])
+                # Inside a place each runs to the battle its own way and
+                # joins when it gets there, as players do; on the streets
+                # the party is right there with the player.
+                battlePos = self.party.battlePos(battle)
+                for npc in party:
+                    if len(battle.toons) >= 4:
+                        break
+                    pos = npc.getPos()
+                    if getAreaId(npc.zoneId) is None and (pos - battlePos).length() > JOIN_REACH:
+                        self.party.headToBattle(npc, battle)
+                        continue
+                    npc.battleGoal = None
+                    npc.route = None
+                    crew.join(npc, pos[0], pos[1], pos[2])
                 continue
             if battle.__class__.__name__ not in STREET_BATTLES:
                 continue
@@ -1155,6 +1259,11 @@ class NPCPlayerManagerAI:
     def npcLeftBattle(self, npc, battle):
         if npc.isDeleted():
             return
+        # It stands where the battle put it (its own spot around the
+        # battle), not where it asked to join from: every NPC of a battle
+        # asked from one spot, and would walk off from there on top of
+        # each other.
+        self.party.syncToClient(npc)
         npc.idleUntil = globalClock.getFrameTime() + random.uniform(2, 5)
         if npc.party is not None:
             # Gone sad; off to the playground, out of the player's party.
@@ -1182,9 +1291,10 @@ class NPCPlayerManagerAI:
             if getAreaId(npc.zoneId) is None or npc.getBattleId() > 0:
                 continue
             npc.needsRefill = False
+            npc.inRun = False
             if npc.hp < npc.maxHp:
                 npc.b_setHp(npc.maxHp)
-            npc.restock()
+            npc.fullBag()
 
     # --- Friends ---
 

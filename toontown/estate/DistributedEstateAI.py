@@ -163,7 +163,10 @@ class DistributedEstateAI(DistributedObjectAI):
 
         for petId in self.pets:
             pet = self.air.doId2do.get(petId)
-            if pet:
+            # (Only the doodle itself: once it has gone to its owner's
+            # battle, the stand-in there has the same id, and taking that
+            # away made the doodle's trick heal nothing.)
+            if pet and pet.__class__.__name__ == 'DistributedPetAI':
                 pet.requestDelete()
         del self.pets[:]
 
@@ -463,7 +466,8 @@ class DistributedEstateAI(DistributedObjectAI):
         av.addMoney(value)
         newBonus = len(collection) // GardenGlobals.FLOWERS_PER_BONUS
         if newBonus > oldBonus:
-            av.b_setMaxHp(av.getMaxHp() + newBonus - oldBonus)
+            # Capped at the most laff a toon can have, like every other boost.
+            av.b_setMaxHp(min(ToontownGlobals.MaxHpLimit, av.getMaxHp() + newBonus - oldBonus))
             av.toonUp(av.getMaxHp())
             av.b_setGardenTrophies(list(range(min(newBonus, len(GardenGlobals.TrophyDict)))))
             self.sendUpdate('awardedTrophy', [avId])

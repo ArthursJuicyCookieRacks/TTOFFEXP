@@ -444,6 +444,10 @@ class PetshopGUI(DirectObject):
 
     def __init__(self, eventDict, petSeeds):
         self.eventDict = eventDict
+        # The clerks' name tags (off-screen arrows at the screen edges) sat
+        # on top of the shop's buttons (Save): none while the shop is open.
+        self.marginCells = list(base.bottomCells) + list(base.rightCells) + list(base.leftCells)
+        base.setCellsAvailable(self.marginCells, 0)
         self.mainMenuDoneEvent = 'MainMenuGuiDone'
         self.adoptPetDoneEvent = 'AdoptPetGuiDone'
         self.returnPetDoneEvent = 'ReturnPetGuiDone'
@@ -466,6 +470,9 @@ class PetshopGUI(DirectObject):
         messenger.send(self.eventDict['guiDone'], [True])
 
     def destroy(self):
+        if getattr(self, 'marginCells', None):
+            base.setCellsAvailable(self.marginCells, 1)
+            self.marginCells = None
         self.destroyDialog()
         self.timer.destroy()
         del self.timer

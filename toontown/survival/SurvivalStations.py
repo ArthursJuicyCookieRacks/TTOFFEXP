@@ -567,6 +567,13 @@ class TrolleyStation(Station):
             return False
         if (Point3(pos[0], pos[1], 0) - Point3(self.node.getX(), self.node.getY(), 0)).length() < G.ESCAPE_RANGE:
             return True
+        # A map whose trolley stands behind a wall on some side (Farewell
+        # Fair's, in a tunnel blocked off at both ends) says where else a
+        # toon can stand to take it.
+        parody = getattr(self.game.arena, 'parody', None)
+        for spot in getattr(parody, 'ESCAPE_SPOTS', ()):
+            if (Point3(pos[0], pos[1], 0) - Point3(spot[0], spot[1], 0)).length() < G.ESCAPE_RANGE:
+                return True
         # A trolley the toon can't walk into (Downsizer Drive): near
         # anywhere along its sides, not only by its middle.
         if self.car.find('**/mapSolid').isEmpty():

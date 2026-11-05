@@ -564,6 +564,10 @@ def startSparksIval(tntProp):
 
 
 def indicateMissed(actor, duration = 1.1, scale = 0.7):
+    # (A toon or cog that left the battle mid-movie, say one that went sad
+    # or logged off, has no one left to show the miss on.)
+    if actor is None or getattr(actor, 'isEmpty', lambda: False)():
+        return
     actor.showHpString(TTLocalizer.AttackMissed, duration=duration, scale=scale)
 
 

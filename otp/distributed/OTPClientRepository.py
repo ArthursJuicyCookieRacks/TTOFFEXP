@@ -58,6 +58,22 @@ class OTPClientRepository(LocalConnectionMixin, ClientRepositoryBase):
         Rejected = 3
     whiteListChatEnabled = 1 # TODO: Have server set this on localAvatar on login.
 
+    # Finding objects by name: a distributed object that is also a NodePath
+    # reprs as its place in the scene graph ("render/.../decor"), not its
+    # class, so the class name is matched too (the gag trees look each
+    # other up this way to know which can bear fruit).
+    @staticmethod
+    def _doNameMatches(value, name):
+        return name in type(value).__name__ or repr(value).find(name) >= 0
+
+    def doFind(self, str):
+        for value in list(self.doId2do.values()):
+            if self._doNameMatches(value, str):
+                return value
+
+    def doFindAll(self, str):
+        return [value for value in list(self.doId2do.values()) if self._doNameMatches(value, str)]
+
     def __init__(self, serverVersion, launcher = None, playGame = None):
         ClientRepositoryBase.__init__(self)
 

@@ -42,6 +42,8 @@ STATION_RADIUS = 1.6
 # The player's body can't go into a cog's: it is pushed out to this far
 # past the cog's radius.
 PLAYER_RADIUS = 1.3
+# How far the player's wall sphere (GravityWalker, 1.4) reaches past its middle.
+PLAYER_WALL_REACH = 1.4
 # Two cogs keep at least this share of their two radii between them.
 COG_SPACING = 0.85
 # Only the nearest few cogs are heard stepping.
@@ -251,6 +253,15 @@ class SurvivalGame(DirectObject):
         for i in range(self.npcCount):
             angle = math.radians(120 * i - 60)
             spot, sh = self.arena.placeOnGround(start[0] + 5 * math.sin(angle), start[1] + 5 * math.cos(angle) + 3, 0)
+            # Only on the player's own level with a clear walk from there:
+            # on Donald's Dock the spot was just off the boardwalk's edge,
+            # down on the harbour bed inside a pylon, and the helper stood
+            # there all game with the cogs crowding it, so the round never
+            # ended (Survival playthrough).
+            if abs(spot[2] - start[2]) > 2.5 or not self.arena.bodyClear(start, spot):
+                cell = self.arena.nearestCell(Point3(spot[0], spot[1], start[2]), level=True)
+                point = self.arena.cellPoint(cell) if cell is not None else None
+                spot = Point3(point) if point is not None and self.arena.bodyClear(start, point) else Point3(start)
             self.npcs.append(SurvivalNPC(self, i, spot))
         self.hud.setLaff(self.player.hp, self.player.maxHp)
         self.hud.setBeans(self.beans)
@@ -491,6 +502,23 @@ class SurvivalGame(DirectObject):
             pos = Point3(pos[0] + away[0], pos[1] + away[1], pos[2])
             moved = True
         if moved:
+            # Never through a wall: a crowd of cogs pressing the toon
+            # against the clock tower on Toybox Terrace pushed it inside
+            # the tower, where its walls then held it for good. A push the
+            # wall stops is left undone (the toon stays rubbing the cog).
+            # Tested out to the toon's far side, not just its middle: a cog
+            # pushed the toon's middle up to a picket fence's thin rail
+            # (Downsizer Drive), past what its wall sphere allows, and it
+            # then slid along inside the fence.
+            start = body.getPos(render)
+            push = Vec3(pos - start)
+            push.setZ(0)
+            if push.length() > 0.001:
+                push.normalize()
+            if not self.arena.bodyClear(start, pos + push * PLAYER_WALL_REACH):
+                return
+            if hasattr(player, 'mayBePushedTo') and not player.mayBePushedTo(pos):
+                return
             body.setPos(render, pos)
 
     # --- What the cogs ask ---

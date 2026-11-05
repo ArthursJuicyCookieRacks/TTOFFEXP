@@ -814,7 +814,16 @@ class LocalAvatar(DistributedAvatar.DistributedAvatar, DistributedSmoothNode.Dis
             self.ccTrav.traverse(self.__geom)
             if self.camCollisionQueue.getNumEntries() > 0:
                 self.camCollisionQueue.sortEntries()
-                self.handleCameraObstruction(self.camCollisionQueue.getEntry(0))
+                # Some solids report a contact with no surface point (seen
+                # in the CFO's room); the nearest one that has one obstructs.
+                for i in range(self.camCollisionQueue.getNumEntries()):
+                    entry = self.camCollisionQueue.getEntry(i)
+                    if entry.hasSurfacePoint():
+                        self.handleCameraObstruction(entry)
+                        break
+                    if not getattr(self, '_noSurfaceLogged', 0):
+                        self._noSurfaceLogged = 1
+                        self.notify.warning('camera hit %s with no surface point' % entry.getIntoNodePath())
             if not self.__onLevelGround:
                 self.handleCameraFloorInteraction()
         if not self.__idealCameraObstructed:

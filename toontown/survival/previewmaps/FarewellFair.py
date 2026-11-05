@@ -58,6 +58,9 @@ class FarewellFair(PreviewMap):
     MICKEY_SPOT = (Point3(88, -54, 0), 90)
     FISHERMAN_SPOT = (Point3(-22, -88, 0), -90)
     TRUNK_SPOT = (Point3(24, 2, 0), 90)
+    # The trolley sits in its tunnel, walled off: it is taken from the
+    # station floor behind it or from the tunnel mouth in front.
+    ESCAPE_SPOTS = ((TROLLEY[0] - 6, TROLLEY[1] - 16), (TROLLEY[0] + 34, TROLLEY[1] - 16))
     REACH_SPAN = 155.0
     SPAWN_RING = (35.0, 220.0)
     NO_LANDING = ((TOWER, 36.0), (Point3(88, -54, 0), 12.0), (Point3(-22, -88, 0), 12.0), (Point3(24, 2, 0), 10.0))
@@ -403,8 +406,18 @@ class FarewellFair(PreviewMap):
     def __trolley(self):
         k = self.kit
         # The old trolley at the west fence: the way out if the cogs win.
-        m = k.model('phase_4/models/modules/trolley_station_TT', pos=TROLLEY, h=-90, color=(0.6, 0.56, 0.56, 1), keepCollisions=True)
+        # Its own collisions were one-sided polygons: toons walked straight
+        # through the station's walls, the trolley and into the tunnel
+        # behind it (Arthur: the tunnels must be blocked off). Solid posts
+        # round the hill over the tunnel (the trolley sits inside it) and
+        # round each tunnel wall instead; the station's floor stays open, so
+        # a toon still walks up to the trolley to escape.
+        m = k.model('phase_4/models/modules/trolley_station_TT', pos=TROLLEY, h=-90, color=(0.6, 0.56, 0.56, 1))
         m.setName('fair_trolley_station')
+        for part in ('hill_1', 'tunnelL', 'tunnelR'):
+            node = m.find('**/' + part)
+            if not node.isEmpty():
+                k.footprint(node, height=12.0, name='trolleySolid')
 
     def __tents(self):
         k = self.kit
