@@ -37,8 +37,8 @@ PITCHER_TIME_BEHIND = (1.4, 2.4)
 PITCHER_HIT_CHANCE = 0.45
 # How many NPCs take a pitcher; the rest golf, fetch toon-up food or keep
 # out of his way.
-PITCHERS = 3
-GOLF_TIME = (4.0, 6.0)
+PITCHERS = 6
+GOLF_TIME = (2.5, 4.0)
 # Chances a pie does what it was thrown for.
 HIT_CHANCE = 0.4
 # The VP's underside opens while he shoots gears out of it; a pie thrown
@@ -87,9 +87,9 @@ LAWYER_HIT_CHANCE = 0.5
 STUNNERS = (2, 3)
 STUN_REST = (4.0, 8.0)
 # The CFO: how likely a safe swung at him lands, and how long one crane is
-# kept free for the player at the start.
+# kept free for the player (at the start, and after the player gets off one).
 CRANE_HIT_CHANCE = 0.4
-CRANE_FOR_PLAYER = 30.0
+CRANE_FOR_PLAYER = 45.0
 # How near a crane, pitcher or golf spot an NPC walks before it takes it.
 STATION_REACH = 5.0
 # At a crane: how near the magnet comes to a safe or goon to pick it up, and
@@ -129,7 +129,7 @@ WAITER_SPACING = 6.0
 WAITER_TABLE_NEAR = 16.0
 # The CEO: how many NPCs take a golf spot, and how likely a ball hits him.
 GOLFERS = 2
-GOLF_HIT_CHANCE = 0.45
+GOLF_HIT_CHANCE = 0.9
 # Between goes the NPCs move about the arena on their own, as players do,
 # rather than following the player: how often, and how far from the boss.
 # The boss's damage is mostly the players' doing: the NPC toons help with
@@ -1370,10 +1370,9 @@ class NPCBossCrew:
             cranes = list(boss.cranes or [])
             free = [c for c in cranes if c.avId == 0]
             players = set(p.doId for p in self.players())
-            playerOnCrane = [c for c in cranes if c.avId in players]
-            if not playerOnCrane and globalClock.getFrameTime() - self.stateSince[1] < CRANE_FOR_PLAYER:
-                # One crane stays free for the player a while; after that
-                # an NPC takes it.
+            if not self.playerCraneTime(cranes, players):
+                # One crane stays free for the player; once the player has
+                # been off the cranes for CRANE_FOR_PLAYER, an NPC takes it.
                 free = free[:-1]
             if free:
                 target = self.pickStation(npc, free)
@@ -1388,6 +1387,22 @@ class NPCBossCrew:
             return
         # At the controls: craneJob works the crane, every tick.
         return
+
+    def playerCraneTime(self, cranes, players):
+        """True once the player has been off the cranes (since the round
+        started, or since getting off one) for CRANE_FOR_PLAYER."""
+        now = globalClock.getFrameTime()
+        if [c for c in cranes if c.avId in players] or not players:
+            self.playerOffCrane = (self.stateSince, None)
+            return not players
+        since = getattr(self, 'playerOffCrane', None)
+        if since is None or since[0] != self.stateSince or since[1] is None:
+            start = self.stateSince[1] if since is None or since[0] != self.stateSince else now
+            self.playerOffCrane = (self.stateSince, start)
+            if start == now:
+                self.notify.info('player got off the crane: one stays free %d s' % CRANE_FOR_PLAYER)
+            since = self.playerOffCrane
+        return now - since[1] >= CRANE_FOR_PLAYER
 
     def craneJob(self, npc, now):
         """An NPC at a crane works it as a player does (NPCCraneOperator
@@ -1962,8 +1977,8 @@ class NPCBossCrew:
                 return
             free = [t for t in tables if t.avId == 0 and t.state == 'Free']
             players = set(p.doId for p in self.players())
-            if not [t for t in tables if t.avId in players] and \
-                    globalClock.getFrameTime() - self.stateSince[1] < CRANE_FOR_PLAYER:
+            if not [t for t in tables if t.avId in players]:
+                # There's always a pitcher free for the player.
                 free = free[:-1]
             if free:
                 target = self.pickStation(npc, free)
@@ -2007,6 +2022,6 @@ class NPCBossCrew:
         # a ball that reaches him counts.
         base = getClientBuiltin('base')
         client = base.cr.doId2do.get(mine[0].doId) if base else None
-        if client is not None and NPCBanquetOperator.wantShot(client, npc.doId, wide=random.random() > GOLF_HIT_CHANCE * 1.6):
+        if client is not None and NPCBanquetOperator.wantShot(client, npc.doId, wide=random.random() > GOLF_HIT_CHANCE):
             self.count('ceo golf swings')
         return True

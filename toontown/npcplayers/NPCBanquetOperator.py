@@ -107,16 +107,20 @@ def wantShot(station, npcId, wide=False):
         return False
     render = _render()
     bossPos = boss.getPos(render)
-    error = random.gauss(0, 3.0) + (random.choice((-1, 1)) * random.uniform(14, 25) if wide else 0)
+    error = random.gauss(0, 1.8) + (random.choice((-1, 1)) * random.uniform(14, 25) if wide else 0)
     if hasattr(station, 'waterPitcherNode'):
         origin = station.nozzle.getPos(render)
         deg = math.degrees(math.atan2(bossPos[1] - origin[1], bossPos[0] - origin[0]))
         # (The water goes out at the pitcher's heading + 90.)
         h = (deg - 90 + error) % 360
-        power = random.uniform(0.35, 0.99)
+        # Held long enough for the water to reach him (a player learns how
+        # long a hold that takes), with a little play either way.
+        flat = math.hypot(bossPos[0] - origin[0], bossPos[1] - origin[1])
+        need = min(0.95, flat / max(1.0, station.fireLength) + 0.05)
+        power = min(0.99, random.uniform(need, need + 0.2))
         t = 1 - math.pow(1 - power, 1.0 / station.waterPowerExponent)
         hold = t * station.waterPowerSpeed
-        hold = max(0.3, hold + random.uniform(-0.15, 0.15))
+        hold = max(0.3, hold + random.uniform(-0.05, 0.05))
         kind = 'water'
     else:
         root = station.root
@@ -124,7 +128,7 @@ def wantShot(station, npcId, wide=False):
         heading = math.degrees(math.atan2(-(bossPos[0] - here[0]), bossPos[1] - here[1]))
         parentH = root.getParent().getH(render)
         h = (heading - parentH + error) % 360
-        dist = math.hypot(bossPos[0] - here[0], bossPos[1] - here[1]) + random.uniform(5, 30)
+        dist = math.hypot(bossPos[0] - here[0], bossPos[1] - here[1]) + random.uniform(5, 15)
         power = max(5, min(100, 100 * (1 - (300 - dist) / 200.0)))
         hold = station.golfPowerSpeed * math.pow(power / 100.0, 1.0 / station.golfPowerExponent)
         kind = 'golf'
