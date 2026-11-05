@@ -810,37 +810,6 @@ class ToyboxTerrace(PreviewMap):
         for i in range(len(ring)):
             k.floorPoly([(x, y, 1.2), ring[i], ring[(i + 1) % len(ring)]], 'towerPlinth')
 
-    # --- Tunnels ---
-
-    def __archBlock(self, g, hw, ar, height, depth, color, trim):
-        """A wooden arch block: hw half-wide, with a half-round ar cut out of
-        its underside, standing on its lower edge at z 0, front at y -d/2."""
-        hd = depth / 2.0
-        steps = 16
-        arch = []
-        for i in range(steps + 1):
-            a = math.pi * i / steps
-            arch.append((-ar * math.cos(a), ar * math.sin(a) * 0.9))
-        for yy, sign in ((-hd, 1), (hd, -1)):
-            for (x0, z0), (x1, z1) in zip(arch[:-1], arch[1:]):
-                pts = [(x0, yy, z0), (x1, yy, z1), (x1, yy, ar * 0.9 + height * 0.55), (x0, yy, ar * 0.9 + height * 0.55)]
-                if sign < 0:
-                    pts = pts[::-1]
-                g.quad(WOOD, pts, [(p[0] / 6, p[2] / 6) for p in pts], color)
-            top = ar * 0.9 + height * 0.55
-            for xa, xb in ((-hw, -ar), (ar, hw)):
-                pts = [(xa, yy, 0), (xb, yy, 0), (xb, yy, top), (xa, yy, top)]
-                if sign < 0:
-                    pts = pts[::-1]
-                g.quad(WOOD, pts, [(p[0] / 6, p[2] / 6) for p in pts], color)
-        top = ar * 0.9 + height * 0.55
-        g.box((-hw, -hd, 0), (hw, hd, top), WOOD, color, tile=6, faces='ewt')
-        # The underside of the cut.
-        for (x0, z0), (x1, z1) in zip(arch[:-1], arch[1:]):
-            g.quad(WOOD, [(x0, hd, z0), (x1, hd, z1), (x1, -hd, z1), (x0, -hd, z0)], [(0, 0), (1, 0), (1, 1), (0, 1)], trim)
-        g.quad(WOOD, [(-hw, -hd, 0), (-ar, -hd, 0), (-ar, hd, 0), (-hw, hd, 0)][::-1], [(0, 0), (1, 0), (1, 1), (0, 1)], trim)
-        g.quad(WOOD, [(ar, -hd, 0), (hw, -hd, 0), (hw, hd, 0), (ar, hd, 0)][::-1], [(0, 0), (1, 0), (1, 1), (0, 1)], trim)
-
     # --- The playground's own buildings, tunnels and trolley ---
 
     def __dnaXml(self):
@@ -1041,12 +1010,23 @@ class ToyboxTerrace(PreviewMap):
 
     def __keyGate(self, mouth, th):
         """Wind-Up Way: no giant key on the hill any more (Arthur: it
-        looked like it was floating there); the ducks wear the keys."""
+        looked like it was floating there); the ducks wear the keys. The
+        marble arch stands in front, as at the other two (Arthur 2026-11-05)."""
         self.windKey = None
+        self.__marbleArch(mouth, th)
 
     def __marbleGate(self, mouth, th):
         """Loose Marble Lane: an arch of big marbles over the path just
         in front of the tunnel, and a few rolled loose."""
+        self.__marbleArch(mouth, th)
+        ar, mr = 14.0, 2.4
+        for i, (lx, ly) in enumerate(((-ar - 9, -16), (ar + 8, -19), (ar + 4, -25))):
+            wp = self.world(mouth, th, (lx, ly))
+            self.g.sphere((wp[0], wp[1], 1.6), 1.6, MARBLES[(i + 1) % 4], (1, 1, 1, 1), rings=8, sides=14)
+            self.kit.wallTube((wp[0], wp[1], 0), 1.7, 3.2)
+
+    def __marbleArch(self, mouth, th):
+        """The arch of big marbles over the path in front of a tunnel."""
         g = self.place(mouth, th)
         mr = 2.4
         ar = 14.0
@@ -1063,35 +1043,17 @@ class ToyboxTerrace(PreviewMap):
         for sx in (-1, 1):
             wp = self.world(mouth, th, (sx * (ar + mr), y))
             self.kit.wallTube((wp[0], wp[1], 0), mr + 0.3, spring)
-        for i, (lx, ly) in enumerate(((-ar - 9, -16), (ar + 8, -19), (ar + 4, -25))):
-            wp = self.world(mouth, th, (lx, ly))
-            self.g.sphere((wp[0], wp[1], 1.6), 1.6, MARBLES[(i + 1) % 4], (1, 1, 1, 1), rings=8, sides=14)
-            self.kit.wallTube((wp[0], wp[1], 0), 1.7, 3.2)
 
     def __blockGate(self, mouth, th):
-        """Building Block Boulevard: a toy block-set gateway over the path
-        (round columns, an arch block, a triangle and cubes on top) and
-        blocks stacked up each side of the tunnel."""
+        """Building Block Boulevard: the same marble arch as Loose Marble
+        Lane over the path (Arthur 2026-11-05, in place of the block-set
+        gateway), and blocks stacked up each side of the tunnel."""
         r = self.r
-        g = self.place(mouth, th)
-        y = -10.0
-        ar = 17.0
-        colZ = 11.0
-        for sx, col in ((-1, RED), (1, BLUE)):
-            cg = g.at((sx * (ar + 3.2), y, 0), (0, 0, 0))
-            cg.cyl(3.0, colZ, WOOD, col, sides=20, caps='t', tile=6)
-            cg.at((0, 0, colZ * 0.5), (0, 0, 0)).torus(3.0, 0.35, WOOD, CREAM, seg=20, sides=6)
-            wp = self.world(mouth, th, (sx * (ar + 3.2), y))
-            self.kit.wallTube((wp[0], wp[1], 0), 3.2, colZ)
-        self.__archBlock(g.at((0, y, colZ), (0, 0, 0)), ar + 5.0, ar, 4.0, 4.5, YELLOW, YELLOW_D)
-        archTop = colZ + ar * 0.9 + 4.0 * 0.55
-        tg = g.at((0, y, archTop), (0, 0, 0))
-        tg.prism((-6, -2.25, 0), (6, 2.25, 6.0), WOOD, RED, gable=RED_D, tile=6)
-        tg.at((0, 0, 0), (90, 0, 0)).prism((-2.25, -6, 0), (2.25, 6, 6.0), WOOD, RED, gable=RED, tile=6)
-        for sx, col, s, letter in ((-1, BLUE, 4.6, 'B'), (1, GREEN, 4.2, 'K')):
-            bh = th + r.uniform(-12, 12)
-            wp = self.world(mouth, th, (sx * 16.5, y))
-            self.letterBlock(self.place((wp[0], wp[1], archTop), bh), s, col, letter, letterFaces='sn', worldFrame=((wp[0], wp[1]), bh))
+        self.__marbleArch(mouth, th)
+        # The old gateway's two top blocks drew from the map's dice; still
+        # roll them so everything placed after stays where it was.
+        r.uniform(-12, 12)
+        r.uniform(-12, 12)
         # Stacks of blocks against the hill each side of the tunnel.
         abc = 'TOYBLOCKS'
         n = 0
