@@ -19,7 +19,7 @@ own wood grain, with quiet cream between the bright bits.
 import math
 import random
 
-from panda3d.core import (PNMImage, Point3, SamplerState, Texture, TextNode, TransparencyAttrib, Vec3, Vec4)
+from panda3d.core import (NodePath, PNMImage, Point3, SamplerState, Texture, TextNode, TransparencyAttrib, Vec3, Vec4)
 
 from toontown.survival.previewmaps.MapKit import heading, rng
 from toontown.survival.previewmaps.PreviewMap import PreviewMap
@@ -41,6 +41,8 @@ CONCRETE = 'phase_4/maps/concrete.jpg'
 # inside of a tunnel.
 MARBLES = ('gen:marble_red', 'gen:marble_blue', 'gen:marble_yellow', 'gen:marble_green')
 CLOCK = 'gen:clock'
+# Arthur's painted models (2026-11-05) for the pond, ducks, tops and key.
+ART = 'phase_4/models/props/toybox_'
 DARK = 'gen:tunnel_dark'
 PLAIN = None
 
@@ -169,7 +171,9 @@ class ToyboxTerrace(PreviewMap):
         self.__tower()
         self.__dna()
         self.__hills()
-        self.__pond()
+        # Arthur's painted pond: the built one only for its collisions.
+        self.collisionsOnly(self.__pond)
+        self.artModel('marble_pond_with_docks', (POND[0], POND[1], 0))
         self.__ducks()
         self.__tops()
         self.__puzzles()
@@ -306,6 +310,29 @@ class ToyboxTerrace(PreviewMap):
         np.setHpr(*hpr)
         self.litNodes.append(np)
         return np
+
+    def artModel(self, name, pos=(0, 0, 0), h=0.0, parent=None):
+        """One of Arthur's painted Toybox Terrace models (resources-overlay
+        phase_4/models/props/toybox_<name>.bam), lit like the built pieces."""
+        np = loader.loadModel('%s%s.bam' % (ART, name))
+        np.reparentTo(parent or self.root)
+        np.setPos(*pos)
+        np.setH(h)
+        self.litNodes.append(np)
+        return np
+
+    def collisionsOnly(self, build):
+        """Run a builder for its collisions only: what it draws is thrown
+        away (a painted model stands in its place)."""
+        k = self.kit
+        meshes, signs, letters = k.meshes, self.signs, self.letters
+        k.meshes = {}
+        self.signs = self.letters = NodePath('discarded')
+        try:
+            build()
+        finally:
+            k.meshes = meshes
+            self.signs, self.letters = signs, letters
 
     def solidOutline(self, pts, z0, z1, name='toySolid'):
         """Posts round a footprint (world x, y), like MapKit's wallBox."""
@@ -967,23 +994,11 @@ class ToyboxTerrace(PreviewMap):
 
     def __keyGate(self, mouth, th):
         """Wind-Up Way: a giant winding key turning in the hill over the
-        tunnel, as if the hill were a wind-up toy."""
-        key = self.part('windKey')
-        kg = key.geo
-        kg.cyl(1.4, 8.0, WOOD, YELLOW_D, sides=14, caps='t')
-        kg.cyl(2.6, 1.4, WOOD, YELLOW, z0=0, sides=16, caps='t')
-        bow = kg.at((0, 0, 13.0), (0, 0, 90))
-        for sx in (-1, 1):
-            bow.at((0, sx * 5.2, 0), (0, 0, 0)).torus(4.0, 1.25, WOOD, YELLOW, seg=28, sides=10)
-        bow.cyl(2.4, 2.4, WOOD, YELLOW_D, z0=-1.2, sides=16, caps='tb')
-        kg.at((0, 0, 7.6), (0, 0, 0)).cyl(1.6, 2.6, WOOD, YELLOW, sides=12, caps='t')
-        # A brass plate where it goes into the hill.
+        tunnel, as if the hill were a wind-up toy (Arthur's painted key and
+        its brass plate)."""
         top = self.world(mouth, th, (0, 52, 0))
-        self.windKey = self.keep(key, (top[0], top[1], 29.0))
-        self.windKey.setScale(2.0)
-        plate = self.place((top[0], top[1], 28.0), th)
-        plate.cyl(6.5, 1.6, WOOD, YELLOW_D, sides=24, caps='t')
-        plate.at((0, 0, 1.6), (0, 0, 0)).torus(6.5, 0.6, WOOD, YELLOW, seg=24, sides=6)
+        key = self.artModel('wind_up_key', (top[0], top[1], 28.0), th)
+        self.windKey = key.find('**/windKey')
 
     def __marbleGate(self, mouth, th):
         """Loose Marble Lane: an arch of big marbles over the path just
@@ -1179,10 +1194,8 @@ class ToyboxTerrace(PreviewMap):
     def __ducks(self):
         self.ducks = []
         for i, (x, y, h) in enumerate(((-42, -40, 110), (36, 70, -150), (-70, -96, 160))):
-            body, key = self.__duck('duck%d' % i)
-            np = self.keep(body, (x, y, 0), (h, 0, 0))
-            knp = self.keep(key, (0, 0, 0), parent=np)
-            knp.setPos(0, -3.6, 4.0)
+            np = self.artModel('wind_up_duck', (x, y, 0), h)
+            knp = np.find('**/duck_key')
             self.ducks.append((np, knp, Point3(x, y, 0), h, i * 1.7))
             self.kit.wallTube((x, y, 0), 3.0, 5)
 
@@ -1208,10 +1221,16 @@ class ToyboxTerrace(PreviewMap):
         spots = ((86, -96, (RED, YELLOW, BLUE)), (118, -128, (BLUE, CREAM, RED)), (-30, 52, (YELLOW, RED, BLUE)),
                  (52, -48, (BLUE, YELLOW, RED)))
         for i, (x, y, cols) in enumerate(spots):
-            top = self.__top('top%d' % i, cols)
             holder = self.root.attachNewNode('topHolder%d' % i)
             holder.setPos(x, y, 0)
-            np = self.keep(top, parent=holder)
+            # Arthur's painted tops, in the same colours as these spots'.
+            tops = self.artModel('spinning_tops', parent=holder)
+            np = tops.find('**/spinning_top_%d' % (i + 1))
+            np.wrtReparentTo(holder)
+            np.setPos(0, 0, 0)
+            tops.removeNode()
+            self.litNodes.remove(tops)
+            self.litNodes.append(np)
             self.tops.append((holder, np, i * 2.1, 1.0 + 0.25 * i))
             self.kit.wallTube((x, y, 0), 3.6, 9)
 
