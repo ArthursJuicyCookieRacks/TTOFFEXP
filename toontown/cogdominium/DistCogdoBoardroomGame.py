@@ -1083,6 +1083,22 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
             place.fsm.request('stopped')
         self._toElevator(toon)
         self._cameraInElevator(self.room.exitElevator)
+        # Off the table: the memo count goes (Arthur). How the toons did
+        # comes up once they are all in (startGolf).
+        self._hideMemoCount()
+
+    def _hideMemoCount(self):
+        self.memoIcon.hide()
+        self.memoLabel.hide()
+        self.statusLabel['text'] = ''
+
+    def _sayMemos(self, got):
+        total = len(self.layout.memos) if self.layout else 0
+        if total and got >= total:
+            text = TTL.BoardroomMemosCollectedAll
+        else:
+            text = TTL.BoardroomMemosCollected % (got, total)
+        base.localAvatar.setSystemMessage(0, text)
 
     def _elevatorSpot(self, toon):
         # A toon's spot in the exit elevator: in the order they got there.
@@ -1446,8 +1462,10 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         # Anyone still on the table when time was up drops the memos they
         # carried, and is in the elevator with the others for the ride.
         self.carried = 0
-        self.memoLabel.hide()
-        self.statusLabel['text'] = ''
+        self._hideMemoCount()
+        # Everyone in: how many memos the toons got out (Arthur: only once
+        # all of them are in the elevator).
+        self._sayMemos(self.banked)
         if self.timer is not None:
             self.timer.stop()
             self.timer.stash()
