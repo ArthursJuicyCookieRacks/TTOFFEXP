@@ -446,6 +446,11 @@ class NPCBossCrew:
                     elif self.dept == 'c' and state == 'BattleTwo':
                         if not self.waiterJob(npc, now):
                             self.roam(npc, now)
+                    elif self.dept == 'c' and state == 'BattleFour':
+                        # On its way to a pitcher or golf spot: no wandering
+                        # off (that walk kept it from ever getting there).
+                        if not self.headingForStation(npc):
+                            self.roam(npc, now)
                     else:
                         self.roam(npc, now)
             play = getattr(self, 'play%s%s' % (self.dept.upper(), state), None)
@@ -1171,6 +1176,47 @@ class NPCBossCrew:
         npc.stationGoal = obj.doId
         return obj
 
+    def headingForStation(self, npc):
+        """True while an NPC is at, or walking to, a station that's still free."""
+        if self.isStationed(npc):
+            return True
+        goal = getattr(npc, 'stationGoal', None)
+        if goal is None:
+            return False
+        boss = self.boss
+        for objects, ok in ((getattr(boss, 'golfSpots', None), lambda o: o.state != 'Off'),
+                            (getattr(boss, 'tables', None), lambda o: o.state == 'Free')):
+            for obj in objects or []:
+                if obj.doId == goal:
+                    if getattr(obj, 'avId', 0) == 0 and ok(obj):
+                        return True
+                    npc.stationGoal = None
+                    return False
+        return False
+
+    def tableEdge(self, obj):
+        """How far a banquet table's edge is from its pitcher (None for
+        anything that isn't a banquet table)."""
+        base = getClientBuiltin('base')
+        do = base.cr.doId2do.get(obj.doId) if base is not None else None
+        group = getattr(do, 'tableGroup', None)
+        pitcher = getattr(do, 'waterPitcherNode', None)
+        if group is None or group.isEmpty() or pitcher is None or pitcher.isEmpty():
+            return None
+        edge = getattr(do, 'npcEdge', None)
+        if edge is None:
+            col = group.find('**/TableCol-%d' % do.index)
+            if col.isEmpty():
+                col = group.find('**/collision_table')
+            edge = 6.0
+            if not col.isEmpty():
+                lo, hi = Point3(), Point3()
+                if col.calcTightBounds(lo, hi, pitcher):
+                    edge = max(abs(lo[0]), abs(hi[0]), abs(lo[1]), abs(hi[1]))
+            do.npcEdge = edge
+            self.notify.info("table %d edge %.1f ft from the pitcher" % (do.index, edge))
+        return edge
+
     def approach(self, npc, obj):
         """A player walks up to a crane (a pitcher, a golf spot) before
         taking it; true once the NPC is there. (Taking one from across the
@@ -1182,9 +1228,21 @@ class NPCBossCrew:
             return True
         self.syncPos(npc)
         pos = npc.getPos()
-        if math.hypot(spot[0] - pos[0], spot[1] - pos[1]) <= STATION_REACH:
+        reach = STATION_REACH
+        edge = self.tableEdge(obj)
+        dist = math.hypot(spot[0] - pos[0], spot[1] - pos[1])
+        if edge is not None:
+            # A banquet table's pitcher sits in the middle of the table: a
+            # player takes it by walking up against the table's edge.
+            reach = edge + 2.0
+        if dist <= reach:
             return True
-        if self.walkToward(npc, pos, Point3(spot[0], spot[1], pos[2]), ToontownGlobals.ToonForwardSpeed):
+        goal = Point3(spot[0], spot[1], pos[2])
+        if edge is not None and dist > 0.01:
+            # The spot at the table's edge on the NPC's side of it.
+            k = (edge + 1.0) / dist
+            goal = Point3(spot[0] + (pos[0] - spot[0]) * k, spot[1] + (pos[1] - spot[1]) * k, pos[2])
+        if self.walkToward(npc, pos, goal, ToontownGlobals.ToonForwardSpeed):
             return False
         # No walk there from here (blocked all ways): takes it from here.
         return True
@@ -1895,6 +1953,10 @@ class NPCBossCrew:
         boss = self.boss
         tables = list(boss.tables or [])
         mine = [t for t in tables if t.avId == npc.doId]
+        now_ = globalClock.getFrameTime()
+        if now_ - getattr(self, 'pitcherLogged', 0) > 15:
+            self.pitcherLogged = now_
+            self.notify.info('pitchers: %s' % [(t.index, t.state, t.avId) for t in tables])
         if not mine:
             if len([t for t in tables if isNPCId(self.air, t.avId)]) >= PITCHERS:
                 return
