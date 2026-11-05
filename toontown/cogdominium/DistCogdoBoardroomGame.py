@@ -1352,6 +1352,14 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
             pos = toon.getPos(render)
             last = getattr(toon, '_boardroomLast', None)
             toon._boardroomLast = PM.Point3(pos)
+            if pos[1] > Consts.TableEnd:
+                self._posDebug(toon, pos, 'slide')
+                if not getattr(toon, '_boardroomSmooth', False):
+                    # Off the table and walking in: smoothed between the
+                    # NPC's moves, which come a few times a second (unsmoothed
+                    # it hopped 2 to 3 ft at a time, as if teleporting: Arthur).
+                    toon._boardroomSmooth = True
+                    toon.startSmooth()
             if avId in self.exited:
                 # Walking on in to its spot, then stood there.
                 want = 'walk' if self._stillMoving(toon, pos, last) else 'neutral'
@@ -1376,6 +1384,12 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
                 self._standUp(toon)
                 toon.loop(want)
 
+    def _posDebug(self, toon, pos, tag):
+        import os
+        if os.environ.get('AUTOPLAY_NPC_DEBUG'):
+            print('NPCPOS %s %d %.2f %.2f %.2f %.2f %s' % (tag, toon.doId, globalClock.getFrameTime(), pos[0], pos[1], pos[2],
+                                                    getattr(toon, '_boardroomAnim', None)), flush=True)
+
     def _stillMoving(self, toon, pos, last):
         # An NPC's moves come a few times a second, not every frame: judged
         # frame by frame it flicked between walking and standing, so its
@@ -1399,6 +1413,7 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
             pos = toon.getPos(render)
             last = getattr(toon, '_boardroomLast', None)
             toon._boardroomLast = PM.Point3(pos)
+            self._posDebug(toon, pos, 'golf')
             want = 'walk' if self._stillMoving(toon, pos, last) else 'neutral'
             if getattr(toon, '_boardroomAnim', None) != want:
                 toon._boardroomAnim = want
@@ -1487,6 +1502,7 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
                 self._standUp(toon)
                 if not toon.isLocal():
                     toon.stopSmooth()
+                    toon._boardroomSmooth = False
                 self._toElevator(toon, run=False)
             self._cameraInElevator(room.exitElevator)
             base.playMusic(self.elevatorMusic, looping=1, volume=0.8)

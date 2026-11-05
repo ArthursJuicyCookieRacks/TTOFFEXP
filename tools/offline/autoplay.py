@@ -1174,6 +1174,10 @@ def playCogdoBoardroom(dist):
             # one is in reach, else the middle; and out of the piles' way.
             ahead = [(i, m) for i, m in enumerate(layout.memos) if i not in dist.memosGone
                      and 3 < m[1] - pos[1] < 22 and m[2] < Consts.TableTop + 0.5]
+            if os.environ.get('AUTOPLAY_SLIDE_RUSH'):
+                # Flat out for the end, memos or not: in the elevator first,
+                # to watch the others walk in.
+                ahead = []
             goal = min(ahead, key=lambda im: im[1][1])[1][0] if ahead else 0.0
             for ob in layout.obstacles:
                 if ob.kind == Layout.PILE and -1 < ob.y - ob.l - pos[1] < 12 and ob.x - ob.w - 2 < goal < ob.x + ob.w + 2:

@@ -1908,7 +1908,6 @@ class CogdoBoardroomPlayer(CogdoPlayer):
                 if self._walkApart(door, RUN_SPEED * (0.5 if near else 0.85), wdt):
                     self.memo['elevStage'] = 1
                     self.memo['atDoorAt'] = now
-                    self.send('requestExit')
             else:
                 spot = Point3(ex + p[0], ey + p[1], BoardroomConsts.ExitFloor)
                 if not self._turnToGoIn(k, ids, now, lambda q: Point3(ex + q[0], ey + q[1], BoardroomConsts.ExitFloor)):
@@ -1918,6 +1917,10 @@ class CogdoBoardroomPlayer(CogdoPlayer):
                     # In at its spot: turns round to face out.
                     self.npc.moveTo(spot[0], spot[1], spot[2], 180)
                     self.npc.stopMoving()
+                    # Only now, in at its spot: the last toon in starts the ride,
+                    # which put everyone still walking straight onto their
+                    # spots (the NPCs said so at the doors, so they popped in).
+                    self.send('requestExit')
                     self.memo['elevStage'] = 0
                     self.memo['off'] = False
             return
@@ -2092,7 +2095,10 @@ class CogdoBoardroomPlayer(CogdoPlayer):
             if j not in game.powerUpsTaken and math.hypot(px - nx, py - ny) < BoardroomConsts.PowerUpRadius:
                 self.send('requestPowerUp', j)
         if ny > BoardroomConsts.TableEnd - BoardroomConsts.JumpOffAt:
-            side = 1 if nx >= 0 else -1
+            # Down on the side of its spot in the elevator, so it doesn't
+            # cross in front of the others to get there.
+            from toontown.building.ElevatorConstants import ElevatorPoints
+            side = 1 if ElevatorPoints[self.index() % len(ElevatorPoints)][0] > 0 else -1
             self.memo['jump'] = (now, nx, ny, z, side * BoardroomConsts.JumpOffX, BoardroomConsts.JumpLandY)
 
     def _dodgeHazard(self, layout, x, y, t, speed):
