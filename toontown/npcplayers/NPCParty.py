@@ -13,6 +13,7 @@ import random
 
 from direct.directnotify import DirectNotifyGlobal
 from direct.task import Task
+from otp.otpbase import OTPGlobals
 from panda3d.core import Point3, Vec3
 
 from toontown.building.DistributedElevatorAI import DistributedElevatorAI
@@ -442,6 +443,10 @@ class NPCParty:
                 continue
             if npc.crew is not None:
                 continue
+            if player.zoneId == OTPGlobals.QuietZone:
+                # The player is between places (teleporting or on a loading
+                # screen): follow once they land, not into the quiet zone.
+                continue
             seated = [e for e in self.getElevators() if npc.doId in seatsOf(e)]
             if seated:
                 npc.seatedAt = globalClock.getFrameTime()
@@ -458,7 +463,7 @@ class NPCParty:
                 # player can stand in the next stretch of the street, its
                 # own zone, for a moment before the ride takes it inside.)
                 justRode = globalClock.getFrameTime() - getattr(npc, 'seatedAt', -100) < 15.0
-                if getAreaId(player.zoneId) is not None and not helper and \
+                if getAreaId(player.zoneId) is not None and (not helper or getattr(npc, 'tripHelper', False)) and \
                         not ((npc.busy or justRode) and getAreaId(npc.zoneId) == getAreaId(player.zoneId)):
                     # Back out in town: the trip is over. (Not one walking
                     # to the player's elevator from the next stretch of the

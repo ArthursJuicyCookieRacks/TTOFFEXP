@@ -155,6 +155,16 @@ class QuestPoster(DirectFrame):
         self.fitGeometry(head, fFlip=1)
         return head
 
+    def createHelpMeter(self):
+        # A help-a-toon task: a toon's face, with no laff limit on it.
+        hp = base.localAvatar.getMaxHp()
+        lm = LaffMeter.LaffMeter(base.localAvatar.style, hp, hp)
+        lm.adjustText()
+        for label in ('maxLabel', 'hpLabel'):
+            if hasattr(lm, label):
+                getattr(lm, label).hide()
+        return lm
+
     def createLaffMeter(self, hp):
         lm = LaffMeter.LaffMeter(base.localAvatar.style, hp, hp)
         lm.adjustText()
@@ -502,7 +512,7 @@ class QuestPoster(DirectFrame):
                 captions.append(list(map(string.capwords, quest.getObjectiveStrings())))
                 auxText = TTLocalizer.QuestsCogNewbieQuestAux
                 lPos.setX(-0.18)
-                self.laffMeter = self.createLaffMeter(quest.getNewbieLevel())
+                self.laffMeter = self.createHelpMeter()
                 self.laffMeter.setScale(0.04)
                 lIconGeom = None
                 infoText = quest.getLocationName()
@@ -535,7 +545,7 @@ class QuestPoster(DirectFrame):
                 captions.append(list(map(string.capwords, quest.getObjectiveStrings())))
                 auxText = TTLocalizer.QuestsCogNewbieQuestAux
                 lPos.setX(-0.18)
-                self.laffMeter = self.createLaffMeter(quest.getNewbieLevel())
+                self.laffMeter = self.createHelpMeter()
                 self.laffMeter.setScale(0.04)
                 lIconGeom = None
                 infoText = quest.getLocationName()
@@ -568,7 +578,7 @@ class QuestPoster(DirectFrame):
                 captions.append(list(map(string.capwords, quest.getObjectiveStrings())))
                 auxText = TTLocalizer.QuestsCogNewbieQuestAux
                 lPos.setX(-0.18)
-                self.laffMeter = self.createLaffMeter(quest.getNewbieLevel())
+                self.laffMeter = self.createHelpMeter()
                 self.laffMeter.setScale(0.04)
                 lIconGeom = None
                 infoText = quest.getLocationName()
@@ -601,7 +611,7 @@ class QuestPoster(DirectFrame):
                 captions.append(list(map(string.capwords, quest.getObjectiveStrings())))
                 auxText = TTLocalizer.QuestsCogPartQuestAux
                 lPos.setX(-0.18)
-                self.laffMeter = self.createLaffMeter(quest.getNewbieLevel())
+                self.laffMeter = self.createHelpMeter()
                 self.laffMeter.setScale(0.04)
                 lIconGeom = None
                 infoText = quest.getLocationName()
@@ -634,7 +644,7 @@ class QuestPoster(DirectFrame):
                 captions.append(list(map(string.capwords, quest.getObjectiveStrings())))
                 auxText = TTLocalizer.QuestsCogNewbieQuestAux
                 lPos.setX(-0.18)
-                self.laffMeter = self.createLaffMeter(quest.getNewbieLevel())
+                self.laffMeter = self.createHelpMeter()
                 self.laffMeter.setScale(0.04)
                 lIconGeom = None
                 infoText = quest.getLocationName()
@@ -667,7 +677,7 @@ class QuestPoster(DirectFrame):
                 captions.append(list(map(string.capwords, quest.getObjectiveStrings())))
                 auxText = TTLocalizer.QuestsCogNewbieQuestAux
                 lPos.setX(-0.18)
-                self.laffMeter = self.createLaffMeter(quest.getNewbieLevel())
+                self.laffMeter = self.createHelpMeter()
                 self.laffMeter.setScale(0.04)
                 lIconGeom = None
                 infoText = quest.getLocationName()
@@ -700,7 +710,7 @@ class QuestPoster(DirectFrame):
                 captions.append(list(map(string.capwords, quest.getObjectiveStrings())))
                 auxText = TTLocalizer.QuestsCogNewbieQuestAux
                 lPos.setX(-0.18)
-                self.laffMeter = self.createLaffMeter(quest.getNewbieLevel())
+                self.laffMeter = self.createHelpMeter()
                 self.laffMeter.setScale(0.04)
                 lIconGeom = None
                 infoText = quest.getLocationName()
@@ -729,7 +739,7 @@ class QuestPoster(DirectFrame):
                 captions.append(list(map(string.capwords, quest.getObjectiveStrings())))
                 auxText = TTLocalizer.QuestsRescueQuestAux
                 lPos.setX(-0.18)
-                self.laffMeter = self.createLaffMeter(quest.getNewbieLevel())
+                self.laffMeter = self.createHelpMeter()
                 self.laffMeter.setScale(0.04)
                 lIconGeom = None
                 infoText = quest.getLocationName()
@@ -787,7 +797,7 @@ class QuestPoster(DirectFrame):
                 captions.append(list(map(string.capwords, quest.getObjectiveStrings())))
                 auxText = TTLocalizer.QuestsMinigameNewbieQuestAux
                 lPos.setX(-0.18)
-                self.laffMeter = self.createLaffMeter(quest.getNewbieLevel())
+                self.laffMeter = self.createHelpMeter()
                 self.laffMeter.setScale(0.04)
                 lIconGeom = None
             else:
@@ -841,7 +851,7 @@ class QuestPoster(DirectFrame):
                     captions.append(list(map(string.capwords, quest.getObjectiveStrings())))
                     auxText = TTLocalizer.QuestsCogNewbieQuestAux
                     lPos.setX(-0.18)
-                    self.laffMeter = self.createLaffMeter(quest.getNewbieLevel())
+                    self.laffMeter = self.createHelpMeter()
                     self.laffMeter.setScale(0.04)
                     lIconGeom = None
                 else:
@@ -885,7 +895,7 @@ class QuestPoster(DirectFrame):
                     captions.append(list(map(string.capwords, quest.getObjectiveStrings())))
                     auxText = TTLocalizer.QuestsCogNewbieQuestAux
                     lPos.setX(-0.18)
-                    self.laffMeter = self.createLaffMeter(quest.getNewbieLevel())
+                    self.laffMeter = self.createHelpMeter()
                     self.laffMeter.setScale(0.04)
                     lIconGeom = None
                 else:

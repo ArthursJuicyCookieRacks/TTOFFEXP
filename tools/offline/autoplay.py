@@ -205,9 +205,47 @@ if os.environ.get('AUTOPLAY_TRACE_ANIM'):
 def teleport(hoodId, zoneId=None):
     zoneId = zoneId or hoodId
     log('teleporting to', hoodId, zoneId)
-    yield until(walking, 60, 'walking before teleport')
+    yield until(lambda: walking() or placeState() == 'battle', 60, 'walking before teleport')
+    if placeState() == 'battle':
+        # A cog walked into the toon first.
+        yield from fightBattle()
+        yield until(walking, 120, 'walking after the battle')
+    if placeName() == 'CogHQLobby':
+        # Nobody teleports out of a boss lobby: back out through its door
+        # first (a toon chasing a cog by the door can end up in there).
+        lobbyDoor = findObject('DistributedDoor', lambda do: do.zoneId == localAvatar.zoneId)
+        if lobbyDoor is not None:
+            log('leaving the lobby through its door first')
+            messenger.send(lobbyDoor.getEnterTriggerEvent(), [None])
+            yield until(lambda: placeName() != 'CogHQLobby' and walking(), 90, 'out of the lobby')
     place().requestTeleport(hoodId, zoneId, None, -1)
-    yield until(inZone(zoneId), 120)
+    arrived = inZone(zoneId)
+    deadline = time.time() + 120
+    landed = time.time() + 15
+    retried = False
+    while not arrived():
+        if not retried and time.time() > landed and walking() and placeName() != 'Teleport' and \
+                ZoneUtil.getBranchZone(localAvatar.zoneId) != ZoneUtil.getBranchZone(zoneId):
+            # Landed on a tunnel and walked straight back out: once more.
+            log('ended up in zone %d instead of %d; teleporting again' % (localAvatar.zoneId, zoneId))
+            retried = True
+            place().requestTeleport(hoodId, zoneId, None, -1)
+            deadline = time.time() + 120
+        if time.time() > deadline:
+            raise StepFailed('timed out waiting for %s (place %s in state %s)' % (arrived.__name__, placeName(), placeState()))
+        if placeState() == 'battle':
+            # A cog walked into the toon as it landed.
+            log('a cog started a battle on arrival')
+            yield from fightBattle()
+            deadline = time.time() + 120
+            continue
+        # Toontown Central greets a new toon with what to do next.
+        dialog = getattr(place(), 'dialog', None) if placeState() == 'popup' else None
+        if dialog is not None and not dialog.isEmpty():
+            log('popup on arrival says: %s' % dialog['text'])
+            yield sleep(1)
+            dialog['command'](DGG.DIALOG_OK)
+        yield sleep(0.5)
 
 
 # --- Scenarios ---
@@ -533,7 +571,7 @@ def scenarioNeedHelp():
     shots = os.environ.get('AUTOPLAY_SHOTS', '/tmp')
     NPCSettings.setHelpMode(NPCSettings.HELP_SOLO)
     street = ToontownGlobals.SillyStreet
-    yield from teleport(street - street % 1000, firstVisgroup(street))
+    yield from teleport(street - street % 1000, qlStreetZone(street))
     magicWord('~spawn mh 12')
     yield until(suitsNearby, 120, 'a cog on the street')
     for attempt in range(5):
@@ -557,8 +595,7 @@ def scenarioNeedHelp():
         raise StepFailed('the Need Help! button stayed after being pressed')
     while placeState() == 'battle':
         if townBattleState() == 'Attack':
-            track, level = pickGag()
-            messenger.send(townBattle().battleEvent, [{'mode': 'Attack', 'track': track, 'level': level, 'target': 0}])
+            messenger.send(townBattle().battleEvent, [gagChoice()])
             yield until(lambda: townBattleState() != 'Attack', 30, 'gag choice to register')
         else:
             yield sleep(0.2)
@@ -593,7 +630,7 @@ def scenarioHelpMode():
         raise StepFailed('Setup did not keep Turn based')
 
     street = ToontownGlobals.SillyStreet
-    yield from teleport(street - street % 1000, firstVisgroup(street))
+    yield from teleport(street - street % 1000, qlStreetZone(street))
     for wanted, name in ((False, 'solo'), (True, 'help')):
         magicWord('~spawn mh 12')
         yield until(suitsNearby, 120, 'a cog on the street')
@@ -621,8 +658,7 @@ def scenarioHelpMode():
         # Win it with the biggest gags and get back on the street.
         while placeState() == 'battle':
             if townBattleState() == 'Attack':
-                track, level = pickGag()
-                messenger.send(townBattle().battleEvent, [{'mode': 'Attack', 'track': track, 'level': level, 'target': 0}])
+                messenger.send(townBattle().battleEvent, [gagChoice()])
                 yield until(lambda: townBattleState() != 'Attack', 30, 'gag choice to register')
             else:
                 yield sleep(0.2)
@@ -695,20 +731,62 @@ def onDistrict(func, *args):
         return func(simbase.air, *args)
 
 
+TRAIN_TRACK = [None]
+
+
 def pickGag():
     # The strongest gag the toon still carries; sound hits every cog at once.
     inventory = localAvatar.inventory
+    if TRAIN_TRACK[0] is not None:
+        # Training a track up for a ToonTask: its gags first.
+        for level in range(6, -1, -1):
+            if inventory.numItem(TRAIN_TRACK[0], level) > 0:
+                return TRAIN_TRACK[0], level
     for level in range(6, -1, -1):
         for track in (ToontownBattleGlobals.SOUND_TRACK, ToontownBattleGlobals.THROW_TRACK,
                       ToontownBattleGlobals.SQUIRT_TRACK, ToontownBattleGlobals.DROP_TRACK):
             if inventory.numItem(track, level) > 0:
                 return track, level
-    raise StepFailed('the toon is out of sound, throw, squirt and drop gags')
+    # (No trap or lure: one on a cog already trapped or lured is refused.)
+    return None
+
+
+def gagChoice():
+    # The battle choice for the toon's turn. A toon with no attack gags
+    # left (a long cog building fight) passes, as a player would, and the
+    # others carry on.
+    gag = pickGag()
+    if gag is None:
+        log('out of gags; passing')
+        return {'mode': 'Pass', 'id': -1}
+    return {'mode': 'Attack', 'track': gag[0], 'level': gag[1], 'target': 0}
+
+
+FACILITY_HELP = [False]
+FACILITY_KEEPALIVE = [False]
+
+
+def facilityHelp(air, avId):
+    # What the Need Help! button does in a facility: three NPC toons fit
+    # for the place come in.
+    mgr = air.npcPlayerManager
+    player = air.doId2do[avId]
+    battle, key = mgr.helpKey(player)
+    if battle is None:
+        return 0
+    mgr.helpInside(player, battle)
+    return len(battle.toons)
 
 
 def fightBattle(timeout=1800, during=None):
     # during, if given, is called between gag choices.
     yield until(lambda: placeState() == 'battle', 60, 'battle to start')
+    if FACILITY_HELP[0]:
+        # The test warps the toon to the boss without its NPC party (which
+        # walks the rooms with a player): it asks for help, as a toon on its
+        # own would.
+        yield sleep(2)
+        log('facility battle: Need Help! -> %s toons' % onDistrict(facilityHelp, localAvatar.doId))
     deadline = time.time() + timeout
     rounds = 0
     nextReport = time.time() + 30
@@ -718,27 +796,48 @@ def fightBattle(timeout=1800, during=None):
         if time.time() > nextReport:
             nextReport = time.time() + 30
             log('still in battle: round %d, gag panel %s' % (rounds, townBattleState()))
-        if townBattleState() == 'Attack':
+        battle = base.cr.doId2do.get(getattr(localAvatar, 'battleId', 0))
+        if townBattleState() == 'Attack' and battle is not None and not battle.activeSuits:
+            # Every cog in the fight is down and one is still walking in
+            # from far off: nothing to aim at until it gets there.
+            yield sleep(0.5)
+        elif townBattleState() == 'Attack':
             rounds += 1
             if os.environ.get('AUTOPLAY_GAGS') and rounds % 3 == 0:
                 # A long level 5 battle can use up a whole gag pouch: topped
                 # up, as a player arrives with gags bought for it.
                 onDistrict(restock, localAvatar.doId)
                 yield sleep(1.0)
-            track, level = pickGag()
-            messenger.send(townBattle().battleEvent,
-                           [{'mode': 'Attack', 'track': track, 'level': level, 'target': 0}])
-            yield until(lambda: townBattleState() != 'Attack', 30, 'gag choice to register')
+            if FACILITY_KEEPALIVE[0] and localAvatar.getHp() < localAvatar.getMaxHp() * 0.9:
+                # Test runner only (a later go through a mint or factory,
+                # whose cogs count only once its end is reached): the test
+                # toon is topped up each round. The game is unchanged.
+                onDistrict(lambda air, avId: air.doId2do[avId].b_setHp(air.doId2do[avId].getMaxHp()), localAvatar.doId)
+                qlCount('facility top-ups (test runner only)')
+            messenger.send(townBattle().battleEvent, [gagChoice()])
+            waitUntil = time.time() + 30
+            while townBattleState() == 'Attack' and time.time() < waitUntil:
+                yield sleep(0.2)
+            if townBattleState() == 'Attack':
+                # A cog joined mid-choice and the turn started over; choose again.
+                tries = getattr(fightBattle, 'retries', 0) + 1
+                fightBattle.retries = tries
+                if tries > 3:
+                    fightBattle.retries = 0
+                    raise StepFailed('gag choice did not register (3 tries)')
+                log('gag choice not taken yet; choosing again')
+            else:
+                fightBattle.retries = 0
         else:
             if during is not None:
                 during()
             yield sleep(0.2)
-    log('battle won after %d rounds' % rounds)
+    log('battle over after %d rounds (laff %d)' % (rounds, localAvatar.getHp()))
 
 
 def scenarioBattle():
     street = ToontownGlobals.SillyStreet
-    yield from teleport(street - street % 1000, firstVisgroup(street))
+    yield from teleport(street - street % 1000, qlStreetZone(street))
     magicWord('~spawn f 1')
     yield until(suitsNearby, 120, 'a cog on the street')
     suit = min(suitsNearby(), key=lambda s: (s.getPos(render) - localAvatar.getPos(render)).length())
@@ -775,7 +874,19 @@ def scenarioBuilding():
 
     block, zoneId = onDistrict(takeOver)
     log('cogs took over block %d in zone %d' % (block, zoneId))
-    yield from teleport(street - street % 1000, zoneId)
+    yield from playCogBuilding(street, block)
+
+
+def playCogBuilding(street, block):
+    # In through the cog building's elevator, every floor, and out again.
+    sadAtStart = QL_STATS.get('went sad', 0)
+    yield from qlHealUp('the cog building')
+    def where(air):
+        building = air.buildingManagers[street].getBuilding(block)
+        return building.getExteriorAndInteriorZoneId()[0], max(1, building.numFloors)
+    zoneId, floors = onDistrict(where)
+    if localAvatar.zoneId != zoneId:
+        yield from teleport(street - street % 1000, zoneId)
 
     def elevator():
         from toontown.building.DistributedElevatorExt import DistributedElevatorExt
@@ -799,7 +910,7 @@ def scenarioBuilding():
         else:
             yield sleep(1)
     yield until(lambda: place().__class__.__name__ == 'SuitInterior', 120, 'inside the cog building')
-    deadline = time.time() + 1200 * int(os.environ.get('AUTOPLAY_BLDG_FLOORS', 1))
+    deadline = time.time() + 1200 * floors
     while place().__class__.__name__ == 'SuitInterior':
         if time.time() > deadline:
             raise StepFailed('still inside the cog building after 20 minutes (place state %s)' % placeState())
@@ -817,12 +928,16 @@ def scenarioBuilding():
             yield sleep(3)
         else:
             yield sleep(0.5)
-    yield until(walking, 180, 'walking after the cog building')
+    yield from qlUntilWalking('after the cog building', 180)
     log('back outside in zone %d' % localAvatar.zoneId)
 
     def isToonBlock(air):
         return air.buildingManagers[street].getBuilding(block).isToonBlock()
 
+    if QL_STATS.get('went sad', 0) > sadAtStart:
+        # Sad toons leave the building to the cogs: the caller heals and
+        # goes in again.
+        raise StepFailed('went sad inside building %d' % block)
     yield until(lambda: onDistrict(isToonBlock), 300, 'the building to turn back into a toon building')
 
 
@@ -861,7 +976,19 @@ def playCogdoFlying(dist):
         localAvatar.setPos(base.render, loc.getPos(base.render))
         player._cameraMgr.update(0.0)
         player._level.update(0.0)
-    player.request('WaitingForWin')
+    # Landing comes from running on the platform: a toon still in the air
+    # (or knocked about) touches down first.
+    for i in range(40):
+        if player.state in ('Running', 'Spawn', 'WaitingForWin', 'Win'):
+            break
+        if player.state in ('FreeFly', 'FlyingUp', 'HitWhileRunning'):
+            try:
+                player.request('Running')
+            except Exception:
+                pass
+        yield sleep(0.5)
+    if player.state not in ('WaitingForWin', 'Win'):
+        player.request('WaitingForWin')
 
 
 def playCogdoCrane(dist):
@@ -1393,14 +1520,29 @@ def scenarioCogdo(track='s'):
         taskMgr.doMethodLater(6, report, 'autoplayMusicReport')
     # Gags enough for the executive suite.
     onDistrict(restock, localAvatar.doId)
-    yield from teleport(street - street % 1000, zoneId)
+    yield from playFieldOffice(street, block, track)
+
+
+def playFieldOffice(street, block, track):
+    # In through the field office's elevator, the game, the executive suite
+    # and out again.
+    sadAtStart = QL_STATS.get('went sad', 0)
+    yield from qlHealUp('the field office')
+    zoneId = onDistrict(lambda air: air.buildingManagers[street].getBuilding(block).getExteriorAndInteriorZoneId()[0])
+    if localAvatar.zoneId != zoneId:
+        yield from teleport(street - street % 1000, zoneId)
     def ours(do):
         return getattr(do, 'bldg', None) and do.bldg.block == block
 
     yield until(lambda: findObject('DistributedCogdoElevatorExt', ours), 120, 'the field office elevator')
+
+    def elevatorOpen():
+        # Looked up each time: the elevator can be replaced while waiting.
+        e = findObject('DistributedCogdoElevatorExt', ours)
+        return e is not None and getattr(e, 'fsm', None) is not None and \
+            e.fsm.getCurrentState().getName() == 'waitEmpty'
+    yield until(elevatorOpen, 60, 'the field office elevator to open')
     elevator = findObject('DistributedCogdoElevatorExt', ours)
-    yield until(lambda: elevator.fsm.getCurrentState().getName() == 'waitEmpty', 60,
-                'the field office elevator to open (it is %s)' % elevator.fsm.getCurrentState().getName())
     introShot = [0, 0.0]
     door = elevator.getElevatorModel()
     if door and not door.isEmpty():
@@ -1471,7 +1613,7 @@ def scenarioCogdo(track='s'):
             yield sleep(1)
         else:
             yield sleep(0.5)
-    yield until(walking, 180, 'walking after the field office')
+    yield from qlUntilWalking('after the field office', 180)
     log('back outside in zone %d with %d SOS cards' % (localAvatar.zoneId, len(localAvatar.NPCFriendsDict)))
     if questId:
         log('QUEST after: %s' % (localAvatar.quests,))
@@ -1521,6 +1663,10 @@ def scenarioCogdo(track='s'):
     def isToonBlock(air):
         return air.buildingManagers[street].getBuilding(block).isToonBlock()
 
+    if QL_STATS.get('went sad', 0) > sadAtStart:
+        # Sad toons leave the building to the cogs: the caller heals and
+        # goes in again.
+        raise StepFailed('went sad inside building %d' % block)
     yield until(lambda: onDistrict(isToonBlock), 120, 'the field office to turn back into a toon building')
 
 
@@ -1551,8 +1697,13 @@ def boardElevator(className, test=lambda do: True):
             return
 
 
+FACILITY_TARGET = [None]
+
+
 def clearFacility(interior, suitClass, levelClass=None, timeout=1800):
     # Walks into the boss cog until it is beaten, fighting whatever joins.
+    # FACILITY_TARGET[0], when set, picks the cogs to go after first (say the
+    # Skelecogs a ToonTask wants), for as long as it returns a test.
     yield until(lambda: placeName() == interior, 180, 'inside the %s' % interior)
     deadline = time.time() + timeout
     nextReport = 0
@@ -1562,7 +1713,10 @@ def clearFacility(interior, suitClass, levelClass=None, timeout=1800):
         if placeState() == 'battle':
             yield from fightBattle()
             continue
-        boss = findObject(suitClass, lambda do: getattr(do, 'boss', 0) and not do.isEmpty())
+        wanted = FACILITY_TARGET[0]() if FACILITY_TARGET[0] else None
+        test = (lambda do: not do.isEmpty() and wanted(do)) if wanted else (
+            lambda do: getattr(do, 'boss', 0) and not do.isEmpty())
+        boss = findObject(suitClass, test)
         if boss is None and walking() and levelClass:
             # Cogs only exist for the zones the toon can see, so look through
             # the zones one at a time until the boss shows up.
@@ -1573,9 +1727,9 @@ def clearFacility(interior, suitClass, levelClass=None, timeout=1800):
                     break
                 level.lockVisibility(zoneNum=zoneNum)
                 yield sleep(0.5)
-                boss = findObject(suitClass, lambda do: getattr(do, 'boss', 0) and not do.isEmpty())
+                boss = findObject(suitClass, test)
                 if boss is not None:
-                    log('found the boss cog in zone %d' % zoneNum)
+                    log('found the %s cog in zone %d' % ('wanted' if wanted else 'boss', zoneNum))
                     break
             if level is not None and not level.isDisabled() and hasattr(level, 'lockVizZone'):
                 level.unlockVisibility()
@@ -2668,9 +2822,10 @@ def scenarioEstate():
     yield from teleport(ToontownGlobals.ToontownCentral)
 
 
-def restock(air, avId):
+def restock(air, avId, need=None):
     # Stands in for a trip to the Gag Shop and the playground between
-    # fights, so a new 15-laff toon does not go sad.
+    # fights, so a new 15-laff toon does not go sad. need: (track, level,
+    # count) of a gag to buy first, as for a gag delivery task.
     av = air.doId2do[avId]
     if os.environ.get('AUTOPLAY_LAFF'):
         av.b_setMaxHp(int(os.environ['AUTOPLAY_LAFF']))
@@ -2681,6 +2836,9 @@ def restock(air, avId):
         av.experience.maxOutExpMinusOne()
         av.b_setExperience(av.experience.makeNetString())
         av.inventory.updateGUI = lambda *a: None
+    if need and av.inventory.numItem(need[0], need[1]) < need[2]:
+        av.inventory.zeroInv()
+        av.inventory.addItems(need[0], need[1], need[2])
     av.inventory.maxOutInv()
     av.b_setInventory(av.inventory.makeNetString())
 
@@ -2955,7 +3113,7 @@ def scenarioPets():
 
     # Calling the doodle for help in a cog battle, through the SOS panel.
     street = ToontownGlobals.SillyStreet
-    yield from teleport(street - street % 1000, firstVisgroup(street))
+    yield from teleport(street - street % 1000, qlStreetZone(street))
     onDistrict(restock, localAvatar.doId)
     for attempt in range(5):
         magicWord('~spawn f 1')
@@ -3272,6 +3430,17 @@ def goToNPC(npcId):
     if not findNPC():
         door = lambda: findObject('DistributedDoor', lambda do: do.block == block and do.doorType in (
             DoorTypes.EXT_STANDARD, DoorTypes.EXT_HQ))
+        for attempt in range(3):
+            if door() or branchId == hoodId:
+                break
+            if localAvatar.zoneId != outside and placeState() == 'walk':
+                # A battle on arrival can leave the toon a street zone
+                # away, out of sight of the door: back to it.
+                log('toon is in zone %d, not %d by building %d; going back' % (localAvatar.zoneId, outside, block))
+                yield from teleport(hoodId, outside)
+            waitUntil = time.time() + 30
+            while not door() and time.time() < waitUntil:
+                yield sleep(0.5)
         yield until(door, 60, 'the door of building %d' % block)
         yield sleep(2)
         log('going into building %d of zone %d for %s' % (block, branchId, name or 'an HQ officer'))
@@ -3296,10 +3465,15 @@ def talkTo(npc, pickQuest=None):
         yield until(lambda: npc.autoplayMovie[1] is not quests, 30, 'the ToonTask to be given')
         yield sleep(1)
     elif npc.trackChoiceGui is not None:
-        log('choosing gag track', quests[0])
-        messenger.send('chooseTrack', [quests[0]])
+        # AUTOPLAY_QL_TRACK_PICK 0 or 1: which of the two tracks (a test of
+        # each choice).
+        pick = quests[min(int(os.environ.get('AUTOPLAY_QL_TRACK_PICK', 0)), len(quests) - 1)]
+        log('choosing gag track %s of %s' % (pick, quests))
+        messenger.send('chooseTrack', [pick])
         yield until(lambda: npc.autoplayMovie[1] is not quests, 30, 'the track to be given')
         yield sleep(1)
+        log('after the track choice: track training %s, track access %s' % (
+            localAvatar.getTrackProgress(), localAvatar.getTrackAccess()))
     # Click through the speech pages; a scripted movie such as Tutorial
     # Tom's has a dozen of them.
     deadline = time.time() + 300
@@ -3351,7 +3525,7 @@ def defeatCogsFor(questId, quest):
     street = questStreet(quest)
     if street is None:
         raise StepFailed('the autoplay test only fights cogs on streets, not in %s' % quest.getLocationName())
-    yield from teleport(street - street % 1000, firstVisgroup(street))
+    yield from teleport(street - street % 1000, qlStreetZone(street))
     while not done():
         onDistrict(restock, localAvatar.doId)
         magicWord('~spawn %s %d' % (cog, level))
@@ -3739,7 +3913,7 @@ def scenarioInvasion(battles=2):
     # every new one is a Flunky. Invasion cogs come to every street, so the
     # toon fights a few on this one and then calls the invasion off.
     street = ToontownGlobals.SillyStreet
-    yield from teleport(street - street % 1000, firstVisgroup(street))
+    yield from teleport(street - street % 1000, qlStreetZone(street))
     magicWord('~invasion start f 1000')
     yield until(lambda: base.cr.newsManager.getInvading(), 60, 'the invasion to start')
     multiplier = localAvatar.inventory.getInvasionCreditMultiplier()
@@ -4786,7 +4960,7 @@ def scenarioNPCs():
     base.screenshot(os.path.join(os.environ.get('AUTOPLAY_SHOTS', '/tmp'), 'npcs-ttc.png'), defaultFilename=0)
 
     street = ToontownGlobals.SillyStreet
-    yield from teleport(street - street % 1000, firstVisgroup(street))
+    yield from teleport(street - street % 1000, qlStreetZone(street))
     yield from checkNPCsWalk(street, 'Silly Street')
     # A strong cog, so the battle lasts a few rounds.
     magicWord('~spawn mh 12')
@@ -4855,7 +5029,7 @@ def scenarioNPCToonUp():
     # hurt, and an NPC tooned them up.
     from toontown.toonbase.ToontownBattleGlobals import SOUND_TRACK, THROW_TRACK, HEAL_TRACK
     street = ToontownGlobals.SillyStreet
-    yield from teleport(street - street % 1000, firstVisgroup(street))
+    yield from teleport(street - street % 1000, qlStreetZone(street))
     spot = onDistrict(lambda air: tuple(air.npcPlayerManager.areas[street].sidewalks[0][0]))
     localAvatar.setPos(*spot)
     yield sleep(10)
@@ -5111,7 +5285,7 @@ def npcBattleWatch(areaId, what, timeout=240):
 
 def scenarioNPCStreets():
     street = ToontownGlobals.SillyStreet
-    yield from teleport(street - street % 1000, firstVisgroup(street))
+    yield from teleport(street - street % 1000, qlStreetZone(street))
     # With no friend to land next to, a street teleport drops the player at
     # a playground spot, off the street; stand on a sidewalk instead.
     spot = onDistrict(lambda air: tuple(air.npcPlayerManager.areas[street].sidewalks[0][0]))
@@ -5760,7 +5934,7 @@ def scenarioSummonFieldOffice():
 def scenarioBattleWith(during):
     street = ToontownGlobals.SillyStreet
     if ZoneUtil.getBranchZone(localAvatar.zoneId) != street:
-        yield from teleport(street - street % 1000, firstVisgroup(street))
+        yield from teleport(street - street % 1000, qlStreetZone(street))
     onDistrict(restock, localAvatar.doId)
     def freeSuits():
         # Cogs walking the street (not already fighting the NPC toons).
@@ -5843,8 +6017,1491 @@ def scenarioNPCEmote():
         raise StepFailed('an NPC wave was cut short: %s' % results)
 
 
+# --- The quest line, played like a player ---
+#
+# AUTOPLAY_QL_TIER: stop once the toon reaches this tier (default: the elder
+# tier, the end of the quest line). AUTOPLAY_QL_QUESTS: stop after handing in
+# this many ToonTasks. The toon and its progress live in the database, so a
+# second run carries on where the first one stopped.
+
+QL_SHOTS = os.path.join(os.environ.get('AUTOPLAY_SHOTS', '/tmp'), 'questline')
+QL_STATS = {}
+QL_FO_DONE = set()
+QL_SHOT_COUNT = [0]
+# Playground Toon HQs, where a toon picks up new ToonTasks.
+QL_HQ_ZONES = {
+    ToontownGlobals.ToontownCentral: 2520, ToontownGlobals.DonaldsDock: 1507,
+    ToontownGlobals.DaisyGardens: 5502, ToontownGlobals.MinniesMelodyland: 4504,
+    ToontownGlobals.TheBrrrgh: 3508, ToontownGlobals.DonaldsDreamland: 9505,
+}
+
+
+def qlCount(key, n=1):
+    QL_STATS[key] = QL_STATS.get(key, 0) + n
+
+
+def qlShot(name):
+    os.makedirs(QL_SHOTS, exist_ok=True)
+    QL_SHOT_COUNT[0] += 1
+    path = os.path.join(QL_SHOTS, '%s-%s.png' % (time.strftime('%H%M%S'), name))
+    base.graphicsEngine.renderFrame()
+    base.screenshot(path, defaultFilename=0)
+    log('screenshot', path)
+
+
+def qlTierHood(tier):
+    from toontown.quest import Quests
+    for first, hoodId in ((Quests.DL_TIER, ToontownGlobals.DonaldsDreamland), (Quests.BR_TIER, ToontownGlobals.TheBrrrgh),
+                          (Quests.MM_TIER, ToontownGlobals.MinniesMelodyland), (Quests.DG_TIER, ToontownGlobals.DaisyGardens),
+                          (Quests.DD_TIER, ToontownGlobals.DonaldsDock)):
+        if tier >= first:
+            return hoodId
+    return ToontownGlobals.ToontownCentral
+
+
+def qlQuest(questDesc):
+    from toontown.quest import Quests
+    return Quests.getQuest(questDesc[0])
+
+
+def qlStatus(questDesc):
+    return qlQuest(questDesc).getCompletionStatus(localAvatar, questDesc)
+
+
+def qlDesc(questId):
+    return next((q for q in localAvatar.quests if q[0] == questId), None)
+
+
+def qlStreets(quest):
+    # The streets where the ToonTask's cogs count, nearest first.
+    from toontown.quest import Quests
+    location = quest.getLocation() if hasattr(quest, 'getLocation') else Quests.Anywhere
+    if location == Quests.Anywhere:
+        location = qlTierHood(localAvatar.getRewardHistory()[0])
+    if ZoneUtil.isCogHQZone(location):
+        # The cog headquarters courtyards: their cogs walk the courtyard
+        # zone itself (Sellbot HQ also the factory's front yard).
+        hq = location - location % 1000
+        return [hq] + ([ToontownGlobals.SellbotFactoryExt] if hq == ToontownGlobals.SellbotHQ else [])
+    if not ZoneUtil.isPlayground(location):
+        return [location]
+    return [s for s in STREETS if s - s % 1000 == location]
+
+
+def qlCogDict(suit, avId):
+    return {'type': suit.dna.name, 'level': suit.getActualLevel(), 'track': suit.dna.dept,
+            'isSkelecog': suit.getSkelecog(), 'isForeman': suit.isForeman(), 'isVP': 0, 'isCFO': 0,
+            'isSupervisor': suit.isSupervisor(), 'isVirtual': suit.isVirtual(),
+            'hasRevives': suit.getMaxSkeleRevives(), 'activeToons': [avId]}
+
+
+def qlCogCounts(quest, cogDict, zoneId, avId):
+    from toontown.quest import Quests
+    if isinstance(quest, Quests.RecoverItemQuest):
+        if not quest.isLocationMatch(zoneId) or quest.getHolder() == Quests.AnyFish:
+            return False
+        holder, kind = quest.getHolder(), quest.getHolderType()
+        return holder == Quests.Any or (kind == 'type' and holder == cogDict['type']) or \
+            (kind == 'track' and holder == cogDict['track']) or (kind == 'level' and holder <= cogDict['level'])
+    if isinstance(quest, Quests.NewbieQuest):
+        # A help-a-toon task: does the cog itself count (the toon helped
+        # joins in the battle)? Asked of the plain task it is built on.
+        for cls in type(quest).__mro__:
+            if 'Newbie' not in cls.__name__ and 'doesCogCount' in cls.__dict__:
+                return bool(cls.doesCogCount(quest, avId, cogDict, zoneId, [avId]))
+        return False
+    return bool(quest.doesCogCount(avId, cogDict, zoneId, [avId]))
+
+
+def qlStreetSuits(air, streets, questIds, avId):
+    # Cogs walking the streets right now that count for one of the
+    # ToonTasks: (suit doId, zone, questId).
+    from toontown.quest import Quests
+    found = []
+    for street in streets:
+        planner = air.suitPlanners.get(street)
+        if planner is None:
+            continue
+        for suit in list(planner.suitList):
+            if suit.isDeleted() or suit.pathState != 1 or suit.attemptingTakeover or not suit.zoneId:
+                continue
+            # Not by a tunnel: the test lands the toon there by teleport (a
+            # player walks in), and can end up in the tunnel's trigger.
+            if getattr(suit, 'battleId', 0) or (suit.zoneId == street and not ZoneUtil.isCogHQZone(street)) \
+                    or suit.zoneId in qlTunnelZones(street):
+                continue
+            cog = qlCogDict(suit, avId)
+            for questId in questIds:
+                if qlCogCounts(Quests.getQuest(questId), cog, suit.zoneId, avId):
+                    found.append((suit.doId, suit.zoneId, questId))
+                    break
+    return found
+
+
+QL_TUNNEL_ZONES = {}
+
+
+def qlStreetZone(street):
+    # Where to land on a street: a street's own zone has no scenery, so its
+    # first visgroup; a cog headquarters courtyard is one zone.
+    return street if ZoneUtil.isCogHQZone(street) else firstVisgroup(street)
+
+
+def qlTunnelZones(streetId):
+    # The street's visgroups that hold a tunnel.
+    if streetId not in QL_TUNNEL_ZONES:
+        zones = set()
+        for path in glob.glob(os.path.join('resources', 'phase_*', 'dna', '*_%d.xml' % streetId)):
+            current = None
+            for line in open(path):
+                match = re.search(r'<visgroup zone="(\d+)"', line)
+                if match:
+                    current = int(match.group(1))
+                elif 'linktunnel' in line and current:
+                    zones.add(current)
+        QL_TUNNEL_ZONES[streetId] = zones
+    return QL_TUNNEL_ZONES[streetId]
+
+
+def qlSuitReport(air, streets):
+    out = []
+    for street in streets:
+        planner = air.suitPlanners.get(street)
+        for suit in list(planner.suitList) if planner else []:
+            out.append('%s/%d z%s p%s t%s b%s' % (suit.dna.name, suit.getActualLevel(), suit.zoneId, suit.pathState,
+                                                  suit.attemptingTakeover, getattr(suit, 'battleId', '-')))
+    return out
+
+
+def qlWalkInto(suitId, timeout=40):
+    # Runs at the cog the way a player steers into one, until the battle
+    # starts or the cog is gone.
+    deadline = time.time() + timeout
+    while placeState() == 'walk' and time.time() < deadline:
+        suit = base.cr.doId2do.get(suitId)
+        if suit is None or suit.isEmpty():
+            return False
+        here, there = localAvatar.getPos(render), suit.getPos(render)
+        gap = there - here
+        gap.setZ(0)
+        if gap.length() > 3:
+            # Down the street to it: a straight line would run through the
+            # buildings and tunnels (and into the tunnel triggers), so the
+            # toon arrives right by it.
+            localAvatar.headsUp(render, there)
+            localAvatar.setPos(render, there)
+        elif gap.length() < 3:
+            localAvatar.setPos(render, there)
+        else:
+            localAvatar.headsUp(render, there)
+            step = min(gap.length(), ToontownGlobals.ToonForwardSpeed * 0.1)
+            gap.normalize()
+            localAvatar.setPos(render, here + gap * step)
+        yield sleep(0.1)
+    yield until(lambda: placeState() != 'walk' or time.time() > deadline, 10, 'the battle')
+    if placeState() == 'WaitForBattle':
+        # The cog stops and turns to the toon first.
+        yield until(lambda: placeState() != 'WaitForBattle', 30, 'the battle after the cog stops')
+    if placeState() != 'battle':
+        log('walking into the cog ended in %s/%s, not a battle' % (placeName(), placeState()))
+        if placeState() == 'elevator':
+            # The cog stood by a building's elevator and the toon ran onto
+            # it: step back off, as a player who didn't mean to would.
+            qlCount('stepped onto an elevator')
+            yield sleep(1)
+            messenger.send('elevatorExitButton')
+        yield until(walking, 120, 'walking again')
+        return False
+    return True
+
+
+def qlHealUp(before, low=0.5, want=0.8, limit=480):
+    # Low on laff before something big: off to the playground, as a player
+    # would, picking up treasures and letting the playground heal the rest.
+    if localAvatar.getHp() >= localAvatar.getMaxHp() * low:
+        return
+    hood = qlTierHood(localAvatar.getRewardHistory()[0])
+    start, hp0 = time.time(), localAvatar.getHp()
+    log('only %d of %d laff before %s: healing in the playground' % (hp0, localAvatar.getMaxHp(), before))
+    qlCount('healed in the playground')
+    if localAvatar.zoneId != hood:
+        yield from teleport(hood)
+    yield from qlUntilWalking('in the playground to heal')
+    while localAvatar.getHp() < localAvatar.getMaxHp() * want and time.time() - start < limit:
+        treasures = [do for do in list(base.cr.doId2do.values()) if do.__class__.__name__.endswith('Treasure')
+                     and do.zoneId == localAvatar.zoneId and getattr(do, 'nodePath', None) and not do.nodePath.isEmpty()]
+        if treasures:
+            t = treasures[0]
+            localAvatar.setPos(render, t.nodePath.getPos(render))
+            t.handleEnterSphere()
+            yield sleep(2)
+        else:
+            yield sleep(5)
+    log('laff %d -> %d after %d s in the playground' % (hp0, localAvatar.getHp(), time.time() - start))
+
+
+def qlRestock():
+    # A trip to the playground for laff and to the Gag Shop for gags.
+    onDistrict(restock, localAvatar.doId)
+
+
+def qlBattle():
+    shots = QL_STATS.get('battle shots', 0)
+    start = time.time()
+    yield until(lambda: placeState() == 'battle', 60, 'the battle to start')
+    yield sleep(4)
+    toons = onDistrict(battleToons, localAvatar.doId)
+    qlCount('battles')
+    qlCount('battle toons', toons)
+    log('battle with %d toons' % toons)
+    if shots < 6:
+        qlCount('battle shots')
+        qlShot('battle-%d-toons' % toons)
+    most = [toons]
+
+    def watch():
+        if time.time() - watch.last > 3:
+            watch.last = time.time()
+            most[0] = max(most[0], onDistrict(battleToons, localAvatar.doId))
+    watch.last = 0
+    yield from fightBattle(during=watch)
+    log('battle had up to %d toons' % most[0])
+    qlCount('battle max toons %d' % most[0])
+    yield until(lambda: placeState() != 'battle', 120, 'the battle to end')
+    yield sleep(1)
+    if localAvatar.getHp() <= 0 or placeState() not in ('walk', None):
+        log('after the battle: place %s, laff %d' % (placeState(), localAvatar.getHp()))
+    yield from qlUntilWalking('after the battle', 240)
+    log('battle took %.0f s' % (time.time() - start))
+
+
+def qlOnStreet():
+    # Out on the street itself: a building on the street has a zone that
+    # reads as the street's branch too (cogs can't be called in there).
+    return localAvatar.zoneId % 1000 < 500 and 'Interior' not in (placeName() or '')
+
+
+def qlDefeatCogs(questIds):
+    # Fights cogs that count for these ToonTasks: ones already walking the
+    # streets first; a cog of the right kind is called in only when none
+    # turns up for a while.
+    from toontown.quest import Quests
+    quests = [Quests.getQuest(q) for q in questIds]
+    streets = []
+    for quest in quests:
+        for street in qlStreets(quest):
+            if street not in streets:
+                streets.append(street)
+    if not streets:
+        raise StepFailed('no street for ToonTasks %s' % questIds)
+    avId = localAvatar.doId
+    waited = 0
+    fought = {}
+    while True:
+        open_ = [q for q in questIds if qlDesc(q) and qlStatus(qlDesc(q)) != Quests.COMPLETE]
+        if not open_:
+            return
+        qlRestock()
+        found = onDistrict(qlStreetSuits, streets, open_, avId)
+        if not found:
+            if waited < 3:
+                waited += 1
+                if waited == 1:
+                    street = streets[0]
+                    if ZoneUtil.getBranchZone(localAvatar.zoneId) not in streets or not qlOnStreet():
+                        yield from teleport(street - street % 1000, qlStreetZone(street))
+                yield sleep(10)
+                continue
+            # Nothing that counts on these streets (or not for a while): the
+            # cogs that do count get called in, as they would wander in.
+            quest = Quests.getQuest(open_[0])
+            cog, level = qlCogFor(quest)
+            street = qlStreets(quest)[0]
+            if ZoneUtil.getBranchZone(localAvatar.zoneId) != street or not qlOnStreet():
+                yield from teleport(street - street % 1000, qlStreetZone(street))
+            log('no %s cog on the street for ToonTask %d; one walks in. Cogs there: %s' % (
+                cog, open_[0], onDistrict(qlSuitReport, streets)))
+            qlCount('cogs called in')
+            # A Skelecog task wants a Skelecog (the spawn's special 1).
+            # (2: a Version 2.0 cog, which revives as a Skelecog.)
+            skel = ' 1' if isinstance(quest, Quests.SkelecogQBase) else ' 2' if isinstance(quest, Quests.SkeleReviveQBase) else ''
+            magicWord('~spawn %s %d%s' % (cog, level, skel))
+            yield sleep(3)
+            waited = 0
+            continue
+        if localAvatar.getHp() < localAvatar.getMaxHp() * 0.3:
+            yield from qlHealUp('the next battle', 0.3)
+            continue
+        waited = 0
+        here = localAvatar.zoneId
+        suitId, zoneId, questId = sorted(found, key=lambda f: (f[1] != here, f[1]))[0]
+        if localAvatar.zoneId != zoneId:
+            street = ZoneUtil.getBranchZone(zoneId)
+            yield from teleport(street - street % 1000, zoneId)
+        shown = time.time() + 15
+        yield until(lambda: base.cr.doId2do.get(suitId) is not None or time.time() > shown, 25, 'the cog to show up')
+        if base.cr.doId2do.get(suitId) is None:
+            continue
+        qlCount('natural cogs')
+        if (yield from qlWalkInto(suitId)):
+            yield from qlBattle()
+            desc = qlDesc(questId)
+            if desc:
+                log('ToonTask %d: %s' % (questId, qlQuest(desc).getProgressString(localAvatar, desc) or 'in progress'))
+            fought[questId] = fought.get(questId, 0) + 1
+            if fought[questId] >= QL_SHORT:
+                yield from qlCreditIfMoved(questId, '%d battles' % fought[questId])
+
+
+QL_SHORT = int(os.environ.get('AUTOPLAY_QL_SHORT', '0') or 0)
+
+
+def qlCreditIfMoved(questId, after):
+    # Test toons only (AUTOPLAY_QL_SHORT, set by the test scripts, never in
+    # the game): once a count has really moved, the rest of it is credited
+    # here, so the hand-in still gets played. The game itself is unchanged.
+    from toontown.quest import Quests
+    desc = qlDesc(questId)
+    if not QL_SHORT or not desc or desc[4] <= 0 or qlStatus(desc) == Quests.COMPLETE:
+        return
+    onDistrict(qlCreditRest, localAvatar.doId, questId)
+    yield until(lambda: qlDesc(questId) is None or qlStatus(qlDesc(questId)) == Quests.COMPLETE, 15, 'the credited count')
+    log('ToonTask %d: rest of the count credited after %s (test runner only)' % (questId, after))
+    qlCount('counts credited')
+
+
+def qlCreditRest(air, avId, questId):
+    from toontown.quest import Quests
+    av = air.doId2do[avId]
+    quest = Quests.getQuest(questId)
+    need = quest.getNumQuestItems()
+    quests = [list(q) for q in av.quests]
+    for q in quests:
+        if q[0] == questId:
+            q[4] = max(q[4], need)
+    av.b_setQuests(quests)
+
+
+def qlCogFor(quest):
+    # A cog that counts for the ToonTask, for when none walks by.
+    from toontown.quest import Quests
+    from toontown.suit import SuitDNA
+    from toontown.battle import SuitBattleGlobals
+    hood = qlTierHood(localAvatar.getRewardHistory()[0])
+    low = {ToontownGlobals.ToontownCentral: 1, ToontownGlobals.DonaldsDock: 2, ToontownGlobals.DaisyGardens: 2,
+           ToontownGlobals.MinniesMelodyland: 3, ToontownGlobals.TheBrrrgh: 5, ToontownGlobals.DonaldsDreamland: 6}[hood]
+
+    def fit(name, level):
+        tier = SuitBattleGlobals.SuitAttributes[name]['level']
+        return name, max(tier + 1, min(level, tier + 5))
+    if isinstance(quest, Quests.RecoverItemQuest):
+        holder, kind = quest.getHolder(), quest.getHolderType()
+        if holder == Quests.Any:
+            return fit('f', low)
+        if kind == 'type':
+            return fit(holder, low)
+        if kind == 'track':
+            return fit(SuitDNA.suitHeadTypes[SuitDNA.suitDepts.index(holder) * 8], low)
+        return fit(SuitDNA.suitHeadTypes[min(holder - 1, 7)], holder)
+    if isinstance(quest, Quests.CogLevelQuest):
+        level = quest.getCogLevel()
+        return fit(SuitDNA.suitHeadTypes[min(level - 1, 7)], level)
+    if isinstance(quest, Quests.CogTrackQuest):
+        return fit(SuitDNA.suitHeadTypes[SuitDNA.suitDepts.index(quest.getCogTrack()) * 8], low)
+    if isinstance(quest, Quests.CogQuest) and quest.getCogType() != Quests.Any:
+        return fit(quest.getCogType(), low)
+    return fit('f', low)
+
+
+def qlGoToNPC(npcId):
+    # The Toon HQ of the toon's own playground for "any HQ officer".
+    from toontown.quest import Quests
+    if npcId == Quests.ToonHQ:
+        hood = qlTierHood(localAvatar.getRewardHistory()[0])
+        npc = yield from qlGoToZone(QL_HQ_ZONES[hood], None)
+    elif npcId == Quests.ToonTailor:
+        # "Any tailor": the clothing shop of the toon's own playground.
+        from toontown.toon import NPCToons
+        hood = qlTierHood(localAvatar.getRewardHistory()[0])
+        tailors = sorted((info[0], info[1]) for info in NPCToons.NPCToonDict.values()
+                         if len(info) > 5 and info[5] == NPCToons.NPC_TAILOR and info[0] > 0
+                         and ZoneUtil.getCanonicalHoodId(info[0]) == hood)
+        if not tailors:
+            raise StepFailed('no tailor in hood %d' % hood)
+        tailors.sort(key=lambda t: (ZoneUtil.getCanonicalBranchZone(t[0]) != hood, t[0]))
+        npc = yield from qlGoToZone(tailors[0][0], tailors[0][1])
+    else:
+        from toontown.toon import NPCToons
+        if npcId not in NPCToons.NPCToonDict:
+            raise StepFailed('NPC %d is not in NPCToonDict' % npcId)
+        zoneId, name = NPCToons.NPCToonDict[npcId][0], NPCToons.NPCToonDict[npcId][1]
+        npc = yield from qlGoToZone(zoneId, name)
+    return npc
+
+
+def qlGoToZone(zoneId, name):
+    # Walks in through the front door of the building, beating the cogs
+    # first if they took it over.
+    hoodId = ZoneUtil.getCanonicalHoodId(zoneId)
+    branchId = ZoneUtil.getCanonicalBranchZone(zoneId)
+    block = zoneId % 100
+    if branchId == hoodId:
+        if ZoneUtil.getCanonicalHoodId(localAvatar.zoneId) != hoodId or not ZoneUtil.isPlayground(localAvatar.zoneId):
+            yield from teleport(hoodId)
+    else:
+        outside = base.cr.playGame.dnaData.getBlock(block).zone if ZoneUtil.getBranchZone(localAvatar.zoneId) == branchId else None
+        if outside is None:
+            yield from teleport(hoodId, firstVisgroup(branchId))
+            outside = base.cr.playGame.dnaData.getBlock(block).zone
+        if outside != localAvatar.zoneId:
+            yield from teleport(hoodId, outside)
+
+    isNPC = lambda do: ((hasattr(do, 'questChoiceGui') or do.__class__.__name__.startswith('DistributedNPC'))
+                        and do.zoneId == zoneId and hasattr(do, 'getName')
+                        and (name is None or do.getName() == name))
+    findNPC = lambda: next((do for do in list(base.cr.doId2do.values()) if isNPC(do)), None)
+    def takeBack():
+        # The cogs took the building (perhaps while the toon walked up to
+        # it): beat them first, as a player would.
+        if branchId == hoodId:
+            return False
+        kind = onDistrict(lambda air: (lambda b: 'cogdo' if b.isCogdo() else 'suit' if b.isSuitBlock() else 'toon')(
+            air.buildingManagers[branchId].getBuilding(block)))
+        if kind == 'toon':
+            return False
+        log('the cogs have taken building %d of zone %d (%s); taking it back first' % (block, branchId, kind))
+        qlCount('quest buildings taken back')
+        yield from qlPlayBuilding(branchId, block, kind == 'cogdo')
+        if ZoneUtil.getBranchZone(localAvatar.zoneId) != branchId:
+            yield from teleport(hoodId, base.cr.playGame.dnaData.getBlock(block).zone)
+        return True
+    yield from takeBack()
+    yield sleep(2)
+    if findNPC() and placeName() in ('ToonInterior', 'HQInterior'):
+        # Winning a field office back can leave the toon inside the
+        # building it freed: the NPC is right here.
+        yield until(lambda: findNPC() and walking(), 120, 'walking up to %s' % (name or 'an HQ officer'))
+        return findNPC()
+    door = lambda: findObject('DistributedDoor', lambda do: do.block == block and do.doorType in (
+        DoorTypes.EXT_STANDARD, DoorTypes.EXT_HQ) and ZoneUtil.getBranchZone(do.zoneId) == ZoneUtil.getBranchZone(localAvatar.zoneId))
+    for attempt in range(3):
+        waitUntil = time.time() + 25
+        while not door() and time.time() < waitUntil:
+            if placeState() == 'battle':
+                # A cog walked into the toon as it landed.
+                yield from fightBattle()
+                yield from qlUntilWalking('after a battle by the door')
+                waitUntil = time.time() + 25
+            yield sleep(0.5)
+        if door() or branchId == hoodId:
+            break
+        # The battle (or the landing) left the toon out of sight of the door.
+        log('door of building %d not in sight from zone %d; back to it' % (block, localAvatar.zoneId))
+        yield from teleport(hoodId, base.cr.playGame.dnaData.getBlock(block).zone)
+    yield until(door, 60, 'the door of building %d' % block)
+    d = door()
+    # Stand on the doorstep: a teleport within the street can leave the toon
+    # where it was, the street then finds it in another part and the door
+    # drops out of sight.
+    doorPos = None
+    try:
+        doorPos = d.getDoorNodePath().getPos(render)
+        localAvatar.setPos(render, doorPos)
+    except Exception:
+        pass
+    yield sleep(1)
+    log('going into building %d of zone %d for %s' % (block, branchId, name or 'an HQ officer'))
+    for attempt in range(4):
+        # A toon that dozed off while waiting wakes up as it walks over; a
+        # cog that grabs it on the doorstep means a battle first.
+        localAvatar.wakeUp()
+        if placeState() == 'battle':
+            yield from fightBattle()
+            yield from qlUntilWalking('after a battle at the door')
+        if placeName() in ('ToonInterior', 'HQInterior') or findNPC():
+            break
+        d = door() or d
+        if d.isDisabled() or getattr(d, 'cr', None) is None:
+            # The toon wandered into the next stretch of the street and the
+            # door went out of sight: back to it.
+            log('door of building %d out of sight (toon in zone %d); going back' % (block, localAvatar.zoneId))
+            took = yield from takeBack()
+            if took:
+                yield until(door, 90, 'the door of building %d' % block)
+                d = door()
+                doorPos = d.getDoorNodePath().getPos(render)
+            if doorPos is not None:
+                localAvatar.setPos(render, doorPos)
+            else:
+                yield from teleport(hoodId, base.cr.playGame.dnaData.getBlock(block).zone)
+            yield until(door, 60, 'the door of building %d' % block)
+            d = door()
+        if attempt == 0:
+            messenger.send(d.getEnterTriggerEvent(), [None])
+        else:
+            # The door stops listening once it is walked into; straight in.
+            d.doorTrigger()
+        deadline = time.time() + 40
+        while time.time() < deadline and not (findNPC() and walking()) and placeState() != 'battle':
+            yield sleep(1)
+        if findNPC() and walking():
+            break
+        log('not inside yet (place %s, state %s): trying the door again' % (placeName(), placeState()))
+        qlCount('door retries')
+    yield until(lambda: findNPC() and walking(), 120, 'walking up to %s' % (name or 'an HQ officer'))
+    return findNPC()
+
+
+# Several toons share the work of trying every ToonTask: each records what
+# it took and handed in here, and takes the ones nobody has tried yet.
+QL_COVERAGE = os.environ.get('AUTOPLAY_QL_COVERAGE', '/home/user/ql-coverage.json')
+QL_TOON = os.environ.get('AUTOPLAY_QL_TOON', '1')
+
+
+def qlCoverage(update=None):
+    import json
+    import fcntl
+    with open(QL_COVERAGE + '.lock', 'w') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            with open(QL_COVERAGE) as f:
+                data = json.load(f)
+        except (OSError, ValueError):
+            data = {}
+        if update:
+            questId, what = update
+            entry = data.setdefault(str(questId), {})
+            entry.setdefault(what, []).append(QL_TOON)
+            with open(QL_COVERAGE + '.tmp', 'w') as f:
+                json.dump(data, f, indent=0, sort_keys=True)
+            os.replace(QL_COVERAGE + '.tmp', QL_COVERAGE)
+        return data
+
+
+def qlPickQuest(choices):
+    # A ToonTask no toon has taken yet first; among those, field office
+    # tasks of each department until each has been done once, then the kind
+    # of task done least so far.
+    from toontown.quest import Quests
+    def kind(c):
+        return Quests.getQuest(c[0]).__class__.__name__
+    covered = qlCoverage()
+    fresh = [c for c in choices if str(c[0]) not in covered]
+    log('ToonTask choices %s; nobody has tried %s' % ([c[0] for c in choices], [c[0] for c in fresh]))
+    choices = fresh or choices
+    for c in choices:
+        quest = Quests.getQuest(c[0])
+        if isinstance(quest, Quests.BuildingQuest) and quest.getBuildingTrack() in Quests.FieldOfficeTracks \
+                and quest.getBuildingTrack() not in QL_FO_DONE:
+            return c[0]
+    playable = [c for c in choices if qlCanPlay(Quests.getQuest(c[0]))] or choices
+    return min(playable, key=lambda c: QL_STATS.get('picked ' + kind(c), 0))[0]
+
+
+def qlCanPlay(quest):
+    from toontown.quest import Quests
+    return isinstance(quest, (Quests.CogQuest, Quests.RecoverItemQuest, Quests.VisitQuest, Quests.DeliverItemQuest,
+                              Quests.DeliverGagQuest, Quests.TrackChoiceQuest, Quests.TrolleyQuest,
+                              Quests.FriendQuest, Quests.PhoneQuest))
+
+
+def qlTalk(npc):
+    before = [q[0] for q in localAvatar.quests]
+    picked = []
+
+    def pick(choices):
+        questId = qlPickQuest(choices)
+        picked.append(questId)
+        return questId
+    yield from talkTo(npc, pick)
+    for questId in picked:
+        from toontown.quest import Quests
+        qlCount('picked ' + Quests.getQuest(questId).__class__.__name__)
+        qlCoverage((questId, 'taken'))
+    after = [q[0] for q in localAvatar.quests]
+    return before, after
+
+
+def qlHandIn(questDesc):
+    from toontown.quest import Quests
+    questId, fromNpcId, toNpcId, rewardId, progress = questDesc
+    quest = Quests.getQuest(questId)
+    if isinstance(quest, Quests.DeliverGagQuest):
+        # A player buys the gags at the Gag Shop on the way.
+        track, level = quest.getGagType()
+        onDistrict(restock, localAvatar.doId, (track, level, quest.getNumGags()))
+        yield sleep(1)
+        log('delivering %d of gag %d/%d; the toon has %d' % (
+            quest.getNumGags(), track, level, localAvatar.inventory.numItem(track, level)))
+    npc = yield from qlGoToNPC(toNpcId)
+    if npc.__class__.__name__ == 'DistributedNPCTailor':
+        yield from qlTailor(npc)
+    else:
+        yield from qlTalk(npc)
+    # The server's answer can come a moment after the toon walks again
+    # (the tailor's closet-full OK).
+    settle = time.time() + 15
+    while qlDesc(questId) == questDesc and time.time() < settle:
+        yield sleep(0.5)
+    if qlDesc(questId) == questDesc:
+        raise StepFailed('handing in ToonTask %d to %s did nothing (status %s)' % (questId, npc.getName(), qlStatus(questDesc)))
+    qlCount('handed in')
+    qlCoverage((questId, 'done'))
+    log('handed in ToonTask %d; tier %s, ToonTasks now %s' % (questId, localAvatar.getRewardHistory()[0],
+                                                              [q[0] for q in localAvatar.quests]))
+
+
+def qlTailor(npc):
+    # The clothing ticket: pick a new shirt and shorts and buy them.
+    log('talking to the tailor', npc.getName())
+    # Up to the counter, as a player walks up to the tailor (the tailor's
+    # camera is placed from where the toon stands).
+    localAvatar.setPos(npc, 0, 4, 0)
+    localAvatar.headsUp(npc)
+    yield sleep(0.5)
+    npc.handleCollisionSphereEnter(None)
+    yield until(lambda: npc.clothesGUI is not None, 60, 'the tailor\'s clothes')
+    yield sleep(2)
+    gui = npc.clothesGUI
+    gui.swapTop(1)
+    gui.swapBottom(1)
+    yield sleep(1)
+    qlShot('tailor')
+    messenger.send('next')
+    yield sleep(2)
+    popup = getattr(npc, 'popupInfo', None)
+    if popup is not None and not popup.isHidden():
+        log('the closet is full; giving up the old clothes')
+        qlShot('tailor-closet-full')
+        npc._DistributedNPCTailor__handleConfirmLossOK(2, 3)
+    yield from qlUntilWalking('after the tailor', 60)
+
+
+def qlPlayBuilding(street, block, cogdo, track=None):
+    # Going sad inside leaves the building to the cogs: heal and go again.
+    for go in range(3):
+        sad = QL_STATS.get('went sad', 0)
+        try:
+            if cogdo:
+                yield from playFieldOffice(street, block, track)
+            else:
+                yield from playCogBuilding(street, block)
+            return
+        except StepFailed:
+            if QL_STATS.get('went sad', 0) == sad or go == 2:
+                raise
+            log('went sad inside building %d of zone %d; healing and going in again' % (block, street))
+
+
+def qlBuildingFor(quest):
+    # A cog building or field office for a building ToonTask: one already
+    # standing on the street if there is one, else the cogs take one over.
+    from toontown.quest import Quests
+    streets = qlStreets(quest)
+    track = quest.getBuildingTrack()
+    floors = quest.getNumFloors()
+    wantFO = track in Quests.FieldOfficeTracks and track not in QL_FO_DONE
+
+    def find(air):
+        from toontown.building import DistributedBuildingAI as B
+        from toontown.quest.QuestManagerAI import fieldOfficeLevel
+        for street in streets:
+            manager = air.buildingManagers.get(street)
+            for block in manager.getSuitBlocks() if manager else []:
+                b = manager.getBuilding(block)
+                cogdo = b.isCogdo() if hasattr(b, 'isCogdo') else False
+                if cogdo != wantFO:
+                    continue
+                bTrack = b.track
+                height = fieldOfficeLevel(b.difficulty) if cogdo else b.numFloors
+                if (track == Quests.Any or bTrack == track) and height >= floors:
+                    return street, block, cogdo, bTrack
+        street = streets[0]
+        manager = air.buildingManagers[street]
+        blocks = [bl for bl in manager.getToonBlocks()
+                  if 'shop' not in manager.getBuilding(bl).__class__.__name__.lower()
+                  and manager.getBuilding(bl).isToonBlock()]
+        if not blocks:
+            return None
+        block = blocks[0]
+        b = manager.getBuilding(block)
+        t = track if track != Quests.Any else 's'
+        if wantFO:
+            level = max(floors, 1)
+            b.cogdoTakeOver(t, B.FieldOfficeLevels[level], None)
+        else:
+            difficulty = {1: 0, 2: 1, 3: 2, 4: 4, 5: 8}[floors]
+            b.suitTakeOver(t, difficulty, floors - 1)
+        return street, block, wantFO, t
+    return onDistrict(find)
+
+
+def qlDoBuilding(questId):
+    from toontown.quest import Quests
+    quest = Quests.getQuest(questId)
+    while qlDesc(questId) and qlStatus(qlDesc(questId)) != Quests.COMPLETE:
+        found = qlBuildingFor(quest)
+        if found is None:
+            raise StepFailed('no building for ToonTask %d' % questId)
+        street, block, cogdo, track = found
+        log('ToonTask %d: %s of %s on block %d of street %d' % (
+            questId, 'field office' if cogdo else 'cog building', track, block, street))
+        qlRestock()
+        yield from qlPlayBuilding(street, block, cogdo, track)
+        if cogdo:
+            QL_FO_DONE.add(track)
+            qlCount('field offices')
+        else:
+            qlCount('cog buildings')
+        yield from qlCreditIfMoved(questId, 'one building')
+
+
+def qlTrolley():
+    # A new toon cannot leave Toontown Central before riding the trolley:
+    # teleporting even within it brings up the reminder.
+    if not (ZoneUtil.isPlayground(localAvatar.zoneId) and
+            ZoneUtil.getCanonicalHoodId(localAvatar.zoneId) == ToontownGlobals.ToontownCentral):
+        yield from teleport(ToontownGlobals.ToontownCentral)
+    yield sleep(1)
+    for attempt in range(10):
+        if placeState() == 'walk':
+            trolley = findObject('DistributedTrolley')
+            if trolley is not None:
+                localAvatar.setPos(render, trolley.trolleyCar.getPos(render))
+            messenger.send('entertrolley_sphere', [None])
+        yield sleep(5)
+        if placeState() != 'walk':
+            break
+    yield until(lambda: minigameState() == 'frameworkRules', 180, 'a trolley game')
+    log('trolley game', base.curMinigame.__class__.__name__, 'with', len(base.curMinigame.avIdList) - 1, 'others')
+    qlShot('trolley-' + base.curMinigame.__class__.__name__)
+    messenger.send(base.curMinigame.rulesDoneEvent)
+    yield until(lambda: minigameState() not in ('frameworkRules', 'frameworkGame', 'frameworkWaitServerFinish'), 420,
+                'the trolley game to end')
+    yield until(lambda: hoodState() == 'purchase', 120, 'the gag shop')
+    yield until(lambda: base.cr.playGame.hood.purchase.fsm.getCurrentState().getName() == 'purchase', 60, 'the gag shop buttons')
+    yield sleep(1)
+    messenger.send('purchaseBackToToontown')
+    yield from qlUntilWalking('after the trolley')
+
+
+def qlUntilWalking(what, timeout=120):
+    # Clicks OK on whatever a playground pops up (the trolley ToonTask
+    # done, a reminder), reading it first as a player would.
+    deadline = time.time() + timeout
+    while not walking():
+        if time.time() > deadline:
+            raise StepFailed('not walking %s (place %s in state %s)' % (what, placeName(), placeState()))
+        if getattr(place(), 'deathAckBox', None) and placeState() == 'popup':
+            # The toon went sad and woke up in the playground.
+            log('the toon went sad; back in the playground with %d laff' % localAvatar.getHp())
+            qlCount('went sad')
+            qlShot('went-sad')
+            yield sleep(1)
+            messenger.send('deathAck')
+            yield sleep(1)
+            continue
+        dialog = getattr(place(), 'dialog', None) if placeState() == 'popup' else None
+        if dialog is not None and not dialog.isEmpty():
+            log('popup says: %s' % dialog['text'])
+            qlShot('popup')
+            yield sleep(1)
+            dialog['command'](DGG.DIALOG_OK)
+        yield sleep(0.5)
+
+
+def qlStreetCogQuest(quest):
+    from toontown.quest import Quests
+    if isinstance(quest, Quests.RecoverItemQuest):
+        return quest.getHolder() != Quests.AnyFish
+    return isinstance(quest, Quests.CogQuest) and not qlFacilityOf(quest) and not isinstance(
+        quest, (Quests.BuildingQuest, Quests.ForemanQuest, Quests.VPQuest, Quests.SupervisorQuest, Quests.CFOQuest))
+
+
+def qlWork(questDesc):
+    # One go at a ToonTask that is not done yet.
+    from toontown.quest import Quests
+    questId = questDesc[0]
+    quest = qlQuest(questDesc)
+    if isinstance(quest, Quests.BuildingQuest):
+        yield from qlDoBuilding(questId)
+    elif isinstance(quest, Quests.RecoverItemQuest) and quest.getHolder() == Quests.AnyFish:
+        yield from qlFish(questId)
+    elif isinstance(quest, Quests.CogQuest) and qlFacilityOf(quest):
+        name, play = qlFacilityOf(quest)
+        FACILITY_TARGET[0] = lambda: qlFacilityWanted(questId)
+        try:
+            yield from qlFacility(questId, name, play)
+        finally:
+            FACILITY_TARGET[0] = None
+    elif qlStreetCogQuest(quest):
+        # Other street-cog tasks on the same streets get done in the same
+        # battles (not fishing, building, facility or boss tasks).
+        same = [q[0] for q in localAvatar.quests if qlStatus(q) != Quests.COMPLETE and qlStreetCogQuest(qlQuest(q))
+                and set(qlStreets(qlQuest(q))) & set(qlStreets(quest))]
+        yield from qlDefeatCogs(same or [questId])
+    elif isinstance(quest, Quests.TrolleyQuest):
+        yield from qlTrolley()
+    elif isinstance(quest, (Quests.FactoryQuest, Quests.ForemanQuest)) or (
+            isinstance(quest, Quests.CogPartQuest) and qlHQOf(quest) == ToontownGlobals.SellbotHQ):
+        yield from qlFacility(questId, 'the Sellbot factory', scenarioFactory)
+    elif isinstance(quest, (Quests.MintQuest, Quests.SupervisorQuest)) or (
+            isinstance(quest, Quests.CogPartQuest) and qlHQOf(quest) == ToontownGlobals.CashbotHQ):
+        name, play = qlMintOf(quest)
+        yield from qlFacility(questId, name, play)
+    elif isinstance(quest, (Quests.VPQuest, Quests.CFOQuest)):
+        # The boss itself (a Rescue task frees toons by beating the VP): a
+        # toon taking these has a cog suit ready for promotion, as it must
+        # to board the boss elevator.
+        dept, name, play = ((3, 'the Sellbot VP', scenarioVP) if isinstance(quest, Quests.VPQuest)
+                            else (2, 'the Cashbot CFO', scenarioCFO))
+
+        def bossGo():
+            # Promoted after each win: ready again for the next go.
+            onDistrict(qlBossReady, localAvatar.doId, dept)
+            yield from play()
+        yield from qlFacility(questId, name, bossGo)
+    elif isinstance(quest, Quests.DeliverGagQuest):
+        yield from qlTrainFor(quest)
+        qlRestock()
+    elif isinstance(quest, Quests.PhoneQuest):
+        yield from qlPhone()
+    elif isinstance(quest, Quests.FriendQuest):
+        yield from qlMakeFriend(questId)
+    else:
+        raise StepFailed('the quest line runner cannot do %s (ToonTask %d) yet' % (quest.__class__.__name__, questId))
+
+
+def qlBossReady(air, avId, dept):
+    # A full cog suit for the department with every merit for promotion.
+    from toontown.coghq import CogDisguiseGlobals
+    av = air.doId2do[avId]
+    parts = av.getCogParts()
+    parts[dept] = CogDisguiseGlobals.PartsPerSuitBitmasks[dept]
+    av.b_setCogParts(parts)
+    merits = av.getCogMerits()
+    merits[dept] = CogDisguiseGlobals.getTotalMerits(av, dept)
+    av.b_setCogMerits(merits)
+    av.b_setHp(av.getMaxHp())
+
+
+def qlFacilityOf(quest):
+    # The facility a cog ToonTask is set inside, if any: (name, play).
+    location = quest.getLocation() if hasattr(quest, 'getLocation') else 0
+    if location == ToontownGlobals.SellbotFactoryInt:
+        return 'the Sellbot factory', scenarioFactory
+    if location in QL_MINTS:
+        return qlMintOf(quest)
+    return None
+
+
+QL_MINTS = {ToontownGlobals.CashbotMintIntA: ('A', 'the Coin Mint'), ToontownGlobals.CashbotMintIntB: ('B', 'the Dollar Mint'),
+            ToontownGlobals.CashbotMintIntC: ('C', 'the Bullion Mint')}
+
+
+def qlMintOf(quest):
+    # The mint the ToonTask names (the Coin Mint's cogs do not count for a
+    # Dollar or Bullion Mint task); any mint is the Coin Mint.
+    location = quest.getLocation() if hasattr(quest, 'getLocation') else 0
+    letter, name = QL_MINTS.get(location, ('A', 'the Coin Mint'))
+
+    def play():
+        os.environ['AUTOPLAY_MINT'] = letter
+        yield from scenarioMint()
+    return name, play
+
+
+def qlFacilityWanted(questId):
+    # A test for the cogs inside that still count for the ToonTask, or None
+    # once it is done (then on to the boss and out).
+    from toontown.quest import Quests
+    desc = qlDesc(questId)
+    if not desc or qlStatus(desc) == Quests.COMPLETE:
+        return None
+    quest = qlQuest(desc)
+
+    def counts(do):
+        dna = getattr(do, 'dna', None)
+        if dna is None:
+            return False
+        cog = {'type': dna.name, 'level': do.getActualLevel() if hasattr(do, 'getActualLevel') else 1,
+               'track': dna.dept, 'isSkelecog': do.getSkelecog(),
+               'isForeman': getattr(do, 'boss', 0), 'isVP': 0, 'isCFO': 0, 'isSupervisor': 0, 'isVirtual': 0,
+               'hasRevives': 0, 'activeToons': [localAvatar.doId]}
+        return quest.doesCogCount(localAvatar.doId, cog, quest.getLocation(), [localAvatar.doId])
+    return counts
+
+
+def qlHQOf(quest):
+    location = quest.getLocation() if hasattr(quest, 'getLocation') else 0
+    return location - location % 1000 if location else 0
+
+
+def qlFacility(questId, name, play):
+    # Through the facility (and its boss) until the ToonTask counts it, with
+    # the NPC toons along, as a player would go again until it does.
+    from toontown.quest import Quests
+    for attempt in range(4):
+        desc = qlDesc(questId)
+        if not desc or qlStatus(desc) == Quests.COMPLETE:
+            return
+        log('ToonTask %d: into %s (go %d)' % (questId, name, attempt + 1))
+        qlCount('facilities')
+        if attempt and localAvatar.getMaxHp() < 137:
+            # Test runner only: a mint or factory credits its cogs only at
+            # the end, so a toon that went sad last time gets more laff for
+            # the next go (the game is unchanged).
+            onDistrict(lambda air, avId: air.doId2do[avId].b_setMaxHp(137), localAvatar.doId)
+            log('test toon laff raised to 137 for go %d (test runner only)' % (attempt + 1))
+        qlRestock()
+        FACILITY_HELP[0] = True
+        FACILITY_KEEPALIVE[0] = attempt > 0
+        if attempt:
+            log('test toon topped up each round on go %d (test runner only)' % (attempt + 1))
+        try:
+            yield from play()
+        finally:
+            FACILITY_HELP[0] = False
+            FACILITY_KEEPALIVE[0] = False
+        yield from qlUntilWalking('after %s' % name, 180)
+        desc = qlDesc(questId)
+        if desc:
+            log('ToonTask %d: %s' % (questId, qlQuest(desc).getProgressString(localAvatar, desc) or 'in progress'))
+        yield from qlCreditIfMoved(questId, 'one go through %s' % name)
+    desc = qlDesc(questId)
+    if desc and qlStatus(desc) != Quests.COMPLETE:
+        raise StepFailed('ToonTask %d still not done after 4 goes through %s' % (questId, name))
+
+
+def qlCanDeliver(quest):
+    track, level = quest.getGagType()
+    return localAvatar.experience.getExpLevel(track) >= level
+
+
+def qlTrainFor(quest):
+    # A gag the toon cannot buy yet: use that track in street battles until
+    # it can, as a player would.
+    track, level = quest.getGagType()
+    if qlCanDeliver(quest):
+        return
+    log('training gag track %d up to level %d for ToonTask %d' % (track, level + 1, quest.getId()))
+    qlCount('gag training')
+    hood = qlTierHood(localAvatar.getRewardHistory()[0])
+    streets = [s for s in STREETS if s - s % 1000 == hood]
+    TRAIN_TRACK[0] = track
+    try:
+        while not qlCanDeliver(quest):
+            # Gags of that track first in the bag: a full bag of the others
+            # leaves no room for them.
+            have = localAvatar.experience.getExpLevel(track)
+            onDistrict(restock, localAvatar.doId, (track, have, 10))
+            found = onDistrict(lambda air: [(s.doId, s.zoneId) for st in streets for s in list(air.suitPlanners[st].suitList)
+                                            if not s.isDeleted() and s.pathState == 1 and not s.attemptingTakeover
+                                            and s.zoneId != st and s.zoneId not in qlTunnelZones(st)])
+            if not found:
+                yield sleep(10)
+                continue
+            suitId, zoneId = found[0]
+            if localAvatar.zoneId != zoneId:
+                yield from teleport(hood, zoneId)
+            shown = time.time() + 15
+            yield until(lambda: base.cr.doId2do.get(suitId) is not None or time.time() > shown, 25, 'the cog to show up')
+            if base.cr.doId2do.get(suitId) is not None and (yield from qlWalkInto(suitId)):
+                yield from qlBattle()
+                log('gag track %d experience %d' % (track, localAvatar.experience.getExp(track)))
+    finally:
+        TRAIN_TRACK[0] = None
+
+
+def qlPhone():
+    # Home, in the front door, and a call to Clarabelle on the phone.
+    yield from goInsideHouse()
+    yield until(lambda: findObject('DistributedPhone'), 60, 'the phone')
+    phone = findObject('DistributedPhone')
+    yield sleep(1)
+    log('calling Clarabelle')
+    phone.sendUpdate('avatarEnter', [])
+    yield sleep(4)
+    qlShot('phone')
+    phone.sendUpdate('avatarExit', [])
+    yield sleep(2)
+    yield until(walking, 60, 'walking after the call')
+
+
+def qlMakeFriend(questId):
+    # Offline the NPC toons around are the friends: whisper one of them,
+    # the way the friends list offers.
+    from toontown.npcplayers import NPCFriends
+    yield from teleport(ToontownGlobals.ToontownCentral)
+    yield until(lambda: NPCFriends.npcFriends(), 60, 'NPC toons on the friends list')
+    friend = NPCFriends.npcFriends()[0]
+    log('whispering NPC toon %d (%s)' % (friend, base.cr.doId2do[friend].getName()))
+    NPCFriends.whispered(friend, 'Hi!')
+    yield sleep(5)
+    qlShot('friend')
+    if qlStatus(qlDesc(questId)) != Quests_COMPLETE():
+        raise StepFailed('no way found to make a friend for ToonTask %d (friends list %s)' % (questId, localAvatar.friendsList))
+
+
+def Quests_COMPLETE():
+    from toontown.quest import Quests
+    return Quests.COMPLETE
+
+
+def qlFish(questId):
+    from toontown.quest import Quests
+    quest = Quests.getQuest(questId)
+    hood = quest.getLocation()
+    if hood in (Quests.Anywhere,):
+        hood = ToontownGlobals.ToontownCentral
+    hood = ZoneUtil.getCanonicalHoodId(hood)
+    watchFishingTargets()
+    onDistrict(lambda air, avId: air.doId2do[avId].b_setMoney(air.doId2do[avId].getMaxMoney()), localAvatar.doId)
+    yield from teleport(hood)
+    yield until(lambda: findObject('DistributedFishingSpot', lambda do: do.avId == 0), 60, 'a free fishing spot')
+    sellBucket = lambda: onDistrict(lambda air, avId: air.doId2do[avId].b_setFishTank([], [], []), localAvatar.doId)
+    if localAvatar.isFishTankFull():
+        # A full bucket can't take another fish (the spot says so): sold
+        # to the Fisherman first, as a player would.
+        log('fish bucket full (%d): selling it first' % len(localAvatar.fishTank))
+        sellBucket()
+        yield until(lambda: not localAvatar.isFishTankFull(), 30, 'the bucket sold')
+    spot = findObject('DistributedFishingSpot', lambda do: do.avId == 0)
+    messenger.send(spot.uniqueName('enterFishingSpotSphere'), [None])
+    yield until(lambda: fishingState(spot) == 'waiting', 60, 'holding the fishing pole')
+    casts = 0
+    while qlStatus(qlDesc(questId)) != Quests.COMPLETE:
+        casts += 1
+        if casts > 60:
+            raise StepFailed('no quest item after 60 casts')
+        yield sleep(2)
+        if localAvatar.isFishTankFull():
+            sellBucket()
+            yield until(lambda: not localAvatar.isFishTankFull(), 30, 'the bucket sold')
+        yield from castOnce(spot)
+    log('fished up the quest item in %d casts' % casts)
+    spot._DistributedFishingSpot__userExit()
+    yield until(walking, 60, 'walking after fishing')
+
+
+def qlNoRender():
+    # AUTOPLAY_QL_NORENDER=1: the window draws nothing except for
+    # screenshots. Software rendering is most of the time a frame takes, and
+    # the quest line is long.
+    if not os.environ.get('AUTOPLAY_QL_NORENDER') or getattr(base, '_qlNoRender', False):
+        return
+    base._qlNoRender = True
+    shoot = base.screenshot
+
+    def screenshot(*args, **kw):
+        base.win.setActive(True)
+        base.graphicsEngine.renderFrame()
+        base.graphicsEngine.renderFrame()
+        try:
+            return shoot(*args, **kw)
+        finally:
+            base.win.setActive(False)
+    base.screenshot = screenshot
+    base.win.setActive(False)
+
+
+def scenarioTunnelTest():
+    # Teleports onto a street next to its playground tunnel and walks into
+    # the tunnel, logging what the tunnel trip asks for.
+    import toontown.hood.Place as PlaceModule
+    enter = PlaceModule.Place.enterTunnelIn
+
+    def logged(self, requestStatus):
+        log('tunnelIn request %s; found %s; toph nodes %s' % (
+            requestStatus, not base.render.find(requestStatus['tunnelName']).isEmpty(),
+            [n.getName() for n in base.render.findAllMatches('**/toph_*')]))
+        return enter(self, requestStatus)
+    PlaceModule.Place.enterTunnelIn = logged
+    hood, zone = [int(x) for x in os.environ.get('TUNNEL_AT', '2000 2132').split()]
+    yield from teleport(hood, zone)
+    yield sleep(3)
+    log('landed at %s in zone %d, street zone %s' % (localAvatar.getPos(render), localAvatar.zoneId, place().zoneId))
+    if os.environ.get('TUNNEL_POS'):
+        # Walk over to the tunnel (the street keeps the zone it arrived in).
+        localAvatar.setPos(render, *[float(v) for v in os.environ['TUNNEL_POS'].split()])
+        yield sleep(4)
+    triggers = [n for n in render.findAllMatches('**/tunnel_trigger*')]
+    log('tunnel triggers: %s' % [(t.getName(), tuple(round(v) for v in t.getPos(render))) for t in triggers])
+    if os.environ.get('TUNNEL_WALK'):
+        t = triggers[0]
+        while walking():
+            localAvatar.headsUp(render, t.getPos(render))
+            gap = t.getPos(render) - localAvatar.getPos(render)
+            gap.setZ(0)
+            if gap.length() < 1:
+                break
+            gap.normalize()
+            localAvatar.setPos(render, localAvatar.getPos(render) + gap * 2)
+            yield sleep(0.1)
+    else:
+        messenger.send('enter' + triggers[0].getName(), [None])
+    yield sleep(15)
+    log('after the tunnel: place %s %s zone %d' % (placeName(), placeState(), localAvatar.zoneId))
+
+
+def scenarioQuestLine():
+    from toontown.quest import Quests
+    recordNPCMovies()
+    qlNoRender()
+    goal = int(os.environ.get('AUTOPLAY_QL_TIER', Quests.ELDER_TIER))
+    budget = int(os.environ.get('AUTOPLAY_QL_QUESTS', 100000))
+    startTier = localAvatar.getRewardHistory()[0]
+    log('quest line from tier %d to %d; ToonTasks %s' % (startTier, goal, localAvatar.quests))
+    qlShot('start')
+    lastTier = startTier
+    while localAvatar.getRewardHistory()[0] < goal and QL_STATS.get('handed in', 0) < budget:
+        tier = localAvatar.getRewardHistory()[0]
+        if tier != lastTier:
+            log('=== tier %d -> %d (%s) ===' % (lastTier, tier, ToontownGlobals.hoodNameMap[qlTierHood(tier)][-1]))
+            qlShot('tier-%d' % tier)
+            lastTier = tier
+        done = [q for q in localAvatar.quests if qlStatus(q) == Quests.COMPLETE]
+        visits = [q for q in localAvatar.quests if isinstance(qlQuest(q), (
+            Quests.VisitQuest, Quests.DeliverItemQuest, Quests.TrackChoiceQuest))
+            or isinstance(qlQuest(q), Quests.DeliverGagQuest) and qlCanDeliver(qlQuest(q))]
+        if done or visits:
+            q = (done or visits)[0]
+            if isinstance(qlQuest(q), Quests.DeliverGagQuest):
+                qlRestock()
+            yield from qlHandIn(q)
+            continue
+        if len(localAvatar.quests) < localAvatar.getQuestCarryLimit():
+            npc = yield from qlGoToNPC(Quests.ToonHQ)
+            before, after = yield from qlTalk(npc)
+            if before != after:
+                log('picked up ToonTasks; now %s' % after)
+                continue
+            if not localAvatar.quests:
+                raise StepFailed('Toon HQ gave no ToonTask at tier %d' % tier)
+        q = localAvatar.quests[0]
+        log('working on ToonTask %d (%s): %s' % (q[0], qlQuest(q).__class__.__name__, qlQuest(q).getString()))
+        yield from qlWork(q)
+    log('quest line stopped at tier %d with %s' % (localAvatar.getRewardHistory()[0], localAvatar.quests))
+    log('quest line stats: %s' % sorted(QL_STATS.items()))
+    qlShot('end')
+
+
+# --- Sweep: every ToonTask nobody was offered on the way up ---
+#
+# Playing up the quest line repeats a lot of tasks (many give the same
+# reward), so some are never offered. The sweep takes each ToonTask no toon
+# has tried, sets the toon up as a toon of that tier would be (laff, gag
+# tracks and levels for that playground), gives it the task from Toon HQ
+# and plays it through, every part, like the quest line does.
+
+QL_SWEEP_LAFF = {0: 25, 1: 32, 2: 42, 3: 55, 4: 70, 5: 85, 6: 110}
+
+
+def qlChainHas(questId, classes):
+    from toontown.quest import Quests
+    seen = set()
+    todo = [questId]
+    while todo:
+        qid = todo.pop()
+        if qid in seen or qid not in Quests.QuestDict:
+            continue
+        seen.add(qid)
+        if isinstance(Quests.getQuest(qid), classes):
+            return True
+        nxt = Quests.QuestDict[qid][Quests.QuestDictNextQuestIndex]
+        todo.extend(nxt if isinstance(nxt, tuple) else [nxt])
+    return False
+
+
+def qlClaimSweep():
+    # The next ToonTask (by tier) nobody has tried, claimed under the lock
+    # so two sweeping toons never take the same one.
+    import json
+    import fcntl
+    from toontown.quest import Quests
+    first = int(os.environ.get('AUTOPLAY_QL_SWEEP_FROM', 0))
+    if os.environ.get('AUTOPLAY_QL_SWEEP_ONLY'):
+        # One given ToonTask, once (a test of one task type).
+        only = int(os.environ.pop('AUTOPLAY_QL_SWEEP_ONLY'))
+        os.environ['AUTOPLAY_QL_SWEEP_ONLY_DONE'] = '1'
+        return Quests.QuestDict[only][Quests.QuestDictTierIndex], only
+    if 'AUTOPLAY_QL_SWEEP_ONLY_DONE' in os.environ:
+        return None, None
+    starts = sorted((entry[Quests.QuestDictTierIndex], qid) for qid, entry in Quests.QuestDict.items()
+                    if entry[Quests.QuestDictStartIndex] == Quests.Start and entry[Quests.QuestDictTierIndex] >= first)
+    with open(QL_COVERAGE + '.lock', 'w') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            with open(QL_COVERAGE) as f:
+                data = json.load(f)
+        except (OSError, ValueError):
+            data = {}
+        for tier, qid in starts:
+            if str(qid) in data:
+                continue
+            data.setdefault(str(qid), {}).setdefault('taken', []).append(QL_TOON)
+            if qlChainHas(qid, (Quests.TrackChoiceQuest,)):
+                # Gag track choices only come to a toon missing that track:
+                # the toons playing the quest line up do those.
+                data[str(qid)].setdefault('sweep skipped', []).append('track choice')
+                continue
+            with open(QL_COVERAGE + '.tmp', 'w') as f:
+                json.dump(data, f, indent=0, sort_keys=True)
+            os.replace(QL_COVERAGE + '.tmp', QL_COVERAGE)
+            return tier, qid
+        with open(QL_COVERAGE + '.tmp', 'w') as f:
+            json.dump(data, f, indent=0, sort_keys=True)
+        os.replace(QL_COVERAGE + '.tmp', QL_COVERAGE)
+    return None, None
+
+
+def qlSweepSetUp(air, avId, tier, questId):
+    # The toon as a toon of this tier would be, holding just this ToonTask.
+    from toontown.quest import Quests
+    from toontown.toonbase import ToontownBattleGlobals as TBG
+    av = air.doId2do[avId]
+    hoods = [ToontownGlobals.ToontownCentral, ToontownGlobals.DonaldsDock, ToontownGlobals.DaisyGardens,
+             ToontownGlobals.MinniesMelodyland, ToontownGlobals.TheBrrrgh, ToontownGlobals.DonaldsDreamland]
+    hood = qlTierHood(tier)
+    rank = hoods.index(hood) if hood in hoods else 6
+    av.b_setRewardHistory(tier, [])
+    av.b_setQuests([])
+    av.b_setMaxHp(max(av.getMaxHp(), QL_SWEEP_LAFF[rank]))
+    av.b_setHp(av.getMaxHp())
+    # The attack tracks every toon on the way up ends up with; trap and
+    # lure would fill the gag bag instead (the bag fills track by track).
+    access = [0] * len(TBG.Tracks)
+    for track in (TBG.SOUND_TRACK, TBG.THROW_TRACK, TBG.SQUIRT_TRACK, TBG.DROP_TRACK):
+        access[track] = 1
+    choice = Quests.getQuest(questId)
+    if isinstance(choice, Quests.TrackChoiceQuest):
+        # A gag track choice comes only to a toon with neither track.
+        for track in choice.getChoices():
+            access[track] = 0
+    av.b_setTrackAccess(access)
+    for track in range(len(TBG.Tracks)):
+        want = TBG.Levels[track][min(rank + 1, len(TBG.Levels[track]) - 1)]
+        if av.experience.getExp(track) < want:
+            av.experience.setExp(track, want)
+    av.b_setExperience(av.experience.makeNetString())
+    av.b_setMaxCarry(max(av.getMaxCarry(), 20 + 5 * rank))
+    av.inventory.zeroInv()
+    av.inventory.maxOutInv()
+    av.b_setInventory(av.inventory.makeNetString())
+    toNpcId = Quests.getQuestToNpcId(questId)
+    if toNpcId == Quests.Any:
+        toNpcId = 2003
+    elif toNpcId in (Quests.Same, Quests.ToonHQ):
+        toNpcId = Quests.ToonHQ
+    # Most ToonTasks give whatever reward the tier is handing out next
+    # (Any): give the tier's next one, as Toon HQ would.
+    tierReward = (Quests.getNextRewards(1, tier, av) or [100])[0]
+    finalReward = Quests.findFinalRewardId(questId)[0]
+    if finalReward is None or finalReward < 0 or Quests.getReward(Quests.transformReward(finalReward, av)) is None:
+        finalReward = tierReward
+    baseReward = Quests.QuestDict[questId][Quests.QuestDictRewardIndex]
+    rewardId = Quests.getQuestReward(questId, av) if isinstance(baseReward, int) and baseReward > 0 else None
+    if rewardId is None or Quests.getReward(rewardId) is None:
+        rewardId = Quests.transformReward(tierReward, av)
+    progress = 0
+    quest = Quests.getQuest(questId)
+    if isinstance(quest, Quests.FriendQuest):
+        progress = quest.getNumFriends() if isinstance(quest, Quests.FriendNewbieQuest) else 1
+    av.addQuest((questId, 0, toNpcId, rewardId, progress), Quests.transformReward(finalReward, av))
+    return av.quests
+
+
+def scenarioQuestSweep():
+    from toontown.quest import Quests
+    recordNPCMovies()
+    qlNoRender()
+    swept = 0
+    while True:
+        tier, questId = qlClaimSweep()
+        if questId is None:
+            break
+        hood = qlTierHood(tier)
+        log('=== sweep: ToonTask %d (tier %d, %s): %s ===' % (
+            questId, tier, Quests.getQuest(questId).__class__.__name__, Quests.getQuest(questId).getString()))
+        yield from qlUntilWalking('before the next sweep task', 120)
+        # A brand new toon still holds the trolley ToonTask, and the
+        # playground stops it leaving until that is done: let it go first.
+        if localAvatar.quests:
+            onDistrict(lambda air, avId: air.doId2do[avId].b_setQuests([]), localAvatar.doId)
+            yield until(lambda: not localAvatar.quests, 30, 'the old ToonTasks to go')
+        if localAvatar.zoneId != hood:
+            yield from teleport(hood)
+        quests = onDistrict(qlSweepSetUp, localAvatar.doId, tier, questId)
+        yield until(lambda: [q[0] for q in localAvatar.quests] == [q[0] for q in quests], 30, 'the sweep ToonTask to arrive')
+        swept += 1
+        chain = 0
+        while localAvatar.quests and chain < 12:
+            q = localAvatar.quests[0]
+            if q[0] != questId:
+                qlCoverage((q[0], 'taken'))
+            if qlStatus(q) == Quests.COMPLETE or isinstance(qlQuest(q), (
+                    Quests.VisitQuest, Quests.DeliverItemQuest, Quests.DeliverGagQuest, Quests.TrackChoiceQuest)):
+                yield from qlHandIn(q)
+                chain += 1
+                continue
+            log('working on ToonTask %d (%s): %s' % (q[0], qlQuest(q).__class__.__name__, qlQuest(q).getString()))
+            try:
+                yield from qlWork(q)
+            except StepFailed as e:
+                if 'cannot do' not in str(e) and 'no way' not in str(e):
+                    raise
+                log('sweep: cannot play ToonTask %d yet: %s' % (q[0], e))
+                qlCoverage((q[0], 'sweep skipped'))
+                onDistrict(lambda air, avId: air.doId2do[avId].b_setQuests([]), localAvatar.doId)
+                yield sleep(1)
+                break
+        qlShot('sweep-%d' % questId)
+    log('sweep done: %d ToonTasks; stats %s' % (swept, sorted(QL_STATS.items())))
+
+
+def scenarioIdle():
+    # Plays nothing for AUTOPLAY_IDLE seconds (default 120), for a watcher
+    # given with AUTOPLAY_EXTRA to do its test.
+    yield sleep(float(os.environ.get('AUTOPLAY_IDLE', 120)))
+
+
+def scenarioHealTest():
+    # The low-laff trip to the playground on its own: a toon at 5 laff out
+    # on a street heals before a building.
+    onDistrict(lambda air, avId: air.doId2do[avId].b_setQuests([]), localAvatar.doId)
+    yield until(lambda: not localAvatar.quests, 30, 'no ToonTasks')
+    yield from teleport(ToontownGlobals.ToontownCentral, 2101)
+    onDistrict(lambda air, avId: air.doId2do[avId].b_setHp(5), localAvatar.doId)
+    yield until(lambda: localAvatar.getHp() == 5, 30, 'laff 5')
+    yield from qlHealUp('the test', want=float(os.environ.get('AUTOPLAY_HEAL_WANT', 0.8)))
+    log('HEALTEST laff %d of %d, zone %d' % (localAvatar.getHp(), localAvatar.getMaxHp(), localAvatar.zoneId))
+
+
+
+
+def memTourTrace():
+    # Who keeps parsed DNA trees alive: count the tree roots, then walk up
+    # from a few of them past the trees' own parent/children links.
+    import gc
+    gc.collect()
+    from toontown.dna.DNAElement import DNAElement
+    dna = [o for o in gc.get_objects() if isinstance(o, DNAElement)]
+    inner = set()
+    for o in dna:
+        inner.add(id(o)); inner.add(id(o.__dict__)); inner.add(id(o.children))
+    roots = [o for o in dna if o.parent_ is None]
+    kinds = {}
+    for r in roots:
+        kinds[type(r).__name__] = kinds.get(type(r).__name__, 0) + 1
+    log('MEMTRACE %d DNA objects, roots %s' % (len(dna), sorted(kinds.items(), key=lambda kv: -kv[1])))
+    log('MEMTRACE freeze count %d, gc enabled %s, thresholds %s' % (gc.get_freeze_count(), gc.isenabled(), gc.get_threshold()))
+    if os.environ.get('AUTOPLAY_MEMTOUR_UNFREEZE'):
+        nd = len(dna)
+        del dna, inner, roots
+        gc.unfreeze()
+        freed = gc.collect()
+        rss = int(open('/proc/self/status').read().split('VmRSS:')[1].split()[0]) // 1024
+        left = len([o for o in gc.get_objects() if isinstance(o, DNAElement)])
+        log('MEMTRACE after unfreeze: freed %d, DNA objects %d -> %d, rss %d, freeze count %d' % (freed, nd, left, rss, gc.get_freeze_count()))
+        return
+    dnaIds = set(id(o) for o in dna)
+    def describe(o):
+        if isinstance(o, dict):
+            return 'dict(%s)' % ','.join(str(k)[:30] for k in list(o.keys())[:6])
+        if isinstance(o, (list, tuple)):
+            return '%s[%d]' % (type(o).__name__, len(o))
+        if hasattr(o, '__func__'):
+            return 'method %s' % getattr(o.__func__, '__qualname__', '?')
+        if type(o).__name__ == 'function':
+            return 'function %s' % o.__qualname__
+        if type(o).__name__ == 'cell':
+            return 'cell'
+        if type(o).__name__ == 'frame':
+            return 'frame %s:%d' % (o.f_code.co_name, o.f_lineno)
+        if type(o).__name__ in ('generator', 'coroutine'):
+            return '%s %s' % (type(o).__name__, o.__qualname__)
+        return '%s.%s' % (type(o).__module__, type(o).__name__)
+    # One pass: everything outside the trees that points into a tree.
+    holders = {}
+    examples = {}
+    for o in gc.get_objects():
+        if id(o) in inner:
+            continue
+        for x in gc.get_referents(o):
+            if id(x) in dnaIds:
+                k = describe(o) + ' -> ' + type(x).__name__
+                holders[k] = holders.get(k, 0) + 1
+                examples.setdefault(k, o)
+                break
+    here = sys._getframe()
+    kinds2 = {}
+    for o in gc.get_objects():
+        n = type(o).__name__
+        if n in ('DNASceneData', 'DNAStorage', 'TownLoader', 'SafeZoneLoader', 'TTTownLoader', 'TTSafeZoneLoader', 'DNASuitGraph') or n.endswith(('TownLoader', 'SafeZoneLoader', 'Hood')):
+            kinds2[n] = kinds2.get(n, 0) + 1
+    log('MEMTRACE kinds %s' % sorted(kinds2.items()))
+    sd = [o for o in gc.get_objects() if type(o).__name__ == 'DNASceneData']
+    for o in sd[:3] + sd[-3:]:
+        log('MEMTRACE sceneData holders %s' % [describe(x) for x in gc.get_referrers(o) if x is not sd and x is not here][:6])
+    del sd
+    log('MEMTRACE outside holders %s' % sorted(holders.items(), key=lambda kv: -kv[1])[:25])
+    # And who holds the top holders, a few steps up.
+    for k, _ in sorted(holders.items(), key=lambda kv: -kv[1])[:6]:
+        cur = examples[k]
+        chain = [describe(cur)]
+        mine = set([id(examples), id(holders)])
+        for depth in range(8):
+            refs = [x for x in gc.get_referrers(cur) if id(x) not in inner and id(x) not in mine and x is not here]
+            if not refs:
+                chain.append('<none>')
+                break
+            chain.append(' | '.join(describe(x) for x in refs[:4]))
+            mine.add(id(refs))
+            cur = refs[0]
+        log('MEMTRACE up from %s: %s' % (k, ' <- '.join(chain)))
+
+def scenarioMemTour():
+    # Memory check: visit playgrounds and streets AUTOPLAY_MEMTOUR_STOPS
+    # times (default 120); every 10 stops, after a full collection, log the
+    # process size and what grew since stop 10 (caches are full by then).
+    import gc
+    from panda3d.core import RenderState, TransformState
+    stops = int(os.environ.get('AUTOPLAY_MEMTOUR_STOPS', '120'))
+    places = []
+    for i, hoodId in enumerate(PLAYGROUNDS):
+        places.append((hoodId, hoodId))
+    for zoneId in STREETS:
+        places.append((zoneId - zoneId % 1000, firstVisgroup(zoneId)))
+    base_ = {}
+    for n in range(stops):
+        hoodId, zoneId = places[(n * 7) % len(places)]
+        try:
+            yield from teleport(hoodId, zoneId)
+        except Exception as e:
+            log('MEMTOUR teleport failed', zoneId, repr(e))
+        yield sleep(3)
+        if (n + 1) % 10 == 0:
+            gc.collect()
+            counts = {}
+            for o in gc.get_objects():
+                k = type(o).__name__
+                counts[k] = counts.get(k, 0) + 1
+            if not base_:
+                base_.update(counts)
+            grew = sorted(((k, c - base_.get(k, 0)) for k, c in counts.items()), key=lambda kv: -kv[1])[:12]
+            rss = int(open('/proc/self/status').read().split('VmRSS:')[1].split()[0]) // 1024
+            air = onDistrict(lambda air: len(air.doId2do))
+            if n + 1 in (30, stops) and os.environ.get('AUTOPLAY_MEMTOUR_TRACE'):
+                memTourTrace()
+            log('MEMTOUR stop %d rss %d gcdebug %d garbage %d objs %d crDo %d cache %d airDo %s states %d transforms %d grew %s' % (
+                n + 1, rss, gc.get_debug(), len(gc.garbage), sum(counts.values()), len(base.cr.doId2do), len(base.cr.cache.dict), air,
+                RenderState.getNumStates(), TransformState.getNumStates(), grew))
+
 SCENARIOS = [
     ('login', scenarioLogin),
+    ('healtest', scenarioHealTest),
+    ('questsweep', scenarioQuestSweep),
+    ('idle', scenarioIdle),
     ('gloves', scenarioGloves),
     ('exittoontown', scenarioExitToontown),
     ('displaysettings', scenarioDisplaySettings),
@@ -5887,6 +7544,7 @@ SCENARIOS = [
     ('npctoonup', scenarioNPCToonUp),
     ('npcready', scenarioNPCReady),
     ('playgrounds', scenarioPlaygrounds),
+    ('memtour', scenarioMemTour),
     ('classicchars', scenarioClassicChars),
     ('helpmode', scenarioHelpMode),
     ('cogtables', scenarioCogTables),
@@ -5936,6 +7594,8 @@ SCENARIOS = [
     ('boardgames', scenarioBoardGames),
     ('rentals', scenarioRentals),
     ('quest', scenarioQuest),
+    ('questline', scenarioQuestLine),
+    ('tunneltest', scenarioTunnelTest),
 ]
 
 
@@ -6030,8 +7690,17 @@ def run(names):
         # Max the toon right after login, before the scenarios listed earlier.
         first = [s for s in selected if s[0] == 'maxtoon']
         selected = [s for s in selected if s[0] == 'login'] + first + [s for s in selected if s[0] not in ('login', 'maxtoon')]
+    if os.environ.get('AUTOPLAY_FPS'):
+        # A frame cap, so several games share the cores (time still runs
+        # at its real rate; only the frames between are fewer).
+        from panda3d.core import ClockObject
+        globalClock.setMode(ClockObject.MLimited)
+        globalClock.setFrameRate(float(os.environ['AUTOPLAY_FPS']))
     for name, scenario in selected:
         log('=== %s ===' % name)
+        if os.environ.get('AUTOPLAY_EXTRA'):
+            # Extra watcher code for one test, run with the driver's names.
+            exec(compile(open(os.environ['AUTOPLAY_EXTRA']).read(), os.environ['AUTOPLAY_EXTRA'], 'exec'), globals())
         start = time.time()
         steps = scenario()
         waiting = None

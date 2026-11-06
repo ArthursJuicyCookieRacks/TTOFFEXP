@@ -571,10 +571,34 @@ class Place(StateData.StateData, FriendsListManager.FriendsListManager):
     def enterTunnelIn(self, requestStatus):
         self.notify.debug('enterTunnelIn(requestStatus=' + str(requestStatus) + ')')
         tunnelOrigin = base.render.find(requestStatus['tunnelName'])
+        if tunnelOrigin.isEmpty():
+            tunnelOrigin = self.findLinkTunnel(requestStatus['tunnelName'])
         self.accept('tunnelInMovieDone', self.__tunnelInMovieDone)
         base.localAvatar.reconsiderCheesyEffect()
         base.localAvatar.tunnelIn(tunnelOrigin)
         base.localAvatar.startQuestMap()
+
+    def findLinkTunnel(self, tunnelName):
+        # The tunnel is named after the street zone the toon left from,
+        # which is the zone it arrived in. A toon that teleported onto the
+        # street (to a friend) arrived in another part of it than the
+        # tunnel's, so no tunnel had that name and the game crashed: take
+        # this place's tunnel to the same street instead.
+        prefix, zone = tunnelName.rsplit('_', 1)
+        try:
+            branchId = ZoneUtil.getBranchZone(int(zone))
+        except ValueError:
+            return NodePath()
+        for tunnel in base.render.findAllMatches(prefix + '_*'):
+            try:
+                tunnelZone = int(tunnel.getName().rsplit('_', 1)[1])
+            except ValueError:
+                continue
+            if ZoneUtil.getBranchZone(tunnelZone) == branchId:
+                self.notify.info('no tunnel %s; using %s' % (tunnelName, tunnel.getName()))
+                return tunnel
+        self.notify.warning('no tunnel %s here' % tunnelName)
+        return NodePath()
 
     def __tunnelInMovieDone(self):
         self.ignore('tunnelInMovieDone')

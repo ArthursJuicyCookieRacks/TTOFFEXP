@@ -193,6 +193,14 @@ class DistributedSuit(DistributedSuitBase.DistributedSuitBase, DelayDeletable):
 
         self.soundSequenceList = []
         self.notify.debug('DistributedSuit %d: disabling' % self.getDoId())
+        # A toon that ran into this cog just as it left (flew off, went into
+        # a building) is still waiting for the battle, and no answer will
+        # come now: let it walk on, or it stands there for good.
+        if getattr(base.localAvatar, 'battleRequestSuit', None) == self.doId:
+            base.localAvatar.battleRequestSuit = None
+            place = self.cr.playGame.getPlace()
+            if place and place.fsm.getCurrentState().getName() == 'WaitForBattle':
+                place.setState('walk')
         self.resumePath(0)
         self.stopPathNow()
         self.setState('Off')
@@ -400,6 +408,7 @@ class DistributedSuit(DistributedSuitBase.DistributedSuitBase, DelayDeletable):
 
     def d_requestBattle(self, pos, hpr):
         self.cr.playGame.getPlace().setState('WaitForBattle')
+        base.localAvatar.battleRequestSuit = self.doId
         self.sendUpdate('requestBattle', [pos[0],
          pos[1],
          pos[2],
@@ -409,6 +418,10 @@ class DistributedSuit(DistributedSuitBase.DistributedSuitBase, DelayDeletable):
 
     def __handleToonCollision(self, collEntry):
         if not base.localAvatar.wantBattles:
+            return
+        if self.fsm.getCurrentState() and self.fsm.getCurrentState().getName() in ('FlyAway', 'ToSky', 'DanceThenFlyAway', 'Off'):
+            # Already leaving: no battle (the server would turn it down too,
+            # or not answer at all once the cog is gone).
             return
         toonId = base.localAvatar.getDoId()
         self.notify.debug('Distributed suit: requesting a Battle with ' + 'toon: %d' % toonId)

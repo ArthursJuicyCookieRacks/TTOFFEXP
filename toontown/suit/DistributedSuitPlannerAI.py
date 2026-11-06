@@ -1477,5 +1477,5 @@ def spawn(name, level, specialSuit = 0):
     zoneId = av.getLocation()[1]
     sp = simbase.air.suitPlanners.get(zoneId - (zoneId % 100))
     pointmap = sp.streetPointList
-    sp.createNewSuit([], pointmap, suitName=name, suitLevel=level, specialSuit = 0)
+    sp.createNewSuit([], pointmap, suitName=name, suitLevel=level, specialSuit=specialSuit)
     return "Spawned %s in current zone." % name

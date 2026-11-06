@@ -60,6 +60,11 @@ class RotationLimitToH(TelemetryLimit):
         self._rConst = rConst
 
     def __call__(self, obj):
+        if obj.isEmpty():
+            # A toon whose model is already gone (an NPC toon leaving the
+            # area, kept in the client's cache) can still be on the list for
+            # a frame; turning it crashed the game.
+            return
         obj.setHpr(obj.getH(), self._pConst, self._rConst)
 
 

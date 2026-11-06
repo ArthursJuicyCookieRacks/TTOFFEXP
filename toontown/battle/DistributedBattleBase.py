@@ -532,8 +532,11 @@ class DistributedBattleBase(DistributedNode.DistributedNode, BattleBase):
         if self.toons.count(base.localAvatar):
             if oldtoons.count(base.localAvatar) == 0:
                 self.notify.debug('setMembers() - local toon just joined')
-                if self.streetBattle == 1:
-                    base.cr.playGame.getPlace().enterZone(self.zoneId)
+                place = base.cr.playGame.getPlace()
+                if self.streetBattle == 1 and place is not None:
+                    # (No place while the toon is between places, say still
+                    # loading after a teleport: that crashed.)
+                    place.enterZone(self.zoneId)
                 self.localToonJustJoined = 1
             if currStateName != 'HasLocalToon':
                 self.localToonFsm.request('HasLocalToon')
@@ -1389,6 +1392,12 @@ class DistributedBattleBase(DistributedNode.DistributedNode, BattleBase):
 
     def __adjustTownBattle(self):
         self.notify.debug('__adjustTownBattle()')
+        if not getattr(self.townBattle, 'isEntered', 1):
+            # The battle reached the toon before its place went into battle
+            # (a cog walked into the toon as it landed on a street): the gag
+            # panel is not set up yet, which crashed here. Next round then.
+            self.needAdjustTownBattle = 1
+            return
         if self.localToonActive() and len(self.activeSuits) > 0:
             self.notify.debug('__adjustTownBattle() - adjusting town battle')
             luredSuits = []

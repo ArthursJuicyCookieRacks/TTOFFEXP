@@ -262,7 +262,9 @@ class NPCBattleCrew:
 
     def __chooseAttacks(self):
         battle = self.battle
-        if battle.ignoreResponses:
+        if battle.ignoreResponses or not battle.activeSuits:
+            # No cog to aim at (the last one is still walking in): the NPCs
+            # wait for it, as a player has to.
             return
         waiting = [npc for npc in self.members
                    if npc.doId in battle.activeToons and battle.responses.get(npc.doId) == 0]

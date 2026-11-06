@@ -992,6 +992,11 @@ class DistributedToon(DistributedPlayer.DistributedPlayer, Toon.Toon, Distribute
     def getCogLevels(self):
         return self.cogLevels
 
+    def getCogTypes(self):
+        # The V.P.'s caged toon reads it to talk about the promotion (a
+        # player below the top suit crashed after beating the V.P.).
+        return self.cogTypes
+
     def setCogParts(self, parts):
         self.cogParts = parts
         if self.disguisePage:

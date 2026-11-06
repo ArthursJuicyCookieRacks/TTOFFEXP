@@ -691,6 +691,11 @@ class Movie(DirectObject.DirectObject):
                     for s in suits:
                         if s != -1:
                             target = self.battle.findSuit(s)
+                            if target is None:
+                                # A cog this client no longer has (it left
+                                # the battle as the movie came in): a lure
+                                # movie crashed reaching for it.
+                                continue
                             if ta[TOON_TRACK_COL] == NPCSOS:
                                 if track == LURE and self.battle.isSuitLured(target) == 1:
                                     continue

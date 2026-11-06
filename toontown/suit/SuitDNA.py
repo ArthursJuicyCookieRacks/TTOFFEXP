@@ -96,6 +96,8 @@ suitsPerLevel = [1,
  1,
  1]
 suitsPerDept = 8
+# Each cog suit covers five levels (Flunky 1-5, Pencil Pusher 2-6, ...).
+levelsPerSuit = 5
 goonTypes = ['pg', 'sg']
 
 def getSuitBodyType(name):

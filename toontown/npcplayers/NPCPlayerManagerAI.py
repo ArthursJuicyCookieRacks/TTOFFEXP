@@ -1462,6 +1462,9 @@ class NPCPlayerManagerAI:
         npc.b_setAnimState('TeleportIn', 1.0)
         self.party.take(npc, player)
         npc.helper = True
+        # Came for this facility, building or boss only: goes home once the
+        # player is back out in town (see NPCParty.follow).
+        npc.tripHelper = True
         return npc
 
     def helperSpots(self, battle, count):

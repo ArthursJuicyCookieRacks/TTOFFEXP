@@ -51,7 +51,14 @@ class QuestManagerAI:
                     # N.B.: This will iterate once if True, none if False.
                     # If it's a newbie quest, it will return an integer rather than a
                     # boolean, and will iterate x times.
-                    for x in range(quest.doesCogCount(toon.getDoId(), suit, zoneId, activeToons)):
+                    # A boss (VP or CFO) counts through its own test: a
+                    # "Defeat a C.F.O." task never counted it at all.
+                    count = int(quest.doesCogCount(toon.getDoId(), suit, zoneId, activeToons))
+                    if suit.get('isCFO'):
+                        count += int(quest.doesCFOCount(toon.getDoId(), suit, zoneId, activeToons))
+                    if suit.get('isVP'):
+                        count += int(quest.doesVPCount(toon.getDoId(), suit, zoneId, activeToons))
+                    for x in range(count):
                         # Give us credit for this cog. If this a newbie quest, it will
                         # give us multiple credit(s), depending on how many newbies were
                         # in the battle.

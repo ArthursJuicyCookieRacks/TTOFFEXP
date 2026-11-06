@@ -16,6 +16,21 @@ import os
 import random
 
 PILOT_DEBUG = bool(os.environ.get('CRANE_PILOT_DEBUG'))
+# How far past the end of its arm (in feet) an NPC crane still goes for a
+# money bag when none lies well inside its reach: the magnet hangs a few
+# feet across, so it still picks those up.
+BagEdgeSlack = 2.0
+# Over a bag this long without the magnet coming down on it (it lies just
+# out of reach, or something holds the magnet off): try another bag, and
+# leave that one alone for a while, as a player would.
+PilotGiveUp = 10.0
+PilotSkipTime = 20.0
+# An empty magnet on its cable hardly loses any swing by itself: once set
+# going it circles a few feet out from under the trolley for minutes, and
+# never comes over a bag. A player steadies it by nudging the stick against
+# the swing; an NPC at the controls does the same, which takes this much of
+# the swing away each second.
+PilotSteadyRate = 1.2
 from panda3d.physics import ActorNode, PhysicsCollisionHandler
 from otp.nametag import NametagGlobals
 from panda3d.direct import SmoothMover
@@ -734,6 +749,7 @@ class DistCogdoCrane(DistributedObject.DistributedObject, FSM.FSM):
         pilot = self.pilot
         if game is None or pilot is None or not game.isPlaying():
             return Task.cont
+        self.__pilotSteady()
         now = globalClock.getFrameTime()
         if now < pilot['until']:
             return Task.cont
@@ -744,13 +760,27 @@ class DistCogdoCrane(DistributedObject.DistributedObject, FSM.FSM):
                 pilot['until'] = now + random.uniform(0.3, 0.8)
                 return Task.cont
             bag = pilot['target']
-            if bag is None or bag.isEmpty() or bag.state not in ('Initial', 'Free') or not self.__bagFree(bag):
-                bag = pilot['target'] = self.__pickBag()
+            if bag is not None and not self.__bagWanted(bag, pilot, BagEdgeSlack):
+                # Gone, taken, or knocked out of reach: pick another.
+                bag = pilot['target'] = None
+            if bag is None:
+                bag = pilot['target'] = self.__pickBag(pilot)
+                pilot['overSince'] = None
                 if bag is None:
                     self.__pilotSteer(*GameConsts.craneWorld(self.index, 0, 0))
                     return Task.cont
             pos = bag.getPos(render)
             over = self.__pilotSteer(pos[0], pos[1])
+            if not over:
+                pilot['overSince'] = None
+            elif pilot.get('overSince') is None:
+                pilot['overSince'] = now
+            elif now - pilot['overSince'] > PilotGiveUp:
+                pilot.setdefault('skip', {})[bag.doId] = now + PilotSkipTime
+                self.__turnOffMagnet()
+                pilot['target'] = None
+                pilot['until'] = now + random.uniform(0.3, 0.8)
+                return Task.cont
             # Wait for the magnet to stop swinging over the bag.
             grip = self.gripper.getPos(render) if self.gripper else pos
             if over and (grip[0] - pos[0]) ** 2 + (grip[1] - pos[1]) ** 2 < 3.0 ** 2:
@@ -796,6 +826,17 @@ class DistCogdoCrane(DistributedObject.DistributedObject, FSM.FSM):
                 pilot['until'] = now + random.uniform(0.6, 1.4)
         return Task.cont
 
+    def __pilotSteady(self):
+        # Take some of the swing out of the cable, as the NPC's nudges on
+        # the stick would. The links move in the cable's own frame, so this
+        # only slows their swing under the trolley.
+        if not self.physicsActivated:
+            return
+        keep = max(0.0, 1.0 - PilotSteadyRate * globalClock.getDt())
+        for an, anp, cnp in self.activeLinks:
+            obj = an.getPhysicsObject()
+            obj.setVelocity(obj.getVelocity() * keep)
+
     def __cogTakenByOther(self, cog):
         for crane in self.craneGame.cranes.values():
             if crane is not self and crane.pilot and crane.pilot.get('cog') is cog and crane.heldObject:
@@ -805,14 +846,27 @@ class DistCogdoCrane(DistributedObject.DistributedObject, FSM.FSM):
     def __bagFree(self, bag):
         return not bag.avId or bag.avId == self.avId
 
-    def __pickBag(self):
+    def __bagWanted(self, bag, pilot, slack):
+        if bag.isEmpty() or bag.state not in ('Initial', 'Free') or not self.__bagFree(bag):
+            return False
+        if pilot.get('skip', {}).get(bag.doId, 0) > globalClock.getFrameTime():
+            return False
+        pos = bag.getPos(render)
+        return GameConsts.inCraneReach(self.index, pos[0], pos[1], slack=slack)
+
+    def __pickBag(self, pilot):
+        # A bag well inside the crane's reach first. When the other cranes
+        # have carried every bag off, one lying just past the end of the
+        # arm is still in reach of the magnet, so go for that rather than
+        # wait at home for the rest of the game.
+        return self.__pickBagWithin(pilot, -0.5) or self.__pickBagWithin(pilot, BagEdgeSlack)
+
+    def __pickBagWithin(self, pilot, slack):
         best = None
         for bag in self.craneGame.moneyBags.values():
-            if bag.isEmpty() or bag.state not in ('Initial', 'Free') or not self.__bagFree(bag):
+            if not self.__bagWanted(bag, pilot, slack):
                 continue
             pos = bag.getPos(render)
-            if not GameConsts.inCraneReach(self.index, pos[0], pos[1], slack=-0.5):
-                continue
             h, d = GameConsts.craneAim(self.index, pos[0], pos[1])
             cost = abs(self.arm.getH() - h) / 16.0 + abs(self.crane.getY() - d) / 10.0
             if best is None or cost < best[0]:

@@ -33,6 +33,10 @@ class TownBattle(StateData.StateData):
         StateData.StateData.__init__(self, doneEvent)
         self.numCogs = 1
         self.creditLevel = None
+        # Set for real in enter(); a battle the toon is put in as it lands
+        # (a cog walking into it on arrival) can update the gag panel first,
+        # which crashed here.
+        self.creditMultiplier = 1
         self.luredIndices = []
         self.trappedIndices = []
         self.numToons = 1

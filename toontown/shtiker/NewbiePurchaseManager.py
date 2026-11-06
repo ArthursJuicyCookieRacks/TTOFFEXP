@@ -41,7 +41,11 @@ class NewbiePurchaseManager(PurchaseManager.PurchaseManager):
 
     def disable(self):
         PurchaseManager.PurchaseManager.disable(self)
+        self.ignore('gagScreenIsUp')
         if hasattr(self, 'movie'):
+            # Leaving before Clerk Clara finished her talk left her picture
+            # and speech balloon on screen, out on the streets.
+            self.movie.cleanup()
             self.npc.removeActive()
             self.npc.delete()
             del self.npc

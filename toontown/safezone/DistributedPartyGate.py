@@ -70,7 +70,16 @@ class DistributedPartyGate(DistributedObject.DistributedObject):
         leftText = DirectLabel.DirectLabel(parent=leftSign, pos=(0, 0.0, 0.0), relief=None, text=TTLocalizer.PartyGateLeftSign, text_align=TextNode.ACenter, text_font=gateFont, text_wordwrap=wordWrap, text_fg=Vec4(0.7, 0.3, 0.3, 1.0), scale=signScale)
         rightSign = partyGate.find('**/signTextR_locatorFront')
         rightText = DirectLabel.DirectLabel(parent=rightSign, pos=(0, 0.0, 0.0), relief=None, text=TTLocalizer.PartyGateRightSign, text_align=TextNode.ACenter, text_font=gateFont, text_wordwrap=wordWrap, text_fg=Vec4(0.7, 0.3, 0.3, 1.0), scale=signScale)
+        # Kept, so they can be destroyed with the gate: a DirectLabel stays
+        # registered until destroyed, and held the whole playground scene
+        # (every building and its GPU buffers) in memory after leaving it.
+        self.signLabels = [leftText, rightText]
         return
+
+    def __destroySignText(self):
+        for label in getattr(self, 'signLabels', []):
+            label.destroy()
+        self.signLabels = []
 
     def announceGenerate(self):
         DistributedObject.DistributedObject.announceGenerate(self)
@@ -86,6 +95,7 @@ class DistributedPartyGate(DistributedObject.DistributedObject):
     def disable(self):
         DistributedObject.DistributedObject.disable(self)
         self.__disableCollisions()
+        self.__destroySignText()
         self.toontownTimeGui.ival.finish()
         self.hourSoundInterval.finish()
         if self.publicPartyGui:

@@ -76,6 +76,11 @@ class NametagGroup:
             self.removeNametag(nametag)
         if self.stompTask:
             self.stompTask.remove()
+        self.stompTask = None
+        # The chat timer points back at this group, which holds the toon or
+        # cog and its whole model: kept, it never let them go.
+        self._stopChatTimeout()
+        self.chatTimeoutTask = None
 
     def getNametag2d(self):
         return self.nametag2d

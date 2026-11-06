@@ -87,6 +87,11 @@ want-doomsday #f
 # Check a quarter of the cached render/transform states per frame instead of
 # all of them; the full sweep cost about a millisecond every frame.
 garbage-collect-states-rate 0.25
+# Panda's repositories default to gc DEBUG_SAVEALL, which puts every object
+# the garbage collector finds into gc.garbage instead of freeing it: each
+# street map, cog and toon the game let go of stayed in memory for good
+# (about 5 MB more per area visited). Collected garbage is freed again.
+gc-save-all #f
 # Every animation blends between its frames (Avatars did already; props,
 # characters and other Actors played frame by frame).
 interpolate-frames 1
