@@ -25,3 +25,6 @@ autoplay-db/
 turnip/
 turnip-runtime/
 /config/version.prc
+
+# Survival walking maps that come with the game (SurvivalArena.SHIPPED_REACH).
+!resources-overlay/phase_4/survival/*.json

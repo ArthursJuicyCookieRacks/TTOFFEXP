@@ -24,6 +24,7 @@ from panda3d.core import (NodePath, PNMImage, Point3, SamplerState, Texture, Tex
 from toontown.survival.previewmaps.MapKit import heading, rng
 from toontown.survival.previewmaps.PreviewMap import PreviewMap
 from toontown.survival.previewmaps.ToyGeo import Geo, Part, signText
+from toontown.survival import SurvivalLoading
 
 # The game's own hand-painted textures.
 # The playground's grey wood grain, lightened (paint) so colours on it stay
@@ -107,6 +108,19 @@ def facing(pos, target):
     return math.degrees(math.atan2(-d[0], d[1]))
 
 
+
+# The marbles' painted swirl colours.
+MARBLE_SWIRLS = {'gen:marble_red': (0.9, 0.22, 0.2), 'gen:marble_blue': (0.25, 0.5, 0.95),
+                 'gen:marble_yellow': (1.0, 0.75, 0.15), 'gen:marble_green': (0.3, 0.75, 0.35)}
+
+# How each painted texture wraps (as the painting functions set it).
+BAKED_WRAP = {
+    CLOCK: (SamplerState.WM_clamp, SamplerState.WM_clamp),
+    DARK: (SamplerState.WM_clamp, SamplerState.WM_clamp),
+    WOOD: (SamplerState.WM_repeat, SamplerState.WM_repeat),
+    SOFT: (SamplerState.WM_repeat, SamplerState.WM_repeat),
+}
+
 class _AnimProp:
     """An animated playground prop, put away with the map's actors."""
 
@@ -172,23 +186,17 @@ class ToyboxTerrace(PreviewMap):
         self.d = Geo(lambda tex: k.mesh(tex, 'decal'))
         self.letters = self.root.attachNewNode('toyLetters')
         self.signs = self.root.attachNewNode('toySigns')
-        self.__ground()
-        self.__plaza()
-        self.__paths()
-        self.__boundary()
-        self.__tunnelSides()
-        self.__tower()
-        self.__dna()
-        self.__hills()
-        # Arthur's painted pond: the built one only for its collisions.
-        self.collisionsOnly(self.__pond)
-        self.artModel('marble_pond_with_docks', (POND[0], POND[1], 0))
-        self.__ducks()
-        self.__tops()
-        self.__puzzles()
-        self.__yard()
-        self.__lamps()
-        self.__trees()
+        # Step by step, so the loading screen keeps drawing (and Android
+        # keeps hearing from the game) while the toys are built.
+        steps = [self.__ground, self.__plaza, self.__paths, self.__boundary, self.__tunnelSides,
+                 self.__tower, self.__dna, self.__hills,
+                 # Arthur's painted pond: the built one only for its collisions.
+                 lambda: self.collisionsOnly(self.__pond),
+                 lambda: self.artModel('marble_pond_with_docks', (POND[0], POND[1], 0)),
+                 self.__ducks, self.__tops, self.__puzzles, self.__yard, self.__lamps, self.__trees]
+        for i, buildStep in enumerate(steps):
+            buildStep()
+            SurvivalLoading.step(0.3 * (i + 1) / len(steps))
         self.letters.flattenStrong()
         self.signs.flattenStrong()
         self.addTask(self.__animate, 'toys')
@@ -198,14 +206,30 @@ class ToyboxTerrace(PreviewMap):
     def paint(self):
         """A few textures painted here, soft-edged like the game's own."""
         k = self.kit
-        swirls = {'gen:marble_red': (0.9, 0.22, 0.2), 'gen:marble_blue': (0.25, 0.5, 0.95),
-                  'gen:marble_yellow': (1.0, 0.75, 0.15), 'gen:marble_green': (0.3, 0.75, 0.35)}
-        for key, col in swirls.items():
-            k.textures[key] = self.__marbleTex(col)
-        k.textures[CLOCK] = self.__clockTex()
-        k.textures[DARK] = self.__darkTex()
-        k.textures[WOOD] = self.__paintTex()
-        k.textures[SOFT] = self.__softTex()
+        # Painting them pixel by pixel took seconds on a phone, so they are
+        # saved as pictures (tools/offline/art/toybox-terrace/
+        # bake_textures.py) and only painted here if a picture is missing.
+        makers = [(key, (lambda col=col: self.__marbleTex(col))) for key, col in MARBLE_SWIRLS.items()]
+        makers += [(CLOCK, self.__clockTex), (DARK, self.__darkTex), (WOOD, self.__paintTex), (SOFT, self.__softTex)]
+        for i, (key, maker) in enumerate(makers):
+            k.textures[key] = self.__baked(key) or maker()
+            SurvivalLoading.step(0.02 * (i + 1) / len(makers))
+
+    @staticmethod
+    def bakedName(key):
+        return 'phase_4/maps/toybox_%s.png' % key.replace(':', '_')
+
+    def __baked(self, key):
+        """The saved picture of a painted texture, sampled as when painted."""
+        tex = loader.loadTexture(self.bakedName(key), okMissing=True)
+        if tex is None:
+            return None
+        wrapU, wrapV = BAKED_WRAP.get(key, (SamplerState.WM_repeat, SamplerState.WM_clamp))
+        tex.setWrapU(wrapU)
+        tex.setWrapV(wrapV)
+        tex.setMinfilter(SamplerState.FT_linear_mipmap_linear)
+        tex.setMagfilter(SamplerState.FT_linear)
+        return tex
 
     def __tex(self, img, name):
         tex = Texture(name)

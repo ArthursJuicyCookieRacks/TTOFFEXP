@@ -255,7 +255,16 @@ class SurvivalLauncher(DirectObject):
         self.__stopMusic()
         self.chooser.exit()
         base.transitions.fadeScreen(1.0)
-        self.game = SurvivalGame(self.dna, self.name, npcs, 'survivalGameDone', mapName, night)
+        # The loading screen, kept drawing while the map is built: on a phone
+        # Toybox Terrace took a minute with no frame drawn, and Android kept
+        # saying the game wasn't responding (Arthur 2026-11-06).
+        from toontown.survival import SurvivalArena, SurvivalLoading
+        key = mapName if mapName in SurvivalArena.MAPS else SurvivalArena.mapName()
+        SurvivalLoading.begin(SurvivalArena.MAPS[key].get('title', 'Survival'))
+        try:
+            self.game = SurvivalGame(self.dna, self.name, npcs, 'survivalGameDone', mapName, night)
+        finally:
+            SurvivalLoading.end()
         base.transitions.fadeIn(0.8)
         self.acceptOnce('survivalGameDone', self.__gameDone)
 

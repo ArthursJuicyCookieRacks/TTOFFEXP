@@ -14,6 +14,7 @@ says "stairs", so the cogs' landing code and NPCNav.onStairs know them.
 import math
 import random
 
+from toontown.survival import SurvivalLoading
 from panda3d.core import (BitMask32, CollisionBox, CollisionNode, CollisionPolygon, CollisionTube, Geom, GeomNode,
                           GeomTriangles, GeomVertexData, GeomVertexFormat, GeomVertexWriter, NodePath, Point3,
                           SamplerState, Texture, TransparencyAttrib, Vec3, Vec4)
@@ -119,6 +120,9 @@ class MapKit:
         return tex
 
     def mesh(self, texPath, group='static'):
+        # Asked for every triangle built, so the loading screen draws from
+        # here while a map is put together (see SurvivalLoading).
+        SurvivalLoading.step()
         key = (texPath, group)
         m = self.meshes.get(key)
         if m is None:
@@ -160,6 +164,7 @@ class MapKit:
 
     def part(self, path, nodeName, pos=(0, 0, 0), h=0, scale=1.0, color=None, parent=None):
         """One named piece of a model (one tree out of trees.bam), placed."""
+        SurvivalLoading.step()
         proto = self.models.get(path)
         if proto is None:
             proto = self.models[path] = loader.loadModel(path)

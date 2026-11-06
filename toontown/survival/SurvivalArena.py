@@ -7,7 +7,10 @@ the Loopy Lane tunnel, the trunk and the fisherman at the gazebo) stand
 where the real playground has those landmarks.
 """
 
+import hashlib
+import json
 import math
+import os
 import random
 
 from direct.directnotify import DirectNotifyGlobal
@@ -18,6 +21,8 @@ from toontown.dna.DNAStorage import DNAStorage
 from toontown.hood import SkyUtil
 from toontown.npcplayers.NPCNav import getNav
 from toontown.toonbase import ToontownGlobals
+from panda3d.core import ConfigVariableBool, ConfigVariableString, Filename, VirtualFileSystem
+from toontown.survival import SurvivalLoading
 
 STORAGE_FILES = ('phase_4/dna/storage.xml', 'phase_4/dna/storage_TT.xml', 'phase_4/dna/storage_TT_sz.xml')
 DNA_FILE = 'phase_4/dna/toontown_central_sz.xml'
@@ -202,6 +207,15 @@ LEVEL_RISE = 2.5
 # How far into the ground a blocker post (addBlocker) reaches.
 BLOCKER_BELOW = 3.0
 
+
+# Goes up whenever buildReach's flood changes, so walking maps saved by an
+# older game are worked out again.
+REACH_CACHE_VERSION = 1
+# The walking maps that come with the game (resources-overlay): made by
+# playing each map once with survival-cache-directory set to
+# resources-overlay/phase_4/survival. One that no longer fits its map (the
+# map changed since) is passed over and the walking map worked out again.
+SHIPPED_REACH = '/phase_4/survival/reach-%s.json'
 
 class SurvivalArena:
     notify = DirectNotifyGlobal.directNotify.newCategory('SurvivalArena')
@@ -923,11 +937,24 @@ class SurvivalArena:
         if z0 is None:
             z0 = start[2]
         origin = (int(round(start[0] / step)), int(round(start[1] / step)))
+        self.flows = {}
+        # The walking map comes out the same every time for the same
+        # playground, so it is saved after it is first worked out: on a
+        # phone working it out was most of Toybox Terrace's minute-long
+        # load (Arthur 2026-11-06).
+        key = self.__reachKey(step, lo, hi, origin, z0)
+        if self.__loadReach(key):
+            self.__finishReach()
+            return
         self.reach = {origin: Point3(origin[0] * step, origin[1] * step, z0)}
         self.reachZ = {}
         self.stairs = set()
+        self.diagonals = {}
         frontier = [origin]
+        # Roughly how many cells the playground has, for the loading bar.
+        expect = max(1, (hi[0] - lo[0]) * (hi[1] - lo[1]) // 3)
         while frontier:
+            SurvivalLoading.step(0.32 + 0.45 * min(1.0, len(self.reach) / float(expect)))
             cell = frontier.pop()
             here = self.reach[cell]
             for di, dj in ((1, 0), (-1, 0), (0, 1), (0, -1)):
@@ -963,10 +990,40 @@ class SurvivalArena:
                     continue
                 self.reach[nxt] = there
                 frontier.append(nxt)
+        # Which side-by-side cells join. The flood only tried a cell from
+        # the first side it reached it by; two cells both reached from
+        # elsewhere were taken as joined, through Old School Toontown's
+        # stone wall, so the cogs' routes led them into it.
+        self.links = set()
+        for n, (cell, point) in enumerate(self.reach.items()):
+            if n % 10 == 0:
+                SurvivalLoading.step(0.77 + 0.1 * n / len(self.reach))
+            for di, dj in ((1, 0), (0, 1)):
+                c = (cell[0] + di, cell[1] + dj)
+                there = self.reach.get(c)
+                if there is not None and self.__joins(cell, c, point, there):
+                    self.links.add((cell, c))
+        # Corner-to-corner steps the cogs' routes may take, worked out now
+        # rather than in the middle of a round.
+        for n, cell in enumerate(list(self.reach)):
+            if n % 10 == 0:
+                SurvivalLoading.step(0.87 + 0.12 * n / len(self.reach))
+            for di, dj in ((1, 1), (1, -1)):
+                c = (cell[0] + di, cell[1] + dj)
+                if c in self.reach:
+                    self.diagonalOpen(cell, c)
+        self.__saveReach(key)
+        self.__finishReach()
+
+    def __finishReach(self):
+        """The cells to land on and the lists, from the walking map."""
+        step = self.REACH_STEP
         self.reachList = [p for c, p in self.reach.items() if c not in self.stairs]
         self.landingList = []
         ring = max(LANDING_CLEARANCE, int(round(LANDING_CLEARANCE * 5.0 / step)))
-        for cell, point in self.reach.items():
+        for n, (cell, point) in enumerate(self.reach.items()):
+            if n % 50 == 0:
+                SurvivalLoading.step()
             if cell in self.stairs:
                 continue
             if any((cell[0] + di, cell[1] + dj) not in self.reach
@@ -975,27 +1032,109 @@ class SurvivalArena:
             if any((Point3(point[0], point[1], 0) - Point3(spot[0], spot[1], 0)).length() < radius for spot, radius in self.noLanding):
                 continue
             self.landingList.append(point)
-        # Which side-by-side cells join. The flood only tried a cell from
-        # the first side it reached it by; two cells both reached from
-        # elsewhere were taken as joined, through Old School Toontown's
-        # stone wall, so the cogs' routes led them into it.
-        self.links = set()
-        for cell, point in self.reach.items():
-            for di, dj in ((1, 0), (0, 1)):
-                c = (cell[0] + di, cell[1] + dj)
-                there = self.reach.get(c)
-                if there is not None and self.__joins(cell, c, point, there):
-                    self.links.add((cell, c))
-        self.flows = {}
-        # Corner-to-corner steps the cogs' routes may take, worked out now
-        # rather than in the middle of a round.
-        self.diagonals = {}
-        for cell in self.reach:
-            for di, dj in ((1, 1), (1, -1)):
-                c = (cell[0] + di, cell[1] + dj)
-                if c in self.reach:
-                    self.diagonalOpen(cell, c)
+        SurvivalLoading.step(1.0)
         self.notify.info('reach: %d cells, %d open for landing' % (len(self.reachList), len(self.landingList)))
+
+    # --- The saved walking map ---
+
+    def __reachKey(self, step, lo, hi, origin, z0):
+        """A fingerprint of everything the walking map comes from: the
+        playground's solid parts (where, what shape, what they stop) and
+        the flood's own settings. Any change to the map makes a new one,
+        so a saved walking map is only used for the very same playground."""
+        h = hashlib.sha1()
+        h.update(repr((REACH_CACHE_VERSION, self.mapName, step, lo, hi, origin, round(z0, 2),
+                       self.map.get('lowest', -8), self.map.get('reachRise', 0.0),
+                       BODY_HEIGHTS, CELL_SIDE)).encode())
+        masks = ToontownGlobals.WallBitmask | ToontownGlobals.FloorBitmask
+        def mat(np):
+            m = np.getMat(self.root)
+            return ','.join('%.2f' % (round(m.getCell(i, j), 2) + 0.0) for i in range(4) for j in range(3))
+        for np in self.root.findAllMatches('**/+CollisionNode'):
+            node = np.node()
+            if node.getIntoCollideMask().isZero():
+                continue
+            h.update(('%s|%s|%d|' % (np.getName(), mat(np), node.getIntoCollideMask().getWord())).encode())
+            for i in range(node.getNumSolids()):
+                solid = node.getSolid(i)
+                h.update(('%s|%d|%s' % (type(solid).__name__, solid.isTangible(), solid)).encode())
+        for np in self.root.findAllMatches('**/+GeomNode'):
+            if (np.node().getIntoCollideMask() & masks).isZero():
+                continue
+            b = np.getTightBounds(self.root)
+            h.update(('%s|%s|%s' % (np.getName(), mat(np),
+                                     b and ','.join('%.1f' % (round(v, 1) + 0.0) for p in b for v in p))).encode())
+        return h.hexdigest()
+
+    def __reachFile(self):
+        folder = ConfigVariableString('survival-cache-directory', '').getValue()
+        if not folder and ConfigVariableBool('offline-release', False).getValue():
+            # The player's own folder (packaged games run from it).
+            folder = os.path.join('cache', 'survival')
+        if not folder:
+            return None
+        return os.path.join(folder, 'reach-%s.json' % self.mapName)
+
+    def __loadReach(self, key):
+        """The walking map saved by an earlier load of the very same
+        playground: the player's own (saved by this game), or the one that
+        comes with the game, so even the first load is quick."""
+        texts = []
+        path = self.__reachFile()
+        if path and os.path.isfile(path):
+            try:
+                with open(path) as file:
+                    texts.append((path, file.read()))
+            except Exception:
+                self.notify.warning('could not read %s' % path)
+        shipped = Filename(SHIPPED_REACH % self.mapName)
+        vfs = VirtualFileSystem.getGlobalPtr()
+        if vfs.exists(shipped):
+            try:
+                texts.append((shipped.getFullpath(), vfs.readFile(shipped, True).decode('utf-8')))
+            except Exception:
+                self.notify.warning('could not read %s' % shipped)
+        for where, text in texts:
+            try:
+                data = json.loads(text)
+                if data.get('key') != key:
+                    self.notify.info('the walking map in %s is for another version of %s' % (where, self.mapName))
+                    continue
+                reach = dict(((i, j), Point3(x, y, z)) for i, j, x, y, z in data['reach'])
+                reachZ = dict(((i, j), z) for i, j, z in data['reachZ'])
+                stairs = set((i, j) for i, j in data['stairs'])
+                links = set(((a, b), (c, d)) for a, b, c, d in data['links'])
+                diagonals = dict((((a, b), (c, d)), bool(o)) for a, b, c, d, o in data['diagonals'])
+            except Exception:
+                self.notify.warning('could not read the walking map in %s' % where)
+                continue
+            self.reach, self.reachZ, self.stairs, self.links, self.diagonals = reach, reachZ, stairs, links, diagonals
+            self.notify.info('walking map from %s' % where)
+            return True
+        return False
+
+    def __saveReach(self, key):
+        path = self.__reachFile()
+        if not path:
+            return
+        data = {
+            'key': key,
+            'reach': [[c[0], c[1], round(p[0], 4), round(p[1], 4), round(p[2], 4)] for c, p in self.reach.items()],
+            'reachZ': [[c[0], c[1], z] for c, z in self.reachZ.items()],
+            'stairs': [list(c) for c in self.stairs],
+            'links': [[a[0], a[1], b[0], b[1]] for a, b in self.links],
+            'diagonals': [[a[0], a[1], b[0], b[1], int(o)] for (a, b), o in self.diagonals.items()],
+        }
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            # One string at once: json.dump to a file goes piece by piece
+            # in Python, several times slower.
+            text = json.dumps(data, separators=(',', ':'))
+            with open(path + '.tmp', 'w') as file:
+                file.write(text)
+            os.replace(path + '.tmp', path)
+        except Exception:
+            self.notify.warning('could not save the walking map to %s' % path)
 
     def __joins(self, cell, nxt, here, there):
         """Whether a cog walks between two side-by-side cells."""

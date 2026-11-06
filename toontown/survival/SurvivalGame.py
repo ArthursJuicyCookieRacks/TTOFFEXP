@@ -17,6 +17,7 @@ from direct.showbase.DirectObject import DirectObject
 from direct.showbase.PythonUtil import Functor
 from panda3d.core import ClockObject, CollisionTraverser, Point3, TextNode, Vec3, Vec4
 
+from toontown.survival import SurvivalLoading
 from toontown.survival import SurvivalGlobals as G
 from toontown.survival.SurvivalArena import SurvivalArena
 from toontown.survival.SurvivalCog import SurvivalCog
@@ -243,9 +244,13 @@ class SurvivalGame(DirectObject):
         for pos, radius, height in self.arena.map.get('blockers', ()):
             self.arena.addBlocker(pos, radius, height)
         self.arena.buildReach(start)
+        SurvivalLoading.step()
         self.player = SurvivalPlayer(self, start, h)
+        SurvivalLoading.step()
         self.hud = SurvivalHUD(self, self.dna)
+        SurvivalLoading.step()
         self.gags = GagHandler(self, self.player)
+        SurvivalLoading.step()
         self.stations = [MickeyStation(self), TrunkStation(self), FishermanStation(self)]
         # A map with no trolley (the Cog HQs) has no way out: fight on.
         if not self.arena.geom.find('**/*trolley_station*').isEmpty():
@@ -263,6 +268,7 @@ class SurvivalGame(DirectObject):
                 point = self.arena.cellPoint(cell) if cell is not None else None
                 spot = Point3(point) if point is not None and self.arena.bodyClear(start, point) else Point3(start)
             self.npcs.append(SurvivalNPC(self, i, spot))
+            SurvivalLoading.step()
         self.hud.setLaff(self.player.hp, self.player.maxHp)
         self.hud.setBeans(self.beans)
         self.hud.setTonics(self.tonics)

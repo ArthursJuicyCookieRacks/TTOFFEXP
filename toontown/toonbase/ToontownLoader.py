@@ -1,3 +1,4 @@
+import sys
 import builtins
 from panda3d.core import *
 from direct.directnotify.DirectNotifyGlobal import *
@@ -76,6 +77,12 @@ class ToontownLoader(Loader.Loader):
                     base.cr.considerHeartbeat()
                 except:
                     pass
+        else:
+            # Survival's loading screen keeps drawing while its map's
+            # models load (see SurvivalLoading).
+            loading = sys.modules.get('toontown.survival.SurvivalLoading')
+            if loading is not None:
+                loading.step()
 
     def loadModel(self, *args, **kw):
         ret = Loader.Loader.loadModel(self, *args, **kw)
