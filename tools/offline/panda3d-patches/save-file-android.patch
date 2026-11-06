@@ -1,8 +1,8 @@
 diff --git a/panda/src/android/PythonActivity.java b/panda/src/android/PythonActivity.java
-index 7e7cec9..ed713c7 100644
+index 8faf14bba..d28206d9e 100644
 --- a/panda/src/android/PythonActivity.java
 +++ b/panda/src/android/PythonActivity.java
-@@ -33,6 +33,7 @@ import android.database.Cursor;
+@@ -34,6 +34,7 @@ import android.database.Cursor;
  import android.net.Uri;
  import android.provider.OpenableColumns;
  import java.io.File;
@@ -10,8 +10,8 @@ index 7e7cec9..ed713c7 100644
  import java.io.FileOutputStream;
  import java.io.InputStream;
  import java.io.OutputStream;
-@@ -337,8 +338,70 @@ public class PythonActivity extends PandaActivity {
-         return typedText;
+@@ -448,8 +449,70 @@ public class PythonActivity extends PandaActivity {
+         typingView.setFocusableInTouchMode(false);
      }
  
 +    // Saving one of the game's files somewhere the player picks with the
@@ -82,10 +82,10 @@ index 7e7cec9..ed713c7 100644
              if (resultCode == RESULT_OK && intent != null && intent.getData() != null) {
                  Uri uri = intent.getData();
 diff --git a/pandatool/src/deploy-stub/android_support.cxx b/pandatool/src/deploy-stub/android_support.cxx
-index 8d4e5c2..74b2535 100644
+index d3bb01f74..59e4250a1 100644
 --- a/pandatool/src/deploy-stub/android_support.cxx
 +++ b/pandatool/src/deploy-stub/android_support.cxx
-@@ -214,12 +214,76 @@ _py_typed_text(PyObject *self, PyObject *args) {
+@@ -193,11 +193,75 @@ _py_poll_keyboard(PyObject *self, PyObject *args) {
    return text;
  }
  
@@ -155,10 +155,9 @@ index 8d4e5c2..74b2535 100644
    { "log_write", &_py_log_write, METH_VARARGS },
    { "find_library", &_py_find_library, METH_VARARGS },
    { "pick_file", &_py_pick_file, METH_VARARGS },
-   { "set_typed_text", &_py_set_typed_text, METH_VARARGS },
    { "picked_file", &_py_picked_file, METH_NOARGS },
 +  { "save_file", &_py_save_file, METH_VARARGS },
 +  { "saved_file", &_py_saved_file, METH_NOARGS },
-   { "ask_text", &_py_ask_text, METH_VARARGS },
-   { "typed_text", &_py_typed_text, METH_NOARGS },
+   { "show_keyboard", &_py_show_keyboard, METH_VARARGS },
+   { "poll_keyboard", &_py_poll_keyboard, METH_NOARGS },
    { NULL, NULL }

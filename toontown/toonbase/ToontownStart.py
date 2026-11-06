@@ -110,6 +110,9 @@ KeyBindings.install()
 # Field of view and volume (Shticker Book > Settings).
 from . import GameSettings
 GameSettings.install()
+# A phone's keyboard comes up for any text box with the focus.
+from . import AndroidKeyboard
+AndroidKeyboard.install()
 
 # The bottom screen of a dual-screen handheld, from the launcher on.
 from toontown.dualscreen import SecondScreen

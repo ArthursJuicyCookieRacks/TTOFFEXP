@@ -1,289 +1,572 @@
 diff --git a/panda/src/android/PythonActivity.java b/panda/src/android/PythonActivity.java
-index 7f625a1..bb994ff 100644
+index 7f625a1a3..78ef48553 100644
 --- a/panda/src/android/PythonActivity.java
 +++ b/panda/src/android/PythonActivity.java
-@@ -15,7 +15,17 @@ package org.panda3d.android;
+@@ -15,7 +15,19 @@ package org.panda3d.android;
  
  import org.panda3d.android.PandaActivity;
  
 +import android.content.Context;
  import android.content.Intent;
-+import android.text.Editable;
-+import android.text.InputFilter;
-+import android.text.TextWatcher;
++import android.os.SystemClock;
++import android.text.InputType;
++import android.view.KeyCharacterMap;
 +import android.view.KeyEvent;
++import android.view.View;
 +import android.view.ViewGroup;
 +import android.view.WindowManager;
++import android.view.inputmethod.BaseInputConnection;
 +import android.view.inputmethod.EditorInfo;
++import android.view.inputmethod.InputConnection;
 +import android.view.inputmethod.InputMethodManager;
-+import android.widget.EditText;
  import android.database.Cursor;
  import android.net.Uri;
  import android.provider.OpenableColumns;
-@@ -114,6 +124,172 @@ public class PythonActivity extends PandaActivity {
+@@ -27,6 +39,7 @@ import java.util.ArrayList;
+ import java.util.Collections;
+ import java.util.Iterator;
+ import java.util.List;
++import java.util.concurrent.ConcurrentLinkedQueue;
+ 
+ /**
+  * Extends PandaActivity with some things that are useful in a Python
+@@ -114,6 +127,296 @@ public class PythonActivity extends PandaActivity {
          }
      }
  
-+    // Typing with the system's keyboard straight into the game's own text
-+    // box. The game's window takes no typing from an on-screen keyboard, so
-+    // an invisible text field takes it, and the game shows what it holds.
-+    // getTypedText gives "E:" and the text while typing, "S:" and the text
-+    // once it is sent, and "C:" and the text if the keyboard was closed.
-+    private volatile String typedText = "C:";
-+    private EditText hiddenEdit = null;
++    // Typing with the system's keyboard.  Panda's window turns the keys it
++    // is given into typed letters, as a computer's keyboard does, so the
++    // game's own text boxes take the typing as they would on a computer,
++    // with no copy of the text kept here.  A phone's keyboard does not send
++    // keys for most of what it types, though: it hands a text editor whole
++    // letters and words.  So while the game wants typing, an invisible
++    // editor of ours has the focus, and hands what it is given on to the
++    // game's window in the order it came: backspace and Enter as those
++    // keys, and the letters as typed text (the window asks for it with
++    // takeTypedText when the marker key that stands for it arrives).  If the
++    // keyboard ends up not bound to the editor, it sends keys instead, and
++    // those type in the same way.
++    private volatile boolean typingWanted = false;
++    private TypingView typingView = null;
++    private final ConcurrentLinkedQueue<String> typedTexts = new ConcurrentLinkedQueue<String>();
++    private final ConcurrentLinkedQueue<String> typingEvents = new ConcurrentLinkedQueue<String>();
 +
-+    public void askText(String title, String text, int maxLength) {
-+        // The state changes at once, on the game's thread: set later on the
-+        // UI thread, the game could read the last time's "S:" or "C:" just
-+        // after asking and take it as this time's (sending the last message
-+        // again, or stopping before a word was typed).
-+        if (maxLength < 0) {
-+            typedText = "C:" + typedText.substring(2);
-+        } else {
-+            typedText = "E:" + text;
++    // The invisible editor that the keyboard is bound to while typing.
++    private class TypingView extends View {
++        TypingView(Context context) {
++            super(context);
 +        }
-+        runOnUiThread(() -> {
-+            if (maxLength < 0) {
-+                // The game is done with the keyboard.
-+                if (hiddenEdit != null) {
-+                    closeKeyboard();
++
++        @Override
++        public boolean onCheckIsTextEditor() {
++            return true;
++        }
++
++        @Override
++        public InputConnection onCreateInputConnection(EditorInfo info) {
++            // Plain text with no suggestions and no word being composed (as
++            // a password typed in the open), so each letter arrives as soon
++            // as it is typed; Send rather than a new line.
++            info.inputType = InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD |
++                             InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS;
++            info.imeOptions = EditorInfo.IME_ACTION_SEND | EditorInfo.IME_FLAG_NO_EXTRACT_UI |
++                              EditorInfo.IME_FLAG_NO_FULLSCREEN;
++            info.initialSelStart = 0;
++            info.initialSelEnd = 0;
++            return new TypingConnection(this);
++        }
++
++        @Override
++        public void onWindowFocusChanged(boolean hasWindowFocus) {
++            super.onWindowFocusChanged(hasWindowFocus);
++            // Back in the game (after another app, a dialog, or a touch on
++            // the second screen) while it still wants typing: bring the
++            // keyboard back.
++            if (hasWindowFocus && typingWanted) {
++                post(() -> {
++                    if (typingWanted) {
++                        takeTypingFocus();
++                    }
++                });
++            }
++        }
++
++        @Override
++        public boolean onKeyPreIme(int keyCode, KeyEvent event) {
++            if (keyCode == KeyEvent.KEYCODE_BACK && typingWanted) {
++                // The back button puts the keyboard away; the game is told,
++                // so that it does not bring it straight back.
++                if (event.getAction() == KeyEvent.ACTION_UP) {
++                    typingWanted = false;
++                    typingEvents.add("C:");
++                    stopTyping();
 +                }
++                return true;
++            }
++            return super.onKeyPreIme(keyCode, event);
++        }
++    }
++
++    // What the keyboard asks the editor to do, passed on to the game.  The
++    // editor holds no text of its own: the game's box holds it.
++    private class TypingConnection extends BaseInputConnection {
++        // The word the keyboard is still composing, already typed into the
++        // game (some keyboards compose even with no suggestions).
++        private String composing = "";
++
++        TypingConnection(View view) {
++            super(view, true);
++        }
++
++        @Override
++        public boolean commitText(CharSequence text, int newCursorPosition) {
++            replaceComposing(text == null ? "" : text.toString());
++            composing = "";
++            return true;
++        }
++
++        @Override
++        public boolean setComposingText(CharSequence text, int newCursorPosition) {
++            replaceComposing(text == null ? "" : text.toString());
++            return true;
++        }
++
++        @Override
++        public boolean setComposingRegion(int start, int end) {
++            // There is no text here to compose again.
++            return true;
++        }
++
++        @Override
++        public boolean finishComposingText() {
++            composing = "";
++            return true;
++        }
++
++        @Override
++        public boolean deleteSurroundingText(int beforeLength, int afterLength) {
++            for (int i = 0; i < beforeLength; ++i) {
++                sendKey(KeyEvent.KEYCODE_DEL);
++            }
++            for (int i = 0; i < afterLength; ++i) {
++                sendKey(KeyEvent.KEYCODE_FORWARD_DEL);
++            }
++            return true;
++        }
++
++        // Android 7's version of the above (no @Override: Panda builds
++        // against an older SDK).
++        public boolean deleteSurroundingTextInCodePoints(int beforeLength, int afterLength) {
++            return deleteSurroundingText(beforeLength, afterLength);
++        }
++
++        @Override
++        public boolean performEditorAction(int actionCode) {
++            // Send (or Done, or Go): the game's Enter.
++            sendKey(KeyEvent.KEYCODE_ENTER);
++            return true;
++        }
++
++        @Override
++        public CharSequence getTextBeforeCursor(int length, int flags) {
++            return "";
++        }
++
++        @Override
++        public CharSequence getTextAfterCursor(int length, int flags) {
++            return "";
++        }
++
++        // Turns what was composed into text: backspace over the letters of
++        // the old word that changed, then type the new word's.
++        private void replaceComposing(String text) {
++            int same = 0;
++            int most = Math.min(composing.length(), text.length());
++            while (same < most && composing.charAt(same) == text.charAt(same)) {
++                ++same;
++            }
++            if (same > 0 && Character.isHighSurrogate(composing.charAt(same - 1))) {
++                --same;
++            }
++            int erase = composing.codePointCount(same, composing.length());
++            for (int i = 0; i < erase; ++i) {
++                sendKey(KeyEvent.KEYCODE_DEL);
++            }
++            String typed = text.substring(same);
++            if (!typed.isEmpty()) {
++                // Line breaks are the game's Enter, not text.
++                StringBuilder letters = new StringBuilder();
++                for (int i = 0; i < typed.length(); ++i) {
++                    char c = typed.charAt(i);
++                    if (c == '\n' || c == '\r') {
++                        typeLetters(letters);
++                        sendKey(KeyEvent.KEYCODE_ENTER);
++                    } else {
++                        letters.append(c);
++                    }
++                }
++                typeLetters(letters);
++            }
++            composing = text;
++        }
++
++        private void typeLetters(StringBuilder letters) {
++            if (letters.length() == 0) {
 +                return;
 +            }
-+            if (hiddenEdit == null) {
-+                hiddenEdit = new EditText(this) {
-+                    @Override
-+                    public boolean onKeyPreIme(int keyCode, KeyEvent event) {
-+                        if (keyCode == KeyEvent.KEYCODE_BACK && event.getAction() == KeyEvent.ACTION_UP) {
-+                            typedText = "C:" + getText().toString();
-+                            closeKeyboard();
-+                            return true;
-+                        }
-+                        return super.onKeyPreIme(keyCode, event);
-+                    }
++            typedTexts.add(letters.toString());
++            letters.setLength(0);
++            // The marker: a key with no key code, standing for the next
++            // text in the queue.
++            long now = SystemClock.uptimeMillis();
++            super.sendKeyEvent(new KeyEvent(now, now, KeyEvent.ACTION_MULTIPLE, KeyEvent.KEYCODE_UNKNOWN, 1));
++        }
 +
-+                    // The game shows the text with no cursor, so the cursor
-+                    // stays at the end: a controller's d-pad could move it
-+                    // to the front, and then backspace deleted nothing.
-+                    @Override
-+                    protected void onSelectionChanged(int selStart, int selEnd) {
-+                        int end = getText() != null ? getText().length() : 0;
-+                        if (selStart != end || selEnd != end) {
-+                            setSelection(end);
-+                            return;
-+                        }
-+                        super.onSelectionChanged(selStart, selEnd);
-+                    }
-+                };
-+                hiddenEdit.setSingleLine(true);
-+                hiddenEdit.setAlpha(0.0f);
-+                hiddenEdit.setImeOptions(EditorInfo.IME_ACTION_SEND | EditorInfo.IME_FLAG_NO_EXTRACT_UI |
-+                                         EditorInfo.IME_FLAG_NO_FULLSCREEN);
-+                hiddenEdit.addTextChangedListener(new TextWatcher() {
-+                    public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
-+                    public void onTextChanged(CharSequence s, int start, int before, int count) {}
-+                    public void afterTextChanged(Editable s) {
-+                        if (typedText.startsWith("E:")) {
-+                            typedText = "E:" + s.toString();
-+                        }
-+                    }
-+                });
-+                // While the game wants typing, the field keeps the focus: the
-+                // game's surface could take it back (a touch on the screen),
-+                // and then the keyboard typed into nothing and its backspace
-+                // went to the game as a key, deleting from the game's box
-+                // but not from this field.
-+                hiddenEdit.setOnFocusChangeListener((view, hasFocus) -> {
-+                    if (!hasFocus && typedText.startsWith("E:")) {
-+                        view.post(() -> {
-+                            if (hiddenEdit != null && typedText.startsWith("E:") && !hiddenEdit.isFocused()) {
-+                                hiddenEdit.setFocusable(true);
-+                                hiddenEdit.setFocusableInTouchMode(true);
-+                                hiddenEdit.requestFocus();
-+                                InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
-+                                if (imm != null) {
-+                                    imm.showSoftInput(hiddenEdit, 0);
-+                                }
-+                            }
-+                        });
-+                    }
-+                });
-+                hiddenEdit.setOnEditorActionListener((view, action, event) -> {
-+                    typedText = "S:" + hiddenEdit.getText().toString();
-+                    closeKeyboard();
-+                    return true;
-+                });
-+                addContentView(hiddenEdit, new ViewGroup.LayoutParams(1, 1));
-+            }
-+            if (maxLength > 0) {
-+                hiddenEdit.setFilters(new InputFilter[] { new InputFilter.LengthFilter(maxLength) });
++        private void sendKey(int keyCode) {
++            long now = SystemClock.uptimeMillis();
++            super.sendKeyEvent(new KeyEvent(now, now, KeyEvent.ACTION_DOWN, keyCode, 0, 0,
++                                            KeyCharacterMap.VIRTUAL_KEYBOARD, 0,
++                                            KeyEvent.FLAG_SOFT_KEYBOARD | KeyEvent.FLAG_KEEP_TOUCH_MODE));
++            super.sendKeyEvent(new KeyEvent(now, now, KeyEvent.ACTION_UP, keyCode, 0, 0,
++                                            KeyCharacterMap.VIRTUAL_KEYBOARD, 0,
++                                            KeyEvent.FLAG_SOFT_KEYBOARD | KeyEvent.FLAG_KEEP_TOUCH_MODE));
++        }
++    }
++
++    // The game (on its own thread) wants the keyboard up, or put away.
++    public void showKeyboard(boolean show) {
++        typingWanted = show;
++        runOnUiThread(() -> {
++            if (typingWanted) {
++                startTyping();
 +            } else {
-+                hiddenEdit.setFilters(new InputFilter[0]);
++                stopTyping();
 +            }
-+            typedText = "E:" + text;
-+            hiddenEdit.setText(text);
-+            hiddenEdit.setSelection(hiddenEdit.getText().length());
-+            hiddenEdit.setFocusable(true);
-+            hiddenEdit.setFocusableInTouchMode(true);
-+            // A field made just now is not in the window yet: the keyboard
-+            // asked for at once would come up bound to the game's surface,
-+            // which takes no typing, and nothing typed would arrive until
-+            // the field was asked for again. So the field gets the focus
-+            // once it is attached, the keyboard is bound to it in so many
-+            // words, and both are asked for again once things have
-+            // settled, since the game's surface can take the focus back.
-+            Runnable takeFocus = () -> {
-+                if (hiddenEdit != null && typedText.startsWith("E:")) {
-+                    hiddenEdit.requestFocus();
-+                    showKeyboard();
-+                }
-+            };
-+            hiddenEdit.post(takeFocus);
-+            hiddenEdit.postDelayed(takeFocus, 250);
-+            hiddenEdit.postDelayed(takeFocus, 700);
 +        });
 +    }
 +
-+    // The game's box changed some other way (a key from a hardware keyboard,
-+    // the game clearing it): the field takes the same text, so the next
-+    // letter typed does not bring back what the box no longer holds.
-+    public void setTypedText(String text) {
-+        if (!typedText.startsWith("E:")) {
++    // "C:" once for each time the player put the keyboard away with the
++    // back button, or "" if there is no news.
++    public String pollKeyboard() {
++        String event = typingEvents.poll();
++        return event != null ? event : "";
++    }
++
++    // The text that the next marker key stands for (asked for by Panda's
++    // window, on the game's thread), or null.
++    public String takeTypedText() {
++        return typedTexts.poll();
++    }
++
++    private void startTyping() {
++        if (typingView == null) {
++            typingView = new TypingView(this);
++            typingView.setAlpha(0.0f);
++            // While the game wants typing, the editor keeps the focus: if
++            // something else takes it, the keyboard is bound to the editor
++            // again.
++            typingView.setOnFocusChangeListener((view, hasFocus) -> {
++                if (!hasFocus && typingWanted) {
++                    view.post(() -> {
++                        if (typingWanted && typingView != null && !typingView.isFocused()) {
++                            takeTypingFocus();
++                        }
++                    });
++                }
++            });
++            addContentView(typingView, new ViewGroup.LayoutParams(1, 1));
++        }
++        typingView.setFocusable(true);
++        typingView.setFocusableInTouchMode(true);
++        // A view made just now is not in the window yet, and the game's
++        // surface can take the focus back as things settle, so the focus
++        // and the keyboard are asked for again a little later.
++        Runnable take = () -> {
++            if (typingWanted) {
++                takeTypingFocus();
++            }
++        };
++        typingView.post(take);
++        typingView.postDelayed(take, 250);
++        typingView.postDelayed(take, 700);
++    }
++
++    private void takeTypingFocus() {
++        if (typingView == null) {
 +            return;
 +        }
-+        typedText = "E:" + text;
-+        runOnUiThread(() -> {
-+            if (hiddenEdit != null && typedText.startsWith("E:") && !hiddenEdit.getText().toString().equals(text)) {
-+                hiddenEdit.setText(text);
-+                hiddenEdit.setSelection(hiddenEdit.getText().length());
-+            }
-+        });
-+    }
-+
-+    private void showKeyboard() {
-+        InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
-+        if (imm != null && hiddenEdit != null) {
-+            if (!hiddenEdit.isFocused()) {
-+                hiddenEdit.requestFocus();
-+            }
-+            imm.restartInput(hiddenEdit);
-+            imm.showSoftInput(hiddenEdit, InputMethodManager.SHOW_FORCED);
++        if (!typingView.isFocused()) {
++            typingView.requestFocus();
 +        }
-+    }
-+
-+    private void closeKeyboard() {
 +        InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
 +        if (imm != null) {
-+            imm.hideSoftInputFromWindow(hiddenEdit.getWindowToken(), 0);
++            if (!imm.isActive(typingView)) {
++                imm.restartInput(typingView);
++            }
++            imm.showSoftInput(typingView, InputMethodManager.SHOW_FORCED);
 +        }
-+        // The field stays in the window, ready for the next time, but can
-+        // hold no focus until then: left focusable it would keep it (Android
-+        // gives the focus straight back to the only field there is), and a
-+        // controller's buttons would go to the keyboard instead of the game
-+        // until the screen was touched.
-+        hiddenEdit.clearFocus();
-+        hiddenEdit.setFocusable(false);
-+        hiddenEdit.setFocusableInTouchMode(false);
 +    }
 +
-+    public String getTypedText() {
-+        return typedText;
++    private void stopTyping() {
++        if (typingView == null) {
++            return;
++        }
++        InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
++        if (imm != null) {
++            imm.hideSoftInputFromWindow(typingView.getWindowToken(), 0);
++        }
++        // The editor stays in the window, ready for the next time, but can
++        // hold no focus until then: left focusable, it would keep the focus
++        // (Android hands it straight back to the only editor there is), and
++        // a controller's buttons would go to it instead of to the game.
++        typingView.clearFocus();
++        typingView.setFocusable(false);
++        typingView.setFocusableInTouchMode(false);
 +    }
 +
      @Override
      protected void onActivityResult(int requestCode, int resultCode, Intent intent) {
          if (requestCode == PICK_FILE_REQUEST) {
+diff --git a/panda/src/androiddisplay/androidGraphicsWindow.cxx b/panda/src/androiddisplay/androidGraphicsWindow.cxx
+index 54d7a2fe0..8534d72ba 100644
+--- a/panda/src/androiddisplay/androidGraphicsWindow.cxx
++++ b/panda/src/androiddisplay/androidGraphicsWindow.cxx
+@@ -30,6 +30,8 @@
+ #include "gamepadButton.h"
+ #include "lightMutexHolder.h"
+ #include "pmap.h"
++#include "thread.h"
++#include "graphicsWindowInputDevice.h"
+ 
+ #include "android_native_app_glue.h"
+ #include <android/window.h>
+@@ -613,6 +615,107 @@ is_gamepad_event(const AInputEvent *event) {
+       || (source & AINPUT_SOURCE_JOYSTICK) == AINPUT_SOURCE_JOYSTICK;
+ }
+ 
++/**
++ * The character that a key types, or 0 if it types none.  Java's
++ * KeyCharacterMap knows it; the NDK has no call for it.
++ */
++static int
++get_key_character(const AInputEvent *event) {
++  JNIEnv *env = Thread::get_current_thread()->get_jni_env();
++  if (env == nullptr) {
++    return 0;
++  }
++  static jclass map_class = nullptr;
++  static jmethodID load_method = nullptr;
++  static jmethodID get_method = nullptr;
++  if (map_class == nullptr) {
++    jclass local_class = env->FindClass("android/view/KeyCharacterMap");
++    if (local_class == nullptr) {
++      env->ExceptionClear();
++      return 0;
++    }
++    load_method = env->GetStaticMethodID(local_class, "load", "(I)Landroid/view/KeyCharacterMap;");
++    get_method = env->GetMethodID(local_class, "get", "(II)I");
++    if (load_method == nullptr || get_method == nullptr) {
++      env->ExceptionClear();
++      env->DeleteLocalRef(local_class);
++      return 0;
++    }
++    map_class = (jclass)env->NewGlobalRef(local_class);
++    env->DeleteLocalRef(local_class);
++  }
++  jobject map = env->CallStaticObjectMethod(map_class, load_method, (jint)AInputEvent_getDeviceId(event));
++  if (env->ExceptionCheck()) {
++    // A device that is gone.
++    env->ExceptionClear();
++    map = nullptr;
++  }
++  if (map == nullptr) {
++    return 0;
++  }
++  jint ch = env->CallIntMethod(map, get_method, (jint)AKeyEvent_getKeyCode(event),
++                               (jint)AKeyEvent_getMetaState(event));
++  if (env->ExceptionCheck()) {
++    env->ExceptionClear();
++    ch = 0;
++  }
++  env->DeleteLocalRef(map);
++  // Control characters (Enter, backspace) are keys, not text, and a dead
++  // key (an accent for the next letter; the top bit is set) types nothing.
++  if (ch < 32 || ch == 127) {
++    return 0;
++  }
++  return ch;
++}
++
++/**
++ * Types the text that the activity's keyboard editor queued up: a phone's
++ * keyboard hands over most of what it types as text, not as keys, and the
++ * editor sends a key with no key code to stand for each piece, so that the
++ * text arrives here in its place among the other keys (such as backspace).
++ */
++static void
++type_queued_text(struct android_app *app, GraphicsWindowInputDevice *input) {
++  JNIEnv *env = Thread::get_current_thread()->get_jni_env();
++  if (env == nullptr || app == nullptr || app->activity == nullptr) {
++    return;
++  }
++  jobject activity = app->activity->clazz;
++  jclass activity_class = env->GetObjectClass(activity);
++  jmethodID method = env->GetMethodID(activity_class, "takeTypedText", "()Ljava/lang/String;");
++  env->DeleteLocalRef(activity_class);
++  if (method == nullptr) {
++    env->ExceptionClear();
++    return;
++  }
++  jstring text = (jstring)env->CallObjectMethod(activity, method);
++  if (env->ExceptionCheck()) {
++    env->ExceptionClear();
++    return;
++  }
++  if (text == nullptr) {
++    return;
++  }
++  // Java's strings are UTF-16: a pair of surrogates is one character.
++  jsize length = env->GetStringLength(text);
++  const jchar *chars = env->GetStringChars(text, nullptr);
++  if (chars != nullptr) {
++    for (jsize i = 0; i < length; ++i) {
++      int ch = chars[i];
++      if (ch >= 0xd800 && ch < 0xdc00 && i + 1 < length &&
++          chars[i + 1] >= 0xdc00 && chars[i + 1] < 0xe000) {
++        ch = 0x10000 + ((ch - 0xd800) << 10) + (chars[i + 1] - 0xdc00);
++        ++i;
++      }
++      if (ch >= 32 && ch != 127) {
++        input->keystroke(ch);
++      }
++    }
++    env->ReleaseStringChars(text, chars);
++  }
++  env->DeleteLocalRef(text);
++}
++
+ /**
+  * Processes a key event.
+  */
+@@ -647,23 +750,43 @@ handle_key_event(const AInputEvent *event) {
+       return 1;
+     }
+   }
++  int32_t action = AKeyEvent_getAction(event);
++  if (action == AKEY_EVENT_ACTION_MULTIPLE && keycode == AKEYCODE_UNKNOWN) {
++    // The keyboard editor's marker for text it has queued up.
++    type_queued_text(_app, _input);
++    return 1;
++  }
++
+   ButtonHandle button = map_button(keycode);
+ 
+-  if (button == ButtonHandle::none()) {
++  // The key types a letter too, as a computer's keyboard does (a text box
++  // takes the letter, not the button).  A key with no button of its own,
++  // such as '@', may still type one.
++  int ch = 0;
++  if (action == AKEY_EVENT_ACTION_DOWN || action == AKEY_EVENT_ACTION_UP) {
++    ch = get_key_character(event);
++  }
++
++  if (button == ButtonHandle::none() && ch == 0) {
+     androiddisplay_cat.warning()
+       << "Unknown keycode: " << keycode << "\n";
+     return 0;
+   }
+ 
+   // Is it an up or down event?
+-  int32_t action = AKeyEvent_getAction(event);
+   if (action == AKEY_EVENT_ACTION_DOWN) {
+-    _input->button_down(button);
++    if (button != ButtonHandle::none()) {
++      _input->button_down(button);
++    }
++    if (ch != 0) {
++      _input->keystroke(ch);
++    }
+   }
+   else if (action == AKEY_EVENT_ACTION_UP) {
+-    _input->button_up(button);
++    if (button != ButtonHandle::none()) {
++      _input->button_up(button);
++    }
+   }
+-  // TODO AKEY_EVENT_ACTION_MULTIPLE
+ 
+   return 1;
+ }
 diff --git a/pandatool/src/deploy-stub/android_support.cxx b/pandatool/src/deploy-stub/android_support.cxx
-index 757e71f..8d4e5c2 100644
+index 757e71fa3..d3bb01f74 100644
 --- a/pandatool/src/deploy-stub/android_support.cxx
 +++ b/pandatool/src/deploy-stub/android_support.cxx
-@@ -127,11 +127,101 @@ _py_picked_file(PyObject *self, PyObject *args) {
+@@ -127,11 +127,79 @@ _py_picked_file(PyObject *self, PyObject *args) {
    return path;
  }
  
 +/**
-+ * Brings up the system's keyboard to type a line of text with;
-+ * typed_text() gives the text when it is done.
++ * Brings up the system's keyboard (show_keyboard(True)), or puts it away.
++ * What is typed with it reaches the game's window as typed keys, as a
++ * computer's keyboard's would.
 + */
 +static PyObject *
-+_py_ask_text(PyObject *self, PyObject *args) {
-+  char *title;
-+  char *text;
-+  int max_length = 0;
-+  if (!PyArg_ParseTuple(args, "ss|i", &title, &text, &max_length)) {
++_py_show_keyboard(PyObject *self, PyObject *args) {
++  int show = 1;
++  if (!PyArg_ParseTuple(args, "|p", &show)) {
 +    return NULL;
 +  }
 +  jobject activity;
 +  jclass activity_class;
 +  JNIEnv *env = get_activity_env(activity, activity_class);
-+  jmethodID method = env ? env->GetMethodID(activity_class, "askText", "(Ljava/lang/String;Ljava/lang/String;I)V") : nullptr;
++  jmethodID method = env ? env->GetMethodID(activity_class, "showKeyboard", "(Z)V") : nullptr;
 +  if (method == nullptr) {
 +    if (env != nullptr) {
 +      env->ExceptionClear();
++      env->DeleteLocalRef(activity_class);
 +    }
 +    PyErr_SetString(PyExc_NotImplementedError, "this activity has no keyboard support");
 +    return NULL;
 +  }
-+  jstring jtitle = env->NewStringUTF(title);
-+  jstring jtext = env->NewStringUTF(text);
-+  env->CallVoidMethod(activity, method, jtitle, jtext, (jint)max_length);
-+  env->DeleteLocalRef(jtitle);
-+  env->DeleteLocalRef(jtext);
++  env->CallVoidMethod(activity, method, (jboolean)(show ? JNI_TRUE : JNI_FALSE));
 +  env->DeleteLocalRef(activity_class);
++  if (env->ExceptionCheck()) {
++    env->ExceptionClear();
++  }
 +  Py_RETURN_NONE;
 +}
 +
 +/**
-+ * Gives the keyboard's text field the game's text, while typing.
++ * Returns "C:" once for each time the player put the keyboard away (the
++ * back button), or "" if there is no news.
 + */
 +static PyObject *
-+_py_set_typed_text(PyObject *self, PyObject *args) {
-+  char *text;
-+  if (!PyArg_ParseTuple(args, "s", &text)) {
-+    return NULL;
-+  }
++_py_poll_keyboard(PyObject *self, PyObject *args) {
 +  jobject activity;
 +  jclass activity_class;
 +  JNIEnv *env = get_activity_env(activity, activity_class);
-+  jmethodID method = env ? env->GetMethodID(activity_class, "setTypedText", "(Ljava/lang/String;)V") : nullptr;
++  jmethodID method = env ? env->GetMethodID(activity_class, "pollKeyboard", "()Ljava/lang/String;") : nullptr;
 +  if (method == nullptr) {
 +    if (env != nullptr) {
 +      env->ExceptionClear();
-+    }
-+    PyErr_SetString(PyExc_NotImplementedError, "this activity has no keyboard support");
-+    return NULL;
-+  }
-+  jstring jtext = env->NewStringUTF(text);
-+  env->CallVoidMethod(activity, method, jtext);
-+  env->DeleteLocalRef(jtext);
-+  env->DeleteLocalRef(activity_class);
-+  Py_RETURN_NONE;
-+}
-+
-+/**
-+ * Returns what is typed so far, after "E:" while typing, "S:" once sent or
-+ * "C:" if the keyboard was closed.
-+ */
-+static PyObject *
-+_py_typed_text(PyObject *self, PyObject *args) {
-+  jobject activity;
-+  jclass activity_class;
-+  JNIEnv *env = get_activity_env(activity, activity_class);
-+  jmethodID method = env ? env->GetMethodID(activity_class, "getTypedText", "()Ljava/lang/String;") : nullptr;
-+  if (method == nullptr) {
-+    if (env != nullptr) {
-+      env->ExceptionClear();
++      env->DeleteLocalRef(activity_class);
 +    }
 +    return PyUnicode_FromString("");
 +  }
 +  jstring result = (jstring)env->CallObjectMethod(activity, method);
 +  env->DeleteLocalRef(activity_class);
++  if (env->ExceptionCheck()) {
++    env->ExceptionClear();
++    result = nullptr;
++  }
 +  if (result == nullptr) {
-+    Py_RETURN_NONE;
++    return PyUnicode_FromString("");
 +  }
 +  const char *chars = env->GetStringUTFChars(result, nullptr);
-+  PyObject *text = PyUnicode_FromString(chars);
-+  env->ReleaseStringUTFChars(result, chars);
++  PyObject *text = PyUnicode_FromString(chars != nullptr ? chars : "");
++  if (chars != nullptr) {
++    env->ReleaseStringUTFChars(result, chars);
++  }
 +  env->DeleteLocalRef(result);
 +  return text;
 +}
@@ -292,10 +575,9 @@ index 757e71f..8d4e5c2 100644
    { "log_write", &_py_log_write, METH_VARARGS },
    { "find_library", &_py_find_library, METH_VARARGS },
    { "pick_file", &_py_pick_file, METH_VARARGS },
-+  { "set_typed_text", &_py_set_typed_text, METH_VARARGS },
    { "picked_file", &_py_picked_file, METH_NOARGS },
-+  { "ask_text", &_py_ask_text, METH_VARARGS },
-+  { "typed_text", &_py_typed_text, METH_NOARGS },
++  { "show_keyboard", &_py_show_keyboard, METH_VARARGS },
++  { "poll_keyboard", &_py_poll_keyboard, METH_NOARGS },
    { NULL, NULL }
  };
  

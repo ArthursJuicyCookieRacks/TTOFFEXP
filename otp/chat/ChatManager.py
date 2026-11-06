@@ -432,11 +432,32 @@ class ChatManager(DirectObject.DirectObject):
 
     def enterNormalChat(self):
         result = self.chatInputNormal.activateByData()
-        base.localAvatar.disableAvatarControls()
+        av = base.localAvatar
+        hadControls = av.avatarControlsEnabled
+        av.disableAvatarControls()
+        # The toon stands still while its player types (the letters would
+        # walk it), and walks again when the box closes, however it closes:
+        # sent, the X, or Enter or the keyboard's Send on an empty line.
+        self.chatTookControls = getattr(av, 'controlsChanges', 0) if hadControls else None
         return result
 
     def exitNormalChat(self):
         self.chatInputNormal.deactivate()
+        self.giveBackChatControls()
+
+    def giveBackChatControls(self):
+        changes = getattr(self, 'chatTookControls', None)
+        self.chatTookControls = None
+        if changes is None:
+            return
+        av = getattr(base, 'localAvatar', None)
+        if av is None or av.isEmpty() or av.avatarControlsEnabled:
+            return
+        if getattr(av, 'controlsChanges', 0) != changes:
+            # Something else took or gave the controls meanwhile (a battle
+            # or a teleport began): it gives them back itself.
+            return
+        av.enableAvatarControls()
 
     def enterOpenChatWarning(self):
         self.notify.error('called enterOpenChatWarning() on parent class')

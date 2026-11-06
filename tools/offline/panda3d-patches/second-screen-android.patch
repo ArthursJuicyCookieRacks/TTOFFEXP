@@ -1,8 +1,8 @@
 diff --git a/panda/src/android/PythonActivity.java b/panda/src/android/PythonActivity.java
-index ed713c7..a79da3a 100644
+index d28206d9e..d04280a28 100644
 --- a/panda/src/android/PythonActivity.java
 +++ b/panda/src/android/PythonActivity.java
-@@ -32,6 +32,14 @@ import android.widget.EditText;
+@@ -33,6 +33,14 @@ import android.view.inputmethod.InputMethodManager;
  import android.database.Cursor;
  import android.net.Uri;
  import android.provider.OpenableColumns;
@@ -17,16 +17,15 @@ index ed713c7..a79da3a 100644
  import java.io.File;
  import java.io.FileInputStream;
  import java.io.FileOutputStream;
-@@ -41,6 +49,8 @@ import java.util.ArrayList;
+@@ -42,6 +50,7 @@ import java.util.ArrayList;
  import java.util.Collections;
  import java.util.Iterator;
  import java.util.List;
 +import java.nio.ByteBuffer;
-+import java.util.concurrent.ConcurrentLinkedQueue;
+ import java.util.concurrent.ConcurrentLinkedQueue;
  
  /**
-  * Extends PandaActivity with some things that are useful in a Python
-@@ -391,6 +401,153 @@ public class PythonActivity extends PandaActivity {
+@@ -502,6 +511,158 @@ public class PythonActivity extends PandaActivity {
          }
      }
  
@@ -111,6 +110,11 @@ index ed713c7..a79da3a 100644
 +        });
 +        presentation.setContentView(frame);
 +        presentation.getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
++        // The second screen never takes the focus from the game: with the
++        // focus there, the keyboard was bound to it, so nothing typed
++        // reached the game, and keys went to it too.  Touches on it still
++        // arrive.
++        presentation.getWindow().addFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
 +        presentation.setOnDismissListener(dialog -> {
 +            if (secondScreen == dialog) {
 +                secondScreen = null;
@@ -181,10 +185,10 @@ index ed713c7..a79da3a 100644
      protected void onActivityResult(int requestCode, int resultCode, Intent intent) {
          if (requestCode == SAVE_FILE_REQUEST) {
 diff --git a/pandatool/src/deploy-stub/android_support.cxx b/pandatool/src/deploy-stub/android_support.cxx
-index 74b2535..e6c44fe 100644
+index 59e4250a1..683847ecf 100644
 --- a/pandatool/src/deploy-stub/android_support.cxx
 +++ b/pandatool/src/deploy-stub/android_support.cxx
-@@ -276,6 +276,104 @@ _py_saved_file(PyObject *self, PyObject *args) {
+@@ -255,6 +255,104 @@ _py_saved_file(PyObject *self, PyObject *args) {
    return saved;
  }
  
@@ -289,13 +293,13 @@ index 74b2535..e6c44fe 100644
  static PyMethodDef python_simple_funcs[] = {
    { "log_write", &_py_log_write, METH_VARARGS },
    { "find_library", &_py_find_library, METH_VARARGS },
-@@ -284,6 +382,9 @@ static PyMethodDef python_simple_funcs[] = {
-   { "picked_file", &_py_picked_file, METH_NOARGS },
+@@ -263,6 +361,9 @@ static PyMethodDef python_simple_funcs[] = {
    { "save_file", &_py_save_file, METH_VARARGS },
    { "saved_file", &_py_saved_file, METH_NOARGS },
+   { "show_keyboard", &_py_show_keyboard, METH_VARARGS },
 +  { "second_screen", &_py_second_screen, METH_NOARGS },
 +  { "second_screen_frame", &_py_second_screen_frame, METH_VARARGS },
 +  { "second_screen_touch", &_py_second_screen_touch, METH_NOARGS },
-   { "ask_text", &_py_ask_text, METH_VARARGS },
-   { "typed_text", &_py_typed_text, METH_NOARGS },
+   { "poll_keyboard", &_py_poll_keyboard, METH_NOARGS },
    { NULL, NULL }
+ };

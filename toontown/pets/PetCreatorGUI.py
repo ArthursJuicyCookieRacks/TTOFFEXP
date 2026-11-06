@@ -25,7 +25,7 @@ from panda3d.core import *
 
 from toontown.hood import ZoneUtil
 from toontown.pets import Pet, PetAccessories, PetCreator, PetDNA, PetNameGenerator, PetTraits
-from toontown.toonbase import AndroidKeyboard, TTLocalizer, ToontownGlobals
+from toontown.toonbase import TTLocalizer, ToontownGlobals
 from toontown.toontowngui import TTDialog
 
 PURPLE = Vec4(0.45, 0.0, 0.61, 1)
@@ -358,8 +358,6 @@ class PetCreatorGUI(DirectFrame):
                                      focusOutCommand=self.__nameTyped)
         self.nameEntry.bind(DGG.TYPE, self.__nameTyped)
         self.nameEntry.bind(DGG.ERASE, self.__nameTyped)
-        if AndroidKeyboard.available():
-            self.nameEntry.bind(DGG.B1PRESS, self.__askAndroidName)
         # The shop's own names, as its old name picker had them.
         self.namePage = page
         for x, width in ((LETTERS_X, LETTERS_WIDTH), (NAMES_X, NAMES_WIDTH)):
@@ -602,10 +600,6 @@ class PetCreatorGUI(DirectFrame):
         self.nameEntry['focus'] = 0
         self.__nameTyped()
 
-    def __askAndroidName(self, *args):
-        AndroidKeyboard.start(self.nameEntry, PetCreator.MaxNameLength, onSend=self.__nameEntered,
-                              onClose=lambda text: self.__nameTyped(), onChange=lambda text: self.__nameTyped())
-
     # Accessories.
 
     def __showWearKind(self, kind):
@@ -846,7 +840,6 @@ class PetCreatorGUI(DirectFrame):
 
     def destroy(self):
         self.ignoreAll()
-        AndroidKeyboard.stop(quiet=True)
         self.__closeConfirm()
         if self.turnIval:
             self.turnIval.finish()

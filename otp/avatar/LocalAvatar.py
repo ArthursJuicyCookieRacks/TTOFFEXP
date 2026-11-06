@@ -434,6 +434,10 @@ class LocalAvatar(DistributedAvatar.DistributedAvatar, DistributedSmoothNode.Dis
         self.ignore('page_down-up')
 
     def enableAvatarControls(self):
+        # Counts every ask, so that whoever took the controls away for a
+        # while (the chat box) can tell whether anyone else has asked for
+        # them since.
+        self.controlsChanges = getattr(self, 'controlsChanges', 0) + 1
         if self.avatarControlsEnabled:
             return
         controls = self.controlManager.currentControls
@@ -448,6 +452,7 @@ class LocalAvatar(DistributedAvatar.DistributedAvatar, DistributedSmoothNode.Dis
         TouchControls.request('walk')
 
     def disableAvatarControls(self):
+        self.controlsChanges = getattr(self, 'controlsChanges', 0) + 1
         if not self.avatarControlsEnabled:
             return
         self.avatarControlsEnabled = 0
