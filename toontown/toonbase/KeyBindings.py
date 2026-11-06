@@ -234,7 +234,11 @@ def physical(gameKey):
 
 
 def forwardKeys():
-    return {'arrow_up', physical('w')}
+    # The events the game hears for Walk Forward. A rebound key reaches the
+    # game already renamed to 'w' (processEvent below), so listening for
+    # the physical key (as this did) heard nothing once Walk Forward was
+    # moved off W, and a double tap never sprinted.
+    return {'arrow_up', 'w'}
 
 
 def keyLabel(key):
