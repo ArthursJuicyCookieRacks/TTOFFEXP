@@ -1,0 +1,34 @@
+diff --git a/panda/src/audiotraits/openalAudioManager.cxx b/panda/src/audiotraits/openalAudioManager.cxx
+index 451cd17..670a7c1 100644
+--- a/panda/src/audiotraits/openalAudioManager.cxx
++++ b/panda/src/audiotraits/openalAudioManager.cxx
+@@ -56,14 +56,27 @@ OpenALAudioManager::SourceCache *OpenALAudioManager::_al_sources = nullptr;
+ void al_audio_errcheck(const char *context) {
+   ALenum result = alGetError();
+   if (result != AL_NO_ERROR) {
+-    audio_error(context << ": " << alGetString(result) );
++    // alGetString gives NULL when no OpenAL context is current (the sound
++    // system was shut down); printing NULL crashes on Android (strlen).
++    const ALchar *text = alGetString(result);
++    if (text != nullptr) {
++      audio_error(context << ": " << text);
++    } else {
++      audio_error(context << ": OpenAL error 0x" << std::hex << result << std::dec
++                  << " (no current OpenAL context)");
++    }
+   }
+ }
+ 
+ void alc_audio_errcheck(const char *context,ALCdevice* device) {
+   ALCenum result = alcGetError(device);
+   if (result != ALC_NO_ERROR) {
+-    audio_error(context << ": " << alcGetString(device,result) );
++    const ALCchar *text = alcGetString(device, result);
++    if (text != nullptr) {
++      audio_error(context << ": " << text);
++    } else {
++      audio_error(context << ": OpenAL device error 0x" << std::hex << result << std::dec);
++    }
+   }
+ }
+ 

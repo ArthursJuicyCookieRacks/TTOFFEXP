@@ -88,6 +88,15 @@ PETS = Point3(-120, -64, 0)
 POND = Point3(-104, -122, 0)
 POND_R = (30.0, 21.0)
 YARD = Point3(104, -118, 0)
+# One tree out of trees.bam. Each of its prop_tree_small/large/fat nodes
+# holds every planter variant of that tree (brick box, wood box, no box,
+# leaning left and right) stacked in one spot: placed whole, five or six
+# flat leaf cards fought for the same pixels, so the trees flickered and
+# blinked out as you walked (Farewell Fair had the same bug). Only one
+# variant, without a planter, is placed.
+TREES = ('prop_tree_small_no_box_ul', 'prop_tree_small_nobox_ur', 'prop_tree_large_no_box_ul',
+         'prop_tree_large_no_box_ur', 'prop_tree_fat_no_box_ul', 'prop_tree_fat_no_box_ur')
+
 # Tunnel mouths: (where, which way the mouth looks, street, theme).
 TUNNELS = ((Point3(0, -HALF, 0), 0, 'Wind-Up Way', 'key'),
            (Point3(HALF, 0, 0), 90, 'Loose Marble Lane', 'marble'),
@@ -1016,7 +1025,7 @@ class ToyboxTerrace(PreviewMap):
             lx, ly = math.cos(a) * radii[0] * d, math.sin(a) * radii[1] * d
             z = radii[2] * math.sqrt(max(0.0, 1 - (lx / radii[0]) ** 2 - (ly / radii[1]) ** 2)) - 2.5
             wp = self.world(center, h, (lx, ly))
-            self.kit.part('phase_3.5/models/props/trees', r.choice(('prop_tree_small', 'prop_tree_large', 'prop_tree_fat')),
+            self.kit.part('phase_3.5/models/props/trees', r.choice(TREES),
                           pos=(wp[0], wp[1], z), h=r.uniform(0, 360), scale=r.uniform(1.0, 1.4))
 
     def __hills(self):
@@ -1355,14 +1364,14 @@ class ToyboxTerrace(PreviewMap):
         spots = ((-150, 100), (-148, 30), (-150, -38), (150, 30), (148, -32), (-30, -150), (34, -152), (-96, 150),
                  (98, 150), (150, 102), (-128, -146), (60, -140), (-52, 76), (40, 156))
         for x, y in spots:
-            self.kit.part('phase_3.5/models/props/trees', r.choice(('prop_tree_small', 'prop_tree_large', 'prop_tree_fat')),
+            self.kit.part('phase_3.5/models/props/trees', r.choice(TREES),
                           pos=(x, y, 0), h=r.uniform(0, 360), scale=r.uniform(1.0, 1.3))
             self.kit.wallTube((x, y, 0), 2.0, 10)
         # Trees outside the wall, so the blocks stand against green.
         for i in range(40):
             a = 2 * math.pi * i / 40 + r.uniform(-0.04, 0.04)
             d = r.uniform(HALF + 30, HALF + 70)
-            self.kit.part('phase_3.5/models/props/trees', r.choice(('prop_tree_small', 'prop_tree_large', 'prop_tree_fat')),
+            self.kit.part('phase_3.5/models/props/trees', r.choice(TREES),
                           pos=(d * math.cos(a), d * math.sin(a), 0), h=r.uniform(0, 360), scale=r.uniform(1.4, 2.0))
 
     # --- Moving toys ---

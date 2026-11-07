@@ -28,7 +28,7 @@ os.chdir(ROOT)
 
 DB = os.path.abspath(os.environ.get('AUTOPLAY_DB', 'autoplay-db'))
 
-from panda3d.core import loadPrcFileData, Filename, NodePath, Point3, Vec3
+from panda3d.core import loadPrcFileData, unloadPrcFile, Filename, NodePath, Point3, Vec3
 loadPrcFileData('autoplay', '''
 audio-library-name null
 toontown-auto-run 0
@@ -480,7 +480,7 @@ def hardy(air, avId):
     # Immortal, with every gag and full laff (set, not toggled, so a second
     # call changes nothing).
     av = air.doId2do[avId]
-    av.setImmortalMode(True)
+    av.setImmortalMode(not os.environ.get('AUTOPLAY_MORTAL'))
     av.setUnlimitedGags(True)
     av.doRestock(0)
     av.toonUp(ToontownGlobals.MaxHpLimit)
@@ -1266,6 +1266,10 @@ def playCogdoBoardroom(dist):
                 press('turnLeft', diff > 8)
                 press('turnRight', diff < -8)
                 press('forward', abs(diff) < 30)
+                if time.time() > nextShot and n < 26:
+                    nextShot = time.time() + 1.5
+                    base.screenshot(os.path.join(shots, 'boss-%02d-walkout.png' % (70 + n)), defaultFilename=0)
+                    n += 1
             yield sleep(0.03)
             continue
         if not idle and getattr(dist, 'phase', None) == 'golf' and dist.golf is not None and (
@@ -1289,12 +1293,12 @@ def playCogdoBoardroom(dist):
                 cog = min(cogs, key=lambda c: (0 if c['carry'] is not None else 1, c['suit'].getPos().length()))
                 lead = 1.0
                 for k in range(3):
-                    cx, cy, ch, leg = Consts.golfCogPos(cog['path'], now - cog['start'] + lead + 0.6)
+                    cx, cy, ch, leg = Consts.golfCogPos(cog['path'], now - cog['start'] + lead + 0.6 + 0.42)
                     d = math.hypot(cx - tee[0], cy - tee[1])
                     v = min(Consts.BallSpeedRange[1], d * Consts.BallFriction + 8.0)
                     lead = d / max(v * 0.7, 1.0)
                 if leg < 3:
-                    aim = max(-80.0, min(80.0, -math.degrees(math.atan2(cx - tee[0], cy - tee[1]))))
+                    aim = -math.degrees(math.atan2(cx - tee[0], cy - tee[1]))
                     lo, hi = Consts.BallSpeedRange
                     target = (aim, max(0.05, min(1.0, (v - lo) / (hi - lo))))
             if target is None:
@@ -1302,11 +1306,13 @@ def playCogdoBoardroom(dist):
                     press(name, False)
             else:
                 aim, power = target
-                press('turnLeft', aim > dist.aimH + 2)
-                press('turnRight', aim < dist.aimH - 2)
-                lined = abs(aim - dist.aimH) <= 2
+                off = (aim - dist.aimH + 180.0) % 360.0 - 180.0
+                press('turnLeft', off > 2)
+                press('turnRight', off < -2)
+                lined = abs(off) <= 2
                 if dist.charging:
-                    rising = ((now - dist.chargeStart) / Consts.ChargeTime) % 2.0 <= 1.0
+                    held = now - dist.chargeStart
+                    rising = Consts.golfPower(held + 0.05) >= Consts.golfPower(held)
                     press('jump', not (rising and dist.power >= power - 0.03))
                 else:
                     press('jump', lined)
@@ -1339,6 +1345,11 @@ def playCogdoBoardroom(dist):
                     left, right = ob.x - ob.w - 2.5, ob.x + ob.w + 2.5
                     free = [g for g in (left, right) if abs(g) < Consts.TableHalfWidth - 1.5 and not layout.blockedAt(g, ob.y, 0.5)]
                     goal = min(free, key=lambda g: abs(g - pos[0])) if free else goal
+            if os.environ.get('AUTOPLAY_SLIDE_CRASH'):
+                # Test: straight into the next pile, to see the hit hurt.
+                piles = [ob for ob in layout.obstacles if ob.kind == Layout.PILE and ob.y - ob.l - pos[1] > 2]
+                if piles:
+                    goal = min(piles, key=lambda ob: ob.y).x
             press('turnLeft', goal < pos[0] - 0.6)
             press('turnRight', goal > pos[0] + 0.6)
             # Off the table early enough to be over the pencil when there
@@ -5567,21 +5578,31 @@ def scenarioNPCStreets():
     yield sleep(20)
 
     def sidewalks(air):
+        from toontown.npcplayers import NPCPlayerManagerAI as M
         area = air.npcPlayerManager.areas.get(street)
         npcs = [npc for npc in area.npcs if not npc.isDeleted()]
-        road = [npc for npc in npcs if npc.inRoad]
-        onWalk = [npc for npc in npcs if not npc.inRoad and npc.crew is None and area.isSidewalk(npc.getPos())]
-        return len(area.sidewalks), len(area.sidewalkQueue), len(npcs), len(road), len(onWalk), area.roadZ
-    found, queued, count, road, onWalk, roadZ = onDistrict(sidewalks)
-    log('Silly Street: %d sidewalk spots (%d to check), road at %s; %d toons, %d in the road, %d of the rest on the sidewalk'
-        % (found, queued, roadZ, count, road, onWalk))
+        road = [npc for npc in npcs if M.fightsCogs(npc)]
+        rest = [npc for npc in npcs if not M.fightsCogs(npc) and npc.crew is None]
+        onWalk = [npc for npc in rest if area.isSidewalk(npc.getPos())]
+        wanted = min(M.MAX_IN_ROAD, int(round(M.ROAD_SHARE * air.npcPlayerManager.npcsPerArea)))
+        return len(area.sidewalks), len(area.sidewalkQueue), len(npcs), len(road), len(rest), len(onWalk), area.roadZ, wanted
+    # The toons that don't fight cogs go everywhere (Arthur, 2026-11-07):
+    # over half a minute some of them are in the road, some on the sidewalk.
+    seenRoad = seenWalk = 0
+    for i in range(30):
+        found, queued, count, road, rest, onWalk, roadZ, wanted = onDistrict(sidewalks)
+        seenWalk += onWalk
+        seenRoad += rest - onWalk
+        yield sleep(1)
+    log('Silly Street: %d sidewalk spots (%d to check), road at %s; %d toons, %d fight cogs; the rest: %d on the sidewalk, %d in the road (toon-seconds)'
+        % (found, queued, roadZ, count, road, seenWalk, seenRoad))
     base.screenshot(os.path.join(os.environ.get('AUTOPLAY_SHOTS', '/tmp'), 'npc-sidewalks.png'), defaultFilename=0)
     if not found:
         raise StepFailed('no sidewalk found on Silly Street')
-    if road != min(8, int(round(0.35 * count))):
-        raise StepFailed('%d of %d toons walk in the road' % (road, count))
-    if onWalk < (count - road) * 0.6:
-        raise StepFailed('only %d of %d sidewalk toons are on the sidewalk' % (onWalk, count - road))
+    if road != wanted:
+        raise StepFailed('%d of %d toons fight cogs, not %d' % (road, count, wanted))
+    if not seenRoad or not seenWalk:
+        raise StepFailed('the toons that don\'t fight cogs keep to one place (%d sidewalk, %d road)' % (seenWalk, seenRoad))
     yield from npcBattleWatch(street, 'Silly Street')
     # A Cog HQ courtyard: no sidewalks, the cogs walk where the toons do.
     yield from teleport(ToontownGlobals.SellbotHQ, ToontownGlobals.SellbotHQ)
@@ -7924,6 +7945,46 @@ def scenarioExtras():
     yield until(walking, 60, 'walking after the book')
     log('Extras checks passed')
 
+def scenarioPupilFix():
+    # Arthur 2026-11-07: the pupil lift (ToonHead.__liftPupil) is a config
+    # switch, want-pupil-fix (on unless #f). Close-ups of the toon looking
+    # up and to the side with it off and on.
+    from toontown.toon import ToonHead
+    shots = os.environ.get('AUTOPLAY_SHOTS', '/tmp')
+    os.makedirs(shots, exist_ok=True)
+
+    def shot(name):
+        base.screenshot(os.path.join(shots, 'pupilfix-%s.png' % name), defaultFilename=0)
+
+    def pupilY():
+        return [localAvatar._ToonHead__lpupil.getY(), localAvatar._ToonHead__rpupil.getY()]
+
+    yield until(walking, 60, 'walking')
+    log('want-pupil-fix in the config:', ToonHead.ToonHead.WantPupilFix.getValue())
+    if not ToonHead.ToonHead.WantPupilFix.getValue():
+        raise StepFailed('want-pupil-fix should be on unless the config turns it off')
+    localAvatar.stopUpdateSmartCamera()
+    localAvatar.stopLookAround()
+    localAvatar.stopStareAtNow()
+    head = localAvatar.find('**/def_head')
+    page = None
+    for n, (dx, dy) in enumerate(((0, 1), (0.7, 0.7), (1, 0))):
+        for on in (False, True):
+            page = loadPrcFileData('autoplay-pupil-fix', 'want-pupil-fix %s' % ('#t' if on else '#f'))
+            localAvatar._ToonHead__setPupilDirection(dx, dy)
+            ys = pupilY()
+            if (min(ys) < 0.009) if on else any(abs(y) > 1e-6 for y in ys):
+                raise StepFailed('want-pupil-fix %s did not move the pupils: %s' % (on, ys))
+            base.camera.setPos(localAvatar, 0, 3.2, head.getZ(localAvatar) + 0.6)
+            base.camera.lookAt(head, 0, 0, 0.3)
+            yield sleep(0.3)
+            shot('look%d-%s' % (n, 'on' if on else 'off'))
+            unloadPrcFile(page)
+    localAvatar.stopStareAtNow()
+    localAvatar.startLookAround()
+    localAvatar.startUpdateSmartCamera()
+    log('Pupil Fix checks passed')
+
 SCENARIOS = [
     ('login', scenarioLogin),
     ('healtest', scenarioHealTest),
@@ -7934,6 +7995,7 @@ SCENARIOS = [
     ('displaysettings', scenarioDisplaySettings),
     ('doublexp', scenarioDoubleXp),
     ('extras', scenarioExtras),
+    ('pupilfix', scenarioPupilFix),
     ('npcstairs', scenarioNPCStairs),
     ('npcs', scenarioNPCs),
     ('npcmintride', scenarioNPCMintRide),

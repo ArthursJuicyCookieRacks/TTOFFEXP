@@ -135,8 +135,92 @@ class CogdoBoardroomGolf:
         self.stealSfx = loader.loadSfx('phase_5/audio/sfx/ENC_propeller_out.ogg')
         self.explodeSfx = loader.loadSfx('phase_3.5/audio/sfx/Cog_Death.ogg')
         self._loadAim()
+        self._loadCollisions()
         self.root.stash()
         return self.root
+
+    def _loadCollisions(self):
+        # Something to walk into (Arthur: the toons walked through the
+        # desks, cubicles and walls on the way out after the golf). The
+        # golf balls' own grid of the furniture (CogdoBoardroomGolfGrid),
+        # its cells merged into boxes, plus the room's walls, the elevator
+        # shafts, the low partitions and the barrel pile. The front
+        # elevator's doorway stays open: it's the way out.
+        from toontown.cogdominium import CogdoBoardroomGolfGrid as Grid
+        mask = OTPGlobals.WallBitmask | ToontownGlobals.CameraBitmask
+        coll = self.root.attachNewNode('golfCollisions')
+        self.collRoot = coll
+        tiles = {}
+
+        def add(x0, y0, x1, y1, z1, tile=None):
+            box = PM.CollisionBox(PM.Point3(min(x0, x1), min(y0, y1), 0.0), PM.Point3(max(x0, x1), max(y0, y1), z1))
+            key = tile if tile is not None else (int((x0 + x1) * 0.5 // 16), int((y0 + y1) * 0.5 // 16))
+            node = tiles.get(key)
+            if node is None:
+                node = PM.CollisionNode('golfWalls')
+                node.setIntoCollideMask(mask)
+                node.setFromCollideMask(PM.BitMask32.allOff())
+                tiles[key] = node
+                coll.attachNewNode(node)
+            node.addSolid(box)
+
+        # The furniture: runs of blocked cells in each row, stacked into
+        # boxes while the run below is the same.
+        cell = Grid.Cell
+        rows = Grid.Rows
+        open_ = {}
+        for r, row in enumerate(rows + ('0' * len(rows[0]),)):
+            runs = set()
+            c = 0
+            while c < len(row):
+                if row[c] == '1':
+                    start = c
+                    while c < len(row) and row[c] == '1':
+                        c += 1
+                    runs.add((start, c))
+                else:
+                    c += 1
+            still = {}
+            for run, r0 in open_.items():
+                if run in runs:
+                    still[run] = r0
+                else:
+                    add(-Grid.HalfX + run[0] * cell, Grid.HalfY - r0 * cell,
+                        -Grid.HalfX + run[1] * cell, Grid.HalfY - r * cell, 6.0)
+            for run in runs:
+                still.setdefault(run, r)
+            open_ = still
+        # The room's walls.
+        hx, hy, t = Consts.GolfHalfX, Consts.GolfHalfY, 2.0
+        add(-hx - t, -hy - t, hx + t, -hy, 16.0, 'wallS')
+        add(-hx - t, hy, hx + t, hy + t, 16.0, 'wallN')
+        add(-hx - t, -hy, -hx, hy, 16.0, 'wallW')
+        add(hx, -hy, hx + t, hy, 16.0, 'wallE')
+        # The elevator shafts, boxed out from their walls: the front one
+        # (the way out) keeps its doorway.
+        door = Consts.GolfExitDoorHalfWidth
+        for i, (ex, ey, eh) in enumerate(Consts.GolfElevators):
+            if eh == 0.0:
+                add(ex - 9.4, ey - 0.3, ex - door, hy, 16.0, 'shaft%da' % i)
+                add(ex + door, ey - 0.3, ex + 9.4, hy, 16.0, 'shaft%db' % i)
+            else:
+                x0 = ex - 0.3 if ex > 0 else -hx
+                x1 = hx if ex > 0 else ex + 0.3
+                add(x0, ey - 9.4, x1, ey + 9.4, 16.0, 'shaft%d' % i)
+        # The barrel pile, while there are barrels in it.
+        px, py = Consts.BarrelPile
+        w = 2.0 * getattr(self, 'barrelScale', 1.0) * 1.2
+        pile = PM.CollisionNode('golfBarrelPile')
+        pile.setIntoCollideMask(mask)
+        pile.setFromCollideMask(PM.BitMask32.allOff())
+        pile.addSolid(PM.CollisionBox(PM.Point3(px - 3.6, py - 1.4, 0), PM.Point3(px + 3.6, py + 1.8, 6.0)))
+        self.pileColl = coll.attachNewNode(pile)
+        # And the floor to walk on.
+        floor = PM.CollisionNode('golfFloor')
+        floor.addSolid(PM.CollisionPlane(PM.Plane(PM.Vec3(0, 0, 1), PM.Point3(0, 0, 0))))
+        floor.setIntoCollideMask(OTPGlobals.FloorBitmask)
+        floor.setFromCollideMask(PM.BitMask32.allOff())
+        coll.attachNewNode(floor)
 
     def _loadShell(self):
         # The office's walls and ceiling: the Sellbot maze office's grey
@@ -339,6 +423,12 @@ class CogdoBoardroomGolf:
 
     def setBarrelsHome(self, home):
         self.barrelsHome = home
+        pile = getattr(self, 'pileColl', None)
+        if pile is not None:
+            if home > 0:
+                pile.unstash()
+            else:
+                pile.stash()
         for i, b in enumerate(self.barrelModels):
             if i < home:
                 b.unstash()
@@ -347,7 +437,7 @@ class CogdoBoardroomGolf:
 
     # --- The cogs ---
 
-    def addCog(self, cogId, nameIndex, px, side, exitY, speed, startTime, target=None):
+    def addCog(self, cogId, nameIndex, px, side, exitY, speed, startTime, target=None, hits=1):
         suit = Suit.Suit()
         dna = SuitDNA.SuitDNA()
         dna.newSuit(Consts.GolfCogNames[nameIndex % len(Consts.GolfCogNames)])
@@ -356,7 +446,13 @@ class CogdoBoardroomGolf:
         suit.reparentTo(self.root)
         suit.loop('walk')
         cog = {'id': cogId, 'suit': suit, 'path': Consts.golfCogPath(px, side, exitY, speed, target), 'start': startTime,
-               'alive': True, 'carry': None, 'ival': None}
+               'alive': True, 'carry': None, 'ival': None, 'flinch': 0.0}
+        if hits > 1:
+            # A cog that takes more than one ball shows its chest light,
+            # as in a battle: green, then yellow, orange, red as it's hit.
+            suit.generateHealthBar()
+            suit.maxHP = suit.currHP = hits
+            suit.healthBar.show()
         self.cogs[cogId] = cog
         self.updateCog(cog, self.game.golfTime())
         return cog
@@ -368,6 +464,8 @@ class CogdoBoardroomGolf:
         suit = cog['suit']
         suit.setPos(x, y, 0)
         suit.setH(h)
+        if now < cog['flinch']:
+            return
         anim = 'neutral' if leg in (1, 3) else 'walk'
         if suit.getCurrentAnim() != anim:
             suit.loop(anim)
@@ -394,6 +492,20 @@ class CogdoBoardroomGolf:
         suit.setTransparency(1)
         cog['ival'] = track
         track.start()
+
+    def cogHurt(self, cogId, hitsLeft):
+        cog = self.cogs.get(cogId)
+        if cog is None or not cog['alive']:
+            return
+        suit = cog['suit']
+        base.playSfx(self.bonkSfx, node=suit, volume=0.6)
+        if getattr(suit, 'healthBar', None):
+            suit.updateHealthBar(max(0, suit.currHP - hitsLeft))
+        # A flinch, still walking on (the AI keeps it to its route).
+        anim = 'pie-small-react' if suit.getAnimControl('pie-small-react') else None
+        if anim:
+            cog['flinch'] = self.game.golfTime() + 0.6
+            suit.play(anim)
 
     def cogHit(self, cogId):
         cog = self.cogs.pop(cogId, None)
@@ -472,6 +584,8 @@ class CogdoBoardroomGolf:
             cog['ival'] = None
         suit = cog.get('suit')
         if suit is not None:
+            if getattr(suit, 'healthBar', None):
+                suit.removeHealthBar()
             suit.cleanup()
             suit.removeNode()
             suit.delete()

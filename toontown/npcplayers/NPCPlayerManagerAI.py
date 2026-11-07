@@ -58,10 +58,29 @@ MANAGER_TICK = 1.0
 # them (SmoothMover's position age), and the tick lands on a frame, so it
 # has to be well under that even at a low frame rate.
 WALK_TICK = 0.1
-# Toons keep at least this far apart (a toon is about 1.4 across), stepped
-# aside at most this much each walk tick.
+# Toons keep at least this far apart (a toon is about 1.4 across). A toon
+# on the move goes round the others it meets, starting this far ahead
+# (STEER_AHEAD); one standing where another stands walks a step out of the
+# way. A toon still inside another is stepped out at most APART_STEP a tick.
 APART = 2.5
 APART_STEP = 0.5
+STEER_AHEAD = 5.0
+# How long a walking toon waits for the way ahead to clear before it picks
+# somewhere else to go.
+STEER_PATIENCE = 2.0
+# How far ahead the way round is looked at, and for how long it is trusted.
+BENT_LOOK = 3.0
+BENT_RECHECK = 0.4
+# How far from a walking cog a toon that doesn't fight cogs keeps (a cog
+# that walks up to one standing in its way sees it step aside).
+COG_CLEAR = 3.2
+# A toon that doesn't fight cogs now and then walks up to one; the cog
+# brushes it off ("I'm busy"), at most once each COG_BRUSH_GAP.
+VISIT_COG = 0.1
+VISIT_REACH = 40.0
+COG_BRUSH_GAP = 8.0
+# And keeps out of a battle's ring.
+BATTLE_CLEAR = 7.0
 # How long an area keeps its NPCs once the player has left it.
 LINGER = 60.0
 RUN_SPEED = ToontownGlobals.ToonForwardSpeed
@@ -131,10 +150,12 @@ STAIR_RISE = 0.12
 # edge of their view, or behind something.
 VIEW_FAR = 110.0
 VIEW_HALF_ANGLE = 55.0
-# On a street the toons run about the road, where the cogs walk, the way
-# they do in a playground (Arthur): up to MAX_IN_ROAD of them; any more
-# keep to the sidewalks.
-ROAD_SHARE = 1.0
+# On a street this share of the toons fight the cogs (Arthur), up to
+# MAX_IN_ROAD of them: they run about the road where the cogs walk, and walk
+# into them. The rest go everywhere too, road and sidewalk, but walk round
+# the cogs and the battles (Arthur, 2026-11-07: not all of them fighting,
+# and not stuck to the sidewalks).
+ROAD_SHARE = 0.5
 MAX_IN_ROAD = 15
 # How much higher than the road the sidewalk is, at least.
 CURB = 0.3
@@ -145,8 +166,6 @@ ONTO_SIDEWALK = 4.0
 # Street spots looked at for the sidewalk each walk tick (each costs a few
 # rays against the scene).
 SIDEWALK_CHECKS_PER_TICK = 4
-# How likely a sidewalk toon is to cross the road on one walk.
-CROSS_CHANCE = 0.15
 # How close a toon must come to a walking cog to walk into it, and to a
 # battle to join it, as a player's toon does.
 BUMP_RANGE = 3.5
@@ -190,6 +209,11 @@ def getAreaId(zoneId):
                                                                     ToontownGlobals.CashbotHQ, ToontownGlobals.LawbotHQ):
         return branchId
     return None
+
+
+def fightsCogs(npc):
+    """Whether this toon walks into cogs to fight them (see ROAD_SHARE)."""
+    return getattr(npc, 'inRoad', True)
 
 
 def getOutsideAreaId(zoneId):
@@ -257,19 +281,20 @@ class NPCArea:
             del self.trail[0]
 
     def points(self, npc=None):
-        if npc is not None and self.onSidewalk(npc):
-            return self.sidewalks + [p for p in self.trail if self.isSidewalk(p[0])]
+        if npc is not None and not fightsCogs(npc):
+            # Road and sidewalk alike.
+            return self.anchors + self.trail + self.sidewalks
         return self.anchors + self.trail
-
-    def onSidewalk(self, npc):
-        # Whether the toon keeps to the sidewalks (and there are some yet).
-        return self.isStreet and not getattr(npc, 'inRoad', True) and bool(self.sidewalks)
 
     def isSidewalk(self, point):
         return self.roadZ is not None and point[2] > self.roadZ + CURB
 
     def seen(self):
         self.lastSeen = globalClock.getFrameTime()
+
+    def hasCogs(self):
+        # Whether cogs walk here at all (not in a playground).
+        return self.manager.air.suitPlanners.get(self.areaId) is not None
 
     def isActive(self):
         return globalClock.getFrameTime() - self.lastSeen < 2 * MANAGER_TICK + 0.5
@@ -734,18 +759,40 @@ class NPCPlayerManagerAI:
         self.lastWalkTick = now
         walked = set()
         try:
-            for area in list(self.areas.values()):
-                if not area.isActive():
-                    continue
+            active = [area for area in list(self.areas.values()) if area.isActive()]
+            for area in active:
                 if area.sidewalkQueue and self.clientIn(area):
                     self.findSidewalks(area)
-                suits = self.walkingSuits(area)
+                area.tickSuits = self.walkingSuits(area)
+                area.tickAvoid = None
+            # Where every toon is this tick, by place: the toons step out of
+            # each other's way first, then walk (each toon is sent where it
+            # is once a tick; two reports in one tick, a step and then a
+            # shove back, were drawn as a toon jumping to and fro).
+            self.tickToons = self.gatherToons(active)
+            self.tickObstacles = {}
+            self.streetBattles = None
+            self.keepApart()
+            for area in active:
+                suits = area.tickSuits
                 for npc in area.npcs[:]:
                     if npc.crew is None and not npc.busy and npc.doId not in walked:
                         walked.add(npc.doId)
                         self.walkNPC(area, npc, dt)
-                        if npc.walk is not None and not npc.isDeleted():
+                        if npc.isDeleted():
+                            continue
+                        if getattr(npc, 'visiting', None) is not None:
+                            self.visitCog(npc)
+                        if npc.walk is not None:
                             self.bump(area, npc, suits)
+                        elif suits and fightsCogs(npc) and not npc.busy and npc.crew is None:
+                            # A cog that walks into a toon standing in its
+                            # way starts a battle, as with a player.
+                            pos = npc.getPos()
+                            for suit, spot in suits:
+                                if abs(spot[0] - pos[0]) < BUMP_RANGE and abs(spot[1] - pos[1]) < BUMP_RANGE:
+                                    self.bump(area, npc, suits)
+                                    break
             self.facilities.tick(now, dt)
             getPathfinder().tick()
             self.party.follow()
@@ -755,82 +802,120 @@ class NPCPlayerManagerAI:
                     # would otherwise go twice as fast.)
                     walked.add(npc.doId)
                     self.walkNPC(None, npc, dt)
-            self.keepApart()
         except Exception:
             self.notify.warning('walking failed')
             import traceback
             traceback.print_exc()
         return Task.again
 
-    def keepApart(self):
-        """No toon ever stands in (or runs inside) another: an NPC closer
-        than APART to another toon is stepped aside a little each tick,
-        onto floor, the way players keep from overlapping."""
-        nav = getNav()
-        if not nav.available():
-            return
-        byZone = {}
-        movable = set()
-        for npc in list(self.party.members) + [n for area in self.areas.values() if area.isActive() for n in area.npcs]:
-            if npc.isDeleted() or npc.crew is not None or npc.busy or getattr(npc, 'onMover', None) is not None \
-                    or getattr(npc, 'jumping', False) \
-                    or any(crew.isStationed(npc) for crew in list(self.bossCrews.values())):
-                # (On a boss's crane, cannon, golf spot or table, the game
-                # holds it in place; a step aside would be drawn as a jump.)
+    def gatherToons(self, active):
+        """The toons of each place now, as [toon, x, y, z, walking, movable]
+        lists (plain numbers: most pairs are far apart, and making vectors
+        for every pair was most of the time this took), by place."""
+        groups = {}
+        seen = set()
+        for npc in list(self.party.members) + [n for area in active for n in area.npcs]:
+            if npc.doId in seen or npc.isDeleted():
                 continue
-            if npc.doId in movable:
-                continue
-            movable.add(npc.doId)
-            byZone.setdefault(npc.zoneId, []).append((npc, Point3(npc.getPos())))
-        if not byZone:
-            return
+            seen.add(npc.doId)
+            area = getattr(npc, 'area', None)
+            key = area.areaId if area is not None and npc.party is None else (getAreaId(npc.zoneId) or npc.zoneId)
+            movable = not (npc.crew is not None or npc.busy or getattr(npc, 'onMover', None) is not None
+                           or getattr(npc, 'jumping', False)
+                           or any(crew.isStationed(npc) for crew in list(self.bossCrews.values())))
+            # (On a boss's crane, cannon, golf spot or table, the game holds
+            # it in place; a step aside would be drawn as a jump.)
+            pos = npc.getPos()
+            groups.setdefault(key, []).append([npc, pos[0], pos[1], pos[2], npc.walk is not None, movable])
         # The players as the manager tick last found them (once a second):
         # looking through every object in the game ten times a second for
         # them made each walk tick 2-3 times as long, an uneven frame on a
         # phone each time.
         for obj in getattr(self, 'lastPlayers', None) or []:
-            if not obj.isDeleted() and obj.zoneId in byZone:
-                byZone[obj.zoneId].append((obj, Point3(self.getPlayerPos(obj))))
-        apart2 = APART * APART
-        for zoneId, toons in byZone.items():
-            if len(toons) < 2:
+            if obj.isDeleted():
                 continue
-            # Plain numbers for the pair test: most pairs are far apart, and
-            # making vectors for every pair was most of this step's time.
-            xs = [p[0] for t, p in toons]
-            ys = [p[1] for t, p in toons]
-            zs = [p[2] for t, p in toons]
+            key = getAreaId(obj.zoneId) or obj.zoneId
+            if key in groups:
+                pos = self.getPlayerPos(obj)
+                groups[key].append([obj, pos[0], pos[1], pos[2], False, False])
+        return groups
+
+    def keepApart(self):
+        """No toon ever stands in (or runs inside) another. A toon standing
+        closer than APART to another toon standing (or to a player) walks a
+        step out of the way, turning as it goes, the way players keep from
+        overlapping; one that doesn't fight cogs steps out of a cog's way
+        too. A walking toon goes round the others by itself (steer); one
+        walking where it can't steer (inside a place, with the party) is
+        stepped aside as part of its next step."""
+        nav = getNav()
+        if not nav.available():
+            return
+        apart2 = APART * APART
+        for key, toons in self.tickToons.items():
+            area = self.areas.get(key)
+            suits = getattr(area, 'tickSuits', None) or () if area is not None else ()
             count = len(toons)
+            if count < 2 and not suits:
+                continue
             for i in range(count):
-                npc, pos = toons[i]
-                if npc.doId not in movable:
+                npc, x, y, z, moving, movable = toons[i]
+                if not movable:
                     continue
-                x, y, z = xs[i], ys[i], zs[i]
+                steering = moving and getattr(npc, 'steerWalk', None) is npc.walk
+                if steering:
+                    continue
                 px = py = 0.0
                 for j in range(count):
                     if i == j:
                         continue
-                    dx = x - xs[j]
-                    dy = y - ys[j]
-                    d2 = dx * dx + dy * dy
-                    if d2 >= apart2 or abs(z - zs[j]) > 3.0:
+                    other = toons[j]
+                    if not moving and other[4]:
+                        # (A toon passing by goes round this one.)
                         continue
-                    other = toons[j][0]
+                    dx = x - other[1]
+                    dy = y - other[2]
+                    d2 = dx * dx + dy * dy
+                    if d2 >= apart2 or abs(z - other[3]) > 3.0:
+                        continue
                     dist = math.sqrt(d2)
                     if dist < 0.05:
                         # Right on top: each goes its own way (from doIds).
-                        angle = ((npc.doId * 7 + other.doId) % 360) * math.pi / 180.0
+                        angle = ((npc.doId * 7 + other[0].doId) % 360) * math.pi / 180.0
                         dx, dy = math.cos(angle), math.sin(angle)
                         dist = 0.0
                     else:
                         dx /= dist
                         dy /= dist
                     # The other toon gives way too when it is an NPC.
-                    share = 0.5 if other.doId in movable else 1.0
+                    share = 0.5 if other[5] else 1.0
                     px += dx * (APART - dist) * share
                     py += dy * (APART - dist) * share
-                push = Vec3(px, py, 0)
-                if push.length() < 0.02:
+                cogPush = False
+                if suits and not moving and not fightsCogs(npc):
+                    for suit, spot in suits:
+                        dx = x - spot[0]
+                        dy = y - spot[1]
+                        d2 = dx * dx + dy * dy
+                        if d2 < COG_CLEAR * COG_CLEAR and abs(z - spot[2]) < 3.0:
+                            dist = math.sqrt(d2) or 0.01
+                            wx, wy = getattr(suit, 'npcWalkDir', (0.0, 0.0))
+                            along = (dx * wx + dy * wy) / dist
+                            if along < -0.5:
+                                # Behind it, as it walks away.
+                                continue
+                            # Out to the side of the cog's way, not on
+                            # ahead of it where it would come again.
+                            sx, sy = dx - along * dist * wx, dy - along * dist * wy
+                            side = math.sqrt(sx * sx + sy * sy)
+                            if side < 0.3:
+                                sx, sy = (-wy, wx) if npc.doId % 2 else (wy, -wx)
+                                side = 1.0
+                            px += sx / side * (COG_CLEAR - dist + 1.0)
+                            py += sy / side * (COG_CLEAR - dist + 1.0)
+                            cogPush = True
+                length = math.sqrt(px * px + py * py)
+                if length < 0.02:
                     continue
                 if self.party.isPlaying(npc):
                     # (In a trolley game, race, golf course or field office
@@ -838,21 +923,141 @@ class NPCPlayerManagerAI:
                     # would step: finding who plays means looking through
                     # every game object, too slow for every toon each tick.)
                     continue
-                if push.length() > APART_STEP:
-                    push.normalize()
-                    push *= APART_STEP
-                spot = Point3(pos[0] + push[0], pos[1] + push[1], pos[2])
-                ground = nav.groundZ(spot[0], spot[1], pos[2] + 1.5)
-                if ground is None or abs(ground - pos[2]) > 1.0 or not nav.clearLine(pos, Point3(spot[0], spot[1], ground)):
+                if moving:
+                    # Folded into its next step (see walkNPC).
+                    scale = min(1.0, APART_STEP / length)
+                    npc.pendingPush = (px * scale, py * scale)
                     continue
-                h = npc.getH()
-                if getattr(npc, 'walk', None) is None:
-                    # A standing toon steps aside facing the way it goes,
-                    # so the clients draw a step, not a slide in a stand.
-                    h = -math.degrees(math.atan2(push[0], push[1]))
-                npc.moveTo(spot[0], spot[1], ground, h)
-                toons[i] = (npc, Point3(spot[0], spot[1], ground))
-                xs[i], ys[i], zs[i] = spot[0], spot[1], ground
+                self.stepAside(npc, Point3(x, y, z), px / length, py / length,
+                               min(2.5, max(0.8, length + 0.6)) if not cogPush else min(4.5, length + 0.6))
+
+    def stepAside(self, npc, pos, dx, dy, distance):
+        """A standing toon walks a step out of the way: turning toward
+        where it goes and walking there, never spun round or slid."""
+        nav = getNav()
+        for turn in (0, 40, -40, 80, -80):
+            c, s = math.cos(math.radians(turn)), math.sin(math.radians(turn))
+            ux, uy = dx * c - dy * s, dx * s + dy * c
+            spot = Point3(pos[0] + ux * distance, pos[1] + uy * distance, pos[2])
+            ground = nav.groundZ(spot[0], spot[1], pos[2] + 1.5)
+            if ground is None or abs(ground - pos[2]) > 1.0:
+                continue
+            spot[2] = ground
+            if not nav.clearLine(pos, spot):
+                continue
+            self.setWalk(npc, [spot], WALK_SPEED, None)
+            npc.idleUntil = 0
+            return True
+        return False
+
+    def steer(self, npc, pos, dx, dy, target):
+        """Which way a walking toon goes to get round the toons ahead of it
+        (and, for one that doesn't fight them, the cogs and battles): the
+        way to target (dx, dy), bent round whatever is in the way. Returns
+        (dx, dy, bent, skip): skip when target itself is taken (someone
+        stands on it) and the toon is as near as it can get."""
+        area = getattr(npc, 'area', None)
+        key = area.areaId if area is not None and npc.party is None else (getAreaId(npc.zoneId) or npc.zoneId)
+        x, y, z = pos[0], pos[1], pos[2]
+        # (The lists are made once a tick for each place, not for each toon.)
+        cache = self.tickObstacles
+        toons = cache.get(key)
+        if toons is None:
+            toons = cache[key] = [(t[0], t[1], t[2], t[3], APART) for t in self.tickToons.get(key, ())]
+        lists = [toons]
+        if area is not None and area.isStreet and not fightsCogs(npc):
+            if area.tickAvoid is None:
+                area.tickAvoid = [(suit, spot[0], spot[1], spot[2], COG_CLEAR) for suit, spot in area.tickSuits] + \
+                    [(b, b.pos[0], b.pos[1], b.pos[2], BATTLE_CLEAR) for b in self.tickBattles()
+                     if getAreaId(b.zoneId) == area.areaId]
+            lists.append(area.tickAvoid)
+        visiting = getattr(npc, 'visiting', None)
+        now = globalClock.getFrameTime()
+        tx, ty = target[0] - x, target[1] - y
+        toTarget = math.sqrt(tx * tx + ty * ty)
+        skip = False
+        sides = getattr(npc, 'steerSides', None)
+        if sides is None:
+            sides = npc.steerSides = {}
+        # The nearest thing in the way decides: the toon heads for the edge
+        # of the room round it (on the side it chose), which hardly changes
+        # from one step to the next, so it curves round smoothly instead of
+        # weaving.
+        nearest = None
+        outX = outY = 0.0
+        for obj, ox, oy, oz, radius in (o for some in lists for o in some):
+            if obj is npc:
+                continue
+            if obj is visiting:
+                # Walking up to it: as near as a toon would.
+                radius = 1.5
+            rx, ry = ox - x, oy - y
+            reach = STEER_AHEAD + radius
+            if abs(rx) > reach or abs(ry) > reach or abs(oz - z) > 3.0:
+                continue
+            d2 = rx * rx + ry * ry
+            if d2 > reach * reach:
+                continue
+            ex, ey = target[0] - ox, target[1] - oy
+            if ex * ex + ey * ey < radius * radius and toTarget < radius + 1.5:
+                # Someone stands where it was going: this is as near as it gets.
+                skip = True
+                continue
+            dist = math.sqrt(d2)
+            if dist < radius and dist > 0.01:
+                # Already too close: out first.
+                inside = (radius - dist) / radius
+                outX -= rx / dist * inside * 1.5
+                outY -= ry / dist * inside * 1.5
+            along = rx * dx + ry * dy
+            if along <= 0 or along > toTarget + radius:
+                continue
+            # How far to the right of its way the obstacle is.
+            lateral = rx * dy - ry * dx
+            room = radius + 0.4
+            side = sides.get(id(obj))
+            if side is None:
+                if abs(lateral) >= room:
+                    continue
+                # Bears left (1) round something on its right or dead
+                # ahead, right (-1) round something on its left; once
+                # chosen it keeps to that side, so it never dithers. (While
+                # it goes round one thing already, round the next the same
+                # way: never left of one and right of the next.)
+                side = npc.steerLast[2] if getattr(npc, 'steerLast', None) and now - npc.steerLast[3] < 1.0 \
+                    else (-1.0 if lateral < -0.05 else 1.0)
+                sides[id(obj)] = side
+            if room - side * lateral <= 0:
+                continue
+            if nearest is None or along < nearest[0]:
+                nearest = (along, rx, ry, dist, room, side)
+        if len(sides) > 8:
+            sides.clear()
+        if nearest is None and abs(outX) < 0.01 and abs(outY) < 0.01:
+            return dx, dy, False, skip
+        nx, ny = dx, dy
+        if nearest is not None:
+            along, rx, ry, dist, room, side = nearest
+            angle = math.atan2(ry, rx)
+            if dist > room:
+                angle += side * math.asin(room / dist)
+            else:
+                angle += side * math.pi / 2
+            nx, ny = math.cos(angle), math.sin(angle)
+        nx += outX
+        ny += outY
+        last = getattr(npc, 'steerLast', None)
+        if last is not None and now - last[3] < 0.5:
+            # Eased from the way it went a moment ago.
+            nx += last[0]
+            ny += last[1]
+        length = math.sqrt(nx * nx + ny * ny)
+        if length < 0.01:
+            return 0.0, 0.0, True, skip
+        nx /= length
+        ny /= length
+        npc.steerLast = (nx, ny, nearest[5] if nearest is not None else (last[2] if last else 1.0), now)
+        return nx, ny, True, skip
 
     def walkNPC(self, area, npc, dt):
         now = globalClock.getFrameTime()
@@ -876,8 +1081,81 @@ class NPCPlayerManagerAI:
         points, speed, zoneId, done = npc.walk
         pos = npc.getPos()
         h = npc.getH()
-        # Turn toward the next point no faster than a toon can, going slower
-        # while the turn is sharp.
+        push = getattr(npc, 'pendingPush', None)
+        if push is not None:
+            npc.pendingPush = None
+            nav = getNav()
+            spot = Point3(pos[0] + push[0], pos[1] + push[1], pos[2])
+            ground = nav.groundZ(spot[0], spot[1], pos[2] + 1.5)
+            if ground is not None and abs(ground - pos[2]) <= 1.0 and nav.clearLine(pos, Point3(spot[0], spot[1], ground)):
+                pos = Point3(spot[0], spot[1], ground)
+        bent = False
+        while points and getattr(npc, 'steerWalk', None) is npc.walk and getattr(self, 'tickToons', None) is not None:
+            ahead = points[0] - pos
+            flat = math.sqrt(ahead[0] * ahead[0] + ahead[1] * ahead[1])
+            if flat <= 0.05:
+                break
+            ux, uy, bent, skip = self.steer(npc, pos, ahead[0] / flat, ahead[1] / flat, points[0])
+            if skip:
+                # As near as it gets to a spot someone else stands on: on
+                # to the next one.
+                points.pop(0)
+                bent = False
+                if not points:
+                    npc.moveTo(pos[0], pos[1], pos[2], h)
+                    self.endWalk(npc, now)
+                    return
+                continue
+            if bent and ux == 0.0 and uy == 0.0:
+                # The way is shut for now: it waits a moment, then goes
+                # somewhere else.
+                self.waitBlocked(npc, now)
+                return
+            break
+        # Turn toward the next point (or round what is in the way) no faster
+        # than a toon can, going slower while the turn is sharp.
+        if bent:
+            wanted = -math.degrees(math.atan2(ux, uy))
+            turn = (wanted - h + 180) % 360 - 180
+            maxTurn = TURN_RATE * (3 if done is not None else 1) * dt
+            speed *= max(0.25, math.cos(math.radians(min(abs(turn), 90))))
+            h += max(-maxTurn, min(maxTurn, turn))
+            toTarget = (points[0] - pos).length()
+            remaining = min(speed * dt, toTarget)
+            # The way it bends off its path is looked at (ground, nothing
+            # in the way) a few strides ahead, then taken for a moment
+            # without looking again while it bends about the same way:
+            # rays against the scene for every step of every toon going
+            # round someone cost more than all the rest of the walking.
+            check = getattr(npc, 'bentCheck', None)
+            if check is not None and now - check[0] < BENT_RECHECK and ux * check[1] + uy * check[2] > 0.94 and \
+                    remaining <= check[3]:
+                ground = pos[2] + (check[4] - pos[2]) * min(1.0, remaining / max(0.01, check[3]))
+                check[3] -= remaining
+            else:
+                nav = getNav()
+                ahead = max(remaining, BENT_LOOK)
+                probe = Point3(pos[0] + ux * ahead, pos[1] + uy * ahead, pos[2])
+                probeZ = nav.groundZ(probe[0], probe[1], pos[2] + 1.5)
+                if probeZ is None or abs(probeZ - pos[2]) > 1.0 or \
+                        not nav.clearLine(pos, Point3(probe[0], probe[1], probeZ)):
+                    npc.bentCheck = None
+                    if ahead > remaining:
+                        # Not that far: just this step, then.
+                        probe = Point3(pos[0] + ux * remaining, pos[1] + uy * remaining, pos[2])
+                        probeZ = nav.groundZ(probe[0], probe[1], pos[2] + 1.5)
+                        if probeZ is not None and abs(probeZ - pos[2]) <= 1.0 and \
+                                nav.clearLine(pos, Point3(probe[0], probe[1], probeZ)):
+                            npc.blockedSince = None
+                            npc.moveTo(probe[0], probe[1], probeZ, h)
+                            return
+                    self.waitBlocked(npc, now)
+                    return
+                npc.bentCheck = [now, ux, uy, ahead - remaining, probeZ]
+                ground = pos[2] + (probeZ - pos[2]) * remaining / ahead
+            npc.blockedSince = None
+            npc.moveTo(pos[0] + ux * remaining, pos[1] + uy * remaining, ground, h)
+            return
         if points:
             ahead = points[0] - pos
             if ahead.lengthSquared() > 0.01:
@@ -890,6 +1168,7 @@ class NPCPlayerManagerAI:
                     # Going somewhere that matters (a battle): no dawdling.
                     maxTurn = TURN_RATE * 3 * dt
                 h += max(-maxTurn, min(maxTurn, turn))
+        npc.blockedSince = None
         remaining = speed * dt
         while points and remaining > 0:
             target = points[0]
@@ -904,20 +1183,78 @@ class NPCPlayerManagerAI:
                 remaining = 0
         npc.moveTo(pos[0], pos[1], pos[2], h)
         if not points:
-            npc.walk = None
+            self.endWalk(npc, now)
+
+    def waitBlocked(self, npc, now):
+        if npc.blockedSince is None:
+            npc.blockedSince = now
             npc.stopMoving()
-            if zoneId is not None and zoneId != npc.zoneId:
-                npc.b_setLocation(self.air.districtId, zoneId)
-            npc.idleUntil = now + random.uniform(*PAUSE_AFTER_WALK)
-            friend = getattr(npc, 'walkingTo', None)
-            npc.walkingTo = None
-            if friend is not None and not friend.isDeleted() and done is None:
-                # Stopped by someone: turn to them, and sometimes say hello.
-                self.faceToward(npc, friend.getPos())
-                if random.random() < 0.5:
-                    npc.afterTurn = lambda: self.greet(npc, friend)
-            if done:
-                done()
+        elif now - npc.blockedSince > STEER_PATIENCE:
+            # Somewhere else, then.
+            npc.walk[0][:] = []
+            self.endWalk(npc, now)
+
+    def endWalk(self, npc, now):
+        points, speed, zoneId, done = npc.walk
+        npc.walk = None
+        npc.steerWalk = None
+        npc.blockedSince = None
+        npc.steerSides = None
+        npc.steerLast = None
+        npc.bentCheck = None
+        npc.stopMoving()
+        if zoneId is not None and zoneId != npc.zoneId:
+            npc.b_setLocation(self.air.districtId, zoneId)
+        npc.idleUntil = now + random.uniform(*PAUSE_AFTER_WALK)
+        friend = getattr(npc, 'walkingTo', None)
+        npc.walkingTo = None
+        if friend is not None and not friend.isDeleted() and done is None:
+            # Stopped by someone: turn to them, and sometimes say hello.
+            self.faceToward(npc, friend.getPos())
+            if random.random() < 0.5:
+                npc.afterTurn = lambda: self.greet(npc, friend)
+        if done:
+            done()
+
+    def visitCog(self, npc):
+        """A toon that walked up to a cog: the cog is too busy for it."""
+        suit = npc.visiting
+        if suit.isDeleted() or suit.pathState != 1:
+            npc.visiting = None
+            return
+        area = getattr(npc, 'area', None)
+        spot = None
+        for other, where in getattr(area, 'tickSuits', None) or ():
+            if other is suit:
+                spot = where
+        if spot is None:
+            if npc.walk is None:
+                npc.visiting = None
+            return
+        pos = npc.getPos()
+        if Vec3(spot[0] - pos[0], spot[1] - pos[1], 0).length() > COG_CLEAR + 1.5:
+            if npc.walk is None:
+                npc.visiting = None
+            elif len(npc.walk[0]) == 1 and (npc.walk[0][0] - spot).length() > 2.0 and \
+                    globalClock.getFrameTime() - getattr(npc, 'visitAimed', 0) > 0.5:
+                # The cog walks on: after it (where the way is clear).
+                npc.visitAimed = globalClock.getFrameTime()
+                if getNav().clearLine(pos, Point3(spot)):
+                    npc.walk[0][0] = Point3(spot)
+            return
+        npc.visiting = None
+        if npc.walk is not None:
+            npc.walk[3] = None
+            self.endWalk(npc, globalClock.getFrameTime())
+        npc.walkingTo = None
+        self.faceToward(npc, Point3(spot))
+        now = globalClock.getFrameTime()
+        if now - getattr(suit, 'npcBrushedOff', -COG_BRUSH_GAP) >= COG_BRUSH_GAP:
+            suit.npcBrushedOff = now
+            from toontown.suit import SuitDialog
+            suit.b_setBrushOff(SuitDialog.getBrushOffIndex(suit.getStyleName()))
+        npc.idleUntil = now + random.uniform(2.5, 4.0)
+        self.stats['cog brush-offs'] = self.stats.get('cog brush-offs', 0) + 1
 
     def turnNPC(self, npc, dt):
         h = npc.getH()
@@ -1019,6 +1356,19 @@ class NPCPlayerManagerAI:
             return False
         pos = npc.getPos()
         candidates = []
+        npc.visiting = None
+        if area.isStreet and not fightsCogs(npc) and random.random() < VISIT_COG:
+            # Up to a cog, to see what it is about (it is too busy).
+            suits = [(suit, spot) for suit, spot in getattr(area, 'tickSuits', ()) if suit.zoneId == npc.zoneId or
+                     (spot - pos).length() < VISIT_REACH]
+            if suits:
+                suit, spot = min(suits, key=lambda s: (s[1] - pos).length())
+                if (spot - pos).length() < VISIT_REACH:
+                    path = nav.walkable(pos, spot)
+                    if path:
+                        self.setWalk(npc, path, WALK_SPEED, None)
+                        npc.visiting = suit
+                        return True
         if random.random() < SOCIAL_WALK:
             # Go and stand by someone.
             near = self.neighbours(area, npc, WANDER_RANGE[1])
@@ -1041,11 +1391,8 @@ class NPCPlayerManagerAI:
         # The emptier places first.
         wander.sort(key=lambda c: self.crowding(area, c[0], npc))
         candidates += wander
-        sidewalk = area.onSidewalk(npc) and (random.random() >= CROSS_CHANCE or self.inRoad(area) >= MAX_IN_ROAD)
         for target, zoneId, friend in candidates:
             path = nav.walkable(pos, target)
-            if path and sidewalk and not self.keepsToSidewalk(area, path, area.isSidewalk(pos)):
-                continue
             if path and area.isLobby and (max(abs(p[2] - pos[2]) for p in path) > LOBBY_FLOOR_RISE or
                                           not self.onLobbyFloor(area, path)):
                 # Not up the stairs, nor through or under them.
@@ -1053,23 +1400,20 @@ class NPCPlayerManagerAI:
             if path:
                 # Players mostly run, and walk now and then.
                 speed = RUN_SPEED if random.random() < 0.65 else WALK_SPEED
-                npc.walk = [path, speed, zoneId, None]
+                self.setWalk(npc, path, speed, zoneId)
                 npc.walkingTo = friend
-                npc.faceH = None
                 return True
         return False
 
-    def inRoad(self, area):
-        # The toons in the road now: those that walk there, and any crossing.
-        return len([npc for npc in area.npcs if not npc.isDeleted() and
-                    (getattr(npc, 'inRoad', True) or not area.isSidewalk(npc.getPos()))])
-
-    def keepsToSidewalk(self, area, path, fromSidewalk=True):
-        # Ends on the sidewalk, and steps off it no more than a stride or
-        # two, where the curb dips. (A toon in the road just gets out of it.)
-        if not area.isSidewalk(path[-1]):
-            return False
-        return not fromSidewalk or len([p for p in path if not area.isSidewalk(p)]) <= 2
+    def setWalk(self, npc, path, speed, zoneId, done=None):
+        """Sends the toon along path. It goes round the toons (and, if it
+        doesn't fight them, the cogs) it meets on the way; see steer."""
+        npc.walk = [path, speed, zoneId, done]
+        npc.steerWalk = npc.walk
+        npc.blockedSince = None
+        npc.faceH = None
+        npc.afterTurn = None
+        npc.walkingTo = None
 
     # --- Walking into cogs ---
 
@@ -1096,18 +1440,26 @@ class NPCPlayerManagerAI:
             leg = legs[index]
             if leg.getType() != SuitLeg.TWalk:
                 continue
+            ends = leg.getPosB() - leg.getPosA()
+            span = math.sqrt(ends[0] * ends[0] + ends[1] * ends[1]) or 1.0
+            # (Which way it walks, so a toon in its way steps to the side.)
+            suit.npcWalkDir = (ends[0] / span, ends[1] / span)
             suits.append((suit, Point3(leg.getPosAtTime(elapsed - legs.getStartTime(index)))))
         return suits
 
     def bump(self, area, npc, suits):
         """A toon that walks into a cog starts a battle with it, and one that
-        walks into a battle joins it, the way a player's toon does."""
-        if npc.walk[3] is not None:
+        walks into a battle joins it, the way a player's toon does. (Not
+        one that doesn't fight cogs: it walks round them; see steer.)"""
+        if not fightsCogs(npc) or not area.hasCogs():
+            # (Nor anywhere without cogs, such as a playground.)
+            return
+        if npc.walk is not None and npc.walk[3] is not None:
             # On its way somewhere that matters (a battle already).
             return
         pos = npc.getPos()
         flat = Point3(pos[0], pos[1], 0)
-        for battle in self.getBattles(streetOnly=True):
+        for battle in self.tickBattles():
             if battle.zoneId != npc.zoneId and getAreaId(battle.zoneId) != area.areaId:
                 continue
             if battle.isDeleted() or battle.fsm is None or not battle.toonCanJoin():
@@ -1128,7 +1480,7 @@ class NPCPlayerManagerAI:
                 return
         if not suits or npc.getBattleId() > 0:
             return
-        alone = [b for b in self.getBattles(streetOnly=True) if getAreaId(b.zoneId) == area.areaId and
+        alone = [b for b in self.tickBattles() if getAreaId(b.zoneId) == area.areaId and
                  not [t for t in b.toons if not isNPC(self.air.doId2do.get(t))]]
         if len(alone) >= MAX_NPC_BATTLES:
             return
@@ -1141,6 +1493,7 @@ class NPCPlayerManagerAI:
                 self.notify.info('NPC %s walks into cog %s in zone %s' % (npc.doId, suit.doId, suit.zoneId))
                 npc.asSender(suit.requestBattle, pos[0], pos[1], pos[2], npc.getH(), 0, 0)
                 battle = self.air.doId2do.get(npc.getBattleId())
+                self.streetBattles = None
                 if isinstance(battle, DistributedBattleBaseAI):
                     self.crewFor(battle).add(npc)
                     self.stats['npc battles'] = self.stats.get('npc battles', 0) + 1
@@ -1169,6 +1522,14 @@ class NPCPlayerManagerAI:
         battles = self.party._objectsOfType((DistributedBattleBaseAI,))
         return [obj for obj in battles
                 if not obj.isDeleted() and (not streetOnly or obj.__class__.__name__ in STREET_BATTLES)]
+
+    def tickBattles(self):
+        """The street battles, looked up once a walk tick (and again after
+        a toon starts one): each walking toon looked them up for itself."""
+        battles = getattr(self, 'streetBattles', None)
+        if battles is None:
+            battles = self.streetBattles = self.getBattles(streetOnly=True)
+        return battles
 
     def crewFor(self, battle):
         crew = self.crews.get(battle.doId)
@@ -1238,7 +1599,8 @@ class NPCPlayerManagerAI:
         if not free:
             return None
         battlePos = Point3(battle.pos)
-        free.sort(key=lambda npc: (npc.getPos() - battlePos).length())
+        # The ones that fight cogs first.
+        free.sort(key=lambda npc: (not fightsCogs(npc), (npc.getPos() - battlePos).length()))
         return free[0]
 
     def battleSpot(self, battle):
@@ -1270,7 +1632,7 @@ class NPCPlayerManagerAI:
             path = getNav().walkable(npc.getPos(), spot)
         if path:
             npc.busy = False
-            npc.walk = [path, RUN_SPEED, battle.zoneId, arrive]
+            self.setWalk(npc, path, RUN_SPEED, battle.zoneId, arrive)
             npc.idleUntil = 0
             return
         # Too far to run: teleport over, the way friends did online.
