@@ -148,6 +148,7 @@ class SCMenu(SCObject, NodePath):
 
     def enterVisible(self):
         SCObject.enterVisible(self)
+        self.__drawAboveParent()
         if getattr(self, 'fitPending', False):
             self.invalidate()
         self.privScheduleFinalize()
@@ -188,6 +189,20 @@ class SCMenu(SCObject, NodePath):
 
     def setHolder(self, holder):
         self.holder = holder
+
+    def __drawAboveParent(self):
+        # A submenu draws over the menu it came from: the parent's arrows and
+        # emote icons further down the list showed through it (Arthur).
+        # Each level sorts one higher in the top menu's bin.
+        if self.holder is None:
+            return
+        depth = 0
+        top = self
+        while top.getHolder() is not None and top.getHolder().parentMenu is not None:
+            depth += 1
+            top = top.getHolder().parentMenu
+        if top.hasBin():
+            self.setBin(top.getBinName(), top.getBinDrawOrder() + depth)
 
     def getHolder(self):
         return self.holder

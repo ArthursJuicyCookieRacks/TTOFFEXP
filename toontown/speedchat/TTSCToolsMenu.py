@@ -35,7 +35,7 @@ class TTSCMaxToonTerminal(TTSCToolsTerminal):
     pressedAt = None
 
     def __init__(self):
-        TTSCToolsTerminal.__init__(self, 'MaxToon', '~maxToon')
+        TTSCToolsTerminal.__init__(self, 'Max Toon', '~maxToon')
 
     def getMagicWord(self):
         now = globalClock.getRealTime()
@@ -51,8 +51,8 @@ class TTSCToolsMenu(SCMenu):
     def __init__(self):
         SCMenu.__init__(self)
         self.append(TTSCMaxToonTerminal())
-        self.append(TTSCToolsTerminal('sostoons', '~sostoons'))
-        self.append(TTSCToolsTerminal('unites', '~unites'))
+        self.append(TTSCToolsTerminal('Restock SOS Cards', '~sostoons'))
+        self.append(TTSCToolsTerminal('Restock Unites', '~unites'))
         self.append(TTSCToolsTerminal('Unlimited Gags', '~unlimitedGags'))
         self.append(TTSCToolsTerminal('Summons', '~summons'))
         self.append(TTSCToolsTerminal('Restock Fires', '~pinkslips'))

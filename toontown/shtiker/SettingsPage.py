@@ -13,6 +13,7 @@ from direct.gui.DirectGui import DirectButton, DirectFrame, DirectLabel, DirectS
 from direct.directnotify import DirectNotifyGlobal
 
 from toontown.shtiker import ShtikerPage
+from otp.otpbase import OTPGlobals
 from toontown.toonbase import GameSettings, KeyBindings, TTLocalizer, ToontownGlobals
 
 GENERAL, KEYBOARD, CONTROLLER = range(3)
@@ -141,12 +142,13 @@ class SettingsPage(ShtikerPage.ShtikerPage):
                 (GameSettings.DOUBLE_XP_GARDENING, TTLocalizer.SettingsPageDoubleXpGardening),
                 (GameSettings.DOUBLE_XP_DOODLES, TTLocalizer.SettingsPageDoubleXpDoodles))
         top = 0.64
-        popup = DirectFrame(parent=self, relief=DGG.RIDGE, borderWidth=(0.015, 0.015),
-                            frameColor=(1, 0.97, 0.85, 1), frameSize=(-0.66, 0.66, -top, top),
+        # The game's own pop-up box (the one TTDialog and the other pop-ups use).
+        popup = DirectFrame(parent=self, relief=None, image=DGG.getDefaultDialogGeom(),
+                            image_color=OTPGlobals.GlobalDialogColor, image_scale=(1.4, 1, 1.36),
                             pos=(0, 0, 0.02), sortOrder=DGG.FOREGROUND_SORT_INDEX)
         popup.setBin('gui-popup', 0)
         DirectLabel(parent=popup, relief=None, text=TTLocalizer.SettingsPageExtras, text_scale=0.08,
-                    text_fg=TEXT_COLOR, pos=(0, 0, top - 0.1))
+                    text_fg=TEXT_COLOR, pos=(0, 0, top - 0.075))
         # Double XP
         DirectLabel(parent=popup, relief=None, text=TTLocalizer.SettingsPageDoubleXp, text_scale=0.06,
                     text_fg=TEXT_COLOR, pos=(0, 0, top - 0.19))
