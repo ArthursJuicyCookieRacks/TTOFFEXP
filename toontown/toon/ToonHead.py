@@ -717,11 +717,28 @@ class ToonHead(Actor.Actor):
         # pupils had moved or changed size, and they didn't follow where the
         # toon looked.  Every LOD now shows the near model's eyes and pupils,
         # which keep moving with where the toon looks.
+        #
+        # The near eyes are fitted into the box the far model's own eyes
+        # take up.  Each far head has its own shape (a monkey's or dog's
+        # muzzle sits higher and closer than on the near head), so eyes kept
+        # at the near model's spot ended up partly behind the far muzzle:
+        # from about 20 to 80 feet away the pupils vanished, and came and
+        # went as the head bobbed while walking.
+        nearBox = self.__eyes.getTightBounds(self.__eyes.getParent())
         for lodEyes in (self.__lod500Eyes, self.__lod250Eyes):
             if not lodEyes or lodEyes.isEmpty():
                 continue
+            farBox = lodEyes.getTightBounds(lodEyes.getParent())
             lodEyes.stash()
             shown = lodEyes.getParent().attachNewNode('nearEyes')
+            if nearBox and farBox:
+                nearSize = nearBox[1] - nearBox[0]
+                farSize = farBox[1] - farBox[0]
+                shown.setPos((farBox[0] + farBox[1]) * 0.5)
+                shown.setScale(*[(f / n) if n > 0.0001 else 1.0 for f, n in zip(farSize, nearSize)])
+                centered = shown.attachNewNode('centered')
+                centered.setPos((nearBox[0] + nearBox[1]) * -0.5)
+                shown = centered.attachNewNode('nearMat')
             shown.setMat(self.__eyes.getMat())
             self.__eyes.instanceTo(shown)
 
