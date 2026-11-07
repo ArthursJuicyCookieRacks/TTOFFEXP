@@ -215,12 +215,11 @@ PaddleRate = (1.0, 1.7)
 SpinTime = 0.8
 CameraBack = 12.0
 CameraUp = 7.0
-# The slide's camera: in the middle of the table, this far behind the toon
-# and up from the tabletop, looking this far up the table past it; from
-# there the table's whole width is in view, over the piles.
-SlideCamBack = 16.0
-SlideCamUp = 9.5
-SlideCamLook = 20.0
+# The slide's camera: where the walk camera sat (behind and above the
+# toon, looking level up the table), without turning with the toon.
+SlideCamBack = 10.16
+SlideCamUp = 3.41
+SlideCamPitch = -0.1
 
 # --- On the table ---
 SlickRadius = 6.0

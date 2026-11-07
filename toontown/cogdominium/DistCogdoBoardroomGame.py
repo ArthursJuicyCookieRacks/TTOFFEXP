@@ -679,21 +679,21 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
             want = PM.Point3(pos[0] * 0.5, pos[1] - Consts.CameraBack * 1.2, Consts.TableTop + Consts.CameraUp * 1.3)
             look = PM.Point3(pos[0], pos[1] + 6, pos[2] + 2)
         else:
-            # Down the middle of the table, looking straight up it, whatever
-            # the toon does: Left and Right move the toon, not the camera
-            # (Arthur). Only the slide along the table (and a hop's height)
-            # carries the camera; the whole width of the table is in view.
-            top = max(pos[2], Consts.TableTop)
-            want = PM.Point3(0, pos[1] - Consts.SlideCamBack, top + Consts.SlideCamUp)
-            look = PM.Point3(0, pos[1] + Consts.SlideCamLook, top)
+            # The view the slide always had (the walk camera's, just behind
+            # the toon's head), but it never turns with the toon: it looked
+            # the way the toon leant, so it swung at every Left or Right
+            # (Arthur: keep that view, just without the turning). It looks
+            # straight up the table, carried along with the toon.
+            want = PM.Point3(pos[0], pos[1] - Consts.SlideCamBack, pos[2] + Consts.SlideCamUp)
+            camera.setPosHpr(render, want, PM.VBase3(0, Consts.SlideCamPitch, 0))
+            self._camPos = PM.Point3(want)
+            return
         cur = getattr(self, '_camPos', None) or want
         # Eased by the real time the frame took (the 0.1 s cap made it fall
         # behind and catch up in jumps at a low frame rate).
-        k = 1.0 - math.exp(-(6.0 if self.slideState in ('off', 'jumpoff') else 10.0) * dt)
+        k = 1.0 - math.exp(-6.0 * dt)
         cur = cur + (want - cur) * k if (want - cur).length() < 40 else want
         self._camPos = PM.Point3(cur)
-        if self.slideState not in ('off', 'jumpoff'):
-            look = PM.Point3(0, cur[1] + Consts.SlideCamBack + Consts.SlideCamLook, look[2])
         camera.setPos(render, cur)
         camera.lookAt(look)
 
