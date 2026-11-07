@@ -16,7 +16,7 @@ it, by rarity as in PetUtil.getPetCostFromSeed. Each better choice of a
 trait adds jellybeans on top. The shop's daily doodles never came with every
 trait at its best, and a built one can, so in every playground the rarest
 body with every best trait costs BestPriceRate times the top of the old
-range: 6,000 in Donald's Dreamland (whose range topped out at 5,000), 600 in
+range: 6,250 in Donald's Dreamland (whose range topped out at 5,000), 625 in
 Toontown Central, and so on.
 """
 
@@ -34,8 +34,8 @@ Levels = (TraitQuality.VERY_BAD, TraitQuality.BAD, TraitQuality.AVERAGE,
 # every body at the price it had.
 BodyShare = 0.6
 # The rarest body with every trait at its best costs this times the top of
-# the playground's old price range (Arthur: 6,000 in Donald's Dreamland).
-BestPriceRate = 1.2
+# the playground's old price range (Arthur: 25% more, 6,250 in Donald's Dreamland).
+BestPriceRate = 1.25
 
 
 def getZones():
