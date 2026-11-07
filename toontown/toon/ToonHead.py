@@ -96,6 +96,19 @@ class ToonHead(Actor.Actor):
     LeftBC = Point3(LeftB[0] - LeftB[2] * (LeftC[0] - LeftB[0]) / (LeftC[2] - LeftB[2]), 0.0, 0.0)
     RightAD = Point3(RightA[0] - RightA[2] * (RightD[0] - RightA[0]) / (RightD[2] - RightA[2]), 0.0, 0.0)
     RightBC = Point3(RightB[0] - RightB[2] * (RightC[0] - RightB[0]) / (RightC[2] - RightB[2]), 0.0, 0.0)
+    # How far the pupils sit out from the eye (see __liftPupil): a hair at
+    # rest, up to PupilLiftSide more looking to the side and PupilLiftUp
+    # more looking up, reached once the pupil has moved PupilSideReach or
+    # PupilUpReach from the middle.
+    PupilLiftRest = 0.01
+    PupilLiftSide = 0.02
+    PupilLiftUp = 0.05
+    PupilSideReach = 0.05
+    PupilUpReach = 0.1
+    # Config switch for the pupil lift (want-pupil-fix in config/*.prc, on
+    # unless set to #f): #f puts the pupils back where the head models have
+    # them, as in 3.2 and before.
+    WantPupilFix = ConfigVariableBool('want-pupil-fix', True)
 
     def __init__(self):
         try:
@@ -417,7 +430,7 @@ class ToonHead(Actor.Actor):
                     self.__copy = copy
         else:
             for lod in lods:
-                self.loadModel('phase_3' + filePrefix + lod, 'head', lod, copy)
+                self.loadModel('phase_3' + filePrefix + self.headModelLOD(lod), 'head', lod, copy)
                 if not forGui:
                     pLoaded = self.loadPumpkin(headStyle[1], lod, copy)
                     self.loadSnowMan(headStyle[1], lod, copy)
@@ -440,6 +453,18 @@ class ToonHead(Actor.Actor):
         self.eyelids.request('open')
         self.setupMuzzles(style)
         return headHeight
+
+    @staticmethod
+    def headModelLOD(lod):
+        # Toons 20 to 80 feet away used to get a simpler head model of their
+        # own.  Those heads put the face, muzzle and nose in other places
+        # than the close-up head (one dog head even has its nose tied to the
+        # pupils), so the pupils hid behind the muzzle or nose and came and
+        # went while walking.  That range now uses the close-up head; it is
+        # under 100 extra points per toon and no extra draw calls.
+        if lod == '500':
+            return '1000'
+        return lod
 
     def loadPumpkin(self, headStyle, lod, copy):
         if hasattr(base, 'launcher') and (not base.launcher or base.launcher and base.launcher.getPhaseComplete(4)):
@@ -708,6 +733,7 @@ class ToonHead(Actor.Actor):
                     self.__lpupil.flattenStrong()
                     self.__rpupil.flattenStrong()
                 self.__sharePupilsWithFarLODs(leye, reye)
+                self.__setPupilDirection(0, 0)
         return
 
     def __sharePupilsWithFarLODs(self, leye, reye):
@@ -717,13 +743,82 @@ class ToonHead(Actor.Actor):
         # pupils had moved or changed size, and they didn't follow where the
         # toon looked.  Every LOD now shows the near model's eyes and pupils,
         # which keep moving with where the toon looks.
-        for lodEyes in (self.__lod500Eyes, self.__lod250Eyes):
+        #
+        # The near eyes are fitted into the box the far model's own eyes
+        # take up.  Each far head has its own shape (a monkey's or dog's
+        # muzzle sits higher and closer than on the near head), so eyes kept
+        # at the near model's spot ended up partly behind the far muzzle:
+        # from about 20 to 80 feet away the pupils vanished, and came and
+        # went as the head bobbed while walking.
+        nearBox = self.__eyes.getTightBounds(self.__eyes.getParent())
+        for lodName, lodEyes in (('500', self.__lod500Eyes), ('250', self.__lod250Eyes)):
             if not lodEyes or lodEyes.isEmpty():
                 continue
+            farBox = lodEyes.getTightBounds(lodEyes.getParent())
             lodEyes.stash()
+            self.__cleanUpFarPupils(lodName)
             shown = lodEyes.getParent().attachNewNode('nearEyes')
+            if nearBox and farBox:
+                nearSize = nearBox[1] - nearBox[0]
+                farSize = farBox[1] - farBox[0]
+                shown.setPos((farBox[0] + farBox[1]) * 0.5)
+                shown.setScale(*[(f / n) if n > 0.0001 else 1.0 for f, n in zip(farSize, nearSize)])
+                centered = shown.attachNewNode('centered')
+                centered.setPos((nearBox[0] + nearBox[1]) * -0.5)
+                shown = centered.attachNewNode('nearMat')
             shown.setMat(self.__eyes.getMat())
             self.__eyes.instanceTo(shown)
+
+    def __cleanUpFarPupils(self, lodName):
+        # The long dog head with the short muzzle has, in its 20-80 ft
+        # model, a second pair of pupils outside its eyes, and its nose is
+        # tied to the pupil joints.  The dog head animations move those
+        # joints, so while walking the nose was pulled into a black streak
+        # across the eyes, with a hole in the muzzle, and the pupils were
+        # lost under it.  The spare pupils are hidden (the near model's
+        # pupils are shown instead) and whatever was tied to a pupil joint
+        # now just follows the head.
+        if not self.getLOD(lodName):
+            return
+        head = self.getPart('head', lodName)
+        if not head or head.isEmpty():
+            return
+        for np in head.findAllMatches('**/+GeomNode'):
+            if np.findTexture('pupils'):
+                np.stash()
+                continue
+            gnode = np.node()
+            for i in range(gnode.getNumGeoms()):
+                table = gnode.getGeom(i).getVertexData().getTransformBlendTable()
+                if table is None:
+                    continue
+                headTransform = None
+                usesPupils = False
+                for b in range(table.getNumBlends()):
+                    blend = table.getBlend(b)
+                    for k in range(blend.getNumTransforms()):
+                        transform = blend.getTransform(k)
+                        if not isinstance(transform, JointVertexTransform):
+                            continue
+                        jointName = transform.getJoint().getName()
+                        if jointName == 'def_head':
+                            headTransform = transform
+                        elif 'pupil' in jointName:
+                            usesPupils = True
+                if not usesPupils or headTransform is None:
+                    continue
+                newTable = TransformBlendTable(table)
+                for b in range(table.getNumBlends()):
+                    blend = table.getBlend(b)
+                    newBlend = TransformBlend()
+                    for k in range(blend.getNumTransforms()):
+                        transform = blend.getTransform(k)
+                        if isinstance(transform, JointVertexTransform) and 'pupil' in transform.getJoint().getName():
+                            transform = headTransform
+                        newBlend.addTransform(transform, blend.getWeight(k))
+                    newBlend.normalizeWeights()
+                    newTable.setBlend(b, newBlend)
+                gnode.modifyGeom(i).modifyVertexData().setTransformBlendTable(newTable)
 
     def __setPupilDirection(self, x, y):
         if y < 0.0:
@@ -748,8 +843,26 @@ class ToonHead(Actor.Actor):
             x2 = x
             left = left0 + (left1 - left0) * x2
             right = right0 + (right1 - right0) * x2
-        self.__lpupil.setPos(left)
-        self.__rpupil.setPos(right)
+        self.__lpupil.setPos(self.__liftPupil(left))
+        self.__rpupil.setPos(self.__liftPupil(right))
+
+    def __liftPupil(self, pos):
+        # The pupils are flat and slide across a flat plane, but the eyes
+        # and the face under them are curved.  Panda only nudges decals a
+        # hair toward the camera (the heads were made for an older way of
+        # drawing them that simply painted the pupils on top), so when a
+        # toon looked up or to the side part of each pupil slid behind the
+        # eye or the face and was cut off or vanished; dogs, cats, monkeys,
+        # pigs, ducks, crocodiles and deer the worst.  Sit the pupils just
+        # out from the eye, a little more the farther they move from the
+        # middle (looking up needs the most), so they stay on top without
+        # floating off the eye.  Checked on all 44 head shapes.  Turned off
+        # with want-pupil-fix #f in the config.
+        if not self.WantPupilFix.getValue():
+            return Point3(pos[0], 0.0, pos[2])
+        side = self.PupilLiftSide * min(1.0, abs(pos[0]) / self.PupilSideReach)
+        up = self.PupilLiftUp * min(1.0, max(pos[2], 0.0) / self.PupilUpReach)
+        return Point3(pos[0], self.PupilLiftRest + max(side, up), pos[2])
 
     def __lookPupilsAt(self, node, point):
         if node != None:
@@ -1172,8 +1285,8 @@ class ToonHead(Actor.Actor):
         self.__lookHeadAt(None, point, lod=lodName)
         self.__lookPupilsAt(None, point)
         endHpr = head.getHpr()
-        endLpupil = self.__lpupil.getPos() * 0.5
-        endRpupil = self.__rpupil.getPos() * 0.5
+        endLpupil = self.__liftPupil(self.__lpupil.getPos() * 0.5)
+        endRpupil = self.__liftPupil(self.__rpupil.getPos() * 0.5)
         head.setHpr(startHpr)
         self.__lpupil.setPos(startLpupil)
         self.__rpupil.setPos(startRpupil)
@@ -1184,7 +1297,7 @@ class ToonHead(Actor.Actor):
         lookToTgt_TimeFraction = 0.2
         lookToTgtTime = time * lookToTgt_TimeFraction
         returnToEyeCenterTime = time - lookToTgtTime - 0.5
-        origin = Point3(0, 0, 0)
+        origin = self.__liftPupil(Point3(0, 0, 0))
         blendType = 'easeOut'
         self.lookAtTrack = Parallel(Sequence(LerpPosInterval(self.__lpupil, lookToTgtTime, endLpupil, blendType=blendType), Wait(0.5), LerpPosInterval(self.__lpupil, returnToEyeCenterTime, origin, blendType=blendType)), Sequence(LerpPosInterval(self.__rpupil, lookToTgtTime, endRpupil, blendType=blendType), Wait(0.5), LerpPosInterval(self.__rpupil, returnToEyeCenterTime, origin, blendType=blendType)), name=self.__stareAtName)
         for lodName in self.getLODNames():
@@ -1336,7 +1449,7 @@ class ToonHead(Actor.Actor):
                     muzzle = self.find('**/' + lodName + '/**/muzzle*')
                     if lodName == '1000' or lodName == '500':
                         filePrefix = DogMuzzleDict[style.head]
-                        muzzles = loader.loadModel('phase_3' + filePrefix + lodName)
+                        muzzles = loader.loadModel('phase_3' + filePrefix + self.headModelLOD(lodName))
                         if config.ConfigVariableBool('want-new-anims', 1).getValue():
                             if not self.find('**/' + lodName + '/**/__Actor_head/def_head').isEmpty():
                                 muzzles.reparentTo(self.find('**/' + lodName + '/**/__Actor_head/def_head'))

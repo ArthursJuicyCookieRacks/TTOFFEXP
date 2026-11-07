@@ -17656,6 +17656,26 @@ QuestDict = {
          NA,
          TTLocalizer.QuestDialogDict[12032])}
 
+# The bigger jellybean jar: a Just for Fun task, defeat 500 Cogs anywhere,
+# that lets a toon carry 500 jellybeans. It is offered from the tier with
+# the 250 jar task (Donald's Dreamland's last) all the way to the end, but
+# only once the toon carries 250 (getNextRewards).
+BigJarRewardId = 708
+BigJarQuestBase = 10900
+BigJarCogs = 500
+BigJarFromJar = 250
+BigJarMoney = 500
+BigJarTiers = tuple(range(DL_TIER + 3, ELDER_TIER + 1))
+for _tier in BigJarTiers:
+    QuestDict[BigJarQuestBase + _tier - BigJarTiers[0]] = (_tier,
+     Start,
+     (CogQuest, Anywhere, BigJarCogs, Any),
+     Any,
+     ToonHQ,
+     BigJarRewardId,
+     NA,
+     DefaultDialog)
+
 Tier2QuestsDict = {}
 for questId, questDesc in list(QuestDict.items()):
     if questDesc[QuestDictStartIndex] == Start:
@@ -18640,6 +18660,9 @@ def getNextRewards(numChoices, tier, av):
         else:
             # They aren't eligible for the quest. Bye bye!
             simbase.air.questManager.removeBetaQuest(av, 'avatarExit')
+    if BigJarRewardId in optRewards and not BigJarFromJar <= av.getMaxMoney() < BigJarMoney:
+        # The 500 jellybean jar only comes after the 250 one, and only once.
+        optRewards = [rewardId for rewardId in optRewards if rewardId != BigJarRewardId]
     if isLoopingFinalTier(tier):
         rewardHistory = [questDesc[3] for questDesc in av.quests]
         if notify.getDebug():
@@ -18777,6 +18800,7 @@ RewardDict = {100: (MaxHpReward, 1),
  705: (MaxMoneyReward, 150),
  706: (MaxMoneyReward, 200),
  707: (MaxMoneyReward, 250),
+ BigJarRewardId: (MaxMoneyReward, BigJarMoney),
  801: (TrackProgressReward, None, 1),
  802: (TrackProgressReward, None, 2),
  803: (TrackProgressReward, None, 3),
@@ -19726,6 +19750,10 @@ OptionalRewardTrackDict = {TT_TIER: (),
               2969,
               2970,
               2971)}
+
+for _tier in BigJarTiers:
+    OptionalRewardTrackDict[_tier] = tuple(OptionalRewardTrackDict.get(_tier, ())) + (BigJarRewardId,)
+
 
 def isRewardOptional(tier, rewardId):
     return tier in OptionalRewardTrackDict and rewardId in OptionalRewardTrackDict[tier]

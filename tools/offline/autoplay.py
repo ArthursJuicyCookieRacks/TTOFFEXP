@@ -28,7 +28,7 @@ os.chdir(ROOT)
 
 DB = os.path.abspath(os.environ.get('AUTOPLAY_DB', 'autoplay-db'))
 
-from panda3d.core import loadPrcFileData, Filename, NodePath, Point3, Vec3
+from panda3d.core import loadPrcFileData, unloadPrcFile, Filename, NodePath, Point3, Vec3
 loadPrcFileData('autoplay', '''
 audio-library-name null
 toontown-auto-run 0
@@ -480,7 +480,7 @@ def hardy(air, avId):
     # Immortal, with every gag and full laff (set, not toggled, so a second
     # call changes nothing).
     av = air.doId2do[avId]
-    av.setImmortalMode(True)
+    av.setImmortalMode(not os.environ.get('AUTOPLAY_MORTAL'))
     av.setUnlimitedGags(True)
     av.doRestock(0)
     av.toonUp(ToontownGlobals.MaxHpLimit)
@@ -1266,6 +1266,10 @@ def playCogdoBoardroom(dist):
                 press('turnLeft', diff > 8)
                 press('turnRight', diff < -8)
                 press('forward', abs(diff) < 30)
+                if time.time() > nextShot and n < 26:
+                    nextShot = time.time() + 1.5
+                    base.screenshot(os.path.join(shots, 'boss-%02d-walkout.png' % (70 + n)), defaultFilename=0)
+                    n += 1
             yield sleep(0.03)
             continue
         if not idle and getattr(dist, 'phase', None) == 'golf' and dist.golf is not None and (
@@ -1289,12 +1293,12 @@ def playCogdoBoardroom(dist):
                 cog = min(cogs, key=lambda c: (0 if c['carry'] is not None else 1, c['suit'].getPos().length()))
                 lead = 1.0
                 for k in range(3):
-                    cx, cy, ch, leg = Consts.golfCogPos(cog['path'], now - cog['start'] + lead + 0.6)
+                    cx, cy, ch, leg = Consts.golfCogPos(cog['path'], now - cog['start'] + lead + 0.6 + 0.42)
                     d = math.hypot(cx - tee[0], cy - tee[1])
                     v = min(Consts.BallSpeedRange[1], d * Consts.BallFriction + 8.0)
                     lead = d / max(v * 0.7, 1.0)
                 if leg < 3:
-                    aim = max(-80.0, min(80.0, -math.degrees(math.atan2(cx - tee[0], cy - tee[1]))))
+                    aim = -math.degrees(math.atan2(cx - tee[0], cy - tee[1]))
                     lo, hi = Consts.BallSpeedRange
                     target = (aim, max(0.05, min(1.0, (v - lo) / (hi - lo))))
             if target is None:
@@ -1302,11 +1306,13 @@ def playCogdoBoardroom(dist):
                     press(name, False)
             else:
                 aim, power = target
-                press('turnLeft', aim > dist.aimH + 2)
-                press('turnRight', aim < dist.aimH - 2)
-                lined = abs(aim - dist.aimH) <= 2
+                off = (aim - dist.aimH + 180.0) % 360.0 - 180.0
+                press('turnLeft', off > 2)
+                press('turnRight', off < -2)
+                lined = abs(off) <= 2
                 if dist.charging:
-                    rising = ((now - dist.chargeStart) / Consts.ChargeTime) % 2.0 <= 1.0
+                    held = now - dist.chargeStart
+                    rising = Consts.golfPower(held + 0.05) >= Consts.golfPower(held)
                     press('jump', not (rising and dist.power >= power - 0.03))
                 else:
                     press('jump', lined)
@@ -1339,6 +1345,11 @@ def playCogdoBoardroom(dist):
                     left, right = ob.x - ob.w - 2.5, ob.x + ob.w + 2.5
                     free = [g for g in (left, right) if abs(g) < Consts.TableHalfWidth - 1.5 and not layout.blockedAt(g, ob.y, 0.5)]
                     goal = min(free, key=lambda g: abs(g - pos[0])) if free else goal
+            if os.environ.get('AUTOPLAY_SLIDE_CRASH'):
+                # Test: straight into the next pile, to see the hit hurt.
+                piles = [ob for ob in layout.obstacles if ob.kind == Layout.PILE and ob.y - ob.l - pos[1] > 2]
+                if piles:
+                    goal = min(piles, key=lambda ob: ob.y).x
             press('turnLeft', goal < pos[0] - 0.6)
             press('turnRight', goal > pos[0] + 0.6)
             # Off the table early enough to be over the pencil when there
@@ -3564,6 +3575,137 @@ def defeatCogsFor(questId, quest):
             yield from fightBattle()
             yield until(walking, 120, 'walking after the battle')
         log('ToonTask progress:', quest.getProgressString(localAvatar, next(q for q in localAvatar.quests if q[0] == questId)))
+
+
+def scenarioJellybeans():
+    # The 100,000 jellybean bank, ~maxJellybeans and its SpeedChat Tools
+    # button, and the Just for Fun task (500 Cogs anywhere) that grows the
+    # jar from 250 to 500.
+    from toontown.quest import Quests
+    from toontown.estate import BankGUI
+    shots = os.environ.get('AUTOPLAY_SHOTS', '/tmp')
+    os.makedirs(shots, exist_ok=True)
+
+    def shot(name):
+        base.graphicsEngine.renderFrame()
+        base.graphicsEngine.renderFrame()
+        base.screenshot(os.path.join(shots, 'jellybeans-%s.png' % name), defaultFilename=0)
+
+    recordNPCMovies()
+
+    def setJar(air, avId, jar, money=None, bank=None):
+        av = air.doId2do[avId]
+        av.b_setMaxMoney(jar)
+        if money is not None:
+            av.b_setMoney(money)
+        if bank is not None:
+            av.b_setBankMoney(bank)
+
+    yield until(walking, 60, 'walking')
+    if localAvatar.getMaxBankMoney() != ToontownGlobals.DefaultMaxBankMoney:
+        raise StepFailed('the bank holds %d, not %d' % (localAvatar.getMaxBankMoney(), ToontownGlobals.DefaultMaxBankMoney))
+    log('the bank holds', localAvatar.getMaxBankMoney())
+
+    # The SpeedChat Tools button fills the jar (only as far as it holds) and
+    # the bank.
+    onDistrict(setJar, localAvatar.doId, 120, 3, 7)
+    yield until(lambda: localAvatar.getMaxMoney() == 120 and localAvatar.getBankMoney() == 7, 30, 'an emptied jar and bank')
+    sc = localAvatar.chatMgr.chatInputSpeedChat
+    sc.show()
+    yield sleep(0.5)
+    sc.speedChat.finalizeAll()
+    button = None
+    for holder in list(sc.speedChat):
+        if getattr(holder, 'getTitle', None) and holder.getTitle() == 'TOOLS':
+            holder.showMenu()
+            yield sleep(0.5)
+            shot('1-tools-menu')
+            button = next((t for t in holder.getMenu() if getattr(t, 'text', None) == 'Max Jellybeans'), None)
+    if button is None:
+        raise StepFailed('no Max Jellybeans in the SpeedChat Tools menu')
+    button.handleSelect('mouse1')
+    sc.hide()
+    yield until(lambda: localAvatar.getMoney() == 120 and localAvatar.getBankMoney() == ToontownGlobals.DefaultMaxBankMoney,
+                30, 'a full 120 jar and a full bank')
+    log('Max Jellybeans: jar %d of %d, bank %d of %d' % (localAvatar.getMoney(), localAvatar.getMaxMoney(),
+                                                          localAvatar.getBankMoney(), localAvatar.getMaxBankMoney()))
+
+    # The bigger jar is offered only once the toon carries 250, and not
+    # again once it carries 500.
+    def offered(air, avId, tier, jar):
+        av = air.doId2do[avId]
+        old = av.getMaxMoney()
+        av.setMaxMoney(jar)
+        try:
+            return Quests.BigJarRewardId in Quests.getNextRewards(3, tier, av)
+        finally:
+            av.setMaxMoney(old)
+
+    tier = localAvatar.getRewardHistory()
+    tier = (tier[0], list(tier[1]))
+    setTier = lambda air, avId, tier, rewards: air.doId2do[avId].b_setRewardHistory(tier, list(rewards))
+    for checkTier in (Quests.LAWBOT_HQ_TIER, Quests.BOSSBOT_HQ_TIER + 16):
+        onDistrict(setTier, localAvatar.doId, checkTier, [])
+        got = [onDistrict(offered, localAvatar.doId, checkTier, jar) for jar in (200, 250, 500)]
+        log('tier %d offers the 500 jar with a 200/250/500 jar: %s' % (checkTier, got))
+        if got != [False, True, False]:
+            onDistrict(setTier, localAvatar.doId, *tier)
+            raise StepFailed('tier %d offers the 500 jar wrong: %s' % (checkTier, got))
+    for checkTier in (Quests.DL_TIER + 3, Quests.ELDER_TIER):
+        if not Quests.isRewardOptional(checkTier, Quests.BigJarRewardId):
+            raise StepFailed('tier %d has no 500 jar task' % checkTier)
+
+    # Take it from Toon HQ, defeat the last cog, hand it in.
+    onDistrict(lambda air, avId: air.doId2do[avId].b_setQuests([]), localAvatar.doId)
+    onDistrict(lambda air, avId: air.doId2do[avId].b_setQuestHistory([]), localAvatar.doId)
+    onDistrict(setTier, localAvatar.doId, Quests.LAWBOT_HQ_TIER, [])
+    onDistrict(setJar, localAvatar.doId, 250, 250)
+    yield until(lambda: localAvatar.getMaxMoney() == 250 and not localAvatar.quests, 30, 'a 250 jar and no ToonTasks')
+    try:
+        def pickBigJar(choices):
+            shot('2-hq-choices')
+            for questId, rewardId, toNpcId in choices:
+                if rewardId == Quests.BigJarRewardId:
+                    return questId
+            raise StepFailed('Toon HQ did not offer the 500 jar task: %s' % choices)
+
+        npc = yield from goToNPC(Quests.ToonHQ)
+        yield from talkTo(npc, pickBigJar)
+        questDesc = next((q for q in localAvatar.quests if q[3] == Quests.BigJarRewardId), None)
+        if questDesc is None:
+            raise StepFailed('no 500 jar task taken: %s' % localAvatar.quests)
+        questId = questDesc[0]
+        quest = Quests.getQuest(questId)
+        log('took ToonTask %d: %s, Just for Fun %s' % (questId, quest.getString(), Quests.isQuestJustForFun(questId, questDesc[3])))
+        if not Quests.isQuestJustForFun(questId, questDesc[3]) or quest.getNumQuestItems() != Quests.BigJarCogs:
+            raise StepFailed('the 500 jar task is not a Just for Fun 500 cog task')
+        yield from questPosterShot('jellybeans-3-task.png')
+
+        def almost(air, avId):
+            av = air.doId2do[avId]
+            quests = [list(q) for q in av.quests]
+            for q in quests:
+                if q[0] == questId:
+                    q[4] = Quests.BigJarCogs - 1
+            av.b_setQuests(quests)
+
+        onDistrict(almost, localAvatar.doId)
+        yield until(lambda: next(q for q in localAvatar.quests if q[0] == questId)[4] == Quests.BigJarCogs - 1, 30, '499 of 500 cogs')
+        yield from defeatCogsFor(questId, quest)
+        npc = yield from goToNPC(Quests.ToonHQ)
+        yield from talkTo(npc)
+        yield until(lambda: localAvatar.getMaxMoney() == ToontownGlobals.MaxJarMoney, 30, 'the 500 jellybean jar')
+        log('the jar holds', localAvatar.getMaxMoney())
+        magicWord('~maxJellybeans')
+        yield until(lambda: localAvatar.getMoney() == ToontownGlobals.MaxJarMoney, 30, 'a full 500 jar')
+        bank = BankGUI.BankGui('autoplay-bank')
+        yield sleep(0.5)
+        shot('4-bank')
+        bank.destroy()
+        if onDistrict(offered, localAvatar.doId, Quests.LAWBOT_HQ_TIER, localAvatar.getMaxMoney()):
+            raise StepFailed('the 500 jar task is still offered with a 500 jar')
+    finally:
+        onDistrict(setTier, localAvatar.doId, *tier)
 
 
 def scenarioToonHall():
@@ -7676,6 +7818,46 @@ def scenarioExtras():
     yield until(walking, 60, 'walking after the book')
     log('Extras checks passed')
 
+def scenarioPupilFix():
+    # Arthur 2026-11-07: the pupil lift (ToonHead.__liftPupil) is a config
+    # switch, want-pupil-fix (on unless #f). Close-ups of the toon looking
+    # up and to the side with it off and on.
+    from toontown.toon import ToonHead
+    shots = os.environ.get('AUTOPLAY_SHOTS', '/tmp')
+    os.makedirs(shots, exist_ok=True)
+
+    def shot(name):
+        base.screenshot(os.path.join(shots, 'pupilfix-%s.png' % name), defaultFilename=0)
+
+    def pupilY():
+        return [localAvatar._ToonHead__lpupil.getY(), localAvatar._ToonHead__rpupil.getY()]
+
+    yield until(walking, 60, 'walking')
+    log('want-pupil-fix in the config:', ToonHead.ToonHead.WantPupilFix.getValue())
+    if not ToonHead.ToonHead.WantPupilFix.getValue():
+        raise StepFailed('want-pupil-fix should be on unless the config turns it off')
+    localAvatar.stopUpdateSmartCamera()
+    localAvatar.stopLookAround()
+    localAvatar.stopStareAtNow()
+    head = localAvatar.find('**/def_head')
+    page = None
+    for n, (dx, dy) in enumerate(((0, 1), (0.7, 0.7), (1, 0))):
+        for on in (False, True):
+            page = loadPrcFileData('autoplay-pupil-fix', 'want-pupil-fix %s' % ('#t' if on else '#f'))
+            localAvatar._ToonHead__setPupilDirection(dx, dy)
+            ys = pupilY()
+            if (min(ys) < 0.009) if on else any(abs(y) > 1e-6 for y in ys):
+                raise StepFailed('want-pupil-fix %s did not move the pupils: %s' % (on, ys))
+            base.camera.setPos(localAvatar, 0, 3.2, head.getZ(localAvatar) + 0.6)
+            base.camera.lookAt(head, 0, 0, 0.3)
+            yield sleep(0.3)
+            shot('look%d-%s' % (n, 'on' if on else 'off'))
+            unloadPrcFile(page)
+    localAvatar.stopStareAtNow()
+    localAvatar.startLookAround()
+    localAvatar.startUpdateSmartCamera()
+    log('Pupil Fix checks passed')
+
 SCENARIOS = [
     ('login', scenarioLogin),
     ('healtest', scenarioHealTest),
@@ -7686,6 +7868,7 @@ SCENARIOS = [
     ('displaysettings', scenarioDisplaySettings),
     ('doublexp', scenarioDoubleXp),
     ('extras', scenarioExtras),
+    ('pupilfix', scenarioPupilFix),
     ('npcstairs', scenarioNPCStairs),
     ('npcs', scenarioNPCs),
     ('npcmintride', scenarioNPCMintRide),
@@ -7754,6 +7937,7 @@ SCENARIOS = [
     ('golf', scenarioGolf),
     ('pets', scenarioPets),
     ('petbuild', scenarioPetBuild),
+    ('jellybeans', scenarioJellybeans),
     ('toonhall', scenarioToonHall),
     ('holidays', scenarioHolidays),
     ('toonfest', scenarioToonfest),

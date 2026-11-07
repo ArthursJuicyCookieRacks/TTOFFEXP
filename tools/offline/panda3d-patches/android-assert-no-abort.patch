@@ -1,0 +1,18 @@
+diff --git a/dtool/src/prc/notify.cxx b/dtool/src/prc/notify.cxx
+index a936ddb..ff4162d 100644
+--- a/dtool/src/prc/notify.cxx
++++ b/dtool/src/prc/notify.cxx
+@@ -377,8 +377,11 @@ assert_failure(const char *expression, int line,
+   }
+ 
+ #ifdef ANDROID
+-  // Write to Android log system.
+-  __android_log_assert("assert", "Panda3D", "Assertion failed: %s", message.c_str());
++  // Write to Android log system.  Not __android_log_assert: that aborts the
++  // whole app on every failed assertion, where every other platform carries
++  // on (from Python, the call raises AssertionError).  The abort still comes
++  // with assert-abort set, below, as on the other platforms.
++  __android_log_print(ANDROID_LOG_ERROR, "Panda3D", "Assertion failed: %s", message.c_str());
+ #endif
+ 
+ #ifdef __EMSCRIPTEN__

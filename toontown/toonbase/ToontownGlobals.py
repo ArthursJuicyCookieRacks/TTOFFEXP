@@ -1637,7 +1637,10 @@ class EmblemTypes(IntEnum):
     Silver = 0
     Gold = 1
 NumEmblemTypes = 2
-DefaultMaxBankMoney = 12000
+# Every bank holds this many jellybeans (it was 15,000).
+DefaultMaxBankMoney = 100000
+# The biggest jellybean jar: the Just for Fun task after the 250 jar.
+MaxJarMoney = 500
 DefaultBankItemId = 1350
 ToonAnimStates = set(['off',
  'neutral',

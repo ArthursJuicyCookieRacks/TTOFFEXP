@@ -962,8 +962,8 @@ dclass DistributedToon : DistributedPlayer {
   setWebAccountId(string) required airecv;
   setDNAString(blob dnaString) required broadcast ownrecv db;
   setGM(uint8 type = 0) required broadcast ownrecv db;
-  setMaxBankMoney(int16 maxMoney = 15000) required broadcast ownrecv db;
-  setBankMoney(int16 money = 0) required broadcast ownrecv db;
+  setMaxBankMoney(int32 maxMoney = 100000) required broadcast ownrecv db;
+  setBankMoney(int32 money = 0) required broadcast ownrecv db;
   setMaxMoney(int16 maxMoney = 40) required broadcast ownrecv db;
   setMoney(int16 money = 0) required broadcast ownrecv db;
   setMaxTokens(int16 maxTokens = 32000) required broadcast ownrecv db;
@@ -2381,7 +2381,7 @@ dclass DistCogdoBoardroomGame : DistCogdoGame {
   requestExit() airecv clsend;
   toonExited(uint32 avId) broadcast;
   startGolf(int16 timestamp) broadcast;
-  golfCog(uint16 cogId, uint8 name, int16/100 px, int8 side, int16/100 exitY, uint16/100 speed, int16 timestamp, bool toDrop, int16/10 tx, int16/10 ty) broadcast;
+  golfCog(uint16 cogId, uint8 name, int16/100 px, int8 side, int16/100 exitY, uint16/100 speed, int16 timestamp, bool toDrop, int16/10 tx, int16/10 ty, uint8 hits) broadcast;
   golfDrops(uint16 dropIds[], int16/10 xs[], int16/10 ys[]) broadcast;
   golfBarrelsHome(uint8 barrelsHome) broadcast;
   golfCogPickup(uint16 cogId, bool carrying, uint8 barrelsHome) broadcast;
@@ -2390,6 +2390,7 @@ dclass DistCogdoBoardroomGame : DistCogdoGame {
   golfSwing(uint32 avId, int16/10 h, uint8/100 power, int16 timestamp) broadcast;
   requestGolfHit(uint16 cogId) airecv clsend;
   golfCogHit(uint16 cogId, uint32 avId, uint8 barrelsHome) broadcast;
+  golfCogHurt(uint16 cogId, uint32 avId, uint8 hitsLeft) broadcast;
   golfOver(int16 timestamp) broadcast;
   requestGolfLeave() airecv clsend;
   requestGolfSkip() airecv clsend;

@@ -73,6 +73,15 @@ class DistCogdoBoardroomGameAI(DistCogdoGameAI):
         level = max(0.0, min(1.0, level))
         return (1.0 - Consts.LevelWeight) * zone + Consts.LevelWeight * level
 
+    def getOfficeLevel(self):
+        # The level on the office's star (1 to 5).
+        from toontown.quest.QuestManagerAI import fieldOfficeLevel
+        import os
+        if os.environ.get('AUTOPLAY_FO_LEVEL'):
+            return int(os.environ['AUTOPLAY_FO_LEVEL'])
+        bldg = getattr(self.interior, 'bldg', None)
+        return fieldOfficeLevel(int(getattr(bldg, 'difficulty', 0) or 0))
+
     def getLayout(self):
         return [self.seed, int(round(self.layout.difficulty * 100))]
 
@@ -218,10 +227,11 @@ class DistCogdoBoardroomGameAI(DistCogdoGameAI):
         # toons lost every barrel in the level 5 test runs, four lost none.
         golfers = max(1, len([a for a in self.toons if a not in self.sadToons]))
         share = min(1.0, golfers / float(Consts.GolfFullParty))
-        most = max(3, int(round(Consts.lerpDifficulty(Consts.GolfMaxCogsRange, d) * share ** 0.5)))
+        level = self.getOfficeLevel()
+        most = max(3, int(round(Consts.golfLevelValue(Consts.GolfMaxCogsByLevel, level) * share ** 0.5)))
         if len(walking) < most:
             self.__makeGolfCog(d)
-        task.delayTime = Consts.lerpDifficulty(Consts.GolfSpawnPeriodRange, d) / share ** 0.6 * random.uniform(0.8, 1.2)
+        task.delayTime = Consts.golfLevelValue(Consts.GolfSpawnPeriodByLevel, level) / share ** 0.6 * random.uniform(0.8, 1.2)
         return task.again
 
     def __makeGolfCog(self, d):
@@ -244,10 +254,12 @@ class DistCogdoBoardroomGameAI(DistCogdoGameAI):
         drop = random.choice(free) if free and random.random() < 0.75 else None
         target = self.drops[drop] if drop is not None else None
         path = Consts.golfCogPath(px, side, exitY, speed, target)
-        cog = {'id': cogId, 'path': path, 'start': self.golfTime(), 'alive': True, 'carrying': False, 'drop': drop}
+        hits = Consts.golfCogHits(self.getOfficeLevel(), name, top)
+        cog = {'id': cogId, 'path': path, 'start': self.golfTime(), 'alive': True, 'carrying': False, 'drop': drop,
+               'hits': hits}
         self.golfCogs[cogId] = cog
         tx, ty = target if target else (0.0, 0.0)
-        self.sendUpdate('golfCog', [cogId, name, px, side, exitY, speed, self.getNetworkTime(), target is not None, tx, ty])
+        self.sendUpdate('golfCog', [cogId, name, px, side, exitY, speed, self.getNetworkTime(), target is not None, tx, ty, hits])
         taskMgr.doMethodLater(path[3], self.__golfPickup, self.uniqueName('golfcog-pick-%d' % cogId), extraArgs=[cogId])
         taskMgr.doMethodLater(path[5], self.__golfEscape, self.uniqueName('golfcog-out-%d' % cogId), extraArgs=[cogId])
 
@@ -295,8 +307,13 @@ class DistCogdoBoardroomGameAI(DistCogdoGameAI):
             tx, ty = Consts.GolfTees[self.toons.index(avId) % len(Consts.GolfTees)] if avId in self.toons else (0, Consts.GolfTees[0][1])
             x, y, vx, vy = Consts.golfBallStart(tx, ty, h, power)
             ball = {'x': x, 'y': y, 'vx': vx, 'vy': vy}
-            taskMgr.add(self.__rollBall, self.uniqueName('golfball-%d' % random.randrange(1 << 30)),
-                        extraArgs=[avId, ball], appendTask=True)
+            # It goes off as the putter meets it, as on the clients.
+            from toontown.golf import GolfGlobals
+            name = self.uniqueName('golfball-%d' % random.randrange(1 << 30))
+            taskMgr.doMethodLater(GolfGlobals.BALL_CONTACT_TIME,
+                                  lambda task, avId=avId, ball=ball, name=name: (
+                                      taskMgr.add(self.__rollBall, name, extraArgs=[avId, ball], appendTask=True), task.done)[1],
+                                  name + '-swing')
 
     def __rollBall(self, avId, ball, task):
         if self.finished or self.phase != 'golf':
@@ -333,9 +350,14 @@ class DistCogdoBoardroomGameAI(DistCogdoGameAI):
         cog = self.golfCogs.get(cogId)
         if self.phase != 'golf' or self.finished or not cog or not cog['alive']:
             return
-        cog['alive'] = False
         self.golfStats = getattr(self, 'golfStats', {'spawned': 0, 'swings': {}, 'hits': {}})
         self.golfStats['hits'][avId] = self.golfStats['hits'].get(avId, 0) + 1
+        cog['hits'] = cog.get('hits', 1) - 1
+        if cog['hits'] > 0:
+            # On the higher levels a cog takes more than one ball.
+            self.sendUpdate('golfCogHurt', [cogId, avId, cog['hits']])
+            return
+        cog['alive'] = False
         taskMgr.remove(self.uniqueName('golfcog-pick-%d' % cogId))
         taskMgr.remove(self.uniqueName('golfcog-out-%d' % cogId))
         if cog['carrying']:
@@ -578,7 +600,10 @@ class DistCogdoBoardroomGameAI(DistCogdoGameAI):
         lost = min(self.carried.get(avId, 0), Consts.Hazards[kind][2])
         self.carried[avId] = self.carried.get(avId, 0) - lost
         self.sendUpdate('toonHit', [avId, kind, lost])
-        self.damageToon(avId, Consts.hazardDamage(kind, self.layout.difficulty))
+        damage = Consts.hazardDamage(kind, self.layout.difficulty)
+        self.damageToon(avId, damage)
+        av = self.air.doId2do.get(avId)
+        self.notify.info('%s lost %d laff (now %s)' % (avId, damage, av.getHp() if av else '?'))
 
     def requestMemo(self, memo):
         avId = self.getSenderToon()
