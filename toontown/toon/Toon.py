@@ -349,6 +349,26 @@ def loadPhaseAnims(phaseStr = 'phase_3', loadFlag = 1):
     return
 
 
+# Dog head animations the game files never had (the original game shipped
+# without them too). Leaving them out keeps the head still for those moves
+# instead of the loader searching for the file and logging an error every
+# time a dog toon plays one (a large-head dog's curtsy, for one).
+MissingDogHeadAnims = {
+    'dls': ('periscope', 'curtsy', 'catch-intro-throw', 'scientistJealous',
+            'scientistWork', 'scientistGame'),
+    'dss': ('tutorial-neutral', 'left-point', 'right-point', 'right-point-start',
+            'give-props', 'give-props-start', 'right-hand', 'right-hand-start',
+            'periscope', 'bow', 'scientistJealous', 'scientistEmcee',
+            'scientistWork', 'scientistGame'),
+    'dsl': ('tutorial-neutral', 'left-point', 'right-point', 'right-point-start',
+            'give-props', 'give-props-start', 'right-hand', 'right-hand-start',
+            'periscope', 'curtsy', 'catch-intro-throw', 'scientistEmcee'),
+    'dll': ('tutorial-neutral', 'left-point', 'right-point', 'right-point-start',
+            'give-props', 'give-props-start', 'right-hand', 'right-hand-start',
+            'periscope', 'curtsy', 'scientistEmcee'),
+}
+
+
 def compileGlobalAnimList():
     phaseList = [Phase3AnimList,
      Phase3_5AnimList,
@@ -387,6 +407,8 @@ def compileGlobalAnimList():
             if key.find('d') >= 0:
                 HeadAnimDict.setdefault(key, {})
                 for anim in animList:
+                    if 'tt_a_chr' in HeadDict[key] and anim[0] in MissingDogHeadAnims.get(key, ()):
+                        continue
                     file = phaseStr + HeadDict[key] + anim[1]
                     HeadAnimDict[key][anim[0]] = file
 

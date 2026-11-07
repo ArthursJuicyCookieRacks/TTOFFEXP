@@ -125,8 +125,12 @@ class LookEditor(DirectObject):
         self.oldSfxVolumes = []
         audio = getattr(self, 'audio', None)
         if audio is not None:
+            # Only this manager goes: AudioManager.shutdown() is Panda's
+            # exit-time call that shuts the WHOLE sound system down (every
+            # manager and the OpenAL device). After it, the next new sound
+            # crashed the game on Android (and went silent on Windows).
             audio.stopAllSounds()
-            audio.shutdown()
+            audio.clearCache()
             self.audio = None
         for music in getattr(self, 'pausedMusic', ()):
             try:
