@@ -20,7 +20,6 @@ import random
 
 from direct.directnotify import DirectNotifyGlobal
 from direct.gui.DirectGui import *
-from direct.interval.IntervalGlobal import LerpHprInterval
 from panda3d.core import *
 
 from toontown.hood import ZoneUtil
@@ -53,6 +52,9 @@ SUM_X = 0.35
 # The doodle's window, and how tall the doodle stands in it.
 PET_WINDOW_Z = 0.25
 PET_HEIGHT = 0.46
+# Make-A-Toon turns the toon one degree a frame while an arrow is held.
+TURN_STEP = 1
+TURN_TASK = 'petCreatorTurn'
 # The pages: their middle, help line and the middle of their rows.
 PAGE_Z = -0.04
 TAB_Z = 0.772
@@ -115,7 +117,6 @@ class PetCreatorGUI(DirectFrame):
             self.zoneId = ToontownGlobals.ToontownCentral
         self.confirmDialog = None
         self.petModel = None
-        self.turnIval = None
         self.tabPages = []
         self.tabButtons = []
         self.rows = {}
@@ -211,10 +212,13 @@ class PetCreatorGUI(DirectFrame):
         self.petTurn.setH(200)
         pawL = (self.shopArt.find('**/Paw1Up'), self.shopArt.find('**/Paw1Down'), self.shopArt.find('**/Paw1Rollover'))
         pawR = (self.shopArt.find('**/Paw2Up'), self.shopArt.find('**/Paw2Down'), self.shopArt.find('**/Paw2Rollover'))
-        for art, arrow, x, turn in ((pawL, 'Arrow1', -0.31, -45), (pawR, 'Arrow2', 0.31, 45)):
+        # Like Make-A-Toon's arrows: hold a paw and the doodle keeps turning
+        # until it is let go.
+        for art, arrow, x, direction in ((pawL, 'Arrow1', -0.31, -1), (pawR, 'Arrow2', 0.31, 1)):
             paw = DirectButton(parent=self.stage, relief=None, image=art, geom=self.shopArt.find('**/' + arrow),
-                               scale=0.075, pos=(x, 0, PET_WINDOW_Z), pressEffect=False, command=self.__turnPet,
-                               extraArgs=[turn])
+                               scale=0.075, pos=(x, 0, PET_WINDOW_Z), pressEffect=False)
+            paw.bind(DGG.B1PRESS, self.__startTurn, [direction])
+            paw.bind(DGG.B1RELEASE, self.__stopTurn)
             # The shop's paws were placed for its own board; this puts the
             # paw (and its arrow) where we want it.
             bounds = paw.getBounds()
@@ -443,6 +447,16 @@ class PetCreatorGUI(DirectFrame):
         self.petModel.setDNA(list(self.dna))
         self.petModel.getGeomNode().setDepthWrite(1)
         self.petModel.getGeomNode().setDepthTest(1)
+        # A doodle made for the GUI draws its eyes with the depth test off,
+        # so they always show on top of its head: fine for the old shop's
+        # still, front-on doodle, but this one turns, and from behind the
+        # eyes showed through the back of its head. Testing them against
+        # the head again hides them there; the offsets keep them (and the
+        # pupils on them) in front of the face they sit on.
+        for part, offset in (('eyeWhites', 1), ('rightPupil', 2), ('leftPupil', 2)):
+            for eye in self.petModel.findAllMatches('**/' + part):
+                eye.setDepthTest(1, 1)
+                eye.setDepthOffset(offset, 1)
         self.petModel.pose('neutral', 0)
         # Fitted by its body alone, so the doodle stays the same size
         # whatever it wears. It turns about the middle of its body (not of
@@ -461,12 +475,22 @@ class PetCreatorGUI(DirectFrame):
         self.petModel.startBlink()
         self.petModel.setAccessoriesLook(self.accessories)
 
-    def __turnPet(self, turn):
-        if self.turnIval:
-            self.turnIval.finish()
-        self.turnIval = LerpHprInterval(self.petTurn, 0.35, (self.petTurn.getH() + turn, 0, 0),
-                                        blendType='easeInOut')
-        self.turnIval.start()
+    def __startTurn(self, direction, event=None):
+        self.__stopTurn()
+        taskMgr.add(self.__turnTask, TURN_TASK, extraArgs=[direction], appendTask=True)
+
+    def __stopTurn(self, event=None):
+        taskMgr.remove(TURN_TASK)
+
+    def __turnTask(self, direction, task):
+        # Make-A-Toon's turn: a degree a frame while the paw is held. A
+        # missed release (a touch that left the window) stops it rather
+        # than spinning for ever.
+        watcher = base.mouseWatcherNode
+        if watcher is not None and not watcher.isButtonDown(MouseButton.one()):
+            return task.done
+        self.petTurn.setH(self.petTurn.getH() + direction * TURN_STEP)
+        return task.cont
 
     # Looks.
 
@@ -841,9 +865,7 @@ class PetCreatorGUI(DirectFrame):
     def destroy(self):
         self.ignoreAll()
         self.__closeConfirm()
-        if self.turnIval:
-            self.turnIval.finish()
-            self.turnIval = None
+        self.__stopTurn()
         if self.petModel:
             self.petModel.delete()
             self.petModel = None

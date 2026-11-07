@@ -10,11 +10,13 @@ are a level of their own, Toontown Central's level 1 up to Donald's
 Dreamland's level 6, since the better the playground, the better its
 doodles' traits.
 
-A built doodle costs jellybeans from the playground's own price range
-(PetConstants.ZoneToCostRange), so no doodle costs more than the shop's
-doodles there ever did. Its body takes most of the range, by rarity as in
-PetUtil.getPetCostFromSeed, and the traits the rest: each better choice of
-a trait adds jellybeans.
+A built doodle's body costs what it always did there: the bottom of the
+playground's price range (PetConstants.ZoneToCostRange) up to BodyShare of
+it, by rarity as in PetUtil.getPetCostFromSeed. Each better choice of a
+trait adds jellybeans on top. The shop's daily doodles never came with every
+trait at its best, and a built one can, so the traits all at their best add
+TraitShare of the range: a doodle with the rarest body and every best trait
+costs a little more than the top of the old range.
 """
 
 from toontown.pets import PetConstants, PetDNA, PetTraits
@@ -27,9 +29,12 @@ NameCharacters = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ012345
 
 Levels = (TraitQuality.VERY_BAD, TraitQuality.BAD, TraitQuality.AVERAGE,
           TraitQuality.GOOD, TraitQuality.VERY_GOOD)
-# How much of a playground's price range the traits can add, all at their
-# best; the body takes the rest.
-TraitShare = 0.4
+# How much of a playground's price range the rarest body takes; this keeps
+# every body at the price it had.
+BodyShare = 0.6
+# How much of the price range the traits add, all at their best (0.4 before
+# traits went up, which kept every doodle inside the old range).
+TraitShare = 0.6
 
 
 def getZones():
@@ -144,7 +149,7 @@ def getBodyCost(body, zoneId):
     # sells: the rarer the body, the dearer, as PetUtil.getPetCostFromSeed.
     rarity = pow(0.001, PetDNA.getBodyRarity(body)) - 0.001
     minCost, maxCost = PetConstants.ZoneToCostRange[zoneId]
-    return int(minCost + rarity * (1.0 - TraitShare) * (maxCost - minCost))
+    return int(minCost + rarity * BodyShare * (maxCost - minCost))
 
 
 def getTraitCost(traitIndex, level, zoneId):

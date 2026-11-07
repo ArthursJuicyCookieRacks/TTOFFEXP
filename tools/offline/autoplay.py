@@ -2955,9 +2955,27 @@ def scenarioPetBuild():
         raise StepFailed('the accessories are not in the price: %d' % screen.getCost())
     log('accessories cost %d jellybeans' % wearCost)
     for turn in range(4):
-        screen._PetCreatorGUI__turnPet(90)
+        screen.petTurn.setH(screen.petTurn.getH() + 90)
         yield sleep(0.6)
         shot('08-turn-%d' % turn)
+    # Holding a paw turns the doodle until it is let go, like Make-A-Toon.
+    # With no mouse watcher the paw counts as held; once it is back, the
+    # button is not down, so the turn stops by itself.
+    watcher = base.mouseWatcherNode
+    start = screen.petTurn.getH()
+    base.mouseWatcherNode = None
+    try:
+        screen._PetCreatorGUI__startTurn(1)
+        yield sleep(0.5)
+    finally:
+        base.mouseWatcherNode = watcher
+    turned = screen.petTurn.getH() - start
+    yield sleep(0.3)
+    stopped = screen.petTurn.getH() - start
+    screen._PetCreatorGUI__stopTurn()
+    log('holding a paw turned the doodle %.0f degrees' % turned)
+    if turned < 5 or stopped != turned:
+        raise StepFailed('holding a paw did not turn the doodle smoothly: %.1f then %.1f' % (turned, stopped))
     built = (list(screen.dna), list(screen.traitLevels), list(screen.accessories), screen.getCost())
     log('building', built)
     money = localAvatar.getTotalMoney()
