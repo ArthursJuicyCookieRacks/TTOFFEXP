@@ -773,7 +773,7 @@ class NPCPlayerManagerAI:
         movable = set()
         for npc in list(self.party.members) + [n for area in self.areas.values() if area.isActive() for n in area.npcs]:
             if npc.isDeleted() or npc.crew is not None or npc.busy or getattr(npc, 'onMover', None) is not None \
-                    or getattr(npc, 'jumping', False) or self.party.isPlaying(npc) \
+                    or getattr(npc, 'jumping', False) \
                     or any(crew.isStationed(npc) for crew in list(self.bossCrews.values())):
                 # (On a boss's crane, cannon, golf spot or table, the game
                 # holds it in place; a step aside would be drawn as a jump.)
@@ -821,6 +821,12 @@ class NPCPlayerManagerAI:
                     share = 0.5 if other.doId in movable else 1.0
                     push += d * (APART - dist) * share
                 if push.length() < 0.02:
+                    continue
+                if self.party.isPlaying(npc):
+                    # (In a trolley game, race, golf course or field office
+                    # game, the game places it. Asked only for a toon that
+                    # would step: finding who plays means looking through
+                    # every game object, too slow for every toon each tick.)
                     continue
                 if push.length() > APART_STEP:
                     push.normalize()
