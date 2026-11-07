@@ -113,6 +113,9 @@ GameSettings.install()
 # A phone's keyboard comes up for any text box with the focus.
 from . import AndroidKeyboard
 AndroidKeyboard.install()
+# Renaming a model that is already gone is logged, not a crash.
+from . import NodeNameGuard
+NodeNameGuard.install()
 
 # The bottom screen of a dual-screen handheld, from the launcher on.
 from toontown.dualscreen import SecondScreen
