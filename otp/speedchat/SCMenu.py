@@ -193,16 +193,15 @@ class SCMenu(SCObject, NodePath):
     def __drawAboveParent(self):
         # A submenu draws over the menu it came from: the parent's arrows and
         # emote icons further down the list showed through it (Arthur).
-        # Each level sorts one higher in the top menu's bin.
-        if self.holder is None:
+        # SpeedChat's bin (gui-popup) is unsorted, so things draw in scene
+        # graph order: the holder (and the submenu under it) moves to the end
+        # of its menu's children. Layout is unchanged (positions are set).
+        holder = self.holder
+        if holder is None or holder.isEmpty():
             return
-        depth = 0
-        top = self
-        while top.getHolder() is not None and top.getHolder().parentMenu is not None:
-            depth += 1
-            top = top.getHolder().parentMenu
-        if top.hasBin():
-            self.setBin(top.getBinName(), top.getBinDrawOrder() + depth)
+        parent = holder.getParent()
+        if not parent.isEmpty():
+            holder.reparentTo(parent, 1000)
 
     def getHolder(self):
         return self.holder

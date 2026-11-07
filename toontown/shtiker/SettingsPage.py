@@ -141,21 +141,21 @@ class SettingsPage(ShtikerPage.ShtikerPage):
         rows = ((GameSettings.DOUBLE_XP_GAGS, TTLocalizer.SettingsPageDoubleXpGags),
                 (GameSettings.DOUBLE_XP_GARDENING, TTLocalizer.SettingsPageDoubleXpGardening),
                 (GameSettings.DOUBLE_XP_DOODLES, TTLocalizer.SettingsPageDoubleXpDoodles))
-        top = 0.64
+        top = 0.56
         # The game's own pop-up box (the one TTDialog and the other pop-ups use).
         popup = DirectFrame(parent=self, relief=None, image=DGG.getDefaultDialogGeom(),
-                            image_color=OTPGlobals.GlobalDialogColor, image_scale=(1.4, 1, 1.36),
+                            image_color=OTPGlobals.GlobalDialogColor, image_scale=(1.4, 1, 1.2),
                             pos=(0, 0, 0.02), sortOrder=DGG.FOREGROUND_SORT_INDEX)
         popup.setBin('gui-popup', 0)
         DirectLabel(parent=popup, relief=None, text=TTLocalizer.SettingsPageExtras, text_scale=0.08,
-                    text_fg=TEXT_COLOR, pos=(0, 0, top - 0.075))
+                    text_fg=TEXT_COLOR, pos=(0, 0, top - 0.065))
         # Double XP
         DirectLabel(parent=popup, relief=None, text=TTLocalizer.SettingsPageDoubleXp, text_scale=0.06,
-                    text_fg=TEXT_COLOR, pos=(0, 0, top - 0.19))
+                    text_fg=TEXT_COLOR, pos=(0, 0, top - 0.16))
         DirectLabel(parent=popup, relief=None, text=TTLocalizer.SettingsPageDoubleXpHelp, text_scale=0.038,
-                    text_wordwrap=30, text_fg=TEXT_COLOR, pos=(0, 0, top - 0.245))
+                    text_wordwrap=30, text_fg=TEXT_COLOR, pos=(0, 0, top - 0.21))
         self.doubleXpButtons = {}
-        z = top - 0.39
+        z = top - 0.33
         for kind, label in rows:
             DirectLabel(parent=popup, relief=None, text=label, text_align=TextNode.ALeft, text_scale=0.055,
                         text_fg=TEXT_COLOR, pos=(-0.56, 0, z - 0.015))
@@ -163,21 +163,21 @@ class SettingsPage(ShtikerPage.ShtikerPage):
                                   text='', text_scale=0.05, text_pos=(0, -0.017), pos=(0.38, 0, z),
                                   command=self.__toggleDoubleXp, extraArgs=[kind])
             self.doubleXpButtons[kind] = toggle
-            z -= 0.12
+            z -= 0.11
         # Nametag style
-        z -= 0.04
+        z -= 0.02
         DirectFrame(parent=popup, relief=DGG.FLAT, frameColor=(0.55, 0.45, 0.3, 0.6),
                     frameSize=(-0.56, 0.56, -0.004, 0.004), pos=(0, 0, z + 0.06))
         DirectLabel(parent=popup, relief=None, text=TTLocalizer.SettingsPageNametag, text_scale=0.06,
                     text_fg=TEXT_COLOR, pos=(0, 0, z))
         DirectLabel(parent=popup, relief=None, text=TTLocalizer.SettingsPageNametagHelp, text_scale=0.038,
                     text_wordwrap=30, text_fg=TEXT_COLOR, pos=(0, 0, z - 0.055))
-        z -= 0.19
+        z -= 0.18
         self.nametagPreview = DirectLabel(parent=popup, relief=DGG.FLAT, frameColor=(1, 1, 1, 0.9),
                                           frameSize=(-0.4, 0.4, -0.06, 0.08), text='', text_scale=0.07,
                                           text_fg=(0, 0, 0.6, 1), pos=(0, 0, z))
         self.nametagCount = DirectLabel(parent=popup, relief=None, text='', text_scale=0.04,
-                                        text_fg=TEXT_COLOR, pos=(0, 0, z - 0.11))
+                                        text_fg=TEXT_COLOR, pos=(0, 0, z - 0.105))
         arrowGui = loader.loadModel('phase_3/models/gui/tt_m_gui_mat_mainGui')
         arrowImage = (arrowGui.find('**/tt_t_gui_mat_shuffleArrowUp'), arrowGui.find('**/tt_t_gui_mat_shuffleArrowDown'),
                       arrowGui.find('**/tt_t_gui_mat_shuffleArrowUp'), arrowGui.find('**/tt_t_gui_mat_shuffleArrowDisabled'))
