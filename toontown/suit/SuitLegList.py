@@ -1,3 +1,5 @@
+import bisect
+
 from toontown.toonbase import ToontownGlobals
 from . import SuitTimings
 from toontown.dna import DNAStoreSuitPoint
@@ -79,25 +81,33 @@ class SuitLegList:
         # And also take the suit down:
         self.legs.append(SuitLeg(self.suitGraph, prevPoint, endPoint, SuitLeg.TOff))
 
+    def legEndTimes(self):
+        # When each leg ends, from the path's start. The legs never change
+        # once made, and these were summed again leg by leg on every call
+        # (the NPC toons ask where each cog is ten times a second).
+        ends = self.__dict__.get('_legEnds')
+        if ends is None or len(ends) != len(self.legs):
+            ends = []
+            time = 0
+            for leg in self.legs:
+                time += leg.getLegTime()
+                ends.append(time)
+            self._legEnds = ends
+        return ends
+
     def getStartTime(self, index):
-        time = 0
-        i = 0
-        while i < self.getNumLegs() and i < index:
-            time += self.legs[i].getLegTime()
-            i += 1
-        return time
-    
+        if index <= 0:
+            return 0
+        ends = self.legEndTimes()
+        return ends[min(index, len(ends)) - 1]
+
     def getLegIndexAtTime(self, time, startLeg):
-        endTime = 0
-        i = 0
-        while i < startLeg:
-            endTime += self.legs[i].getLegTime()
-            i += 1
-        while i < self.getNumLegs():
-            endTime += self.legs[i].getLegTime()
-            if endTime > time:
-                return i
-            i += 1
+        ends = self.legEndTimes()
+        if startLeg >= len(ends):
+            return len(self.legs)-1
+        i = bisect.bisect_right(ends, time, max(0, startLeg))
+        if i < len(ends):
+            return i
         return len(self.legs)-1
 
     def getNumLegs(self):
@@ -161,6 +171,12 @@ class SuitLeg:
         self.type = type
 
     def getLegTime(self):
+        time = self.__dict__.get('_legTime')
+        if time is None:
+            time = self._legTime = self.computeLegTime()
+        return time
+
+    def computeLegTime(self):
         if self.type in (SuitLeg.TWalk, SuitLeg.TWalkFromStreet,
                          SuitLeg.TWalkToStreet):
             return (self.posA-self.posB).length()/ToontownGlobals.SuitWalkSpeed

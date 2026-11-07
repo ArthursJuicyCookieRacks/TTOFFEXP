@@ -5461,21 +5461,31 @@ def scenarioNPCStreets():
     yield sleep(20)
 
     def sidewalks(air):
+        from toontown.npcplayers import NPCPlayerManagerAI as M
         area = air.npcPlayerManager.areas.get(street)
         npcs = [npc for npc in area.npcs if not npc.isDeleted()]
-        road = [npc for npc in npcs if npc.inRoad]
-        onWalk = [npc for npc in npcs if not npc.inRoad and npc.crew is None and area.isSidewalk(npc.getPos())]
-        return len(area.sidewalks), len(area.sidewalkQueue), len(npcs), len(road), len(onWalk), area.roadZ
-    found, queued, count, road, onWalk, roadZ = onDistrict(sidewalks)
-    log('Silly Street: %d sidewalk spots (%d to check), road at %s; %d toons, %d in the road, %d of the rest on the sidewalk'
-        % (found, queued, roadZ, count, road, onWalk))
+        road = [npc for npc in npcs if M.fightsCogs(npc)]
+        rest = [npc for npc in npcs if not M.fightsCogs(npc) and npc.crew is None]
+        onWalk = [npc for npc in rest if area.isSidewalk(npc.getPos())]
+        wanted = min(M.MAX_IN_ROAD, int(round(M.ROAD_SHARE * air.npcPlayerManager.npcsPerArea)))
+        return len(area.sidewalks), len(area.sidewalkQueue), len(npcs), len(road), len(rest), len(onWalk), area.roadZ, wanted
+    # The toons that don't fight cogs go everywhere (Arthur, 2026-11-07):
+    # over half a minute some of them are in the road, some on the sidewalk.
+    seenRoad = seenWalk = 0
+    for i in range(30):
+        found, queued, count, road, rest, onWalk, roadZ, wanted = onDistrict(sidewalks)
+        seenWalk += onWalk
+        seenRoad += rest - onWalk
+        yield sleep(1)
+    log('Silly Street: %d sidewalk spots (%d to check), road at %s; %d toons, %d fight cogs; the rest: %d on the sidewalk, %d in the road (toon-seconds)'
+        % (found, queued, roadZ, count, road, seenWalk, seenRoad))
     base.screenshot(os.path.join(os.environ.get('AUTOPLAY_SHOTS', '/tmp'), 'npc-sidewalks.png'), defaultFilename=0)
     if not found:
         raise StepFailed('no sidewalk found on Silly Street')
-    if road != min(8, int(round(0.35 * count))):
-        raise StepFailed('%d of %d toons walk in the road' % (road, count))
-    if onWalk < (count - road) * 0.6:
-        raise StepFailed('only %d of %d sidewalk toons are on the sidewalk' % (onWalk, count - road))
+    if road != wanted:
+        raise StepFailed('%d of %d toons fight cogs, not %d' % (road, count, wanted))
+    if not seenRoad or not seenWalk:
+        raise StepFailed('the toons that don\'t fight cogs keep to one place (%d sidewalk, %d road)' % (seenWalk, seenRoad))
     yield from npcBattleWatch(street, 'Silly Street')
     # A Cog HQ courtyard: no sidewalks, the cogs walk where the toons do.
     yield from teleport(ToontownGlobals.SellbotHQ, ToontownGlobals.SellbotHQ)
