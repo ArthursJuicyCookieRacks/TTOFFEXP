@@ -5,6 +5,10 @@ from toontown.toonbase import ToontownGlobals
 from toontown.toonbase import TTLocalizer
 from direct.task.Task import Task
 
+BANK_TEXT_SCALE = 0.2
+BANK_TEXT_DIGITS = 5
+
+
 class BankGui(DirectFrame):
     notify = DirectNotifyGlobal.directNotify.newCategory('BankGui')
 
@@ -89,6 +93,9 @@ class BankGui(DirectFrame):
             self.withdrawArrow['state'] = DGG.NORMAL
         self.jarDisplay['text'] = str(newJarMoney)
         self.bankDisplay['text'] = str(newBankMoney)
+        # The bank now holds up to 100,000: six digits would run past the
+        # dialog's edge at the old size, so a long number gets smaller.
+        self.bankDisplay['text_scale'] = BANK_TEXT_SCALE * min(1.0, BANK_TEXT_DIGITS / float(len(str(newBankMoney))))
         return (hitLimit,
          newJarMoney,
          newBankMoney,

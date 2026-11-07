@@ -56,4 +56,5 @@ class TTSCToolsMenu(SCMenu):
         self.append(TTSCToolsTerminal('Unlimited Gags', '~unlimitedGags'))
         self.append(TTSCToolsTerminal('Summons', '~summons'))
         self.append(TTSCToolsTerminal('Restock Fires', '~pinkslips'))
+        self.append(TTSCToolsTerminal('Max Jellybeans', '~maxJellybeans'))
         self.append(TTSCToolsTerminal('Unlock All Emotions', '~unlockEmotes'))

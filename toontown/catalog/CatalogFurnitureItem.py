@@ -37,12 +37,12 @@ woodColors = [
   (0.5451, 0.4118, 0.4118, 1.0)
 ]
 BankToMoney = {
- 1300: 15000,
- 1310: 15000,
- 1320: 15000,
- 1330: 15000,
- 1340: 15000,
- 1350: 15000
+ 1300: ToontownGlobals.DefaultMaxBankMoney,
+ 1310: ToontownGlobals.DefaultMaxBankMoney,
+ 1320: ToontownGlobals.DefaultMaxBankMoney,
+ 1330: ToontownGlobals.DefaultMaxBankMoney,
+ 1340: ToontownGlobals.DefaultMaxBankMoney,
+ 1350: ToontownGlobals.DefaultMaxBankMoney
 }
 MoneyToBank = {}
 for bankId, maxMoney in list(BankToMoney.items()):

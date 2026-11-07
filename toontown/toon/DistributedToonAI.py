@@ -256,6 +256,9 @@ class DistributedToonAI(DistributedPlayerAI.DistributedPlayerAI, DistributedSmoo
             # A holiday head from the database whose holiday is over.
             self.d_setCheesyEffect(*self.getCheesyEffect())
         if self.isPlayerControlled():
+            if self.maxBankMoney < ToontownGlobals.DefaultMaxBankMoney:
+                # Banks hold more than they used to: older toons' banks grow.
+                self.b_setMaxBankMoney(ToontownGlobals.DefaultMaxBankMoney)
             if self.WantOldGMNameBan:
                 self._checkOldGMName()
             messenger.send('avatarEntered', [self])
@@ -4956,9 +4959,10 @@ def maxToon(hasConfirmed='UNCONFIRMED'):
     # ToonFest Tokens
     toon.b_setTokens(250)
     # Jellybeans
-    toon.b_setMaxMoney(250)
+    toon.b_setMaxMoney(ToontownGlobals.MaxJarMoney)
     toon.b_setMoney(toon.getMaxMoney())
-    toon.b_setBankMoney(ToontownGlobals.DefaultMaxBankMoney)
+    toon.b_setMaxBankMoney(ToontownGlobals.DefaultMaxBankMoney)
+    toon.b_setBankMoney(toon.getMaxBankMoney())
     # SOS Toons
     toon.restockAllNPCFriends(99)
     # Unites
@@ -4983,8 +4987,8 @@ def maxToon(hasConfirmed='UNCONFIRMED'):
 @magicWord(category=CATEGORY_CHARACTERSTATS, types=[int])
 def setMaxMoney(moneyVal):
     """Set target's money and maxMoney values."""
-    if not 40 <= moneyVal <= 250:
-        return 'Money value must be between 40 and 250.'
+    if not 40 <= moneyVal <= ToontownGlobals.MaxJarMoney:
+        return 'Money value must be between 40 and %d.' % ToontownGlobals.MaxJarMoney
     spellbook.getTarget().b_setMaxMoney(moneyVal)
     spellbook.getTarget().b_setMoney(moneyVal)
     return 'maxMoney set to %s' % moneyVal
@@ -5525,6 +5529,14 @@ def summons():
     av.b_setCogStatus([CogPageGlobals.COG_COMPLETE2] * 32)
     av.restockAllCogSummons()
     return 'Restocked all cog summons successfully!'
+
+@magicWord(category=CATEGORY_CHARACTERSTATS)
+def maxJellybeans():
+    """Fill the jellybean jar (up to what it holds now) and the bank."""
+    toon = spellbook.getTarget()
+    toon.b_setMoney(toon.getMaxMoney())
+    toon.b_setBankMoney(toon.getMaxBankMoney())
+    return 'Filled your jar with {:,} jellybeans and your bank with {:,}.'.format(toon.getMoney(), toon.getBankMoney())
 
 @magicWord(category=CATEGORY_OVERRIDE)
 def unlockEmotes():

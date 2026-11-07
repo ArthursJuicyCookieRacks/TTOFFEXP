@@ -962,8 +962,8 @@ dclass DistributedToon : DistributedPlayer {
   setWebAccountId(string) required airecv;
   setDNAString(blob dnaString) required broadcast ownrecv db;
   setGM(uint8 type = 0) required broadcast ownrecv db;
-  setMaxBankMoney(int16 maxMoney = 15000) required broadcast ownrecv db;
-  setBankMoney(int16 money = 0) required broadcast ownrecv db;
+  setMaxBankMoney(int32 maxMoney = 100000) required broadcast ownrecv db;
+  setBankMoney(int32 money = 0) required broadcast ownrecv db;
   setMaxMoney(int16 maxMoney = 40) required broadcast ownrecv db;
   setMoney(int16 money = 0) required broadcast ownrecv db;
   setMaxTokens(int16 maxTokens = 32000) required broadcast ownrecv db;
