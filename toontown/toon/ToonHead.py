@@ -96,6 +96,15 @@ class ToonHead(Actor.Actor):
     LeftBC = Point3(LeftB[0] - LeftB[2] * (LeftC[0] - LeftB[0]) / (LeftC[2] - LeftB[2]), 0.0, 0.0)
     RightAD = Point3(RightA[0] - RightA[2] * (RightD[0] - RightA[0]) / (RightD[2] - RightA[2]), 0.0, 0.0)
     RightBC = Point3(RightB[0] - RightB[2] * (RightC[0] - RightB[0]) / (RightC[2] - RightB[2]), 0.0, 0.0)
+    # How far the pupils sit out from the eye (see __liftPupil): a hair at
+    # rest, up to PupilLiftSide more looking to the side and PupilLiftUp
+    # more looking up, reached once the pupil has moved PupilSideReach or
+    # PupilUpReach from the middle.
+    PupilLiftRest = 0.01
+    PupilLiftSide = 0.02
+    PupilLiftUp = 0.05
+    PupilSideReach = 0.05
+    PupilUpReach = 0.1
 
     def __init__(self):
         try:
@@ -720,6 +729,7 @@ class ToonHead(Actor.Actor):
                     self.__lpupil.flattenStrong()
                     self.__rpupil.flattenStrong()
                 self.__sharePupilsWithFarLODs(leye, reye)
+                self.__setPupilDirection(0, 0)
         return
 
     def __sharePupilsWithFarLODs(self, leye, reye):
@@ -829,8 +839,23 @@ class ToonHead(Actor.Actor):
             x2 = x
             left = left0 + (left1 - left0) * x2
             right = right0 + (right1 - right0) * x2
-        self.__lpupil.setPos(left)
-        self.__rpupil.setPos(right)
+        self.__lpupil.setPos(self.__liftPupil(left))
+        self.__rpupil.setPos(self.__liftPupil(right))
+
+    def __liftPupil(self, pos):
+        # The pupils are flat and slide across a flat plane, but the eyes
+        # and the face under them are curved.  Panda only nudges decals a
+        # hair toward the camera (the heads were made for an older way of
+        # drawing them that simply painted the pupils on top), so when a
+        # toon looked up or to the side part of each pupil slid behind the
+        # eye or the face and was cut off or vanished; dogs, cats, monkeys,
+        # pigs, ducks, crocodiles and deer the worst.  Sit the pupils just
+        # out from the eye, a little more the farther they move from the
+        # middle (looking up needs the most), so they stay on top without
+        # floating off the eye.  Checked on all 44 head shapes.
+        side = self.PupilLiftSide * min(1.0, abs(pos[0]) / self.PupilSideReach)
+        up = self.PupilLiftUp * min(1.0, max(pos[2], 0.0) / self.PupilUpReach)
+        return Point3(pos[0], self.PupilLiftRest + max(side, up), pos[2])
 
     def __lookPupilsAt(self, node, point):
         if node != None:
@@ -1253,8 +1278,8 @@ class ToonHead(Actor.Actor):
         self.__lookHeadAt(None, point, lod=lodName)
         self.__lookPupilsAt(None, point)
         endHpr = head.getHpr()
-        endLpupil = self.__lpupil.getPos() * 0.5
-        endRpupil = self.__rpupil.getPos() * 0.5
+        endLpupil = self.__liftPupil(self.__lpupil.getPos() * 0.5)
+        endRpupil = self.__liftPupil(self.__rpupil.getPos() * 0.5)
         head.setHpr(startHpr)
         self.__lpupil.setPos(startLpupil)
         self.__rpupil.setPos(startRpupil)
@@ -1265,7 +1290,7 @@ class ToonHead(Actor.Actor):
         lookToTgt_TimeFraction = 0.2
         lookToTgtTime = time * lookToTgt_TimeFraction
         returnToEyeCenterTime = time - lookToTgtTime - 0.5
-        origin = Point3(0, 0, 0)
+        origin = self.__liftPupil(Point3(0, 0, 0))
         blendType = 'easeOut'
         self.lookAtTrack = Parallel(Sequence(LerpPosInterval(self.__lpupil, lookToTgtTime, endLpupil, blendType=blendType), Wait(0.5), LerpPosInterval(self.__lpupil, returnToEyeCenterTime, origin, blendType=blendType)), Sequence(LerpPosInterval(self.__rpupil, lookToTgtTime, endRpupil, blendType=blendType), Wait(0.5), LerpPosInterval(self.__rpupil, returnToEyeCenterTime, origin, blendType=blendType)), name=self.__stareAtName)
         for lodName in self.getLODNames():
