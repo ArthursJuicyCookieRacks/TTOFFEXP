@@ -200,6 +200,11 @@ class TownBattle(StateData.StateData):
         del self.toons
 
     def enter(self, event, parentFSMState, bldg = 0, creditMultiplier = 1, tutorialFlag = 0):
+        # This enter() doesn't go through StateData.enter(), so isEntered has
+        # to be kept here: the battle reads it before adjusting the gag panel
+        # (left at 0, no battle ever showed the cogs to pick or the other
+        # toons' gag choices).
+        self.isEntered = 1
         self.parentFSMState = parentFSMState
         self.parentFSMState.addChild(self.fsm)
         if not self.isLoaded:
@@ -222,6 +227,7 @@ class TownBattle(StateData.StateData):
         return
 
     def exit(self):
+        self.isEntered = 0
         base.localAvatar.laffMeter.stop()
         self.parentFSMState.removeChild(self.fsm)
         del self.parentFSMState
