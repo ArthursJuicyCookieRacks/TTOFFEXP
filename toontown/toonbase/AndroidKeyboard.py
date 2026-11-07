@@ -156,7 +156,9 @@ def _update(task):
     global _owner, _dismissed, _shown
     support = _androidSupport()
     entry = _focusedEntry()
-    while True:
+    # Only the keyboard's own back button sends news, so with no keyboard up
+    # and no box wanting one there is nothing to ask Android each frame.
+    while _shown or entry is not None:
         try:
             news = support.poll_keyboard()
         except Exception:

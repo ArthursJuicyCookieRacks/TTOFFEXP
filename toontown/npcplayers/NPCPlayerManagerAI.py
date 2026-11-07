@@ -784,8 +784,12 @@ class NPCPlayerManagerAI:
             byZone.setdefault(npc.zoneId, []).append((npc, Point3(npc.getPos())))
         if not byZone:
             return
-        for obj in list(self.air.doId2do.values()):
-            if isinstance(obj, DistributedToonAI) and not isNPC(obj) and obj.zoneId in byZone:
+        # The players as the manager tick last found them (once a second):
+        # looking through every object in the game ten times a second for
+        # them made each walk tick 2-3 times as long, an uneven frame on a
+        # phone each time.
+        for obj in getattr(self, 'lastPlayers', None) or []:
+            if not obj.isDeleted() and obj.zoneId in byZone:
                 byZone[obj.zoneId].append((obj, Point3(self.getPlayerPos(obj))))
         for zoneId, toons in byZone.items():
             if len(toons) < 2:
