@@ -105,6 +105,10 @@ class ToonHead(Actor.Actor):
     PupilLiftUp = 0.05
     PupilSideReach = 0.05
     PupilUpReach = 0.1
+    # Config switch for the pupil lift (want-pupil-fix in config/*.prc, on
+    # unless set to #f): #f puts the pupils back where the head models have
+    # them, as in 3.2 and before.
+    WantPupilFix = ConfigVariableBool('want-pupil-fix', True)
 
     def __init__(self):
         try:
@@ -852,7 +856,10 @@ class ToonHead(Actor.Actor):
         # pigs, ducks, crocodiles and deer the worst.  Sit the pupils just
         # out from the eye, a little more the farther they move from the
         # middle (looking up needs the most), so they stay on top without
-        # floating off the eye.  Checked on all 44 head shapes.
+        # floating off the eye.  Checked on all 44 head shapes.  Turned off
+        # with want-pupil-fix #f in the config.
+        if not self.WantPupilFix.getValue():
+            return Point3(pos[0], 0.0, pos[2])
         side = self.PupilLiftSide * min(1.0, abs(pos[0]) / self.PupilSideReach)
         up = self.PupilLiftUp * min(1.0, max(pos[2], 0.0) / self.PupilUpReach)
         return Point3(pos[0], self.PupilLiftRest + max(side, up), pos[2])

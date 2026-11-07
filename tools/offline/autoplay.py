@@ -28,7 +28,7 @@ os.chdir(ROOT)
 
 DB = os.path.abspath(os.environ.get('AUTOPLAY_DB', 'autoplay-db'))
 
-from panda3d.core import loadPrcFileData, Filename, NodePath, Point3, Vec3
+from panda3d.core import loadPrcFileData, unloadPrcFile, Filename, NodePath, Point3, Vec3
 loadPrcFileData('autoplay', '''
 audio-library-name null
 toontown-auto-run 0
@@ -7818,6 +7818,46 @@ def scenarioExtras():
     yield until(walking, 60, 'walking after the book')
     log('Extras checks passed')
 
+def scenarioPupilFix():
+    # Arthur 2026-11-07: the pupil lift (ToonHead.__liftPupil) is a config
+    # switch, want-pupil-fix (on unless #f). Close-ups of the toon looking
+    # up and to the side with it off and on.
+    from toontown.toon import ToonHead
+    shots = os.environ.get('AUTOPLAY_SHOTS', '/tmp')
+    os.makedirs(shots, exist_ok=True)
+
+    def shot(name):
+        base.screenshot(os.path.join(shots, 'pupilfix-%s.png' % name), defaultFilename=0)
+
+    def pupilY():
+        return [localAvatar._ToonHead__lpupil.getY(), localAvatar._ToonHead__rpupil.getY()]
+
+    yield until(walking, 60, 'walking')
+    log('want-pupil-fix in the config:', ToonHead.ToonHead.WantPupilFix.getValue())
+    if not ToonHead.ToonHead.WantPupilFix.getValue():
+        raise StepFailed('want-pupil-fix should be on unless the config turns it off')
+    localAvatar.stopUpdateSmartCamera()
+    localAvatar.stopLookAround()
+    localAvatar.stopStareAtNow()
+    head = localAvatar.find('**/def_head')
+    page = None
+    for n, (dx, dy) in enumerate(((0, 1), (0.7, 0.7), (1, 0))):
+        for on in (False, True):
+            page = loadPrcFileData('autoplay-pupil-fix', 'want-pupil-fix %s' % ('#t' if on else '#f'))
+            localAvatar._ToonHead__setPupilDirection(dx, dy)
+            ys = pupilY()
+            if (min(ys) < 0.009) if on else any(abs(y) > 1e-6 for y in ys):
+                raise StepFailed('want-pupil-fix %s did not move the pupils: %s' % (on, ys))
+            base.camera.setPos(localAvatar, 0, 3.2, head.getZ(localAvatar) + 0.6)
+            base.camera.lookAt(head, 0, 0, 0.3)
+            yield sleep(0.3)
+            shot('look%d-%s' % (n, 'on' if on else 'off'))
+            unloadPrcFile(page)
+    localAvatar.stopStareAtNow()
+    localAvatar.startLookAround()
+    localAvatar.startUpdateSmartCamera()
+    log('Pupil Fix checks passed')
+
 SCENARIOS = [
     ('login', scenarioLogin),
     ('healtest', scenarioHealTest),
@@ -7828,6 +7868,7 @@ SCENARIOS = [
     ('displaysettings', scenarioDisplaySettings),
     ('doublexp', scenarioDoubleXp),
     ('extras', scenarioExtras),
+    ('pupilfix', scenarioPupilFix),
     ('npcstairs', scenarioNPCStairs),
     ('npcs', scenarioNPCs),
     ('npcmintride', scenarioNPCMintRide),

@@ -17,6 +17,9 @@ texture-anisotropic-degree 16
 # eyes, pupils and far-away building details cut through what is behind
 # them and flicker.
 depth-bits 24
+# Toons' pupils sit just out from the eye, so they are not cut off when a
+# toon looks up or to the side. #f puts them back as they were in 3.2.
+want-pupil-fix #t
 # Offline there is no server to protect. The check could end the game on its
 # own after a long stall or a clock jump (a phone waking from sleep).
 want-speedhack-fix #f
