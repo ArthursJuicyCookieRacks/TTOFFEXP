@@ -3697,6 +3697,123 @@ def scenarioJellybeans():
         onDistrict(setTier, localAvatar.doId, *tier)
 
 
+def scenarioMaxDoodle():
+    # ~maxDoodle from the SpeedChat Tools menu, first with the doodle at
+    # home in the database, then again with it out on the estate: every
+    # trick phrase, every trick fully learned, the best traits.
+    from toontown.pets import PetAvatarPanel, PetManagerAI, PetTraits, PetTricks
+    shots = os.environ.get('AUTOPLAY_SHOTS', '/tmp')
+    os.makedirs(shots, exist_ok=True)
+
+    def shot(name):
+        base.graphicsEngine.renderFrame()
+        base.graphicsEngine.renderFrame()
+        base.screenshot(os.path.join(shots, 'maxdoodle-%s.png' % name), defaultFilename=0)
+
+    def pressMaxDoodle(name=None):
+        sc = localAvatar.chatMgr.chatInputSpeedChat
+        sc.show()
+        yield sleep(0.5)
+        sc.speedChat.finalizeAll()
+        button = None
+        for holder in list(sc.speedChat):
+            if getattr(holder, 'getTitle', None) and holder.getTitle() == 'TOOLS':
+                holder.showMenu()
+                yield sleep(0.5)
+                if name:
+                    shot(name)
+                button = next((t for t in holder.getMenu() if getattr(t, 'text', None) == 'Max Doodle'), None)
+        if button is None:
+            raise StepFailed('no Max Doodle in the SpeedChat Tools menu')
+        button.handleSelect('mouse1')
+        sc.hide()
+
+    tricks = [t for t in PetTricks.Tricks if t != PetTricks.Tricks.BALK]
+    best = PetManagerAI.getBestTraitValues()
+    yield until(walking, 60, 'walking')
+    if not localAvatar.hasPet():
+        raise StepFailed('the toon has no doodle (run petbuild first)')
+    # Start untrained: no trick phrases, and a doodle that knows no tricks.
+    petId = localAvatar.getPetId()
+    onDistrict(lambda air, avId: air.doId2do[avId].b_setPetTrickPhrases([]), localAvatar.doId)
+    onDistrict(lambda air: air.dbInterface.updateObject(air.dbId, petId, air.dclassesByName['DistributedPetAI'],
+                                                        {'setTrickAptitudes': [[0.0] * len(tricks)]}))
+    yield until(lambda: not localAvatar.petTrickPhrases, 30, 'no trick phrases')
+    yield from pressMaxDoodle('1-tools-menu')
+    yield until(lambda: sorted(localAvatar.petTrickPhrases) == tricks, 30, 'every trick phrase')
+    log('trick phrases:', localAvatar.petTrickPhrases)
+
+    log('going home to see the doodle')
+    place().goHomeNow(localAvatar.zoneId)
+    yield until(lambda: placeName() == 'Estate' and placeState() in ('walk', 'petTutorial'), 180, 'arriving at the estate')
+    if placeState() == 'petTutorial':
+        place().petTutorial._PetTutorial__handleQuit()
+    yield until(walking, 60, 'walking around the estate')
+    yield until(lambda: petId in base.cr.doId2do, 60, 'the doodle on the estate')
+    pet = base.cr.doId2do[petId]
+    log('doodle %s: tricks %s, traits %s' % (pet.getName(), list(pet.trickAptitudes), list(pet.traitList)))
+    if [round(a, 3) for a in pet.trickAptitudes[:len(tricks)]] != [1.0] * len(tricks):
+        raise StepFailed('the doodle has not learned every trick: %s' % list(pet.trickAptitudes))
+    if [round(v, 4) for v in pet.traitList] != [round(v, 4) for v in best]:
+        raise StepFailed('the doodle does not have the best traits: %s' % list(pet.traitList))
+    yield sleep(2)
+    localAvatar.setPos(pet.getPos(render) + Vec3(0, -6, 0))
+    localAvatar.headsUp(pet)
+    yield sleep(1)
+    panel = PetAvatarPanel.PetAvatarPanel(pet)
+    yield sleep(1)
+    shot('2-doodle-panel')
+    panel._PetAvatarPanel__handleDetail()
+    yield sleep(1)
+    shot('3-tricks')
+    panel.cleanup()
+
+    # SpeedChat PETS > TRICKS lists every trick now.
+    sc = localAvatar.chatMgr.chatInputSpeedChat
+    sc.show()
+    yield sleep(0.5)
+    sc.speedChat.finalizeAll()
+    from otp.otpbase import OTPLocalizer
+    for holder in list(sc.speedChat):
+        if getattr(holder, 'getTitle', None) and holder.getTitle() == OTPLocalizer.SCMenuPets:
+            holder.showMenu()
+            yield sleep(0.5)
+            for sub in list(holder.getMenu()):
+                if getattr(sub, 'getTitle', None) and sub.getTitle() == OTPLocalizer.SCMenuPetTricks:
+                    sub.showMenu()
+                    yield sleep(0.5)
+    shot('4-trick-menu')
+    sc.hide()
+
+    # Ask for a backflip: a fully trained doodle does it rather than balk.
+    done = []
+    doTrick = pet.doTrick
+    pet.doTrick = lambda trickId, timestamp: (done.append(trickId), doTrick(trickId, timestamp))
+    for attempt in range(4):
+        del done[:]
+        localAvatar.b_setSC(PetTricks.TrickId2scIds[PetTricks.Tricks.BACKFLIP][0])
+        yield until(lambda: done, 60, 'the doodle to try a backflip')
+        log('asked for a backflip, the doodle did trick', done[0])
+        if done[0] == PetTricks.Tricks.BACKFLIP:
+            yield sleep(0.6)
+            shotFrom('maxdoodle-5-backflip.png', pet.getPos(render) + pet.getQuat(render).getRight() * 7 + Vec3(0, 0, 2.5),
+                     pet.getPos(render) + Vec3(0, 0, 1.5))
+            break
+        yield sleep(6)
+    pet.doTrick = doTrick
+    if not done or done[0] != PetTricks.Tricks.BACKFLIP:
+        raise StepFailed('the maxed doodle would not backflip')
+    yield sleep(6)
+
+    # Again with the doodle out: it stays maxed.
+    yield from pressMaxDoodle()
+    yield sleep(2)
+    if [round(a, 3) for a in pet.trickAptitudes[:len(tricks)]] != [1.0] * len(tricks):
+        raise StepFailed('the doodle lost its tricks after ~maxDoodle on the estate')
+    log('maxed again on the estate:', list(pet.trickAptitudes))
+    yield from teleport(ToontownGlobals.ToontownCentral)
+
+
 def scenarioToonHall():
     # Walks into Toon Hall, where Flippy and the Loony Labs scientists work.
     # The scientists stay hidden unless the Silly Meter holiday is on.
@@ -7886,6 +8003,7 @@ SCENARIOS = [
     ('pets', scenarioPets),
     ('petbuild', scenarioPetBuild),
     ('jellybeans', scenarioJellybeans),
+    ('maxdoodle', scenarioMaxDoodle),
     ('toonhall', scenarioToonHall),
     ('holidays', scenarioHolidays),
     ('toonfest', scenarioToonfest),

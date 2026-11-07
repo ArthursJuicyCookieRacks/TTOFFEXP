@@ -57,4 +57,5 @@ class TTSCToolsMenu(SCMenu):
         self.append(TTSCToolsTerminal('Summons', '~summons'))
         self.append(TTSCToolsTerminal('Restock Fires', '~pinkslips'))
         self.append(TTSCToolsTerminal('Max Jellybeans', '~maxJellybeans'))
+        self.append(TTSCToolsTerminal('Max Doodle', '~maxDoodle'))
         self.append(TTSCToolsTerminal('Unlock All Emotions', '~unlockEmotes'))

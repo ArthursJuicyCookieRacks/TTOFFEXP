@@ -2,7 +2,8 @@ import random
 import time
 
 from direct.directnotify import DirectNotifyGlobal
-from toontown.pets import PetCreator, PetDNA, PetNameGenerator, PetTraits, PetUtil
+from toontown.pets import PetCreator, PetDNA, PetMood, PetNameGenerator, PetTraits, PetTricks, PetUtil
+from toontown.toonbase import ToontownGlobals
 
 
 class PetManagerAI:
@@ -104,6 +105,40 @@ class PetManagerAI:
             self.air.dbInterface.updateObject(self.air.dbId, petId, self.air.dclassesByName['DistributedPetAI'],
                                               {'setPetName': [name], 'setAccessories': [list(accessories)]})
 
+    def maxPet(self, avId):
+        # ~maxDoodle: the toon learns every trick phrase, and its doodle
+        # knows every trick perfectly, has the best trait a doodle can have
+        # in every trait, and is in a calm, contented mood. Works whether
+        # the doodle is out on the estate or only in the database.
+        av = self.air.doId2do.get(avId)
+        if av is None or not av.getPetId():
+            return False
+        tricks = [trickId for trickId in PetTricks.Tricks if trickId != PetTricks.Tricks.BALK]
+        av.b_setPetTrickPhrases(sorted(set(list(av.getPetTrickPhrases()) + tricks)))
+        aptitudes = [1.0] * len(tricks)
+        traits = getBestTraitValues()
+        petId = av.getPetId()
+        pet = self.air.doId2do.get(petId)
+        if pet is not None and hasattr(pet, 'b_setTrickAptitudes'):
+            pet.b_setTrickAptitudes(aptitudes)
+            for traitName, value in zip(PetTraits.getTraitNames(), traits):
+                getattr(pet, pet.getSetterName(traitName, 'b_set'))(value)
+            pet.traits = PetTraits.PetTraits(pet.traitSeed, pet.safeZone, traitValueList=pet.traitList)
+            if getattr(pet, 'mood', None) is not None:
+                for component in PetMood.PetMood.Components:
+                    pet.mood.setComponent(component, 0.0)
+        else:
+            fields = {'setTrickAptitudes': [aptitudes]}
+            for traitName, value in zip(PetTraits.getTraitNames(), traits):
+                fields['set' + traitName[0].upper() + traitName[1:]] = [value]
+            for component in PetMood.PetMood.Components:
+                fields['set' + component[0].upper() + component[1:]] = [0.0]
+            # Its calm mood is as of now, not of when it was last out (a
+            # doodle's mood drifts by the time it has been away).
+            fields['setLastSeenTimestamp'] = [int(time.time())]
+            self.air.dbInterface.updateObject(self.air.dbId, petId, self.air.dclassesByName['DistributedPetAI'], fields)
+        return True
+
     def _createPet(self, avId, name, fields):
         def created(doId):
             if not doId:
@@ -130,3 +165,19 @@ class PetManagerAI:
         # The pet's database record is left behind, as Astron's database
         # has no delete; nothing refers to it once the toon forgets it.
         av.b_setPetId(0)
+
+
+def getBestTraitValues():
+    # The best value a doodle can have in each trait: the best end of
+    # Donald's Dreamland's range (highest for a trait that is better high,
+    # lowest for one better low), as one of its doodles could have.
+    values = []
+    for traitName, distrib, hasWorth in PetTraits.PetTraits.TraitDescs:
+        lo, hi = distrib.getMinMax(ToontownGlobals.DonaldsDreamland)
+        if distrib.TraitType == PetTraits.TraitDistribution.TraitTypes.INCREASING:
+            value = hi
+        else:
+            value = lo
+        # Never 0: a doodle with a 0 trait gets it rolled again.
+        values.append(max(int(round(value * PetTraits.TraitDivisor)), 1) / float(PetTraits.TraitDivisor))
+    return values

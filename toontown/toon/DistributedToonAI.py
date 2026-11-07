@@ -5531,6 +5531,16 @@ def summons():
     return 'Restocked all cog summons successfully!'
 
 @magicWord(category=CATEGORY_CHARACTERSTATS)
+def maxDoodle():
+    """Teach your doodle every trick perfectly and give it the best traits."""
+    toon = spellbook.getTarget()
+    if not toon.getPetId():
+        return "You don't have a Doodle yet. Adopt one at a Pet Shop first!"
+    if not simbase.air.petMgr.maxPet(toon.doId):
+        return 'Could not max out your Doodle.'
+    return 'Your Doodle now knows every trick perfectly and has the best traits a Doodle can have!'
+
+@magicWord(category=CATEGORY_CHARACTERSTATS)
 def maxJellybeans():
     """Fill the jellybean jar (up to what it holds now) and the bank."""
     toon = spellbook.getTarget()
