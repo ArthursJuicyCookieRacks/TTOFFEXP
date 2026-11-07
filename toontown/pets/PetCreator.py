@@ -161,17 +161,21 @@ def getTraitsCost(zoneId):
     return int(round(BestPriceRate * maxCost)) - rarest
 
 
+def getTraitPrice(zoneId):
+    # What one trait at its best adds: the same for every trait, getTraitsCost
+    # shared evenly and rounded up, so all the best traits together come to at
+    # least BestPriceRate (Donald's Dreamland: 158 each).
+    numTraits = PetTraits.PetTraits.NumTraits
+    return -(-getTraitsCost(zoneId) // numTraits)
+
+
 def getTraitCost(traitIndex, level, zoneId):
     # What this trait's level adds to the body's cost: nothing for the worst
-    # one sold here, its share of getTraitsCost for the best (the shares add
-    # up to it exactly), and evenly between.
+    # one sold here, getTraitPrice for the best, and evenly between.
     levels = sorted(getTraitLevels(traitIndex, zoneId).keys())
     if len(levels) < 2:
         return 0
-    total = getTraitsCost(zoneId)
-    numTraits = PetTraits.PetTraits.NumTraits
-    best = total * (traitIndex + 1) // numTraits - total * traitIndex // numTraits
-    return int(best * levels.index(level) // (len(levels) - 1))
+    return int(getTraitPrice(zoneId) * levels.index(level) // (len(levels) - 1))
 
 
 def getCost(body, traitLevels, zoneId):
