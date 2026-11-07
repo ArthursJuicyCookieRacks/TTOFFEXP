@@ -86,6 +86,8 @@ class TTSCSummonsMenu(SCMenu):
         try:
             held = base.localAvatar.getMiniSummons()
         except Exception:
+            self.__anything = False
+            self.__showHolder()
             return
         perDept = SuitDNA.suitsPerDept
         anything = False
@@ -100,3 +102,15 @@ class TTSCSummonsMenu(SCMenu):
             self.append(SCMenuHolder(TTLocalizer.SCSummonsDepts[dept], menu=menu))
         if not anything:
             self.append(TTSCNoSummonsTerminal())
+        # Hidden from SpeedChat until a field office has given a summons (Arthur).
+        self.__anything = anything
+        self.__showHolder()
+
+    def setHolder(self, holder):
+        SCMenu.setHolder(self, holder)
+        self.__showHolder()
+
+    def __showHolder(self):
+        holder = self.getHolder()
+        if holder is not None:
+            holder.setViewable(getattr(self, '_TTSCSummonsMenu__anything', False))

@@ -4321,6 +4321,43 @@ class DistributedToonAI(DistributedPlayerAI.DistributedPlayerAI, DistributedSmoo
     def getNametagStyle(self):
         return self.nametagStyle
 
+    # Nametag styles the toon owns (Arthur): bought from the catalog, or all of
+    # them after ~maxToon. The Shticker Book's Extras menu switches between
+    # them for free. Basic and the style being worn always count as owned.
+    def setNametagStyles(self, nametagStyles):
+        self.nametagStyles = sorted(set(nametagStyles))
+
+    def getNametagStyles(self):
+        return getattr(self, 'nametagStyles', [])
+
+    def b_setNametagStyles(self, nametagStyles):
+        self.setNametagStyles(nametagStyles)
+        self.sendUpdate('setNametagStyles', [self.getNametagStyles()])
+
+    def ownsNametagStyle(self, nametagStyle):
+        return nametagStyle == 100 or nametagStyle == getattr(self, 'nametagStyle', 100) or \
+            nametagStyle in self.getNametagStyles()
+
+    def addNametagStyle(self, nametagStyle):
+        if nametagStyle != 100 and nametagStyle not in self.getNametagStyles():
+            self.b_setNametagStyles(self.getNametagStyles() + [nametagStyle])
+
+    def unlockAllNametagStyles(self):
+        self.b_setNametagStyles(list(range(len(TTLocalizer.NametagFontNames))))
+
+    def reqNametagStyle(self, nametagStyle):
+        if nametagStyle != 100 and nametagStyle >= len(TTLocalizer.NametagFontNames):
+            return
+        if not self.ownsNametagStyle(nametagStyle):
+            self.air.writeServerEvent('suspicious', self.doId, 'reqNametagStyle not owned %s' % nametagStyle)
+            return
+        # The one being taken off stays owned.
+        self.addNametagStyle(getattr(self, 'nametagStyle', 100))
+        self.b_setNametagStyle(nametagStyle)
+
+    def unlockAllEmotes(self):
+        self.b_setEmoteAccess([1] * len(self.emoteAccess))
+
     def logMessage(self, message):
         avId = self.air.getAvatarIdFromSender()
         if __dev__:
@@ -4937,6 +4974,9 @@ def maxToon(hasConfirmed='UNCONFIRMED'):
     toon.b_setCogCount(cogCount)
     toon.b_setCogStatus([CogPageGlobals.COG_COMPLETE2] * 32)
     toon.restockAllCogSummons()
+    # Every emotion and every nametag style (Arthur).
+    toon.unlockAllEmotes()
+    toon.unlockAllNametagStyles()
 
     return 'By the power invested in me, I, McQuack, max your toon.'
 
@@ -5485,6 +5525,13 @@ def summons():
     av.b_setCogStatus([CogPageGlobals.COG_COMPLETE2] * 32)
     av.restockAllCogSummons()
     return 'Restocked all cog summons successfully!'
+
+@magicWord(category=CATEGORY_OVERRIDE)
+def unlockEmotes():
+    """ Give the toon every emotion (SpeedChat Tools: Unlock All Emotions). """
+    av = spellbook.getInvoker()
+    av.unlockAllEmotes()
+    return 'Unlocked all emotions!'
 
 @magicWord(category=CATEGORY_OVERRIDE)
 def pinkslips():

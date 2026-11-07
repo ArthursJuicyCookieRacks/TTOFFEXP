@@ -20,6 +20,9 @@ class CatalogNametagItem(CatalogItem.CatalogItem):
             return 1
         if avatar.nametagStyle == self.nametagStyle:
             return 1
+        # Already owned: the Extras menu switches to it for free.
+        if self.nametagStyle in avatar.getNametagStyles():
+            return 1
         return 0
 
     def getAcceptItemErrorText(self, retcode):
@@ -52,6 +55,9 @@ class CatalogNametagItem(CatalogItem.CatalogItem):
 
     def recordPurchase(self, avatar, optional):
         if avatar:
+            # Kept for the Extras menu, along with the one taken off.
+            avatar.addNametagStyle(avatar.nametagStyle)
+            avatar.addNametagStyle(self.nametagStyle)
             avatar.b_setNametagStyle(self.nametagStyle)
         return ToontownGlobals.P_ItemAvailable
 

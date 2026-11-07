@@ -148,6 +148,8 @@ class SCMenu(SCObject, NodePath):
 
     def enterVisible(self):
         SCObject.enterVisible(self)
+        if getattr(self, 'fitPending', False):
+            self.invalidate()
         self.privScheduleFinalize()
         for member in self:
             if member.isViewable():
@@ -300,7 +302,14 @@ class SCMenu(SCObject, NodePath):
             member.setDimensions(memberWidth, memberHeight)
             member.finalize()
 
-        if len(visibleMembers) > 0:
+        # Laid out while SpeedChat is closed (it then sits under hidden, not
+        # on screen), the screen numbers below are wrong: a long list (every
+        # emotion unlocked) was pushed up off the top. Fit it when shown.
+        self.fitPending = len(visibleMembers) > 0 and hidden.isAncestorOf(self)
+        if self.fitPending:
+            if not self.isTopLevel():
+                self.setZ(0)
+        elif len(visibleMembers) > 0:
             z1 = visibleMembers[0].getZ(aspect2d)
             visibleMembers[0].setZ(-maxHeight)
             z2 = visibleMembers[0].getZ(aspect2d)

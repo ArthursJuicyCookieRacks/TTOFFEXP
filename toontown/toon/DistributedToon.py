@@ -2285,6 +2285,24 @@ class DistributedToon(DistributedPlayer.DistributedPlayer, Toon.Toon, Distribute
         else:
             return 0
 
+    def setNametagStyles(self, nametagStyles):
+        # Nametag styles this toon owns (the Extras menu picks from them).
+        self.nametagStyles = list(nametagStyles)
+        messenger.send('nametagStylesChanged')
+
+    def getNametagStyles(self):
+        return getattr(self, 'nametagStyles', [])
+
+    def getOwnedNametagStyles(self):
+        # Basic first, then every owned style (the one worn always counts).
+        owned = set(self.getNametagStyles())
+        owned.add(self.getNametagStyle())
+        owned.discard(100)
+        return [100] + sorted(owned)
+
+    def d_reqNametagStyle(self, nametagStyle):
+        self.sendUpdate('reqNametagStyle', [nametagStyle])
+
     def setNametagStyle(self, nametagStyle):
         if hasattr(self, 'gmToonLockStyle') and self.gmToonLockStyle:
             return

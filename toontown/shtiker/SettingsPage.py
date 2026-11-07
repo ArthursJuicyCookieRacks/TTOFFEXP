@@ -1,7 +1,8 @@
 """The Shticker Book's Settings page (after Events).
 
-General: field of view, music and sound effects volume, and a Double XP button whose menu turns double experience on or off for gags,
-gardening and doodle training, each on its own.
+General: field of view, music and sound effects volume, and an Extras button.
+Its menu turns double experience on or off for gags, gardening and doodle
+training, each on its own, and picks which owned nametag style the toon wears.
 Keyboard: what key does each action (click one, then press the new key).
 Controller: what each controller button does, and how fast the controller
 moves the on-screen pointer (1 slowest .. 10 fastest).
@@ -91,7 +92,7 @@ class SettingsPage(ShtikerPage.ShtikerPage):
         DirectButton(parent=frame, relief=None, image=self.btnImage, image_scale=(0.9, 1, 1), text=TTLocalizer.SettingsPageReset,
                      text_scale=0.05, text_pos=(0, -0.02), pos=(-0.3, 0, -0.5), command=self.__resetGeneral)
         DirectButton(parent=frame, relief=None, image=self.btnImage, image_scale=(0.9, 1, 1),
-                     text=TTLocalizer.SettingsPageDoubleXp, text_scale=0.05,
+                     text=TTLocalizer.SettingsPageExtras, text_scale=0.05,
                      text_pos=(0, -0.02), pos=(0.3, 0, -0.5), command=self.__openDoubleXp)
 
     def __addSlider(self, frame, z, name, label, low, high, step, getter, setter):
@@ -129,26 +130,30 @@ class SettingsPage(ShtikerPage.ShtikerPage):
         GameSettings.setSfxVolume(GameSettings.VOLUME_DEFAULT)
         self.__refreshGeneral()
 
-    # Double XP
+    # Extras: Double XP switches and the nametag style picker
 
     def __openDoubleXp(self):
-        # A menu with an on/off switch for each kind of experience.
+        # A menu with an on/off switch for each kind of experience, and
+        # arrows that switch between the nametag styles the toon owns.
         messenger.send('wakeup')
         self.__closeDoubleXp()
         rows = ((GameSettings.DOUBLE_XP_GAGS, TTLocalizer.SettingsPageDoubleXpGags),
                 (GameSettings.DOUBLE_XP_GARDENING, TTLocalizer.SettingsPageDoubleXpGardening),
                 (GameSettings.DOUBLE_XP_DOODLES, TTLocalizer.SettingsPageDoubleXpDoodles))
-        top = 0.42
+        top = 0.64
         popup = DirectFrame(parent=self, relief=DGG.RIDGE, borderWidth=(0.015, 0.015),
                             frameColor=(1, 0.97, 0.85, 1), frameSize=(-0.66, 0.66, -top, top),
                             pos=(0, 0, 0.02), sortOrder=DGG.FOREGROUND_SORT_INDEX)
         popup.setBin('gui-popup', 0)
-        DirectLabel(parent=popup, relief=None, text=TTLocalizer.SettingsPageDoubleXp, text_scale=0.075,
+        DirectLabel(parent=popup, relief=None, text=TTLocalizer.SettingsPageExtras, text_scale=0.08,
                     text_fg=TEXT_COLOR, pos=(0, 0, top - 0.1))
-        DirectLabel(parent=popup, relief=None, text=TTLocalizer.SettingsPageDoubleXpHelp, text_scale=0.04,
-                    text_wordwrap=28, text_fg=TEXT_COLOR, pos=(0, 0, top - 0.17))
+        # Double XP
+        DirectLabel(parent=popup, relief=None, text=TTLocalizer.SettingsPageDoubleXp, text_scale=0.06,
+                    text_fg=TEXT_COLOR, pos=(0, 0, top - 0.19))
+        DirectLabel(parent=popup, relief=None, text=TTLocalizer.SettingsPageDoubleXpHelp, text_scale=0.038,
+                    text_wordwrap=30, text_fg=TEXT_COLOR, pos=(0, 0, top - 0.245))
         self.doubleXpButtons = {}
-        z = top - 0.33
+        z = top - 0.39
         for kind, label in rows:
             DirectLabel(parent=popup, relief=None, text=label, text_align=TextNode.ALeft, text_scale=0.055,
                         text_fg=TEXT_COLOR, pos=(-0.56, 0, z - 0.015))
@@ -156,13 +161,39 @@ class SettingsPage(ShtikerPage.ShtikerPage):
                                   text='', text_scale=0.05, text_pos=(0, -0.017), pos=(0.38, 0, z),
                                   command=self.__toggleDoubleXp, extraArgs=[kind])
             self.doubleXpButtons[kind] = toggle
-            z -= 0.14
+            z -= 0.12
+        # Nametag style
+        z -= 0.04
+        DirectFrame(parent=popup, relief=DGG.FLAT, frameColor=(0.55, 0.45, 0.3, 0.6),
+                    frameSize=(-0.56, 0.56, -0.004, 0.004), pos=(0, 0, z + 0.06))
+        DirectLabel(parent=popup, relief=None, text=TTLocalizer.SettingsPageNametag, text_scale=0.06,
+                    text_fg=TEXT_COLOR, pos=(0, 0, z))
+        DirectLabel(parent=popup, relief=None, text=TTLocalizer.SettingsPageNametagHelp, text_scale=0.038,
+                    text_wordwrap=30, text_fg=TEXT_COLOR, pos=(0, 0, z - 0.055))
+        z -= 0.19
+        self.nametagPreview = DirectLabel(parent=popup, relief=DGG.FLAT, frameColor=(1, 1, 1, 0.9),
+                                          frameSize=(-0.4, 0.4, -0.06, 0.08), text='', text_scale=0.07,
+                                          text_fg=(0, 0, 0.6, 1), pos=(0, 0, z))
+        self.nametagCount = DirectLabel(parent=popup, relief=None, text='', text_scale=0.04,
+                                        text_fg=TEXT_COLOR, pos=(0, 0, z - 0.11))
+        arrowGui = loader.loadModel('phase_3/models/gui/tt_m_gui_mat_mainGui')
+        arrowImage = (arrowGui.find('**/tt_t_gui_mat_shuffleArrowUp'), arrowGui.find('**/tt_t_gui_mat_shuffleArrowDown'),
+                      arrowGui.find('**/tt_t_gui_mat_shuffleArrowUp'), arrowGui.find('**/tt_t_gui_mat_shuffleArrowDisabled'))
+        self.nametagArrows = []
+        for x, step, scale in ((-0.5, -1, 0.6), (0.5, 1, -0.6)):
+            self.nametagArrows.append(DirectButton(parent=popup, relief=None, image=arrowImage, image_scale=(scale, 0.6, 0.6),
+                                                   image1_scale=(scale * 1.1, 0.66, 0.66), image2_scale=(scale * 1.1, 0.66, 0.66),
+                                                   pos=(x, 0, z + 0.01), command=self.__stepNametag, extraArgs=[step]))
+        arrowGui.removeNode()
         DirectButton(parent=popup, relief=None, image=self.btnImage, image_scale=(0.7, 1, 0.9),
                      text=TTLocalizer.SettingsPageClose, text_scale=0.045, text_pos=(0, -0.015),
                      pos=(0, 0, -top + 0.08), command=self.__closeDoubleXp)
         self.doubleXpMenu = popup
         self.frames[GENERAL].hide()
         self.__refreshDoubleXp()
+        self.nametagChoice = None
+        self.accept('nametagStylesChanged', self.__refreshNametag)
+        self.__refreshNametag()
 
     def __refreshDoubleXp(self):
         for kind, toggle in self.doubleXpButtons.items():
@@ -174,7 +205,45 @@ class SettingsPage(ShtikerPage.ShtikerPage):
         GameSettings.setDoubleXp(kind, not GameSettings.getDoubleXp(kind))
         self.__refreshDoubleXp()
 
+    def __ownedNametags(self):
+        try:
+            return base.localAvatar.getOwnedNametagStyles()
+        except Exception:
+            return [100]
+
+    def __refreshNametag(self):
+        if getattr(self, 'doubleXpMenu', None) is None:
+            return
+        owned = self.__ownedNametags()
+        style = self.nametagChoice
+        if style not in owned:
+            style = base.localAvatar.getNametagStyle()
+            if style not in owned:
+                style = 100
+        self.nametagChoice = style
+        if style == 100:
+            font = ToontownGlobals.getToonFont()
+            name = TTLocalizer.UnpaidNameTag
+        else:
+            font = ToontownGlobals.getNametagFont(style)
+            name = TTLocalizer.NametagFontNames[style]
+        self.nametagPreview['text_font'] = font
+        self.nametagPreview['text'] = base.localAvatar.getName()
+        self.nametagCount['text'] = TTLocalizer.SettingsPageNametagCount % (name, owned.index(style) + 1, len(owned))
+        for arrow in self.nametagArrows:
+            arrow['state'] = DGG.NORMAL if len(owned) > 1 else DGG.DISABLED
+
+    def __stepNametag(self, step):
+        # Wears the next owned style right away; the server checks it is owned.
+        owned = self.__ownedNametags()
+        index = owned.index(self.nametagChoice) if self.nametagChoice in owned else 0
+        self.nametagChoice = owned[(index + step) % len(owned)]
+        if self.nametagChoice != base.localAvatar.getNametagStyle():
+            base.localAvatar.d_reqNametagStyle(self.nametagChoice)
+        self.__refreshNametag()
+
     def __closeDoubleXp(self):
+        self.ignore('nametagStylesChanged')
         popup = getattr(self, 'doubleXpMenu', None)
         if popup is not None:
             popup.destroy()
@@ -182,6 +251,7 @@ class SettingsPage(ShtikerPage.ShtikerPage):
                 self.frames[GENERAL].show()
         self.doubleXpMenu = None
         self.doubleXpButtons = {}
+        self.nametagArrows = []
 
     # Keyboard
 

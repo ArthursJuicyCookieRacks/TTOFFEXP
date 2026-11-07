@@ -7523,6 +7523,159 @@ def scenarioMemTour():
                 n + 1, rss, gc.get_debug(), len(gc.garbage), sum(counts.values()), len(base.cr.doId2do), len(base.cr.cache.dict), air,
                 RenderState.getNumStates(), TransformState.getNumStates(), grew))
 
+def scenarioExtras():
+    # Arthur 2026-11-07: SpeedChat SUMMONS only shows with mini summons held;
+    # Tools > Unlock All Emotions; Shticker Book Settings > Extras picks an
+    # owned nametag style; ~maxToon gives every emotion and nametag style.
+    from toontown.toonbase import TTLocalizer
+    from otp.otpbase import OTPLocalizer
+    from toontown.catalog.CatalogNametagItem import CatalogNametagItem
+    shots = os.environ.get('AUTOPLAY_SHOTS', '/tmp')
+    os.makedirs(shots, exist_ok=True)
+    me = localAvatar.doId
+
+    def ai():
+        return onDistrict(lambda air: air.doId2do[me])
+
+    def shot(name):
+        base.screenshot(os.path.join(shots, 'extras-%s.png' % name), defaultFilename=0)
+
+    def holderNamed(sc, title):
+        for holder in list(sc.speedChat):
+            if getattr(holder, 'getTitle', None) and holder.getTitle() == title:
+                return holder
+
+    def openSpeedChat(menuTitle=None):
+        sc = localAvatar.chatMgr.chatInputSpeedChat
+        sc.show()
+        sc.speedChat.finalizeAll()
+        if menuTitle:
+            holderNamed(sc, menuTitle).showMenu()
+        return sc
+
+    yield until(walking, 60, 'walking')
+    # A fresh start: no summons, the five starting emotions, no nametags.
+    onDistrict(lambda air: (air.doId2do[me].b_setMiniSummons([0] * 32),
+                            air.doId2do[me].b_setEmoteAccess([1] * 5 + [0] * 20),
+                            air.doId2do[me].b_setNametagStyles([]),
+                            air.doId2do[me].b_setNametagStyle(100)))
+    yield sleep(1)
+
+    # 1. SUMMONS hidden until a summons is held.
+    sc = openSpeedChat()
+    yield sleep(0.5)
+    shot('1-speedchat-no-summons')
+    holder = holderNamed(sc, TTLocalizer.SCMenuSummons)
+    log('summons holder viewable with none held:', holder.isViewable())
+    if holder.isViewable():
+        raise StepFailed('SUMMONS shows with no summons')
+    sc.hide()
+    onDistrict(lambda air: air.doId2do[me].addMiniSummons(3))
+    yield until(lambda: localAvatar.getMiniSummons()[3] > 0, 20, 'the summons reaching the client')
+    sc = openSpeedChat(TTLocalizer.SCMenuSummons)
+    yield sleep(0.6)
+    shot('2-speedchat-with-summons')
+    if not holderNamed(sc, TTLocalizer.SCMenuSummons).isViewable():
+        raise StepFailed('SUMMONS hidden with a summons held')
+    sc.hide()
+    onDistrict(lambda air: air.doId2do[me].b_setMiniSummons([0] * 32))
+    yield until(lambda: localAvatar.getMiniSummons()[3] == 0, 20, 'summons used up')
+    yield sleep(0.3)
+    if holderNamed(localAvatar.chatMgr.chatInputSpeedChat, TTLocalizer.SCMenuSummons).isViewable():
+        raise StepFailed('SUMMONS still shows after the last one was used')
+    log('SUMMONS hides again once used up')
+
+    # 2. Tools > Unlock All Emotions.
+    sc = openSpeedChat(OTPLocalizer.SCMenuEmotions)
+    yield sleep(0.6)
+    shot('3-emotions-before')
+    sc.hide()
+    sc = openSpeedChat('TOOLS')
+    yield sleep(0.6)
+    shot('4-tools-menu')
+    terminal = [t for t in holderNamed(sc, 'TOOLS').getMenu() if getattr(t, 'word', None) == '~unlockEmotes'][0]
+    terminal.handleSelect('mouse1')
+    holderNamed(sc, 'TOOLS').hideMenu()
+    sc.hide()
+    yield until(lambda: all(localAvatar.emoteAccess), 20, 'all emotions unlocked')
+    yield sleep(1)
+    shot('5-unlocked-message')
+    sc = openSpeedChat(OTPLocalizer.SCMenuEmotions)
+    yield sleep(0.6)
+    shot('6-emotions-after')
+    sc.hide()
+    for i in range(len(localAvatar.emoteAccess)):
+        yield until(walking, 30, 'walking before emote %d' % i)
+        localAvatar.b_setEmoteState(i, animMultiplier=localAvatar.animMultiplier)
+        yield sleep(2.5 if i in (6, 20, 22) else 0.4)
+        if i in (6, 20, 22):
+            shot('7-emote-%d' % i)
+    log('every emotion played')
+    yield until(walking, 30, 'walking after the emotions')
+
+    # 3. Extras menu and nametag styles.
+    onDistrict(lambda air: [CatalogNametagItem(n).recordPurchase(air.doId2do[me], None) for n in (3, 9, 13)])
+    yield until(lambda: localAvatar.getNametagStyle() == 13, 20, 'the bought nametags')
+    log('owned nametags', localAvatar.getOwnedNametagStyles(), 'wearing', localAvatar.getNametagStyle())
+    place().fsm.request('stickerBook')
+    yield until(lambda: place().isAccepting('bookDone'), 30, 'the Shticker Book open')
+    book = localAvatar.book
+    page = localAvatar.settingsPage
+    book.setPage(page)
+    yield sleep(1)
+    shot('8-settings-extras-button')
+    page._SettingsPage__openDoubleXp()
+    yield sleep(0.5)
+    shot('9-extras-menu')
+    seen = []
+    for n in range(4):
+        page._SettingsPage__stepNametag(1)
+        yield until(lambda: localAvatar.getNametagStyle() == page.nametagChoice, 20, 'the nametag change')
+        yield sleep(0.4)
+        seen.append(localAvatar.getNametagStyle())
+        shot('10-extras-step-%d' % n)
+    log('nametags stepped through', seen)
+    if sorted(set(seen)) != [3, 9, 13, 100]:
+        raise StepFailed('Extras did not cycle the owned nametags: %s' % seen)
+    # A style not owned is refused by the server.
+    localAvatar.d_reqNametagStyle(5)
+    yield sleep(1)
+    if localAvatar.getNametagStyle() == 5:
+        raise StepFailed('server let the toon wear a nametag it does not own')
+    page._SettingsPage__stepNametag(-1)
+    yield sleep(0.5)
+    page._SettingsPage__closeDoubleXp()
+    book.doneStatus = {'mode': 'close'}
+    messenger.send(book.doneEvent)
+    yield until(walking, 60, 'walking after the book')
+    yield sleep(1)
+    localAvatar.stopUpdateSmartCamera()
+    base.camera.setPosHpr(localAvatar, 0, 9, 4, 180, -5, 0)
+    yield sleep(0.3)
+    shot('11-nametag-in-world')
+    localAvatar.startUpdateSmartCamera()
+
+    # 4. ~maxToon gives everything.
+    onDistrict(lambda air: (air.doId2do[me].b_setEmoteAccess([1] * 5 + [0] * 20),
+                            air.doId2do[me].b_setNametagStyles([])))
+    yield sleep(1)
+    magicWord('~maxToon CONFIRM')
+    yield until(lambda: all(localAvatar.emoteAccess), 20, 'maxToon emotions')
+    yield until(lambda: len(localAvatar.getOwnedNametagStyles()) == len(TTLocalizer.NametagFontNames) + 1, 20, 'maxToon nametags')
+    log('after maxToon: emotes %s nametags %s' % (localAvatar.emoteAccess, localAvatar.getOwnedNametagStyles()))
+    place().fsm.request('stickerBook')
+    yield until(lambda: place().isAccepting('bookDone'), 30, 'the Shticker Book open')
+    localAvatar.book.setPage(page)
+    yield sleep(0.5)
+    page._SettingsPage__openDoubleXp()
+    yield sleep(0.5)
+    shot('12-extras-after-maxtoon')
+    page._SettingsPage__closeDoubleXp()
+    localAvatar.book.doneStatus = {'mode': 'close'}
+    messenger.send(localAvatar.book.doneEvent)
+    yield until(walking, 60, 'walking after the book')
+    log('Extras checks passed')
+
 SCENARIOS = [
     ('login', scenarioLogin),
     ('healtest', scenarioHealTest),
@@ -7532,6 +7685,7 @@ SCENARIOS = [
     ('exittoontown', scenarioExitToontown),
     ('displaysettings', scenarioDisplaySettings),
     ('doublexp', scenarioDoubleXp),
+    ('extras', scenarioExtras),
     ('npcstairs', scenarioNPCStairs),
     ('npcs', scenarioNPCs),
     ('npcmintride', scenarioNPCMintRide),
