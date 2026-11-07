@@ -417,7 +417,7 @@ class ToonHead(Actor.Actor):
                     self.__copy = copy
         else:
             for lod in lods:
-                self.loadModel('phase_3' + filePrefix + lod, 'head', lod, copy)
+                self.loadModel('phase_3' + filePrefix + self.headModelLOD(lod), 'head', lod, copy)
                 if not forGui:
                     pLoaded = self.loadPumpkin(headStyle[1], lod, copy)
                     self.loadSnowMan(headStyle[1], lod, copy)
@@ -440,6 +440,18 @@ class ToonHead(Actor.Actor):
         self.eyelids.request('open')
         self.setupMuzzles(style)
         return headHeight
+
+    @staticmethod
+    def headModelLOD(lod):
+        # Toons 20 to 80 feet away used to get a simpler head model of their
+        # own.  Those heads put the face, muzzle and nose in other places
+        # than the close-up head (one dog head even has its nose tied to the
+        # pupils), so the pupils hid behind the muzzle or nose and came and
+        # went while walking.  That range now uses the close-up head; it is
+        # under 100 extra points per toon and no extra draw calls.
+        if lod == '500':
+            return '1000'
+        return lod
 
     def loadPumpkin(self, headStyle, lod, copy):
         if hasattr(base, 'launcher') and (not base.launcher or base.launcher and base.launcher.getPhaseComplete(4)):
@@ -725,11 +737,12 @@ class ToonHead(Actor.Actor):
         # from about 20 to 80 feet away the pupils vanished, and came and
         # went as the head bobbed while walking.
         nearBox = self.__eyes.getTightBounds(self.__eyes.getParent())
-        for lodEyes in (self.__lod500Eyes, self.__lod250Eyes):
+        for lodName, lodEyes in (('500', self.__lod500Eyes), ('250', self.__lod250Eyes)):
             if not lodEyes or lodEyes.isEmpty():
                 continue
             farBox = lodEyes.getTightBounds(lodEyes.getParent())
             lodEyes.stash()
+            self.__cleanUpFarPupils(lodName)
             shown = lodEyes.getParent().attachNewNode('nearEyes')
             if nearBox and farBox:
                 nearSize = nearBox[1] - nearBox[0]
@@ -741,6 +754,57 @@ class ToonHead(Actor.Actor):
                 shown = centered.attachNewNode('nearMat')
             shown.setMat(self.__eyes.getMat())
             self.__eyes.instanceTo(shown)
+
+    def __cleanUpFarPupils(self, lodName):
+        # The long dog head with the short muzzle has, in its 20-80 ft
+        # model, a second pair of pupils outside its eyes, and its nose is
+        # tied to the pupil joints.  The dog head animations move those
+        # joints, so while walking the nose was pulled into a black streak
+        # across the eyes, with a hole in the muzzle, and the pupils were
+        # lost under it.  The spare pupils are hidden (the near model's
+        # pupils are shown instead) and whatever was tied to a pupil joint
+        # now just follows the head.
+        if not self.getLOD(lodName):
+            return
+        head = self.getPart('head', lodName)
+        if not head or head.isEmpty():
+            return
+        for np in head.findAllMatches('**/+GeomNode'):
+            if np.findTexture('pupils'):
+                np.stash()
+                continue
+            gnode = np.node()
+            for i in range(gnode.getNumGeoms()):
+                table = gnode.getGeom(i).getVertexData().getTransformBlendTable()
+                if table is None:
+                    continue
+                headTransform = None
+                usesPupils = False
+                for b in range(table.getNumBlends()):
+                    blend = table.getBlend(b)
+                    for k in range(blend.getNumTransforms()):
+                        transform = blend.getTransform(k)
+                        if not isinstance(transform, JointVertexTransform):
+                            continue
+                        jointName = transform.getJoint().getName()
+                        if jointName == 'def_head':
+                            headTransform = transform
+                        elif 'pupil' in jointName:
+                            usesPupils = True
+                if not usesPupils or headTransform is None:
+                    continue
+                newTable = TransformBlendTable(table)
+                for b in range(table.getNumBlends()):
+                    blend = table.getBlend(b)
+                    newBlend = TransformBlend()
+                    for k in range(blend.getNumTransforms()):
+                        transform = blend.getTransform(k)
+                        if isinstance(transform, JointVertexTransform) and 'pupil' in transform.getJoint().getName():
+                            transform = headTransform
+                        newBlend.addTransform(transform, blend.getWeight(k))
+                    newBlend.normalizeWeights()
+                    newTable.setBlend(b, newBlend)
+                gnode.modifyGeom(i).modifyVertexData().setTransformBlendTable(newTable)
 
     def __setPupilDirection(self, x, y):
         if y < 0.0:
@@ -1353,7 +1417,7 @@ class ToonHead(Actor.Actor):
                     muzzle = self.find('**/' + lodName + '/**/muzzle*')
                     if lodName == '1000' or lodName == '500':
                         filePrefix = DogMuzzleDict[style.head]
-                        muzzles = loader.loadModel('phase_3' + filePrefix + lodName)
+                        muzzles = loader.loadModel('phase_3' + filePrefix + self.headModelLOD(lodName))
                         if config.ConfigVariableBool('want-new-anims', 1).getValue():
                             if not self.find('**/' + lodName + '/**/__Actor_head/def_head').isEmpty():
                                 muzzles.reparentTo(self.find('**/' + lodName + '/**/__Actor_head/def_head'))
