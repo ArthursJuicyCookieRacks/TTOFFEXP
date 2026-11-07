@@ -187,6 +187,7 @@ class CogdoBoardroomDecor:
         return self.makeSuit(name)
 
     def _give(self, suit):
+        suit._shadowToken = getattr(suit, '_shadowToken', 0) + 1
         suit.stop()
         suit.setActiveShadow(0)
         suit.clearChat()
@@ -274,9 +275,12 @@ class CogdoBoardroomDecor:
                 slot['node'].setH(h)
             mover['anim'] = anim
             suit.loop(anim)
+            suit.setActiveShadow(1)
         else:
+            # Sat or standing still: its shadow placed once.
             self.startSuit(suit)
-        suit.setActiveShadow(1)
+            from toontown.cogdominium.DistCogdoBoardroomGame import placeShadowOnce
+            placeShadowOnce(suit)
 
     def _hide(self, slot):
         suit = slot['suit']

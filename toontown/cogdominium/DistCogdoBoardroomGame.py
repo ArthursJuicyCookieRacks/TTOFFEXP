@@ -27,6 +27,21 @@ from toontown.toonbase import TTLocalizer as TTL
 from toontown.toonbase import ToontownGlobals
 
 
+def placeShadowOnce(suit):
+    # A cog that stays in its place (sat, or stood still) has its shadow put
+    # on the floor once, then no ray is cast for it each frame (one ray per
+    # cog in view was most of the shadow pass).
+    suit._shadowToken = getattr(suit, '_shadowToken', 0) + 1
+    token = suit._shadowToken
+    suit.setActiveShadow(1)
+
+    def off(task):
+        if not suit.isEmpty() and getattr(suit, '_shadowToken', None) == token:
+            suit.setActiveShadow(0)
+        return task.done
+    taskMgr.doMethodLater(0.3, off, 'boardroomShadowOnce-%d' % id(suit))
+
+
 class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
     """Boardroom Hijinks, the Bossbot field office (see
     CogdoBoardroomGameConsts). The AI picks what is thrown where and when;
@@ -38,7 +53,12 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         DistCogdoGame.__init__(self, cr)
         self.layout = None
         self.room = None
+        # The Boss Cogs shown now, by seat (made only for the seats in view:
+        # bossSlots has every seat, _bossFree the cogs not in a seat).
         self.bosses = {}
+        self.bossSlots = {}
+        self._bossFree = {}
+        self._bossTops = {}
         self.minions = []
         self.chairman = None
         self._musicKey = None
@@ -159,11 +179,16 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
             self._introMovie = None
         self._stopMusic()
         self._unloadGui()
-        for suit in list(self.bosses.values()) + [m for m in self.minions] + ([self.chairman] if self.chairman else []):
+        for index in list(self.bosses):
+            self._hideBoss(index)
+        for suit in [s for free in self._bossFree.values() for s in free] + [m for m in self.minions] + (
+                [self.chairman] if self.chairman else []):
             suit.cleanup()
             suit.removeNode()
             suit.delete()
         self.bosses = {}
+        self._bossFree = {}
+        self.bossSlots = {}
         self.minions = []
         self.chairman = None
         for prop in self.props.values():
@@ -229,13 +254,24 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         d = self.layout.difficulty
         names = Consts.BossCogNames
         top = max(1, int(round(2 + d * (len(names) - 2))))
+        # Each seat's cog is only made while the seat is in view, from a pool
+        # of each kind (all 236 at the longest table were made at load).
         for index in self.layout.bossSeats():
-            suit = self._makeSuit(rng.choice(names[:top]))
-            CogdoBoardroomRoom.sitCog(suit, self.room.seatLocators[index], suit.style.body)
-            CogdoBoardroomRoom.liftOverTable(suit)
-            # Sat still till it comes into view (_cullCogs).
-            suit.pose('sit', rng.randrange(20))
-            self.bosses[index] = suit
+            name = rng.choice(names[:top])
+            dna = SuitDNA.SuitDNA()
+            dna.newSuit(name)
+            anchor = PM.NodePath('bossSeat')
+            sit = CogdoBoardroomRoom.sitCog(anchor, self.room.seatLocators[index], dna.body)
+            # Lifted up its seat till its head shows over the table, as
+            # CogdoBoardroomRoom.liftOverTable does for a cog sat there.
+            head = self._bossTop(name)
+            if head is not None:
+                short = Consts.TableTop + Consts.SeatedHeadClear - (anchor.getZ(render) + head)
+                if short > 0:
+                    sit.setZ(sit.getZ() + short)
+            self.bossSlots[index] = {'name': name, 'anchor': anchor, 'y': anchor.getY(render),
+                                     'frame': rng.randrange(20)}
+        self._warmBossPool()
         # The chairman at the head of the table.
         self.chairman = self._makeSuit('tbc')
         sit = CogdoBoardroomRoom.sitCog(self.chairman, self.room.chairmanLocator, self.chairman.style.body)
@@ -257,6 +293,86 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
             suit.prop = prop
             suit.setPos(*self.layout.minionPos(i, 0))
             self.minions.append(suit)
+
+    def _bossTop(self, name):
+        # How high a seated cog of this kind reaches above its seat place.
+        if name not in self._bossTops:
+            suit = self._takeBoss(name)
+            holder = PM.NodePath('holder')
+            suit.reparentTo(holder)
+            suit.pose('sit', 0)
+            bounds = suit.getTightBounds(holder)
+            self._bossTops[name] = bounds[1][2] if bounds else None
+            self._giveBoss(suit)
+            holder.removeNode()
+        return self._bossTops[name]
+
+    def _takeBoss(self, name):
+        free = self._bossFree.get(name)
+        return free.pop() if free else self._makeSuit(name)
+
+    def _giveBoss(self, suit):
+        suit._shadowToken = getattr(suit, '_shadowToken', 0) + 1
+        if getattr(suit, '_seatPos', None) is not None:
+            suit._seatPos = None
+        suit.stop()
+        suit.setActiveShadow(0)
+        suit.clearChat()
+        suit.nametag3d.stash()
+        suit.nametag.setTicking(False)
+        suit._lastSaid = -99
+        suit._replyAt = 0
+        suit.detachNode()
+        self._bossFree.setdefault(suit.style.name, []).append(suit)
+
+    def _warmBossPool(self):
+        # As many of each kind as are ever in view at once (the intro looks
+        # further down the table than the slide), made behind the loading
+        # screen so none is made mid-slide.
+        need = {}
+        ys = sorted(slot['y'] for slot in self.bossSlots.values())
+        lo = Consts.TableStart - 80
+        while lo < Consts.TableEnd + 80:
+            count = {}
+            for slot in self.bossSlots.values():
+                if lo - 60 < slot['y'] < lo + Consts.IntroCogsWithin + 20:
+                    count[slot['name']] = count.get(slot['name'], 0) + 1
+            for name, n in count.items():
+                need[name] = max(need.get(name, 0), n)
+            lo += 25
+        for name, n in need.items():
+            for k in range(n + 1 - len(self._bossFree.get(name, ()))):
+                self._giveBoss(self._makeSuit(name))
+
+    def _showBoss(self, index, animate=True):
+        slot = self.bossSlots[index]
+        suit = self._takeBoss(slot['name'])
+        suit.reparentTo(slot['anchor'])
+        suit.setPosHpr(0, 0, 0, 0, 0, 0)
+        suit.unstash()
+        self.bosses[index] = suit
+        placeShadowOnce(suit)
+        if animate:
+            suit.loop('sit', fromFrame=slot['frame'])
+        else:
+            suit.pose('sit', slot['frame'])
+        return suit
+
+    def _hideBoss(self, index):
+        suit = self.bosses.pop(index, None)
+        if suit is not None:
+            self._giveBoss(suit)
+
+    def _cullBosses(self, y, ahead, behind=-40):
+        # Seats coming into view get their cog, those gone out of view (a
+        # little further, so none flickers at the edge) give it back.
+        for index, slot in self.bossSlots.items():
+            dy = slot['y'] - y
+            if index not in self.bosses:
+                if behind < dy < ahead:
+                    self._showBoss(index)
+            elif not behind - 15 < dy < ahead + 20:
+                self._hideBoss(index)
 
     def _loadProps(self):
         self.props = {
@@ -380,7 +496,7 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         DistCogdoGame.enterGame(self)
         # From the intro's view to the slide's: all hidden, then those near
         # the toon shown and moving again (the first _cullCogs).
-        for suit in list(self.bosses.values()) + self.minions:
+        for suit in self.minions:
             suit._introMoving = False
             if not suit.isStashed():
                 suit.stash()
@@ -620,7 +736,8 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
             return
         self._nextCull = now + 0.4
         y = camera.getY(render) if self.slideState != 'wait' else pos[1]
-        for suit in list(self.bosses.values()) + self.minions:
+        self._cullBosses(y, Consts.ShowCogsWithin)
+        for suit in self.minions:
             near = -40 < suit.getY(render) - y < Consts.ShowCogsWithin
             if near and suit.isStashed():
                 self._showCog(suit)
@@ -637,7 +754,10 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         if self.room is None:
             return Task.done
         y = camera.getY(render)
-        for suit in list(self.bosses.values()) + self.minions:
+        # The Boss Cogs further down the table too: the intro's long shots
+        # look down it.
+        self._cullBosses(y, Consts.IntroCogsWithin, -60)
+        for suit in self.minions:
             near = -60 < suit.getY(render) - y < Consts.ShowCogsWithin
             moving = getattr(suit, '_introMoving', False)
             if near and not moving:
@@ -1262,21 +1382,24 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         else:
             flight = Consts.ThrowFlightTime
             suit = self.bosses.get(source)
-            if suit is None:
+            slot = self.bossSlots.get(source)
+            if suit is None and slot is None:
                 return
-            start = suit.getPos(render) + PM.Vec3(0, 0, 5.0)
+            # (A seat out of view has no cog made: the throw still comes,
+            # from its seat.)
+            start = (suit if suit is not None else slot['anchor']).getPos(render) + PM.Vec3(0, 0, 5.0)
             sfx = self.landSfx
             # The Boss Cog half stands to swing or throw, then sits again.
-            anim = self._throwAnim(suit, kind)
+            anim = self._throwAnim(suit, kind) if suit is not None else None
             if anim:
                 swing = Sequence(Func(suit.headsUp, target), Func(self._standUpFromSeat, suit),
                                  ActorInterval(suit, anim, duration=1.2), Func(suit.setH, 0),
                                  Func(self._sitBackDown, suit), Func(suit.loop, 'sit'))
                 swing.start()
                 self.ivals.append(swing)
-            if kind == Consts.GolfBall:
+            if kind == Consts.GolfBall and suit is not None:
                 base.playSfx(self.swingSfx, node=suit)
-            if random.random() < 0.45:
+            if suit is not None and random.random() < 0.45:
                 self._say(suit, ('TeeOff', 'PlayHardball') if kind == Consts.GolfBall else ('Synergy', 'PinkSlip', 'RedTape', 'WriteOff'))
         if kind == Consts.Oil:
             # A jug of oil: no hit where it lands, but a slick spreads there.
@@ -1330,6 +1453,10 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         # The Boss Cog by the toon swings its golf club in over the table's
         # edge: a red strip there warns where.
         suit = self.bosses.get(seat)
+        if suit is None and seat in self.bossSlots:
+            # (Swipes come from the seats by the toons, in view; should one
+            # not be, its cog is made for it.)
+            suit = self._showBoss(seat)
         if suit is None:
             return
         z = Consts.TableTop
@@ -1629,7 +1756,9 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
             # The boardroom's cogs are out of sight from here on: nothing
             # of theirs is worked out each frame (their shadow rays were,
             # hidden or not).
-            for suit in list(self.bosses.values()) + self.minions + ([self.chairman] if self.chairman else []):
+            for index in list(self.bosses):
+                self._hideBoss(index)
+            for suit in self.minions + ([self.chairman] if self.chairman else []):
                 suit.stash()
                 self._showCog(suit, False)
             if self.decor:

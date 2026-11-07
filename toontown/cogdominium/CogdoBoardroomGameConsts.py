@@ -78,6 +78,9 @@ SeatSideX = TableHalfWidth + 3.4
 # Only the cogs this near the toon are shown (and move), for the frame
 # rate on phones: the table is long.
 ShowCogsWithin = 240.0
+# In the intro, whose long shots look down the table, the Boss Cogs this
+# far ahead of the camera are there.
+IntroCogsWithin = 600.0
 # Cogs this far from the camera are animated less often (Actor's
 # setLODAnimation: every frame nearer than the second figure, about every
 # 0.15 s at the first, less often further off).
