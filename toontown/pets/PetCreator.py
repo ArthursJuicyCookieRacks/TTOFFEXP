@@ -14,9 +14,10 @@ A built doodle's body costs what it always did there: the bottom of the
 playground's price range (PetConstants.ZoneToCostRange) up to BodyShare of
 it, by rarity as in PetUtil.getPetCostFromSeed. Each better choice of a
 trait adds jellybeans on top. The shop's daily doodles never came with every
-trait at its best, and a built one can, so the traits all at their best add
-TraitShare of the range: a doodle with the rarest body and every best trait
-costs a little more than the top of the old range.
+trait at its best, and a built one can, so in every playground the rarest
+body with every best trait costs BestPriceRate times the top of the old
+range: 6,000 in Donald's Dreamland (whose range topped out at 5,000), 600 in
+Toontown Central, and so on.
 """
 
 from toontown.pets import PetConstants, PetDNA, PetTraits
@@ -32,9 +33,9 @@ Levels = (TraitQuality.VERY_BAD, TraitQuality.BAD, TraitQuality.AVERAGE,
 # How much of a playground's price range the rarest body takes; this keeps
 # every body at the price it had.
 BodyShare = 0.6
-# How much of the price range the traits add, all at their best (0.4 before
-# traits went up, which kept every doodle inside the old range).
-TraitShare = 0.6
+# The rarest body with every trait at its best costs this times the top of
+# the playground's old price range (Arthur: 6,000 in Donald's Dreamland).
+BestPriceRate = 1.2
 
 
 def getZones():
@@ -152,16 +153,25 @@ def getBodyCost(body, zoneId):
     return int(minCost + rarity * BodyShare * (maxCost - minCost))
 
 
+def getTraitsCost(zoneId):
+    # What every trait at its best adds: enough to bring the rarest body up
+    # to BestPriceRate times the top of the playground's old price range.
+    minCost, maxCost = PetConstants.ZoneToCostRange[zoneId]
+    rarest = max(getBodyCost(body, zoneId) for body in getBodies(zoneId))
+    return int(round(BestPriceRate * maxCost)) - rarest
+
+
 def getTraitCost(traitIndex, level, zoneId):
     # What this trait's level adds to the body's cost: nothing for the worst
-    # one sold here, its full share of the traits' part of the price range
-    # for the best, and evenly between.
+    # one sold here, its share of getTraitsCost for the best (the shares add
+    # up to it exactly), and evenly between.
     levels = sorted(getTraitLevels(traitIndex, zoneId).keys())
     if len(levels) < 2:
         return 0
-    minCost, maxCost = PetConstants.ZoneToCostRange[zoneId]
-    share = TraitShare * (maxCost - minCost) / float(PetTraits.PetTraits.NumTraits)
-    return int(share * levels.index(level) / float(len(levels) - 1))
+    total = getTraitsCost(zoneId)
+    numTraits = PetTraits.PetTraits.NumTraits
+    best = total * (traitIndex + 1) // numTraits - total * traitIndex // numTraits
+    return int(best * levels.index(level) // (len(levels) - 1))
 
 
 def getCost(body, traitLevels, zoneId):
