@@ -11,9 +11,9 @@ import math
 import random
 
 from direct.directnotify import DirectNotifyGlobal
-from direct.interval.IntervalGlobal import (ActorInterval, Func, LerpPosHprInterval, LerpPosInterval, LerpScaleInterval, Parallel,
-                                            Sequence, SoundInterval, Wait)
-from panda3d.core import CullFaceAttrib, LMatrix4, NodePath, Point2, Point3, Quat, Vec3, Vec4
+from direct.interval.IntervalGlobal import (ActorInterval, Func, LerpFunctionInterval, LerpPosHprInterval, LerpPosInterval,
+                                            LerpScaleInterval, Parallel, Sequence, SoundInterval, Wait)
+from panda3d.core import CullFaceAttrib, PartBundle, LMatrix4, NodePath, Point2, Point3, Quat, Vec3, Vec4
 
 from toontown.battle import BattleProps
 from toontown.battle.BattleSounds import globalBattleSoundCache
@@ -123,6 +123,8 @@ PALM_UP_ANIMS = ('throw',)
 PALM_UP = Vec3(0, -0.35, 1)
 # The arm comes in flatter for those, so the rolled palm can face up.
 PALM_ARM_FROM = Vec3(0.85, -0.5, -0.12)
+# How far the palm-up holds straighten the wrist (see straightenWrist).
+PALM_WRIST_STRAIGHT = 0.85
 # Gags rest in the hold joint (the palm) as the battle puts a pie there.
 PALM_HOLD = True
 # Heading in the palm per gag, and how deep it sinks (fraction of height).
@@ -169,6 +171,13 @@ FIT_SIZES = (1.0, 0.95, 0.9, 0.85, 0.8, 0.75, 0.7, 0.65, 0.6, 0.55, 0.5)
 # The storm cloud's bounds reach below what shows (HOLD_SINK sets it).
 CLEAR_SKIP = ('stormcloud',)
 # Where the hose nozzle points: out at the cogs past the crosshair (camera space).
+# Where each held squirt gag's water comes out (the battle's spray joints:
+# squirt gun, seltzer bottle, fire hose), and the mouth the glass's water
+# is spat from (camera space).
+NOZZLE_JOINTS = ('joint_nozzle', 'joint_toSpray', 'joint_water_stream')
+SPIT_FROM = Point3(0.1, 3.0, -0.55)
+# Gags whose water comes from their middle (the flower's face), not their top.
+SPRAY_FROM_MIDDLE = ('squirting-flower',)
 HOSE_AIM_AT = Point3(0, 30, 0.5)
 # Where the glove on the hose sits in the view (camera space).
 HOSE_GLOVE_AT = Point3(0.8, 3.4, -0.9)
@@ -201,6 +210,14 @@ GUN_IN_FIST = Vec3(0, 0.05, -0.15)
 GUN_SCALE = 0.75
 GUN_CANT = 0
 # The arms' kick when an aimed gag fires: (pos, hpr) of the swing, camera space.
+# The shot's motion: the throw takes THROW_SHARE of the gag's rate, then
+# the arm eases back to the hold over SETTLE_SHARE of it (SETTLE_MIN to
+# SETTLE_MAX seconds), the two poses blended on these parts.
+THROW_SHARE = 0.6
+SETTLE_SHARE = 0.75
+SETTLE_MIN = 0.25
+SETTLE_MAX = 0.4
+SETTLE_PARTS = ('legs', 'torso')
 KICKS = {'shout': ((0, 0.15, 0.03), (0, 3, 0)), 'gun': ((0, -0.1, 0.04), (0, 5, 0))}
 # The shoulder must end up at least this far outside the frame (film units,
 # the frame is -1..1).
@@ -686,7 +703,7 @@ class ToonArms:
         # until its cut-off shoulder is out of the frame again.
         self.growOut(side)
 
-    def straightenWrist(self, side, amount):
+    def straightenWrist(self, side, amount, shoulderOut=True):
         """Swing the forearm about the wrist, the hand (and what it holds)
         staying just where it is, until the forearm carries on in line with
         the hand (amount 1; less leaves some of the bend). The battle hold
@@ -762,7 +779,9 @@ class ToonArms:
                 for node in cuffs:
                     node.setMat(cuff * net * follow * netInv)
             self.toon.update(force=True)
-            if not self.shoulderInView(side):
+            # (shoulderOut False: straightened all the way, the arm grown
+            # out of the frame after.)
+            if not shoulderOut or not self.shoulderInView(side):
                 break
 
     def releaseWrist(self):
@@ -1009,8 +1028,8 @@ class ToonArms:
         self.toon.setScale(ARMS_SCALE)
         if getattr(self, 'mirrored', False):
             self.toon.clearAttrib(CullFaceAttrib)
-            self.unclipBody()
             self.mirrored = False
+        self.unclipBody()
         self.releaseWrist()
         self.aimArm(side)
         if anim in PALM_UP_ANIMS:
@@ -1024,6 +1043,17 @@ class ToonArms:
             self.grow *= 1.08
             self.toon.setScale(self.toon.getScale() * 1.08)
             self.placeGlove(side, glove)
+        if anim in PALM_UP_ANIMS and PALM_WRIST_STRAIGHT:
+            # The battle's pie hold bends the wrist hard sideways: seen from
+            # the eyes the glove stuck out of the forearm like a spatula
+            # (Arthur: "bent out of place, unnatural"). The forearm swings
+            # round to carry on toward the hand, the hand staying put.
+            self.straightenWrist(side, PALM_WRIST_STRAIGHT, shoulderOut=False)
+            self.growOut(side)
+            # The forearm now comes in from further round to the right,
+            # and the shirt by the shoulder peeked in at the frame's edge:
+            # cut away as for the sound gags.
+            self.clipBody(side)
         self.rig.setMat(rigMat)
 
     def firstPerson(self):
@@ -1052,8 +1082,22 @@ class ToonArms:
         if self.track:
             self.track.finish()
         duration = min(max(rate * 0.8, 0.15), 0.6)
-        self.track = Sequence(ActorInterval(self.toon, self.anim, startFrame=self.start, endFrame=self.end, duration=duration),
-                              Func(self.toon.pose, self.anim, self.hold))
+        if self.end > self.start:
+            # The throw (or squirt, or button press), then the arm eases
+            # back into the hold: the battle pose at the throw's end blended
+            # into the hold's, instead of popping straight back to it
+            # (Arthur: "your arm just pops back into place").
+            throw = min(max(rate * THROW_SHARE, 0.15), 0.45)
+            settle = min(max(rate * SETTLE_SHARE, SETTLE_MIN), SETTLE_MAX)
+            duration = throw
+            self.track = Sequence(ActorInterval(self.toon, self.anim, startFrame=self.start, endFrame=self.end, duration=throw),
+                                  Func(self.startSettle),
+                                  LerpFunctionInterval(self.settleTo, duration=settle, fromData=0.0, toData=1.0,
+                                                       blendType='easeInOut'),
+                                  Func(self.endSettle))
+        else:
+            self.track = Sequence(ActorInterval(self.toon, self.anim, startFrame=self.start, endFrame=self.end, duration=duration),
+                                  Func(self.toon.pose, self.anim, self.hold))
         if self.kick:
             # The shout pushes the megaphone forward and it settles back, as
             # the battle toon leans into the blast; the squirt gun kicks up
@@ -1066,6 +1110,52 @@ class ToonArms:
                                        LerpPosHprInterval(self.swing, duration * 0.7, (0, 0, 0), (0, 0, 0), blendType='easeInOut'))
             self.swingTrack.start()
         self.track.start()
+
+    def restAnim(self):
+        """A second copy of the hold's animation, so the pose at the
+        throw's end and the hold's pose can play at once and be blended."""
+        name = self.anim + '-rest'
+        loaded = self.__dict__.setdefault('restLoaded', set())
+        if name not in loaded:
+            for part in SETTLE_PARTS:
+                filename = self.toon.getAnimFilename(self.anim, part)
+                if not filename:
+                    continue
+                for lod in self.toon.getLODNames():
+                    self.toon.loadAnims({name: filename}, part, lod)
+            loaded.add(name)
+        return name
+
+    def startSettle(self):
+        rest = self.restAnim()
+        self.settling = rest
+        for part in SETTLE_PARTS:
+            # Blended as turns (quaternions), so the arm swings round
+            # back to the hold instead of shrinking through the middle.
+            self.toon.setBlend(animBlend=True, blendType=PartBundle.BTComponentwiseQuat, partName=part)
+            self.toon.pose(self.anim, self.end, partName=part)
+            self.toon.pose(rest, self.hold, partName=part)
+            self.toon.setControlEffect(self.anim, 1.0, partName=part)
+            self.toon.setControlEffect(rest, 0.0, partName=part)
+
+    def settleTo(self, t):
+        rest = getattr(self, 'settling', None)
+        if rest is None:
+            return
+        for part in SETTLE_PARTS:
+            self.toon.setControlEffect(self.anim, 1.0 - t, partName=part)
+            self.toon.setControlEffect(rest, t, partName=part)
+
+    def endSettle(self):
+        rest = getattr(self, 'settling', None)
+        self.settling = None
+        if rest is not None:
+            for part in SETTLE_PARTS:
+                self.toon.setControlEffect(rest, 0.0, partName=part)
+                self.toon.setControlEffect(self.anim, 1.0, partName=part)
+                self.toon.setBlend(animBlend=False, partName=part)
+                self.toon.stop(rest, partName=part)
+        self.toon.pose(self.anim, self.hold)
 
     def whack(self, hit=None):
         """The melee: the gag drawn back to the right and swung across the
@@ -1465,6 +1555,25 @@ class GagHandler:
         gag = self.gag
         if gag is None:
             return
+        if self.arms is None:
+            self.__showHeld(gag)
+            return
+        # The whole hold is built with the rig at rest, then the rig gets
+        # its sway back. A new gag arrives while the arms are lowered (a
+        # switch, a reload's switch to a full gag, the trunk), and the
+        # aiming below works in the camera's space: built under the
+        # lowered, tilted rig, the sound gags, the squirt gun and the fire
+        # hose came back up with the arm thrown out of place (Arthur's
+        # whistle, the arm hanging in from the top of the view).
+        rig = self.arms.rig
+        rigMat = rig.getMat()
+        rig.clearTransform()
+        try:
+            self.__showHeld(gag)
+        finally:
+            rig.setMat(rigMat)
+
+    def __showHeld(self, gag):
         prop = BattleProps.globalPropPool.getProp(gag.prop)
         if self.arms is not None:
             # In the toon's own glove, the way the battle holds it.
@@ -1847,12 +1956,47 @@ class GagHandler:
             np.setScale(VIEW_SCALE.get(gag.prop, 0.6) * 1.4)
             speed = G.PROJECTILE_SPEED
         np.reparentTo(render)
-        start = eye + forward * 1.5 + Vec3(0.4, 0, -0.4)
-        np.setPos(start)
-        np.lookAt(start + forward)
         point, dist, cog = self.aimPoint(eye, forward)
-        self.flying.append({'np': np, 'pos': Point3(start), 'dir': Vec3(forward), 'speed': speed, 'left': dist - 1.5,
+        start = eye + forward * 1.5 + Vec3(0.4, 0, -0.4)
+        way = Vec3(forward)
+        left = dist - 1.5
+        nozzle = self.nozzle(gag) if gag.track == G.SQUIRT else None
+        if nozzle is not None and (point - nozzle).length() > 0.5:
+            # The water leaves the gag's own nozzle (the bottle's spout, the
+            # gun's barrel, the hose's end, the flower) and runs from there
+            # to where the crosshair lands. It used to start at a fixed spot
+            # off the eye, shifted along the world's x (not the view's), so
+            # it lined up with the gag only when facing one way (Arthur).
+            start = nozzle
+            way = point - nozzle
+            left = way.length()
+            way.normalize()
+        np.setPos(start)
+        np.lookAt(start + way)
+        self.flying.append({'np': np, 'pos': Point3(start), 'dir': way, 'speed': speed, 'left': left,
                             'gag': gag, 'target': cog, 'end': point, 'spin': gag.track == G.THROW})
+
+    def nozzle(self, gag):
+        """Where the held squirt gag's water comes out, in render: the
+        battle's own spray joints (MovieSquirt's getSprayStartPos), the
+        mouth for the glass (it is spat), else the top of the gag."""
+        prop = self.viewProp
+        if self.arms is None or prop is None or prop.isEmpty() or prop.isHidden():
+            return None
+        self.arms.toon.update(force=True)
+        if gag.prop == 'glass':
+            return render.getRelativePoint(camera, SPIT_FROM)
+        for name in NOZZLE_JOINTS:
+            joint = prop.find('**/' + name)
+            if not joint.isEmpty():
+                return joint.getPos(render)
+        low, high = prop.getTightBounds(camera)
+        if low is None:
+            return None
+        middle = (low + high) * 0.5
+        if gag.prop in SPRAY_FROM_MIDDLE:
+            return render.getRelativePoint(camera, middle)
+        return render.getRelativePoint(camera, Point3(middle[0], middle[1], high[2]))
 
     def tick(self, dt):
         if self.arms is not None:
@@ -2135,13 +2279,20 @@ class GagHandler:
 
     def __tntInHand(self):
         self.__clearView()
+        # Built with the rig at rest, as showHeld (the stick is put in the
+        # glove while the arms are lowered).
+        rigMat = self.arms.rig.getMat()
+        self.arms.rig.clearTransform()
+        try:
+            self.__tntInGlove()
+        finally:
+            self.arms.rig.setMat(rigMat)
+
+    def __tntInGlove(self):
         self.arms.holdPose(G.THROW, 0)
         # Higher and further in than a pie, clear of the gag box, so the
         # stick is seen in the glove before it goes.
-        rigMat = self.arms.rig.getMat()
-        self.arms.rig.clearTransform()
         self.arms.placeGlove(RIGHT, TNT_GLOVE)
-        self.arms.rig.setMat(rigMat)
         prop = BattleProps.globalPropPool.getProp('tnt')
         prop.reparentTo(self.arms.hand(RIGHT))
         self.arms.toon.update(force=True)
