@@ -1,0 +1,106 @@
+# The back button (or a keyboard's own "hide the keyboard" button) while the
+# keyboard is up only puts the keyboard away; it no longer reaches Android's
+# own back handling, which sent the whole game to the background.
+# Applies after android-text-input.patch and the other PythonActivity patches.
+diff --git a/panda/src/android/PythonActivity.java b/panda/src/android/PythonActivity.java
+index 42ea766..4cf806e 100644
+--- a/panda/src/android/PythonActivity.java
++++ b/panda/src/android/PythonActivity.java
+@@ -246,9 +246,7 @@ public class PythonActivity extends PandaActivity {
+                 // The back button puts the keyboard away; the game is told,
+                 // so that it does not bring it straight back.
+                 if (event.getAction() == KeyEvent.ACTION_UP) {
+-                    typingWanted = false;
+-                    typingEvents.add("C:");
+-                    stopTyping();
++                    closeKeyboardByBack();
+                 }
+                 return true;
+             }
+@@ -338,6 +336,17 @@ public class PythonActivity extends PandaActivity {
+ 
+         @Override
+         public boolean sendKeyEvent(KeyEvent event) {
++            if (event.getKeyCode() == KeyEvent.KEYCODE_BACK) {
++                // Some keyboards send their own "hide the keyboard" button
++                // (and the back button, when they look after it themselves)
++                // to the editor as a back key.  Passed on, it would skip
++                // onKeyPreIme and reach the activity, which sends the whole
++                // game to the background; it only puts the keyboard away.
++                if (event.getAction() == KeyEvent.ACTION_UP && typingWanted) {
++                    closeKeyboardByBack();
++                }
++                return true;
++            }
+             // Keys go to the game as they are; Enter ends the line here too.
+             if (event.getKeyCode() == KeyEvent.KEYCODE_ENTER && event.getAction() == KeyEvent.ACTION_DOWN) {
+                 finishTyping();
+@@ -401,6 +410,68 @@ public class PythonActivity extends PandaActivity {
+         }
+     }
+ 
++    // The player put the keyboard away with the back button (or the
++    // keyboard's own button for it): the game is told, so that it does not
++    // bring it straight back.
++    private void closeKeyboardByBack() {
++        typingWanted = false;
++        keyboardClosedAt = SystemClock.uptimeMillis();
++        typingEvents.add("C:");
++        stopTyping();
++    }
++
++    // When the keyboard was last put away with the back button, and whether
++    // the back press now going on is the keyboard's.
++    private volatile long keyboardClosedAt = -100000;
++    private boolean backForKeyboard = false;
++
++    // A back press while the keyboard is up (or one that the keyboard
++    // already handled half of, and that arrives just after it went away)
++    // only puts the keyboard away: it never reaches Android's own back
++    // handling, which would send the game to the background.  This catches
++    // every way the key can come (the game's window, the keyboard's editor,
++    // a keyboard that hid itself on the press and let the release through);
++    // with no keyboard about, the back button works as it always has.
++    private boolean isKeyboardBack() {
++        return typingWanted || SystemClock.uptimeMillis() - keyboardClosedAt < 800;
++    }
++
++    @Override
++    public boolean dispatchKeyEvent(KeyEvent event) {
++        if (event.getKeyCode() == KeyEvent.KEYCODE_BACK) {
++            int action = event.getAction();
++            if (action == KeyEvent.ACTION_DOWN) {
++                if (event.getRepeatCount() == 0) {
++                    backForKeyboard = isKeyboardBack();
++                }
++                if (backForKeyboard) {
++                    return true;
++                }
++            } else if (action == KeyEvent.ACTION_UP) {
++                boolean keyboards = backForKeyboard || isKeyboardBack();
++                backForKeyboard = false;
++                if (keyboards) {
++                    if (typingWanted) {
++                        closeKeyboardByBack();
++                    }
++                    return true;
++                }
++            }
++        }
++        return super.dispatchKeyEvent(event);
++    }
++
++    @Override
++    public void onBackPressed() {
++        if (isKeyboardBack()) {
++            if (typingWanted) {
++                closeKeyboardByBack();
++            }
++            return;
++        }
++        super.onBackPressed();
++    }
++
+     // The game (on its own thread) wants the keyboard up, or put away.
+     public void showKeyboard(boolean show) {
+         typingWanted = show;
