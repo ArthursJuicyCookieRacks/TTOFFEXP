@@ -791,35 +791,45 @@ class NPCPlayerManagerAI:
         for obj in getattr(self, 'lastPlayers', None) or []:
             if not obj.isDeleted() and obj.zoneId in byZone:
                 byZone[obj.zoneId].append((obj, Point3(self.getPlayerPos(obj))))
+        apart2 = APART * APART
         for zoneId, toons in byZone.items():
             if len(toons) < 2:
                 continue
-            for i in range(len(toons)):
+            # Plain numbers for the pair test: most pairs are far apart, and
+            # making vectors for every pair was most of this step's time.
+            xs = [p[0] for t, p in toons]
+            ys = [p[1] for t, p in toons]
+            zs = [p[2] for t, p in toons]
+            count = len(toons)
+            for i in range(count):
                 npc, pos = toons[i]
                 if npc.doId not in movable:
                     continue
-                push = Vec3(0, 0, 0)
-                for j in range(len(toons)):
+                x, y, z = xs[i], ys[i], zs[i]
+                px = py = 0.0
+                for j in range(count):
                     if i == j:
                         continue
-                    other, opos = toons[j]
-                    d = Vec3(pos - opos)
-                    if abs(d[2]) > 3.0:
+                    dx = x - xs[j]
+                    dy = y - ys[j]
+                    d2 = dx * dx + dy * dy
+                    if d2 >= apart2 or abs(z - zs[j]) > 3.0:
                         continue
-                    d.setZ(0)
-                    dist = d.length()
-                    if dist >= APART:
-                        continue
+                    other = toons[j][0]
+                    dist = math.sqrt(d2)
                     if dist < 0.05:
                         # Right on top: each goes its own way (from doIds).
                         angle = ((npc.doId * 7 + other.doId) % 360) * math.pi / 180.0
-                        d = Vec3(math.cos(angle), math.sin(angle), 0)
+                        dx, dy = math.cos(angle), math.sin(angle)
                         dist = 0.0
                     else:
-                        d.normalize()
+                        dx /= dist
+                        dy /= dist
                     # The other toon gives way too when it is an NPC.
                     share = 0.5 if other.doId in movable else 1.0
-                    push += d * (APART - dist) * share
+                    px += dx * (APART - dist) * share
+                    py += dy * (APART - dist) * share
+                push = Vec3(px, py, 0)
                 if push.length() < 0.02:
                     continue
                 if self.party.isPlaying(npc):
@@ -842,6 +852,7 @@ class NPCPlayerManagerAI:
                     h = -math.degrees(math.atan2(push[0], push[1]))
                 npc.moveTo(spot[0], spot[1], ground, h)
                 toons[i] = (npc, Point3(spot[0], spot[1], ground))
+                xs[i], ys[i], zs[i] = spot[0], spot[1], ground
 
     def walkNPC(self, area, npc, dt):
         now = globalClock.getFrameTime()
