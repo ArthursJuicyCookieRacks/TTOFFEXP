@@ -2140,22 +2140,30 @@ class CogdoBoardroomPlayer(CogdoPlayer):
             x, y, h, leg = BoardroomConsts.golfCogPos(cog['path'], t)
             return (0 if cog['carrying'] else 1, math.hypot(x - tx, y - ty))
         cogId, cog, t = min(cogs, key=score)
-        # Where it will be when the ball gets there.
+        # Where it will be when the ball gets there (the ball goes off as
+        # the putter meets it, a moment after the swing starts).
+        from toontown.golf import GolfGlobals
+        contact = GolfGlobals.BALL_CONTACT_TIME
         lead = 1.0
         for k in range(3):
-            x, y, h, leg = BoardroomConsts.golfCogPos(cog['path'], t + lead)
+            x, y, h, leg = BoardroomConsts.golfCogPos(cog['path'], t + lead + contact)
             d = math.hypot(x - tx, y - ty)
             v = min(BoardroomConsts.BallSpeedRange[1], d * BoardroomConsts.BallFriction + 8.0)
             lead = d / max(v * 0.7, 1.0)
         if leg == 3:
             return
         aim = -math.degrees(math.atan2(x - tx, y - ty)) + random.uniform(-6, 6)
-        aim = max(-80.0, min(80.0, aim))
+        aim = (aim + 180.0) % 360.0 - 180.0
         lo, hi = BoardroomConsts.BallSpeedRange
         power = max(0.05, min(1.0, (v - lo) / (hi - lo) + random.uniform(-0.08, 0.08)))
         self.npc.placeAt(ox + tx - 1.6 * math.cos(math.radians(aim)), oy + ty - 1.6 * math.sin(math.radians(aim)), 0, aim - 90)
         self.send('requestGolfSwing', aim, power)
-        self.memo['nextSwing'] = now + random.uniform(1.6, 3.2)
+        # At a player's pace: turning round to the shot (as slowly as the
+        # C.E.O.'s golf spots turn) and filling the power bar take time.
+        turn = abs((aim - self.memo.get('aim', 0.0) + 180.0) % 360.0 - 180.0) / BoardroomConsts.AimSpeed
+        charge = BoardroomConsts.GolfPowerSpeed * power ** (1.0 / BoardroomConsts.GolfPowerExponent)
+        self.memo['aim'] = aim
+        self.memo['nextSwing'] = now + BoardroomConsts.SwingCooldown + turn * 0.6 + charge + random.uniform(0.3, 1.2)
 
 
 COGDO_PLAYERS = {

@@ -119,7 +119,8 @@ Hazards = {
     # slides by its chair (a strip, not a circle: see SwipeReach).
     Swipe: (2, 6, 2, 3.5),
     GolfBall: (2, 5, 1, 2.6),
-    Obstacle: (1, 4, 1, 0.0),
+    # (Running into a pile or a pencil: Arthur wants it to hurt.)
+    Obstacle: (2, 5, 1, 0.0),
     Paper: (1, 4, 1, 3.0),
     Pencil: (2, 5, 1, 2.6),
     Anvil: (4, 8, 2, 3.4),
@@ -383,6 +384,11 @@ GolfCamBack = 13.0
 GolfCamUp = 7.5
 GolfCamLook = 30.0
 GolfCamLookUp = 0.0
+# Brought in front of anything in its way (this far in front of it, never
+# nearer the ball than GolfCamMin), and up this much for each foot in.
+GolfCamMargin = 1.2
+GolfCamMin = 3.5
+GolfCamRise = 0.35
 # After the golf, the toons walk into their elevator; the ride goes on
 # without anyone who hasn't in this long.
 GolfLeaveTime = 40.0
@@ -398,6 +404,9 @@ GolfElevatorDepth = 6.2
 GolfElevators = ((0.0, GolfHalfY - GolfElevatorDepth, 0.0),
                  (-GolfHalfX + GolfElevatorDepth, BarrelPile[1], 90.0),
                  (GolfHalfX - GolfElevatorDepth, BarrelPile[1], -90.0))
+# Half the width of the way into the front elevator, the way out after
+# the golf, left open in its shaft's collisions.
+GolfExitDoorHalfWidth = 4.4
 # Where a cog stands just out of each elevator's doors.
 GolfElevatorStep = 2.5
 NumBarrels = 10
@@ -405,20 +414,33 @@ LaffPerBarrel = 3
 GolfCogNames = ('f', 'p', 'ym', 'mm', 'ds', 'hh', 'cr')
 GolfMaxCogsRange = (7, 10)
 GolfSpawnPeriodRange = (1.8, 1.0)
+# By the field office's level (1 to 5, its star): more cogs walking at once
+# and coming quicker on each level (Arthur: the golf was too easy), for a
+# full party of golfers.
+GolfMaxCogsByLevel = (5, 6, 7, 8, 10)
+GolfSpawnPeriodByLevel = (2.5, 2.4, 2.3, 2.25, 2.15)
+# On levels 3 to 5 some cogs take two golf balls (the bigger ones more
+# often): about this share of them.
+GolfToughShareByLevel = (0.0, 0.0, 0.15, 0.22, 0.3)
 GolfCogSpeedRange = (5.5, 7.5)
 # The party the golf is made for: fewer golfers get fewer cogs.
 GolfFullParty = 4
 GolfPickupTime = 1.2
 GolfCogRadius = 2.4
-# The swing: Left/Right aims, holding Jump (Control) winds up, letting go
-# swings; the longer the wind-up, the harder the hit.
-AimSpeed = 75.0
-ChargeTime = 1.1
+# The swing, as at the C.E.O.'s golf spots: Left/Right turns the shot all
+# the way round, holding Jump (Control) fills the power bar up and back
+# down, letting go putts.
+AimSpeed = 60.0
+# The C.E.O. golf spots' power: (time held / 3) ** 0.75, up to full and
+# back down again.
+GolfPowerSpeed = 3.0
+GolfPowerExponent = 0.75
 BallSpeedRange = (14.0, 52.0)
 BallFriction = 0.9
 BallStopSpeed = 1.5
 BallRadius = 0.45
-SwingCooldown = 0.8
+# The putter's swing (24 frames) is over before the next wind-up.
+SwingCooldown = 1.0
 
 
 def golfElevatorDoor(index):
@@ -534,3 +556,48 @@ def golfBallStart(x, y, h, power):
     a = math.radians(h)
     vx, vy = -math.sin(a) * speed, math.cos(a) * speed
     return x + vx * 1.4 / max(speed, 1.0), y + vy * 1.4 / max(speed, 1.0), vx, vy
+
+
+def golfPower(held):
+    """The power (0 to 1) of a putt after holding Jump this long: as at
+    the C.E.O.'s golf spots, up to full and back down, over and over."""
+    t = max(0.0, held) / GolfPowerSpeed
+    t = t ** GolfPowerExponent
+    power = int(t * 100) % 200
+    if power > 100:
+        power = 200 - power
+    return power / 100.0
+
+
+def golfCamWall(x, y):
+    """Whether the golf camera would be in or past the office's walls (the
+    balls' grid reaches a little past them)."""
+    return abs(x) > GolfHalfX - 0.6 or abs(y) > GolfHalfY - 0.6
+
+
+def golfLowPartition(x, y):
+    """Whether (x, y) is on one of the low cubicle partitions."""
+    for x0, y0, x1, y1 in GolfPartitions:
+        if x0 - 0.6 <= x <= x1 + 0.6 and y0 - 0.6 <= y <= y1 + 0.6:
+            return True
+    return False
+
+
+def golfCogHits(level, nameIndex, top=7, roll=None):
+    """How many golf balls it takes to knock a golf cog over at a field
+    office of this level (1 to 5): one on levels 1 and 2; from level 3 on,
+    a share of them take two (Arthur: the higher levels' cogs take more
+    than one ball), the bigger kinds of cog more often."""
+    import random
+    share = golfLevelValue(GolfToughShareByLevel, level)
+    if share <= 0.0:
+        return 1
+    # The biggest kind of this office twice as likely as the smallest.
+    size = nameIndex / float(max(1, top - 1))
+    chance = share * (0.67 + 0.66 * size)
+    roll = random.random() if roll is None else roll
+    return 2 if roll < chance else 1
+
+
+def golfLevelValue(table, level):
+    return table[max(1, min(len(table), int(level))) - 1]

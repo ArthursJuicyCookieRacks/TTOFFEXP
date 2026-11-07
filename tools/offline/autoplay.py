@@ -480,7 +480,7 @@ def hardy(air, avId):
     # Immortal, with every gag and full laff (set, not toggled, so a second
     # call changes nothing).
     av = air.doId2do[avId]
-    av.setImmortalMode(True)
+    av.setImmortalMode(not os.environ.get('AUTOPLAY_MORTAL'))
     av.setUnlimitedGags(True)
     av.doRestock(0)
     av.toonUp(ToontownGlobals.MaxHpLimit)
@@ -1266,6 +1266,10 @@ def playCogdoBoardroom(dist):
                 press('turnLeft', diff > 8)
                 press('turnRight', diff < -8)
                 press('forward', abs(diff) < 30)
+                if time.time() > nextShot and n < 26:
+                    nextShot = time.time() + 1.5
+                    base.screenshot(os.path.join(shots, 'boss-%02d-walkout.png' % (70 + n)), defaultFilename=0)
+                    n += 1
             yield sleep(0.03)
             continue
         if not idle and getattr(dist, 'phase', None) == 'golf' and dist.golf is not None and (
@@ -1289,12 +1293,12 @@ def playCogdoBoardroom(dist):
                 cog = min(cogs, key=lambda c: (0 if c['carry'] is not None else 1, c['suit'].getPos().length()))
                 lead = 1.0
                 for k in range(3):
-                    cx, cy, ch, leg = Consts.golfCogPos(cog['path'], now - cog['start'] + lead + 0.6)
+                    cx, cy, ch, leg = Consts.golfCogPos(cog['path'], now - cog['start'] + lead + 0.6 + 0.42)
                     d = math.hypot(cx - tee[0], cy - tee[1])
                     v = min(Consts.BallSpeedRange[1], d * Consts.BallFriction + 8.0)
                     lead = d / max(v * 0.7, 1.0)
                 if leg < 3:
-                    aim = max(-80.0, min(80.0, -math.degrees(math.atan2(cx - tee[0], cy - tee[1]))))
+                    aim = -math.degrees(math.atan2(cx - tee[0], cy - tee[1]))
                     lo, hi = Consts.BallSpeedRange
                     target = (aim, max(0.05, min(1.0, (v - lo) / (hi - lo))))
             if target is None:
@@ -1302,11 +1306,13 @@ def playCogdoBoardroom(dist):
                     press(name, False)
             else:
                 aim, power = target
-                press('turnLeft', aim > dist.aimH + 2)
-                press('turnRight', aim < dist.aimH - 2)
-                lined = abs(aim - dist.aimH) <= 2
+                off = (aim - dist.aimH + 180.0) % 360.0 - 180.0
+                press('turnLeft', off > 2)
+                press('turnRight', off < -2)
+                lined = abs(off) <= 2
                 if dist.charging:
-                    rising = ((now - dist.chargeStart) / Consts.ChargeTime) % 2.0 <= 1.0
+                    held = now - dist.chargeStart
+                    rising = Consts.golfPower(held + 0.05) >= Consts.golfPower(held)
                     press('jump', not (rising and dist.power >= power - 0.03))
                 else:
                     press('jump', lined)
@@ -1339,6 +1345,11 @@ def playCogdoBoardroom(dist):
                     left, right = ob.x - ob.w - 2.5, ob.x + ob.w + 2.5
                     free = [g for g in (left, right) if abs(g) < Consts.TableHalfWidth - 1.5 and not layout.blockedAt(g, ob.y, 0.5)]
                     goal = min(free, key=lambda g: abs(g - pos[0])) if free else goal
+            if os.environ.get('AUTOPLAY_SLIDE_CRASH'):
+                # Test: straight into the next pile, to see the hit hurt.
+                piles = [ob for ob in layout.obstacles if ob.kind == Layout.PILE and ob.y - ob.l - pos[1] > 2]
+                if piles:
+                    goal = min(piles, key=lambda ob: ob.y).x
             press('turnLeft', goal < pos[0] - 0.6)
             press('turnRight', goal > pos[0] + 0.6)
             # Off the table early enough to be over the pencil when there

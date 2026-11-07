@@ -4,7 +4,7 @@ import random
 from panda3d import core as PM
 from direct.directnotify.DirectNotifyGlobal import directNotify
 from direct.distributed.ClockDelta import globalClockDelta
-from direct.gui.DirectGui import DirectFrame, DirectLabel
+from direct.gui.DirectGui import DGG, DirectFrame, DirectLabel, DirectWaitBar
 from direct.interval.IntervalGlobal import (ActorInterval, Func, LerpFunctionInterval, LerpColorScaleInterval, LerpHprInterval, LerpPosInterval,
                                             LerpScaleInterval, Parallel, ProjectileInterval, Sequence, SoundInterval, Wait)
 from direct.task.Task import Task
@@ -415,6 +415,10 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         self._updateGui()
 
     def _unloadGui(self):
+        self._destroyPowerBar()
+        if getattr(self, '_swinging', None) is not None:
+            self._swinging.finish()
+            self._swinging = None
         if self.gui:
             self.gui.destroy()
         self.gui = None
@@ -1866,14 +1870,18 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         self.power = 0.0
         self.charging = False
         self.lastSwing = -99
+        self._swinging = None
         self._golfCamPos = None
+        self._golfCamH = None
+        self._golfCamDist = None
+        self._golfTurn = 0
+        self._makePowerBar()
         place = base.cr.playGame.getPlace()
         self._toWalk(place)
         toon.stopTrackAnimToSpeed()
         toon.controlManager.setSpeeds(0, 0, 0, 0)
         self._holdStill(toon, True)
-        if toon.getAnimControls('loop-putt'):
-            toon.loop('loop-putt')
+        self._golfAnimState('GolfPuttLoop', True)
         # The golf camera is ours alone: the walk's smart camera would put
         # it back behind the toon's head every frame.
         if getattr(toon, '_smartCamEnabled', False):
@@ -1933,31 +1941,70 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
             self._checkGolfLeave(toon)
             return Task.cont
         from direct.showbase.InputStateGlobal import inputState
+        # As at the C.E.O.'s golf spots: Left and Right turn the shot all
+        # the way round, the toon shuffling round with it; holding Jump
+        # (Control) fills the power bar up and back down, and letting go
+        # putts at the power it's at.
         turn = 0
         if inputState.isSet('turnLeft') or inputState.isSet('slideLeft'):
             turn += 1
         if inputState.isSet('turnRight') or inputState.isSet('slideRight'):
             turn -= 1
-        self.aimH = max(-80.0, min(80.0, self.aimH + turn * Consts.AimSpeed * dt))
+        swinging = self._swinging is not None and self._swinging.isPlaying()
+        if swinging:
+            turn = 0
+        self.aimH = (self.aimH + turn * Consts.AimSpeed * dt + 180.0) % 360.0 - 180.0
+        if not swinging and turn != self._golfTurn:
+            # (The C.E.O.'s spot's own pairing of key and animation.)
+            self._golfAnimState({1: 'GolfRotateRight', -1: 'GolfRotateLeft', 0: 'GolfPuttLoop'}[turn])
+        self._golfTurn = turn
         tee = self.golf.teePos(self.startIndex(toon.doId))
         toon.setPos(render, tee + self._teeOffset(self.aimH))
         toon.setH(render, self.aimH - 90)
         held = inputState.isSet('jump')
-        if held and not self.charging and now - self.lastSwing > Consts.SwingCooldown:
+        if held and not self.charging and not swinging and now - self.lastSwing > Consts.SwingCooldown:
             self.charging = True
             self.chargeStart = now
         if self.charging:
-            # The power goes up and back down while held, as on the course.
-            t = ((now - self.chargeStart) / Consts.ChargeTime) % 2.0
-            self.power = t if t <= 1.0 else 2.0 - t
+            self.power = Consts.golfPower(now - self.chargeStart)
             if not held:
                 self.charging = False
                 self.lastSwing = now
                 self.sendUpdate('requestGolfSwing', [self.aimH, self.power])
         else:
             self.power = 0.0
+        if self._powerBar is not None:
+            value = int(round(self.power * 100))
+            if self._powerBar['value'] != value:
+                self._powerBar['value'] = value
         self.golf.showAim(tee, self.aimH, self.power)
         return Task.cont
+
+    def _golfAnimState(self, state, forced=False):
+        # The putting stance, and turning on the spot, as at the C.E.O.'s
+        # golf spots (the others see it too).
+        toon = base.localAvatar
+        if toon.isEmpty():
+            return
+        cur = toon.animFSM.getCurrentState()
+        if forced or cur is None or cur.getName() != state:
+            toon.b_setAnimState(state)
+
+    def _makePowerBar(self):
+        # The C.E.O.'s golf spots' power bar, along the bottom of the screen.
+        self._destroyPowerBar()
+        self._powerBar = DirectWaitBar(pos=(0.0, 0, -0.94), relief=DGG.SUNKEN, frameSize=(-2.0, 2.0, -0.2, 0.2),
+                                       borderWidth=(0.02, 0.02), scale=0.25, range=100, sortOrder=50,
+                                       frameColor=(0.5, 0.5, 0.5, 0.5), barColor=(1.0, 0.0, 0.0, 1.0), text='',
+                                       text_scale=0.26, text_fg=(1, 1, 1, 1), text_align=PM.TextNode.ACenter,
+                                       text_pos=(0, -0.05))
+        self._powerBar['value'] = 0
+
+    def _destroyPowerBar(self):
+        bar = getattr(self, '_powerBar', None)
+        if bar is not None:
+            bar.destroy()
+        self._powerBar = None
 
     def _teeOffset(self, h):
         # Where a toon stands beside its tee for a shot at heading h.
@@ -1967,29 +2014,59 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         return side + back
 
     def _golfCamera(self, toon, dt):
+        # As at the C.E.O.'s golf spots: behind the ball, down the line of
+        # the shot, turning with the aim (Arthur). Brought in front of any
+        # desk, cubicle or wall that would come between it and the toon,
+        # and up a little when it is brought in, so it never ends up in a
+        # wall or looking at the back of one.
         tee = self.golf.teePos(self.startIndex(toon.doId))
-        # Behind the ball, looking straight down the office: Left and Right
-        # turn the aim (the arrow and the toon), not the camera (Arthur:
-        # the camera swung round with every turn).
-        fwd = PM.Vec3(0, 1, 0)
-        # Kept inside the walls.
-        want = tee - fwd * Consts.GolfCamBack + PM.Vec3(0, 0, Consts.GolfCamUp)
-        local = self.golf.toLocal(want)
-        local.setX(max(-Consts.GolfHalfX + 1.5, min(Consts.GolfHalfX - 1.5, local[0])))
-        local.setY(max(-Consts.GolfHalfY + 0.6, local[1]))
-        want = local + self.golf.root.getPos(render)
+        h = self.aimH
+        if self._golfCamH is None:
+            self._golfCamH = h
+        else:
+            d = (h - self._golfCamH + 180.0) % 360.0 - 180.0
+            self._golfCamH += d * min(1.0, dt * 10.0)
+        a = math.radians(self._golfCamH)
+        fwd = PM.Vec3(-math.sin(a), math.cos(a), 0)
+        local = self.golf.toLocal(tee)
+        dist = self._golfCamClear(local[0], local[1], -fwd[0], -fwd[1], Consts.GolfCamBack)
+        if self._golfCamDist is None or dist < self._golfCamDist:
+            # In at once (never through a wall), out again gently.
+            self._golfCamDist = dist
+        else:
+            self._golfCamDist += (dist - self._golfCamDist) * min(1.0, dt * 3.0)
+        dist = self._golfCamDist
+        up = Consts.GolfCamUp + (Consts.GolfCamBack - dist) * Consts.GolfCamRise
+        cur = tee - fwd * dist + PM.Vec3(0, 0, up)
         look = tee + fwd * Consts.GolfCamLook + PM.Vec3(0, 0, Consts.GolfCamLookUp)
-        cur = self._golfCamPos or want
-        cur = cur + (want - cur) * min(1.0, dt * 12.0)
         self._golfCamPos = PM.Point3(cur)
         camera.setPos(render, cur)
         camera.lookAt(look)
 
-    def golfCog(self, cogId, name, px, side, exitY, speed, timestamp, toDrop=False, tx=0.0, ty=0.0):
+    def _golfCamClear(self, x, y, dx, dy, want):
+        # How far back from the ball (x, y, office space) along (dx, dy) the
+        # camera can go before something is in the way, less a margin.
+        step = 0.25
+        d = 0.5
+        while d <= want + Consts.GolfCamMargin:
+            px, py = x + dx * d, y + dy * d
+            # (The low cubicle partitions are under the camera: it looks
+            # over them, as before.)
+            if Consts.golfCamWall(px, py) or (Consts.golfBlocked(px, py) and not Consts.golfLowPartition(px, py)):
+                return max(Consts.GolfCamMin, min(want, d - Consts.GolfCamMargin))
+            d += step
+        return want
+
+    def golfCog(self, cogId, name, px, side, exitY, speed, timestamp, toDrop=False, tx=0.0, ty=0.0, hits=1):
         if self.golf is None:
             return
         elapsed = globalClockDelta.localElapsedTime(timestamp, bits=16)
-        self.golf.addCog(cogId, name, px, side, exitY, speed, self.golfTime() - elapsed, (tx, ty) if toDrop else None)
+        self.golf.addCog(cogId, name, px, side, exitY, speed, self.golfTime() - elapsed, (tx, ty) if toDrop else None, hits)
+
+    def golfCogHurt(self, cogId, avId, hitsLeft):
+        # Hit, but it takes more than one ball on this level.
+        if self.golf is not None:
+            self.golf.cogHurt(cogId, hitsLeft)
 
     def golfDrops(self, dropIds, xs, ys):
         if self.golf is None:
@@ -2036,6 +2113,10 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         self.golfLeaving = True
         self.charging = False
         self.golf.hideAim()
+        self._destroyPowerBar()
+        if self._swinging is not None:
+            self._swinging.finish()
+            self._swinging = None
         # Every cog left in the office blows up: no more barrels taken.
         for cogId in list(self.golf.cogs):
             self.golf.cogExplode(cogId)
@@ -2177,13 +2258,33 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         toon = self.getToon(avId)
         index = self.startIndex(avId)
         tee = self.golf.toLocal(self.golf.teePos(index))
-        self.golf.addBall(avId, tee, h, power, toon is not None and toon.isLocal())
-        if toon is not None and not toon.isEmpty():
-            if not toon.isLocal():
-                toon.setH(render, h - 90)
-            if toon.getAnimControls('swing-putt'):
-                Sequence(ActorInterval(toon, 'swing-putt', startFrame=0, endFrame=23),
-                         Func(toon.loop, 'loop-putt')).start()
+        local = toon is not None and toon.isLocal()
+
+        def hit():
+            if self.golf is not None:
+                self.golf.addBall(avId, tee, h, power, local)
+
+        if toon is None or toon.isEmpty() or not toon.getAnimControls('swing-putt'):
+            hit()
+            return
+        if not local:
+            toon.setH(render, h - 90)
+        # As at the C.E.O.'s golf spots: the putter goes back and comes
+        # through, and the ball goes off as the club meets it.
+        from toontown.golf import GolfGlobals
+        contact = GolfGlobals.BALL_CONTACT_FRAME
+        after = Func(self._golfAnimState, 'GolfPuttLoop', True) if local else Func(toon.loop, 'loop-putt')
+        swing = Sequence(ActorInterval(toon, 'swing-putt', startFrame=0, endFrame=contact), Func(hit),
+                         ActorInterval(toon, 'swing-putt', startFrame=contact, endFrame=24), after,
+                         name=self.uniqueName('golfSwing-%d' % avId))
+        if local:
+            if self._swinging is not None:
+                self._swinging.finish()
+            self._swinging = swing
+            self._golfTurn = 0
+        else:
+            self.ivals.append(swing)
+        swing.start()
 
     # --- What the cogs say ---
 

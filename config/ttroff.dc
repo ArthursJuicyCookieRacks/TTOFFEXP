@@ -2381,7 +2381,7 @@ dclass DistCogdoBoardroomGame : DistCogdoGame {
   requestExit() airecv clsend;
   toonExited(uint32 avId) broadcast;
   startGolf(int16 timestamp) broadcast;
-  golfCog(uint16 cogId, uint8 name, int16/100 px, int8 side, int16/100 exitY, uint16/100 speed, int16 timestamp, bool toDrop, int16/10 tx, int16/10 ty) broadcast;
+  golfCog(uint16 cogId, uint8 name, int16/100 px, int8 side, int16/100 exitY, uint16/100 speed, int16 timestamp, bool toDrop, int16/10 tx, int16/10 ty, uint8 hits) broadcast;
   golfDrops(uint16 dropIds[], int16/10 xs[], int16/10 ys[]) broadcast;
   golfBarrelsHome(uint8 barrelsHome) broadcast;
   golfCogPickup(uint16 cogId, bool carrying, uint8 barrelsHome) broadcast;
@@ -2390,6 +2390,7 @@ dclass DistCogdoBoardroomGame : DistCogdoGame {
   golfSwing(uint32 avId, int16/10 h, uint8/100 power, int16 timestamp) broadcast;
   requestGolfHit(uint16 cogId) airecv clsend;
   golfCogHit(uint16 cogId, uint32 avId, uint8 barrelsHome) broadcast;
+  golfCogHurt(uint16 cogId, uint32 avId, uint8 hitsLeft) broadcast;
   golfOver(int16 timestamp) broadcast;
   requestGolfLeave() airecv clsend;
   requestGolfSkip() airecv clsend;
