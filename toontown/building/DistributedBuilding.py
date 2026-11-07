@@ -607,10 +607,14 @@ class DistributedBuilding(DistributedObject.DistributedObject):
         return suitBuildingNP
 
     # Where the level star sits beside the field office sign: just past the
-    # sign's right edge (half its width is 20 * 0.267), out in front of the
-    # wall and the eyebrow beam so they never hide it, and its size in feet.
+    # sign's right edge (half its width is 20 * 0.267), flat on the wall
+    # beside the sign (Arthur: it stood 3.5 ft out and looked to float; a
+    # hair off the wall, not a decal, so the wall can't hide it), and its
+    # size in feet.
     FieldOfficeStarX = 6.75
-    FieldOfficeStarY = -3.5
+    FieldOfficeStarY = -0.12
+    FieldOfficeStarOldY = -3.5
+    FieldOfficeStarView = (4.0, -20.0, -4.0)
     FieldOfficeStarZ = -0.7
     FieldOfficeStarSize = 2.5
 
@@ -714,12 +718,24 @@ class DistributedBuilding(DistributedObject.DistributedObject):
             bigger = self.FieldOfficeMidSignScale
             sx, sy, sz = signNP.getScale(signOrigin)
             signNP.setScale(signOrigin, sx * bigger, sy, sz * bigger)
+        # The places and sizes above were set with the star 3.5 ft out from
+        # the wall. Flat on the wall now (Arthur), it is moved and grown so
+        # it looks just as it did from in front of the door (from 20 ft out,
+        # 4 ft right and 4 ft down of the sign): the same place, the same size.
+        view = self.FieldOfficeStarView
+        k = (view[1] - self.FieldOfficeStarY) / (view[1] - self.FieldOfficeStarOldY)
+        x, z = starNP.getX(), starNP.getZ()
+        starNP.setX(view[0] + (x - view[0]) * k)
+        starNP.setZ(view[2] + (z - view[2]) * k)
+        starNP.setY(self.FieldOfficeStarY)
+        sx, sy, sz = starNP.getScale()
+        starNP.setScale(sx * k, sy, sz * k)
         starNP.setPythonTag('foSignLayout', (round(squeeze, 3), round(fit, 3)))
 
     @classmethod
     def makeFieldOfficeLevelStar(cls, signOrigin, level, z=0.0):
         star = signOrigin.attachNewNode('fieldOfficeLevelStar')
-        star.setPos(cls.FieldOfficeStarX, cls.FieldOfficeStarY, z + cls.FieldOfficeStarZ)
+        star.setPos(cls.FieldOfficeStarX, cls.FieldOfficeStarOldY, z + cls.FieldOfficeStarZ)
         star.setDepthOffset(2)
         outline = loader.loadModel('phase_3.5/models/gui/name_star')
         outline.reparentTo(star)

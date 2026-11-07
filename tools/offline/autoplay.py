@@ -1787,6 +1787,9 @@ def scenarioFieldOfficeStars():
                  render.getRelativePoint(sign, Point3(3, 0, 0)))
         shotFrom('fo-star-%s-level%d-close.png' % (track, level), render.getRelativePoint(sign, Point3(4, -20, -4)),
                  render.getRelativePoint(sign, Point3(3, 0, 0)))
+        # From the side, along the wall: does the star sit on it?
+        shotFrom('fo-star-%s-level%d-side.png' % (track, level), render.getRelativePoint(sign, Point3(22, -14, -3)),
+                 render.getRelativePoint(star, Point3(0, 0, 0)))
         base.aspect2d.show()
         log('field office %s level %d on block %d, lot squeeze and fit %s' % (track, level, block, star.getPythonTag('foSignLayout')))
 
