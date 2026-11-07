@@ -41,6 +41,7 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         self.bosses = {}
         self.minions = []
         self.chairman = None
+        self._musicKey = None
         self.memosGone = set()
         self.powerUpsGone = set()
         self.carried = 0
@@ -113,20 +114,27 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         self.sceneRoot = self.geomRoot.attachNewNode('sceneRoot')
         self._loadMeeting()
         self.decor = CogdoBoardroomDecor(self.layout, self._makeSuit)
-        self.decor.load(self.room.root)
+        self.decor.load(self.room.root, self.room.bins)
         self._loadProps()
         self.golf = CogdoBoardroomGolf(self)
         self.golf.load(self.geomRoot)
         self._loadGui()
-        self.music = loader.loadMusic('phase_12/audio/bgm/Bossbot_CEO_v1.ogg')
+        # The C.E.O.'s music (Consts.MusicFiles), one copy per file.
+        loaded = {}
+        self.musics = {}
+        for key, path in Consts.MusicFiles.items():
+            if path not in loaded:
+                loaded[path] = loader.loadMusic(path)
+            self.musics[key] = loaded[path]
+        self._musicKey = None
         self.hitSfx = loader.loadSfx('phase_5/audio/sfx/tt_s_ara_cmg_toonHit.ogg')
         self.memoSfx = loader.loadSfx('phase_4/audio/sfx/MG_maze_pickup.ogg')
         self.powerSfx = loader.loadSfx('phase_4/audio/sfx/MG_pairing_match_bonus_both.ogg')
         self.swingSfx = loader.loadSfx('phase_5/audio/sfx/SA_tee_off.ogg')
-        self.throwSfx = loader.loadSfx('phase_5/audio/sfx/SA_paper_throw.ogg') if hasattr(loader, 'loadSfx') else None
+        self.throwSfx = loader.loadSfx('phase_5/audio/sfx/SA_powertie_throw.ogg') if hasattr(loader, 'loadSfx') else None
         self.dropSfx = loader.loadSfx('phase_5/audio/sfx/AA_drop_anvil.ogg')
         self.landSfx = loader.loadSfx('phase_5/audio/sfx/AA_drop_sandbag.ogg')
-        self.oilSfx = loader.loadSfx('phase_9/audio/sfx/CHQ_FACT_stomper_small.ogg')
+        self.oilSfx = loader.loadSfx('phase_9/audio/sfx/CHQ_FACT_stomper_med.ogg')
         self.slipSfx = loader.loadSfx('phase_6/audio/sfx/KART_Skidding_On_Asphalt.ogg')
         self.exitSfx = loader.loadSfx('phase_5/audio/sfx/elevator_door_open.ogg')
         # The ride to the golf office, as between the other field offices'
@@ -139,6 +147,7 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         for ival in self.ivals:
             ival.pause()
         self.ivals = []
+        taskMgr.remove(self.uniqueName('introCull'))
         self._stopGolfArrival()
         self.elevatorMusic.stop()
         if getattr(self, '_defaultFar', None):
@@ -148,7 +157,7 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
             self._introMovie.end()
             self._introMovie.unload()
             self._introMovie = None
-        self.music.stop()
+        self._stopMusic()
         self._unloadGui()
         for suit in list(self.bosses.values()) + [m for m in self.minions] + ([self.chairman] if self.chairman else []):
             suit.cleanup()
@@ -180,8 +189,38 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         dna.newSuit(name)
         suit.setDNA(dna)
         suit.nametag3d.stash()
-        suit.nametag.destroy() if False else None
+        # Their names never show (only a cog speaking shows its bubble, see
+        # _say), so their name tags don't tick each frame: hundreds of them
+        # did, about 20 ms a frame on a PC (perf audit).
+        suit.nametag.setTicking(False)
+        # No shadow ray till the cog is in view (_showCog): a ray each was
+        # cast for hidden cogs too, about 16 ms every other frame.
+        suit.setActiveShadow(0)
+        # Far down the table a cog's animation is worked out less often
+        # (no difference to see that far off; much less work on phones).
+        suit.setLODAnimation(*Consts.CogAnimLOD)
         return suit
+
+    def _showCog(self, suit, show=True, animate=True):
+        # A cog coming into view (or going out of it): only those in view
+        # are drawn, animated and cast a shadow.
+        if show:
+            if suit.isStashed():
+                suit.unstash()
+            suit.setActiveShadow(1)
+            if animate:
+                if suit in self.minions:
+                    suit.pose('landing', 0)
+                    suit.prop.loop('propeller')
+                elif getattr(suit, '_decorSlot', None) is not None and self.decor:
+                    self.decor.startSuit(suit)
+                else:
+                    suit.loop('sit', fromFrame=random.randrange(20))
+        else:
+            suit.stop()
+            suit.setActiveShadow(0)
+            if suit in self.minions:
+                suit.prop.stop()
 
     def _loadMeeting(self):
         # The Boss Cogs in their chairs: the hardest offices have the
@@ -194,7 +233,8 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
             suit = self._makeSuit(rng.choice(names[:top]))
             CogdoBoardroomRoom.sitCog(suit, self.room.seatLocators[index], suit.style.body)
             CogdoBoardroomRoom.liftOverTable(suit)
-            suit.loop('sit', fromFrame=rng.randrange(20))
+            # Sat still till it comes into view (_cullCogs).
+            suit.pose('sit', rng.randrange(20))
             self.bosses[index] = suit
         # The chairman at the head of the table.
         self.chairman = self._makeSuit('tbc')
@@ -204,6 +244,7 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         # Forward and up a touch, onto the seat, his legs over its edge.
         sit.setPos(sit.getX(), sit.getY() + Consts.ChairmanSitForward, sit.getZ() + Consts.ChairmanSitUp)
         self.chairman.loop('sit')
+        self.chairman.setActiveShadow(1)
         # The minions overhead, each on its propeller.
         for i, minion in enumerate(self.layout.minions):
             suit = self._makeSuit(minion['name'])
@@ -212,7 +253,7 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
             prop = BattleProps.globalPropPool.getProp('propeller')
             head = suit.find('**/joint_head')
             prop.reparentTo(head if not head.isEmpty() else suit)
-            prop.loop('propeller')
+            prop.pose('propeller', 0)
             suit.prop = prop
             suit.setPos(*self.layout.minionPos(i, 0))
             self.minions.append(suit)
@@ -301,7 +342,21 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         self._introMovie.load(self.sceneRoot)
         self._farView()
         self._introMovie.play()
-        base.playMusic(self.music, looping=1, volume=0.7)
+        self._playMusic('slide')
+        taskMgr.add(self._introCull, self.uniqueName('introCull'))
+
+    def _playMusic(self, key):
+        # One tune at a time; the one already playing carries on.
+        if self._musicKey == key or not getattr(self, 'musics', None):
+            return
+        self._stopMusic()
+        self._musicKey = key
+        base.playMusic(self.musics[key], looping=1, volume=Consts.MusicVolume)
+
+    def _stopMusic(self):
+        for music in getattr(self, 'musics', {}).values():
+            music.stop()
+        self._musicKey = None
 
     def _farView(self):
         # The table is longer than the usual 400 feet the camera sees: the
@@ -311,6 +366,7 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         base.camLens.setFar(Consts.TableEnd + 150)
 
     def exitIntro(self):
+        taskMgr.remove(self.uniqueName('introCull'))
         if self._introMovie:
             self._introMovie.end()
             self._introMovie.unload()
@@ -322,6 +378,14 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
 
     def enterGame(self):
         DistCogdoGame.enterGame(self)
+        # From the intro's view to the slide's: all hidden, then those near
+        # the toon shown and moving again (the first _cullCogs).
+        for suit in list(self.bosses.values()) + self.minions:
+            suit._introMoving = False
+            if not suit.isStashed():
+                suit.stash()
+                self._showCog(suit, False)
+        self._nextCull = 0
         self._placeToons()
         self.gui.show()
         self._startTimer()
@@ -345,8 +409,17 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         # the slide below does the moving.
         base.localAvatar.stopTrackAnimToSpeed()
         self._holdControls()
-        # The camera follows the slide (see _followCamera), after the smart
-        # camera has had its go each frame.
+        # The camera follows the slide (see _followCamera), and only this
+        # does. The walk's smart camera ran after it each frame (its
+        # "priority=47" is really its sort), so the camera was held behind
+        # the toon's head: it swung with the toon's lean as soon as Left or
+        # Right was pressed, and spun round with it on oil (the camera's
+        # jerks, Arthur). It is off until the golf office is left.
+        toon = base.localAvatar
+        if getattr(toon, '_smartCamEnabled', False):
+            toon.stopUpdateSmartCamera()
+            self._stoppedSmartCam = True
+        camera.wrtReparentTo(render)
         taskMgr.add(self._cameraTask, self.uniqueName('camera'), sort=40)
         # The table is longer than the usual 400 feet the camera sees: the
         # far end showed as a grey wall.
@@ -489,7 +562,7 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         if getattr(self, 'finishLabel', None):
             self.finishLabel.destroy()
             self.finishLabel = None
-        self.music.stop()
+        self._stopMusic()
         DistCogdoGame.exitFinish(self)
 
     def timerExpired(self):
@@ -512,6 +585,7 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
                 suit.headsUp(PM.Point3(x + (x - old[0]) * 10, y + (y - old[1]) * 10, suit.getZ()))
         pos = toon.getPos(render)
         self._cullCogs(pos, now)
+        self.room.bins.cull(camera.getY(render) if self.slideState != 'wait' else pos[1])
         if self.decor:
             self.decor.update(now)
         self._chatter(now)
@@ -540,28 +614,40 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
 
     def _cullCogs(self, pos, now):
         # The table is long: only the cogs near the toon are shown and
-        # animated, for the frame rate on phones.
+        # animated, for the frame rate on phones. The cogs about the hall
+        # (CogdoBoardroomDecor) are only made for the part in view.
         if now < getattr(self, '_nextCull', 0):
             return
         self._nextCull = now + 0.4
         y = camera.getY(render) if self.slideState != 'wait' else pos[1]
-        decor = self.decor.allSuits() if self.decor else []
-        for suit in list(self.bosses.values()) + self.minions + decor:
+        for suit in list(self.bosses.values()) + self.minions:
             near = -40 < suit.getY(render) - y < Consts.ShowCogsWithin
             if near and suit.isStashed():
-                suit.unstash()
-                if suit in self.minions:
-                    suit.pose('landing', 0)
-                    suit.prop.loop('propeller')
-                elif suit in decor:
-                    self.decor.startSuit(suit)
-                else:
-                    suit.loop('sit', fromFrame=random.randrange(20))
+                self._showCog(suit)
             elif not near and not suit.isStashed():
                 suit.stash()
-                suit.stop()
-                if suit in self.minions:
-                    suit.prop.stop()
+                self._showCog(suit, False)
+        if self.decor:
+            self.decor.cull(y, now)
+
+    def _introCull(self, task):
+        # The intro's camera flies about the table: the cogs near it move,
+        # those far off are drawn sat still (all of them animated was about
+        # 19 ms a frame, perf audit).
+        if self.room is None:
+            return Task.done
+        y = camera.getY(render)
+        for suit in list(self.bosses.values()) + self.minions:
+            near = -60 < suit.getY(render) - y < Consts.ShowCogsWithin
+            moving = getattr(suit, '_introMoving', False)
+            if near and not moving:
+                suit._introMoving = True
+                self._showCog(suit)
+            elif not near and moving:
+                suit._introMoving = False
+                self._showCog(suit, False)
+        task.delayTime = 0.25
+        return Task.again
 
     def _cameraTask(self, task):
         toon = base.localAvatar
@@ -572,7 +658,7 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
             if not toon.isEmpty():
                 self._golfCamera(toon, min(globalClock.getDt(), 0.1))
         elif not toon.isEmpty() and toon.doId not in self.exited:
-            self._followCamera(toon, min(globalClock.getDt(), 0.1))
+            self._followCamera(toon, min(globalClock.getDt(), 0.5))
         return Task.cont
 
     def _followCamera(self, toon, dt):
@@ -593,12 +679,21 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
             want = PM.Point3(pos[0] * 0.5, pos[1] - Consts.CameraBack * 1.2, Consts.TableTop + Consts.CameraUp * 1.3)
             look = PM.Point3(pos[0], pos[1] + 6, pos[2] + 2)
         else:
-            want = PM.Point3(pos[0] * 0.6, pos[1] - Consts.CameraBack, max(pos[2], Consts.TableTop) + Consts.CameraUp)
-            look = PM.Point3(pos[0] * 0.85, pos[1] + 16, max(pos[2], Consts.TableTop) + 1.0)
+            # Down the middle of the table, looking straight up it, whatever
+            # the toon does: Left and Right move the toon, not the camera
+            # (Arthur). Only the slide along the table (and a hop's height)
+            # carries the camera; the whole width of the table is in view.
+            top = max(pos[2], Consts.TableTop)
+            want = PM.Point3(0, pos[1] - Consts.SlideCamBack, top + Consts.SlideCamUp)
+            look = PM.Point3(0, pos[1] + Consts.SlideCamLook, top)
         cur = getattr(self, '_camPos', None) or want
-        k = min(1.0, dt * 6.0)
+        # Eased by the real time the frame took (the 0.1 s cap made it fall
+        # behind and catch up in jumps at a low frame rate).
+        k = 1.0 - math.exp(-(6.0 if self.slideState in ('off', 'jumpoff') else 10.0) * dt)
         cur = cur + (want - cur) * k if (want - cur).length() < 40 else want
         self._camPos = PM.Point3(cur)
+        if self.slideState not in ('off', 'jumpoff'):
+            look = PM.Point3(0, cur[1] + Consts.SlideCamBack + Consts.SlideCamLook, look[2])
         camera.setPos(render, cur)
         camera.lookAt(look)
 
@@ -1502,6 +1597,7 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
             self._golfArrival = None
         if getattr(self, 'elevatorMusic', None):
             self.elevatorMusic.stop()
+        self._playMusic('golf')
         self._beginGolf()
 
     def _makeGolfArrival(self):
@@ -1523,14 +1619,22 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
                     toon._boardroomSmooth = False
                 self._toElevator(toon, run=False)
             self._cameraInElevator(room.exitElevator)
+            self._stopMusic()
             base.playMusic(self.elevatorMusic, looping=1, volume=0.8)
 
         def arrive():
             # The elevator is the golf office's now: the boardroom goes, the
             # golf office comes, the toons stand in its elevator.
             room.root.stash()
-            for suit in self.minions:
+            # The boardroom's cogs are out of sight from here on: nothing
+            # of theirs is worked out each frame (their shadow rays were,
+            # hidden or not).
+            for suit in list(self.bosses.values()) + self.minions + ([self.chairman] if self.chairman else []):
                 suit.stash()
+                self._showCog(suit, False)
+            if self.decor:
+                self.decor.releaseAll()
+            self.room.bins.stop()
             self.golf.show()
             self.golf.setBarrelsHome(Consts.NumBarrels)
             self.golf.closeToonDoors()
@@ -1566,7 +1670,7 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
 
         def intro():
             self.elevatorMusic.stop()
-            base.playMusic(self.music, looping=1, volume=0.7)
+            self._playMusic('golf')
             self._camInElevator = True
             camera.wrtReparentTo(render)
             self._fixFov()
@@ -1735,11 +1839,11 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
 
     def _golfCamera(self, toon, dt):
         tee = self.golf.teePos(self.startIndex(toon.doId))
-        h = getattr(self, 'aimH', 0.0)
-        a = math.radians(h)
-        fwd = PM.Vec3(-math.sin(a), math.cos(a), 0)
-        # Behind the ball down the line of the shot, as at the CEO battle's
-        # golf spots; kept inside the walls.
+        # Behind the ball, looking straight down the office: Left and Right
+        # turn the aim (the arrow and the toon), not the camera (Arthur:
+        # the camera swung round with every turn).
+        fwd = PM.Vec3(0, 1, 0)
+        # Kept inside the walls.
         want = tee - fwd * Consts.GolfCamBack + PM.Vec3(0, 0, Consts.GolfCamUp)
         local = self.golf.toLocal(want)
         local.setX(max(-Consts.GolfHalfX + 1.5, min(Consts.GolfHalfX - 1.5, local[0])))
@@ -1747,8 +1851,6 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         want = local + self.golf.root.getPos(render)
         look = tee + fwd * Consts.GolfCamLook + PM.Vec3(0, 0, Consts.GolfCamLookUp)
         cur = self._golfCamPos or want
-        # Turning with the aim, as the CEO battle's camera does, with just a
-        # little easing.
         cur = cur + (want - cur) * min(1.0, dt * 12.0)
         self._golfCamPos = PM.Point3(cur)
         camera.setPos(render, cur)
@@ -2012,6 +2114,7 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         suit._lastSaid = now
         self._lastSaid = now
         suit.nametag3d.unstash()
+        suit.nametag.setTicking(True)
         self._placeChat(suit)
         suit.setChatAbsolute(random.choice(lines), CFSpeech | CFTimeout)
         name = self.uniqueName('hush-%d' % id(suit))
@@ -2022,6 +2125,7 @@ class DistCogdoBoardroomGame(CogdoBoardroomGameBase, DistCogdoGame):
         if suit is not None and not suit.isEmpty():
             suit.clearChat()
             suit.nametag3d.stash()
+            suit.nametag.setTicking(False)
 
     def _chatter(self, now):
         # The cogs in view talk, every one of them in turn (Arthur: all the

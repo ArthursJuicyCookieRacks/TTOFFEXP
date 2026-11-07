@@ -78,6 +78,16 @@ SeatSideX = TableHalfWidth + 3.4
 # Only the cogs this near the toon are shown (and move), for the frame
 # rate on phones: the table is long.
 ShowCogsWithin = 240.0
+# Cogs this far from the camera are animated less often (Actor's
+# setLODAnimation: every frame nearer than the second figure, about every
+# 0.15 s at the first, less often further off).
+CogAnimLOD = (150.0, 45.0, 0.15)
+# The things on and beside the table are drawn (and the memos spin) only
+# this far ahead of the camera, in stretches of the table this long
+# (CogdoBoardroomRoom.SceneryBins). The walls, the table and its chairs
+# are drawn the whole way down.
+SceneryWithin = 600.0
+SceneryBinLength = 100.0
 # Seats filled, per side, from the easiest office to the hardest.
 # Per hall: the table is NumHalls halls long.
 SeatsPerSideRange = (6 * NumHalls, 9 * NumHalls)
@@ -205,6 +215,12 @@ PaddleRate = (1.0, 1.7)
 SpinTime = 0.8
 CameraBack = 12.0
 CameraUp = 7.0
+# The slide's camera: in the middle of the table, this far behind the toon
+# and up from the tabletop, looking this far up the table past it; from
+# there the table's whole width is in view, over the piles.
+SlideCamBack = 16.0
+SlideCamUp = 9.5
+SlideCamLook = 20.0
 
 # --- On the table ---
 SlickRadius = 6.0
@@ -291,6 +307,13 @@ def hazardHits(kind, x, y, z, px, py, pz):
 # walking out with them: a cog that is hit drops its barrel back on the
 # pile. Each barrel left at the end is laff for every toon.
 SlideDuration = 255.0
+# The music: the Bossbot C.E.O.'s, as meant from the start (Arthur), on
+# the slide and in the golf office. (It never played: the file is
+# BossBot_CEO_v1.ogg, and it was asked for as Bossbot_CEO_v1.ogg; the game's
+# files are case-sensitive on phones and in the packed Windows build.)
+MusicFiles = {'slide': 'phase_12/audio/bgm/BossBot_CEO_v1.ogg',
+              'golf': 'phase_12/audio/bgm/BossBot_CEO_v1.ogg'}
+MusicVolume = 0.7
 GolfDuration = 120.0
 # The slide's clock, then the golf's: GameDuration above is both.
 GameDuration = SlideDuration + GolfDuration

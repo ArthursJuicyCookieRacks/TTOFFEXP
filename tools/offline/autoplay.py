@@ -1268,8 +1268,11 @@ def playCogdoBoardroom(dist):
                 press('forward', abs(diff) < 30)
             yield sleep(0.03)
             continue
-        if not idle and getattr(dist, 'phase', None) == 'golf' and dist.golf is not None and dist.golfTime() < 0:
-            # Riding over and the golf office's intro.
+        if not idle and getattr(dist, 'phase', None) == 'golf' and dist.golf is not None and (
+                dist.golfTime() < 0 or not hasattr(dist, 'aimH')):
+            # Riding over and the golf office's intro (till the golf has
+            # begun: its clock can pass 0 a frame before the intro's last
+            # step runs).
             for name in list(tokens):
                 press(name, False)
             yield sleep(0.05)
@@ -1365,7 +1368,9 @@ def playCogdoBoardroom(dist):
                 # Every chair: is its cog there, and does its head show over the table?
                 dist._seatsChecked = True
                 seated = [('seat %d' % i, s) for i, s in sorted(dist.bosses.items())]
-                seated += [('diner %d' % i, s) for i, s in enumerate(dist.decor.diners if dist.decor else [])]
+                # (The diners are only made while in view: those there now.)
+                seated += [('diner %d' % i, sl['suit']) for i, sl in enumerate(dist.decor.diners if dist.decor else [])
+                           if sl['suit'] is not None]
                 low = []
                 for label, s in seated:
                     was = s.isStashed()

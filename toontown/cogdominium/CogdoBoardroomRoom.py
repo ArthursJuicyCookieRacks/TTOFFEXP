@@ -18,6 +18,85 @@ ChairFar = ('chair_7', 180)
 PileModels = ('phase_11/models/lawbotHQ/LB_paper_stacks', 'phase_11/models/lawbotHQ/LB_paper_big_stacks3')
 
 
+def flattenHard(node):
+    # Merged into as few pieces as its textures allow. (Each model copy
+    # keeps a ModelNode, which flattening won't merge across: ten chairs
+    # stayed 20 pieces, not 2.)
+    node.clearModelNodes()
+    node.flattenStrong()
+
+
+class SceneryBins:
+    """The things on and beside the long table (paper piles, memos, oil
+    drums, the hall's tables and carts...) sorted into stretches of the
+    table, so only the stretches near the camera are drawn and their memos
+    spin. The camera sees the table's whole length (2,700 feet): drawing
+    everything on it was a large part of each frame, worst on phones."""
+
+    def __init__(self):
+        self.bins = {}
+        self.spins = {}
+        self.shown = None
+
+    def index(self, y):
+        return max(0, int(y // Consts.SceneryBinLength))
+
+    def get(self, parent, y):
+        # The node for this stretch of the table under this parent.
+        key = (parent.getKey(), self.index(y))
+        if key not in self.bins:
+            self.bins[key] = (self.index(y), parent.attachNewNode('stretch%d' % self.index(y)))
+        return self.bins[key][1]
+
+    def addSpin(self, y, ival):
+        # A looping spin that only runs while its stretch is in view.
+        self.spins.setdefault(self.index(y), []).append(ival)
+        ival.loop()
+
+    def flatten(self, parent):
+        for key, (i, node) in self.bins.items():
+            if key[0] == parent.getKey():
+                flattenHard(node)
+
+    def cull(self, y):
+        # The stretches from just behind the camera to SceneryWithin ahead.
+        lo = self.index(y - 80)
+        hi = self.index(y + Consts.SceneryWithin)
+        self.showRange(lo, hi)
+
+    def showAll(self):
+        self.showRange(0, 1 << 20)
+
+    def showRange(self, lo, hi):
+        if self.shown == (lo, hi):
+            return
+        self.shown = (lo, hi)
+        for i, node in self.bins.values():
+            if lo <= i <= hi:
+                if node.isStashed():
+                    node.unstash()
+            elif not node.isStashed():
+                node.stash()
+        for i, ivals in self.spins.items():
+            for ival in ivals:
+                if lo <= i <= hi:
+                    if not ival.isPlaying():
+                        ival.resume()
+                elif ival.isPlaying():
+                    ival.pause()
+
+    def stop(self):
+        # All of it out of sight (the golf office), nothing spinning.
+        self.showRange(-2, -1)
+
+    def destroy(self):
+        for ivals in self.spins.values():
+            for ival in ivals:
+                ival.finish()
+        self.spins = {}
+        self.bins = {}
+
+
 class CogdoBoardroomRoom:
     """Boardroom Hijinks' room: the Bossbot banquet hall with one long
     meeting table down its middle, built from the banquet table's cloth,
@@ -35,6 +114,7 @@ class CogdoBoardroomRoom:
         self.chairNodes = []
         self.seatLocators = []
         self.chairmanLocator = None
+        self.bins = SceneryBins()
 
     def load(self):
         self.root = NodePath('boardroom')
@@ -49,6 +129,7 @@ class CogdoBoardroomRoom:
         return self.root
 
     def destroy(self):
+        self.bins.destroy()
         if self.root:
             self.root.removeNode()
         self.root = None
@@ -81,6 +162,9 @@ class CogdoBoardroomRoom:
             if i < Consts.NumHalls - 1:
                 hall.findAllMatches('**/wallC').detach()
                 hall.findAllMatches('**/lights').detach()
+            # Its hundred-odd pieces merged into a few (all eight halls are
+            # in view down the table: about 1,000 pieces drawn each frame).
+            flattenHard(hall)
             self.halls.append(hall)
         self.hall = self.halls[-1]
 
@@ -159,19 +243,30 @@ class CogdoBoardroomRoom:
 
     def _loadChairs(self):
         chairs = self.root.attachNewNode('chairs')
+        # The chairs' geometry, merged a stretch of the table at a time: the
+        # chairs line the whole table, all in view, and one by one they were
+        # about 3,000 pieces drawn each frame (half of the slide's drawing).
+        # The cogs sit on their own seat nodes.
+        self._chairGeom = chairs.attachNewNode('chairGeom')
+        self._chairGroups = {}
         for index, (side, y, taken) in enumerate(self.layout.seats):
             name, heading = ChairLeft if side < 0 else ChairRight
             locator = self._placeChair(chairs, name, Point3(side * Consts.SeatSideX, y, 0), heading)
             self.seatLocators.append(locator)
         name, heading = ChairFar
         self.chairmanLocator = self._placeChair(chairs, name, Point3(*Consts.ChairmanPos), heading)
+        for group in self._chairGroups.values():
+            flattenHard(group)
 
     def _placeChair(self, parent, name, pos, heading):
         source = self.tableModel.find('**/chairs/' + name)
         chair = parent.attachNewNode(name)
-        geom = source.copyTo(chair)
+        k = self.bins.index(pos[1])
+        if k not in self._chairGroups:
+            self._chairGroups[k] = self._chairGeom.attachNewNode('chairs%d' % k)
+        geom = source.copyTo(self._chairGroups[k])
         # The chair's geometry sits round its own node, at its seat height.
-        geom.setPos(0, 0, source.getZ())
+        geom.setPos(pos[0], pos[1], pos[2] + source.getZ())
         chair.setPos(pos)
         locator = chair.attachNewNode('correctHeading')
         locator.setZ(source.getZ())
@@ -220,40 +315,43 @@ class CogdoBoardroomRoom:
             if ob.kind == Layout.PILE:
                 model = pileModels[i % len(pileModels)]
                 mn, mx = model.getTightBounds()
-                pile = model.copyTo(obstacles)
+                pile = model.copyTo(self.bins.get(obstacles, ob.y))
                 pile.setPos(ob.x - (mn[0] + mx[0]) / 2.0 * ob.w * 2.0 / (mx[0] - mn[0]),
                             ob.y - (mn[1] + mx[1]) / 2.0 * ob.l * 2.0 / (mx[1] - mn[1]), Consts.TableTop)
                 pile.setScale(ob.w * 2.0 / (mx[0] - mn[0]), ob.l * 2.0 / (mx[1] - mn[1]), ob.h / (mx[2] - mn[2]))
             elif ob.kind == Layout.PENCIL:
                 # A giant pencil lying across the table, as thick as a
                 # toon's knees are high.
-                holder = obstacles.attachNewNode('pencil')
+                holder = self.bins.get(obstacles, ob.y).attachNewNode('pencil')
                 p = makePencil(2.0 * ob.w + 1.0, Consts.PencilHeight / 2.0)
                 p.reparentTo(holder)
                 p.setZ(Consts.PencilHeight / 2.0)
                 holder.setPos(ob.x, ob.y, Consts.TableTop)
                 holder.setH(90 + ob.angle)
             elif ob.kind == Layout.RAMP:
-                self._makeRamp(obstacles, ob.x, ob.y, ob.w, ob.l, Consts.TableTop, Consts.TableTop + ob.h,
+                self._makeRamp(self.bins.get(obstacles, ob.y), ob.x, ob.y, ob.w, ob.l, Consts.TableTop, Consts.TableTop + ob.h,
                                'phase_11/maps/LB_WoodPanel.jpg', 0.85)
         for model in pileModels:
             model.removeNode()
         pencil.removeNode()
+        # Nothing on the table moves: each stretch's piles, pencils and ramps
+        # merged into a few pieces.
+        self.bins.flatten(obstacles)
 
     def _loadPickups(self):
         pickups = self.root.attachNewNode('pickups')
         memo = loader.loadModel('phase_5/models/cogdominium/tt_m_ara_csa_memo')
         for i, (x, y, z) in enumerate(self.layout.memos):
-            m = memo.copyTo(pickups)
+            m = memo.copyTo(self.bins.get(pickups, y))
             m.setPos(x, y, z + 1.6)
             m.setScale(1.1)
             m.setH(i * 37)
             # They turn round where they lie, as in the Sellbot maze.
-            m.hprInterval(3.0, Vec3(m.getH() + 360, 0, 0)).loop()
+            self.bins.addSpin(y, m.hprInterval(3.0, Vec3(m.getH() + 360, 0, 0)))
             self.memoModels.append(m)
         memo.removeNode()
         for kind, x, y in self.layout.powerUps:
-            holder = pickups.attachNewNode('powerUp')
+            holder = self.bins.get(pickups, y).attachNewNode('powerUp')
             holder.setPos(x, y, Consts.TableTop + 1.4)
             if kind == Layout.INVULNERABLE:
                 # A gold Cog Award: nothing can touch the toon who holds it.
@@ -272,14 +370,14 @@ class CogdoBoardroomRoom:
             glow.setScale(1.8)
             glow.setColor(1, 0.9, 0.3, 0.6) if kind == Layout.INVULNERABLE else glow.setColor(0.4, 0.8, 1, 0.6)
             glow.setTransparency(TransparencyAttrib.MAlpha)
-            holder.hprInterval(2.0, Vec3(360, 0, 0)).loop()
+            self.bins.addSpin(y, holder.hprInterval(2.0, Vec3(360, 0, 0)))
             self.powerUpModels.append(holder)
 
     def _loadOilCans(self):
         cans = self.root.attachNewNode('oilCans')
         for i, (x, y) in enumerate(self.layout.oilCans):
             can = loader.loadModel('phase_6/models/props/small_round_barrel')
-            can.reparentTo(cans)
+            can.reparentTo(self.bins.get(cans, y))
             can.setPos(x, y, Consts.TableTop)
             can.setScale(0.75, 0.75, 1.0)
             # An oil drum: dark, with an oily sheen.
@@ -288,7 +386,7 @@ class CogdoBoardroomRoom:
             # Its spill, ready to spread when it is knocked over.
             sx, sy, r = self.layout.slickAt(i)
             # The game's own spilled-oil decal (Arthur), not a dark shadow.
-            slick = CogdoUtil.makeOilSlick(cans, r, pick=i, h=(i * 137) % 360)
+            slick = CogdoUtil.makeOilSlick(self.bins.get(cans, sy), r, pick=i, h=(i * 137) % 360)
             slick.setPos(sx, sy, Consts.TableTop + 0.03)
             slick.hide()
             self.slickModels.append(slick)
