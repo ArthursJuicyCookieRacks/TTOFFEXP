@@ -218,7 +218,16 @@ SETTLE_SHARE = 0.75
 SETTLE_MIN = 0.25
 SETTLE_MAX = 0.4
 SETTLE_PARTS = ('legs', 'torso')
-KICKS = {'shout': ((0, 0.15, 0.03), (0, 3, 0)), 'gun': ((0, -0.1, 0.04), (0, 5, 0))}
+KICKS = {'shout': ((0, 0.15, 0.03), (0, 3, 0)), 'gun': ((0, -0.1, 0.04), (0, 5, 0)),
+         'squirt': ((0, -0.08, 0.03), (0, 4, 0))}
+# Gags fired faster than this (seconds between shots: the flower, glass,
+# gun, bottle and hose) only kick: their battle motion swung the arm out of
+# the view and back every shot, so held down the arm flickered in and out
+# (Arthur: "your arm seems to disappear when shooting").
+RAPID_RATE = 0.15
+# Every other gag's battle motion is cut where the glove would leave the
+# view (film units, -1..1), then eases back to the hold.
+GLOVE_IN_VIEW = 0.75
 # The shoulder must end up at least this far outside the frame (film units,
 # the frame is -1..1).
 SHOULDER_OUT = 1.15
@@ -835,7 +844,12 @@ class ToonArms:
         normal.normalize()
         middle = (a + b) * 0.5
         at = Point3(middle + (a - middle) * BODY_CLIP_AT)
-        plane = self.toon.attachNewNode(PlaneNode('bodyClip', Plane(normal, at)))
+        # The plane rides on the holding shoulder, so it turns with the
+        # upper arm. Fixed in the body, the throw and the shout swung the
+        # arm across it and the sleeve and forearm vanished mid-swing
+        # (Arthur: "your arm seems to disappear when shooting").
+        toJoint = self.toon.getMat(keep)
+        plane = keep.attachNewNode(PlaneNode('bodyClip', Plane(toJoint.xformVec(normal), toJoint.xformPoint(at))))
         nodes = []
         for name in BODY_CLIP_PARTS:
             for np in self.toon.findAllMatches('**/%s' % name):
@@ -1006,6 +1020,7 @@ class ToonArms:
         self.hold = hold
         self.start = start
         self.end = min(end, max(1, self.toon.getNumFrames(anim) or 1) - 1)
+        self.viewEnd = None
         self.toon.pose(anim, hold)
         if getattr(self, 'hiddenHead', None) is not None:
             self.hiddenHead.show()
@@ -1082,15 +1097,27 @@ class ToonArms:
         if self.track:
             self.track.finish()
         duration = min(max(rate * 0.8, 0.15), 0.6)
-        if self.end > self.start:
+        if rate < RAPID_RATE:
+            # Rapid fire: the arm stays up and the gag kicks.
+            self.recoil(self.kick or 'squirt', duration)
+            return
+        end = self.inViewEnd()
+        if self.end > self.start and end <= self.start:
+            # The glove leaves the view at once: a kick instead.
+            self.recoil(self.kick or 'squirt', duration)
+            return
+        self.throwEnd = end
+        if end > self.start:
             # The throw (or squirt, or button press), then the arm eases
             # back into the hold: the battle pose at the throw's end blended
             # into the hold's, instead of popping straight back to it
             # (Arthur: "your arm just pops back into place").
             throw = min(max(rate * THROW_SHARE, 0.15), 0.45)
+            # Cut short, the motion keeps its pace.
+            throw = max(0.1, throw * float(end - self.start) / max(1, self.end - self.start))
             settle = min(max(rate * SETTLE_SHARE, SETTLE_MIN), SETTLE_MAX)
             duration = throw
-            self.track = Sequence(ActorInterval(self.toon, self.anim, startFrame=self.start, endFrame=self.end, duration=throw),
+            self.track = Sequence(ActorInterval(self.toon, self.anim, startFrame=self.start, endFrame=end, duration=throw),
                                   Func(self.startSettle),
                                   LerpFunctionInterval(self.settleTo, duration=settle, fromData=0.0, toData=1.0,
                                                        blendType='easeInOut'),
@@ -1099,17 +1126,55 @@ class ToonArms:
             self.track = Sequence(ActorInterval(self.toon, self.anim, startFrame=self.start, endFrame=self.end, duration=duration),
                                   Func(self.toon.pose, self.anim, self.hold))
         if self.kick:
-            # The shout pushes the megaphone forward and it settles back, as
-            # the battle toon leans into the blast; the squirt gun kicks up
-            # and back. Small, so the arm's cut-off shoulder stays out of view.
-            if self.swingTrack:
-                self.swingTrack.finish()
-            self.swing.setPosHpr(0, 0, 0, 0, 0, 0)
-            kickPos, kickHpr = KICKS[self.kick]
-            self.swingTrack = Sequence(LerpPosHprInterval(self.swing, duration * 0.3, kickPos, kickHpr, blendType='easeOut'),
-                                       LerpPosHprInterval(self.swing, duration * 0.7, (0, 0, 0), (0, 0, 0), blendType='easeInOut'))
-            self.swingTrack.start()
+            self.recoil(self.kick, duration)
         self.track.start()
+
+    def recoil(self, kick, duration):
+        """The shout pushes the megaphone forward and it settles back, as
+        the battle toon leans into the blast; the squirt gun kicks up and
+        back. Small, so the arm's cut-off shoulder stays out of view."""
+        if self.swingTrack:
+            self.swingTrack.finish()
+        self.swing.setPosHpr(0, 0, 0, 0, 0, 0)
+        kickPos, kickHpr = KICKS[kick]
+        self.swingTrack = Sequence(LerpPosHprInterval(self.swing, duration * 0.3, kickPos, kickHpr, blendType='easeOut'),
+                                   LerpPosHprInterval(self.swing, duration * 0.7, (0, 0, 0), (0, 0, 0), blendType='easeInOut'))
+        self.swingTrack.start()
+
+    def inViewEnd(self):
+        """The last frame of the battle motion (from start) before the
+        glove leaves the view, worked out once per hold with the rig at
+        rest. Played to the end, the throws and drops swung the arm off the
+        bottom of the screen and back, so it vanished every shot."""
+        if self.viewEnd is not None:
+            return self.viewEnd
+        if self.end <= self.start:
+            self.viewEnd = self.end
+            return self.end
+        rigMat = self.rig.getMat()
+        swingMat = self.swing.getMat()
+        self.rig.clearTransform()
+        self.swing.clearTransform()
+        lens = base.camLens
+        glove = self.hand(self.side)
+        last = self.start
+        try:
+            for frame in range(self.start, self.end + 1):
+                self.toon.pose(self.anim, frame)
+                self.toon.update(force=True)
+                p = glove.getPos(base.cam)
+                film = Point2()
+                if p[1] <= lens.getNear() or not lens.project(p, film) or \
+                        abs(film[0]) > GLOVE_IN_VIEW or abs(film[1]) > GLOVE_IN_VIEW:
+                    break
+                last = frame
+        finally:
+            self.toon.pose(self.anim, self.hold)
+            self.toon.update(force=True)
+            self.rig.setMat(rigMat)
+            self.swing.setMat(swingMat)
+        self.viewEnd = last
+        return last
 
     def restAnim(self):
         """A second copy of the hold's animation, so the pose at the
@@ -1133,7 +1198,7 @@ class ToonArms:
             # Blended as turns (quaternions), so the arm swings round
             # back to the hold instead of shrinking through the middle.
             self.toon.setBlend(animBlend=True, blendType=PartBundle.BTComponentwiseQuat, partName=part)
-            self.toon.pose(self.anim, self.end, partName=part)
+            self.toon.pose(self.anim, getattr(self, 'throwEnd', self.end), partName=part)
             self.toon.pose(rest, self.hold, partName=part)
             self.toon.setControlEffect(self.anim, 1.0, partName=part)
             self.toon.setControlEffect(rest, 0.0, partName=part)
