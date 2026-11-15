@@ -13,7 +13,7 @@ import random
 from direct.directnotify import DirectNotifyGlobal
 from direct.interval.IntervalGlobal import (ActorInterval, Func, LerpFunctionInterval, LerpPosHprInterval, LerpPosInterval,
                                             LerpScaleInterval, Parallel, Sequence, SoundInterval, Wait)
-from panda3d.core import CullFaceAttrib, PartBundle, LMatrix4, NodePath, Point2, Point3, Quat, TransformState, Vec3, Vec4
+from panda3d.core import CullFaceAttrib, DepthOffsetAttrib, PartBundle, LMatrix4, NodePath, Point2, Point3, Quat, TransformState, Vec3, Vec4
 
 from toontown.battle import BattleProps
 from toontown.battle.BattleSounds import globalBattleSoundCache
@@ -440,6 +440,17 @@ def battlePose(track, level):
     return BATTLE_POSES.get((track, level)) or BATTLE_POSES.get(track) or BATTLE_POSES[G.THROW]
 
 
+# The arms, the glove and the gag in it are drawn in the nearest sliver of
+# the depth range, so they are never hidden by the world: a wall, a tree or
+# a cog closer than the arm's reach (about 3 feet) used to cut the arm and
+# gag out of the picture. Among themselves they still sort by depth.
+VIEW_DEPTH = 0.02
+
+
+def viewModel(np):
+    np.setAttrib(DepthOffsetAttrib.make(0, 0.0, VIEW_DEPTH), 1)
+
+
 class ToonArms:
     """The player's toon from the shoulders down to the gloves, hung in
     front of the camera so the gag sits in its own hand (BO1 shows the
@@ -493,6 +504,7 @@ class ToonArms:
         self.toon.setHpr(ARMS_H, 0, 0)
         self.toon.setDepthTest(1)
         self.toon.setBin('fixed', 40)
+        viewModel(self.toon)
         self.toon.setLightOff()
         self.toon.setColorScaleOff()
         self.track = None
@@ -1844,6 +1856,7 @@ class GagHandler:
                     prop.setPos(camera, prop.getPos(camera) + VIEW_NUDGE[gag.prop])
             for node in [prop] + extras:
                 node.setBin('fixed', 41)
+                viewModel(node)
                 node.setLightOff()
                 node.setColorScaleOff()
             self.viewExtras = extras
@@ -2480,6 +2493,7 @@ class GagHandler:
         prop.setHpr(camera, TNT_IN_VIEW_HPR)
         self.seatOnPalm(prop)
         prop.setBin('fixed', 41)
+        viewModel(prop)
         prop.setLightOff()
         prop.setColorScaleOff()
         self.viewProp = prop
