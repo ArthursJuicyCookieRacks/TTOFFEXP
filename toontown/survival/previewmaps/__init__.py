@@ -7,6 +7,7 @@ only those in MAP_ORDER show in Map Select.
 PREVIEW_MAPS = {
     'farewell_fair': ('toontown.survival.previewmaps.FarewellFair', 'FarewellFair'),
     'toybox_terrace': ('toontown.survival.previewmaps.ToyboxTerrace', 'ToyboxTerrace'),
+    'toontropolis': ('toontown.survival.previewmaps.Toontropolis', 'Toontropolis'),
 }
 
 

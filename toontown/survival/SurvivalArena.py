@@ -156,6 +156,17 @@ MAPS['toybox_terrace'] = {
     'picture': 'phase_4/maps/survival_map_toybox_terrace.jpg',
     'preview': 'toybox_terrace',
 }
+# Disney's Toontown 2.0 plaza, converted from the prototype (toontown/toontropolis).
+MAPS['toontropolis'] = {
+    'title': 'Toontropolis',
+    'description': 'The big city from Toontown 2.0, straight from Disney\'s prototype: the shops sway and snore, the Cog Pinata hangs by '
+                   'the Gag Shop and the power switch turns night into day. Mickey waits at Toon Hall, Fisherman Freddy by the fountain, '
+                   'and the trunk outside the Clothing Shop.',
+    'picture': 'phase_4/maps/survival_map_toontropolis.jpg',
+    'preview': 'toontropolis',
+    # The town is not centred on its origin.
+    'reachCenter': (55, -73, 0),
+}
 # The other playgrounds, straight from their DNA like Toontown Central,
 # and two Cog HQs loaded from their models (toontown/survival/HoodMaps.py
 # has them all). Each names who upgrades the gag there instead of Mickey.
@@ -165,7 +176,7 @@ MAPS.update(HOOD_MAPS)
 MAP_STATION_CLEAR = 10.0
 
 # The order the Map Select menu lists them in.
-MAP_ORDER = ('ttc', 'beta_ttc', 'downsizer', 'farewell_fair', 'toybox_terrace', 'brrrgh', 'melodyland', 'dock', 'sellbot_hq', 'bossbot_hq')
+MAP_ORDER = ('ttc', 'beta_ttc', 'downsizer', 'farewell_fair', 'toybox_terrace', 'toontropolis', 'brrrgh', 'melodyland', 'dock', 'sellbot_hq', 'bossbot_hq')
 
 
 def mapName():
@@ -948,6 +959,59 @@ class SurvivalArena:
         path = self.root.attachNewNode(node)
         path.setPos(pos)
         return path
+
+    def reachState(self):
+        """The walking map as it stands (its cells and where cogs may
+        land), to put back later with setReachState."""
+        if not getattr(self, 'reach', None):
+            return None
+        return dict(self.reach), list(self.reachList), list(self.landingList)
+
+    def setReachState(self, state):
+        """Puts a walking map back that reachState() gave (Toontropolis:
+        the ground a Cog building took is free again, or taken again).
+        The cogs' routes are worked out again as they are asked for."""
+        if state is None:
+            return
+        self.reach, self.reachList, self.landingList = dict(state[0]), list(state[1]), list(state[2])
+        self.flows = {}
+        self.neighbours = {}
+
+    def closeCells(self, inside, anchor=None):
+        """Ground the playground loses in the middle of a round
+        (Toontropolis: a Cog building lands on it). inside(point) says
+        which cells of the walking map go; with anchor (a point on the
+        open playground), so does any ground that is cut off from it by
+        the loss, so no cog lands where it cannot walk to the toons. The
+        cogs' routes and landing spots are worked out again. -> how many
+        cells went."""
+        reach = getattr(self, 'reach', None)
+        if not reach:
+            return 0
+        gone = [cell for cell, point in reach.items() if inside(point)]
+        if not gone:
+            return 0
+        for cell in gone:
+            del reach[cell]
+        self.flows = {}
+        self.neighbours = {}
+        start = self.nearestCell(anchor) if anchor is not None else None
+        if start is not None:
+            joined = set([start])
+            frontier = [start]
+            while frontier:
+                here = frontier.pop()
+                for cell in self.cellNeighbours(here):
+                    if cell not in joined:
+                        joined.add(cell)
+                        frontier.append(cell)
+            cut = [cell for cell in reach if cell not in joined]
+            for cell in cut:
+                del reach[cell]
+            gone += cut
+            self.neighbours = {}
+        self.__finishReach()
+        return len(gone)
 
     def playerStart(self):
         if self.parody is not None:

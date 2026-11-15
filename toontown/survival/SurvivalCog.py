@@ -92,7 +92,7 @@ class SurvivalCog:
     notify = DirectNotifyGlobal.directNotify.newCategory('SurvivalCog')
     gearSounds = None
 
-    def __init__(self, game, name, landing, roundNum, snatcher=False):
+    def __init__(self, game, name, landing, roundNum, snatcher=False, walkIn=False):
         self.game = game
         self.snatcher = snatcher
         self.arena = game.arena
@@ -153,7 +153,13 @@ class SurvivalCog:
         self.nextWarn = 0.0
         self.suit.setPos(landing)
         self.suit.setH(random.uniform(0, 360))
-        self.__flyIn(landing)
+        if walkIn:
+            # It steps out of a building rather than flying down
+            # (Toontropolis: the Cog building that lands on Toon Hall).
+            self.prop = None
+            self.__landed()
+        else:
+            self.__flyIn(landing)
 
     # --- Arriving ---
 

@@ -28,3 +28,8 @@ turnip-runtime/
 
 # Survival walking maps that come with the game (SurvivalArena.SHIPPED_REACH).
 !resources-overlay/phase_4/survival/*.json
+
+# Data that comes with the Toontown 2.0 ports (the Toontropolis town, Asteroid Chicken, Doodle Rescue).
+!resources-overlay/phase_4/models/toontropolis/**/*.json
+!resources-overlay/phase_4/models/asteroidchicken/**/*.json
+!resources-overlay/phase_4/models/doodlerescue/**/*.json

@@ -269,6 +269,11 @@ class SurvivalGame(DirectObject):
                 spot = Point3(point) if point is not None and self.arena.bodyClear(start, point) else Point3(start)
             self.npcs.append(SurvivalNPC(self, i, spot))
             SurvivalLoading.step()
+        # A map with a life of its own (Toontropolis: its horn, cymbals and
+        # power switch answer to the toons) is told who walks on it.
+        parody = getattr(self.arena, 'parody', None)
+        if parody is not None and hasattr(parody, 'setGame'):
+            parody.setGame(self)
         self.hud.setLaff(self.player.hp, self.player.maxHp)
         self.hud.setBeans(self.beans)
         self.hud.setTonics(self.tonics)
@@ -353,6 +358,13 @@ class SurvivalGame(DirectObject):
         else:
             base.playSfx(base.loader.loadSfx(ROUND_SOUND), volume=0.7)
         self.notify.info('round %d: %d cogs, %d HP each, cap %d' % (self.roundNum, self.toSpawn, G.cogHp(self.roundNum), G.aliveCap(self.roundNum, self.npcCount)))
+        self.__mapCall('roundStarted', self.roundNum, self.snatcherRound)
+
+    def __mapCall(self, name, *args):
+        """Some maps take part in the rounds (Toontropolis: the Cogs take
+        Toon Hall for a Gag-Snatcher round)."""
+        hook = getattr(getattr(self.arena, 'parody', None), name, None)
+        return hook(*args) if hook is not None else False
 
     def endRound(self):
         self.roundState = 'intermission'
@@ -372,6 +384,7 @@ class SurvivalGame(DirectObject):
                 else:
                     pos = self.player.getPos()
             self.drops.append(PowerDrop(self, 'maxgags', pos, now))
+        self.__mapCall('roundEnded', self.roundNum, self.snatcherRound)
         self.count('rounds cleared')
         # BO1: the fallen get up between rounds.
         for npc in self.npcs:
@@ -382,19 +395,32 @@ class SurvivalGame(DirectObject):
         alive = [c for c in self.cogs if not c.dead]
         if len(alive) >= G.aliveCap(self.roundNum, self.npcCount):
             return
-        toons = [self.player.getPos()] + [n.getPos() for n in self.npcs]
-        landing = self.arena.pickLanding(toons, self.player.getEye(), self.player.getForward())
-        if landing is None:
+        # On a Gag-Snatcher round a map can send the round's cogs out of a
+        # door of its own instead of down from the sky (Toontropolis: the
+        # Cog building on Toon Hall): None while they are not to come yet.
+        door = self.__mapCall('snatcherDoor', alive) if self.snatcherRound else False
+        if door is None:
             return
-        looks = G.COG_LOOKS[0][1]
-        for minRound, names in G.COG_LOOKS:
-            if self.roundNum >= minRound:
-                looks = names
-        name = random.choice(looks)
-        if self.snatcherRound:
-            name = random.choice(G.SNATCHER_LOOKS)
+        if door:
+            name, landing, heading = door
+        else:
+            toons = [self.player.getPos()] + [n.getPos() for n in self.npcs]
+            landing = self.arena.pickLanding(toons, self.player.getEye(), self.player.getForward())
+            if landing is None:
+                return
+            name = heading = None
+        if name is None:
+            looks = G.COG_LOOKS[0][1]
+            for minRound, names in G.COG_LOOKS:
+                if self.roundNum >= minRound:
+                    looks = names
+            name = random.choice(looks)
+            if self.snatcherRound:
+                name = random.choice(G.SNATCHER_LOOKS)
         self.cogSerial += 1
-        cog = SurvivalCog(self, name, landing, self.roundNum, snatcher=self.snatcherRound)
+        cog = SurvivalCog(self, name, landing, self.roundNum, snatcher=self.snatcherRound, walkIn=bool(door))
+        if heading is not None:
+            cog.suit.setH(heading)
         self.cogs.append(cog)
         if self.lure:
             # A cog dropping in during a Presentation can't look away either.
@@ -403,6 +429,21 @@ class SurvivalGame(DirectObject):
             cog.fleeFrom(self.player.getPos(), self.secondWindAt)
         self.toSpawn -= 1
         self.nextSpawn = now + G.spawnDelay(self.roundNum) * random.uniform(0.7, 1.3)
+
+    def addCog(self, name, pos, heading=None):
+        """One more cog, of a given kind, that walks in where it stands
+        instead of flying down (Toontropolis: out of the Cog building
+        that lands on Toon Hall). It does not count towards the round."""
+        if self.over:
+            return None
+        self.cogSerial += 1
+        cog = SurvivalCog(self, name, pos, max(self.roundNum, 1), walkIn=True)
+        if heading is not None:
+            cog.suit.setH(heading)
+        self.cogs.append(cog)
+        if self.lure:
+            cog.lureTo(*self.lure)
+        return cog
 
     # --- Each frame ---
 

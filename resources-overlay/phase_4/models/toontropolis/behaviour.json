@@ -1,0 +1,2736 @@
+{
+ "things": [
+  {
+   "cls": "PWR_PowerBuildingControl",
+   "on": "t2_r_ara_ttp_powerBuilding",
+   "enabled": 1,
+   "activationDist": 0,
+   "idle": [
+    {
+     "anim": "idle0",
+     "min_dur": 1.0,
+     "max_dur": 2.0,
+     "delta": 0.0
+    },
+    {
+     "anim": "powerSurge",
+     "min_dur": 1.0,
+     "max_dur": 1.0,
+     "delta": 8.0
+    },
+    {
+     "anim": "idleLookAround",
+     "min_dur": 1.0,
+     "max_dur": 1.0,
+     "delta": 10.0
+    }
+   ],
+   "sleep": [
+    {
+     "anim": "sleep0",
+     "min_dur": 3.0,
+     "max_dur": 10.0,
+     "delta": 1.0
+    },
+    {
+     "anim": "sleepSnore",
+     "min_dur": 2.0,
+     "max_dur": 3.0,
+     "delta": 2.0
+    },
+    {
+     "anim": "sleepShake2",
+     "min_dur": 1.0,
+     "max_dur": 1.0,
+     "delta": 10.0
+    }
+   ],
+   "rest": 0
+  },
+  {
+   "cls": "PET_PetShopBuildingControl",
+   "on": "tt_a_ara_ttc_petshop",
+   "enabled": 1,
+   "activationDist": 10000,
+   "idle": [
+    {
+     "anim": "idle0",
+     "min_dur": 2.0,
+     "max_dur": 5.0,
+     "delta": 0.0
+    },
+    {
+     "anim": "idleTake1",
+     "min_dur": 1.0,
+     "max_dur": 1.0,
+     "delta": 10.0
+    },
+    {
+     "anim": "idleLookAround",
+     "min_dur": 1.0,
+     "max_dur": 1.0,
+     "delta": 8.0
+    }
+   ],
+   "sleep": [
+    {
+     "anim": "sleep0",
+     "min_dur": 0.0,
+     "max_dur": 0.0,
+     "delta": 0.0
+    },
+    {
+     "anim": "sleepShake2",
+     "min_dur": 1.0,
+     "max_dur": 1.0,
+     "delta": 6.0
+    },
+    {
+     "anim": "sleepSnore2",
+     "min_dur": 2.0,
+     "max_dur": 4.0,
+     "delta": 5.0
+    }
+   ],
+   "rest": 0
+  },
+  {
+   "cls": "CSP_ClothesShopBuildingControl",
+   "on": "tt_a_ara_ttc_clothesShop",
+   "enabled": 1,
+   "activationDist": 1000000,
+   "idle": [
+    {
+     "anim": "idle0",
+     "min_dur": 2.0,
+     "max_dur": 5.0,
+     "delta": 0.0
+    },
+    {
+     "anim": "idleTake1",
+     "min_dur": 1.0,
+     "max_dur": 1.0,
+     "delta": 12.0
+    },
+    {
+     "anim": "idleLookAround",
+     "min_dur": 1.0,
+     "max_dur": 1.0,
+     "delta": 5.0
+    }
+   ],
+   "sleep": [
+    {
+     "anim": "sleep0",
+     "min_dur": 0.0,
+     "max_dur": 0.0,
+     "delta": 0.0
+    },
+    {
+     "anim": "sleepSnore",
+     "min_dur": 1.0,
+     "max_dur": 3.0,
+     "delta": 6.0
+    },
+    {
+     "anim": "sleepShake2",
+     "min_dur": 1.0,
+     "max_dur": 1.0,
+     "delta": 12.0
+    }
+   ],
+   "rest": 0
+  },
+  {
+   "cls": "RandomAnim",
+   "on": "Trashcan",
+   "enabled": 1,
+   "raw": "0100000000000000000000000100000002020000010000000e02000001000000e301000001000000e9010000"
+  },
+  {
+   "cls": "RandomAnim",
+   "on": "Trashcan",
+   "enabled": 1,
+   "raw": "0100000000000000000000000100000002020000010000000e02000001000000e301000001000000e9010000"
+  },
+  {
+   "cls": "RandomAnim",
+   "on": "Trashcan",
+   "enabled": 1,
+   "raw": "0100000000000000000000000100000002020000010000000e02000001000000e301000001000000e9010000"
+  },
+  {
+   "cls": "RandomAnim",
+   "on": "Trashcan_NoAnim",
+   "enabled": 0,
+   "raw": "0000000000000000000000000100000002020000010000000e02000001000000e301000001000000e9010000"
+  },
+  {
+   "cls": "RandomAnim",
+   "on": "Hydrant",
+   "enabled": 1,
+   "raw": "010000000000000000000000010000004c020000010000000f02000001000000e00100000100000018020000"
+  },
+  {
+   "cls": "RandomAnim",
+   "on": "Mailbox",
+   "enabled": 1,
+   "raw": "0100000000000000000000000100000001020000010000004002000001000000da0100000100000019020000"
+  },
+  {
+   "cls": "RandomAnim",
+   "on": "Trashcan",
+   "enabled": 1,
+   "raw": "0100000000000000000000000100000002020000010000000e02000001000000e301000001000000e9010000"
+  },
+  {
+   "cls": "RandomAnim",
+   "on": "Mailbox",
+   "enabled": 1,
+   "raw": "0100000000000000000000000100000001020000010000004002000001000000da0100000100000019020000"
+  },
+  {
+   "cls": "RandomAnim",
+   "on": "Trashcan",
+   "enabled": 1,
+   "raw": "0100000000000000000000000100000002020000010000000e02000001000000e301000001000000e9010000"
+  },
+  {
+   "cls": "RandomAnim",
+   "on": "Trashcan",
+   "enabled": 1,
+   "raw": "0100000000000000000000000100000002020000010000000e02000001000000e301000001000000e9010000"
+  },
+  {
+   "cls": "RandomAnim",
+   "on": "Trashcan",
+   "enabled": 1,
+   "raw": "0100000000000000000000000100000002020000010000000e02000001000000e301000001000000e9010000"
+  },
+  {
+   "cls": "RandomAnim",
+   "on": "Trashcan",
+   "enabled": 1,
+   "raw": "0100000000000000000000000100000002020000010000000e02000001000000e301000001000000e9010000"
+  },
+  {
+   "cls": "RandomAnim",
+   "on": "Mailbox",
+   "enabled": 1,
+   "raw": "0100000000000000000000000100000001020000010000004002000001000000da0100000100000019020000"
+  },
+  {
+   "cls": "RandomAnim",
+   "on": "Hydrant",
+   "enabled": 1,
+   "raw": "010000000000000000000000010000004c020000010000000f02000001000000e00100000100000018020000"
+  },
+  {
+   "cls": "RandomAnim",
+   "on": "Hydrant",
+   "enabled": 1,
+   "raw": "010000000000000000000000010000004c020000010000000f02000001000000e00100000100000018020000"
+  },
+  {
+   "cls": "RandomAnim",
+   "on": "Mailbox",
+   "enabled": 1,
+   "raw": "0100000000000000000000000100000001020000010000004002000001000000da0100000100000019020000"
+  },
+  {
+   "cls": "RandomAnim",
+   "on": "Trashcan",
+   "enabled": 1,
+   "raw": "0100000000000000000000000100000002020000010000000e02000001000000e301000001000000e9010000"
+  },
+  {
+   "cls": "RandomAnim",
+   "on": "Trashcan",
+   "enabled": 1,
+   "raw": "0100000000000000000000000100000002020000010000000e02000001000000e301000001000000e9010000"
+  },
+  {
+   "cls": "RandomAnim",
+   "on": "Trashcan",
+   "enabled": 1,
+   "raw": "0100000000000000000000000100000002020000010000000e02000001000000e301000001000000e9010000"
+  },
+  {
+   "cls": "RandomAnim",
+   "on": "Hydrant",
+   "enabled": 1,
+   "raw": "010000000000000000000000010000004c020000010000000f02000001000000e00100000100000018020000"
+  },
+  {
+   "cls": "RandomAnim",
+   "on": "Trashcan",
+   "enabled": 1,
+   "raw": "0100000000000000000000000100000002020000010000000e02000001000000e301000001000000e9010000"
+  },
+  {
+   "cls": "RandomAnim",
+   "on": "Trashcan",
+   "enabled": 1,
+   "raw": "0100000000000000000000000100000002020000010000000e02000001000000e301000001000000e9010000"
+  },
+  {
+   "cls": "RandomAnim",
+   "on": "Trashcan",
+   "enabled": 1,
+   "raw": "0100000000000000000000000100000002020000010000000e02000001000000e301000001000000e9010000"
+  },
+  {
+   "cls": "RandomAnim",
+   "on": "Hydrant",
+   "enabled": 1,
+   "raw": "010000000000000000000000010000004c020000010000000f02000001000000e00100000100000018020000"
+  },
+  {
+   "cls": "MUS_MusicShopBuildingControl",
+   "on": "tt_a_ara_ttc_musicShop",
+   "enabled": 1,
+   "activationDist": 500,
+   "idle": [
+    {
+     "anim": "idle0",
+     "min_dur": 3.0,
+     "max_dur": 4.0,
+     "delta": 0.0
+    },
+    {
+     "anim": "idleTake1",
+     "min_dur": 1.0,
+     "max_dur": 1.0,
+     "delta": 5.0
+    },
+    {
+     "anim": "idleLookAround",
+     "min_dur": 1.0,
+     "max_dur": 1.0,
+     "delta": 7.0
+    }
+   ],
+   "sleep": [
+    {
+     "anim": "sleep0",
+     "min_dur": 3.0,
+     "max_dur": 5.0,
+     "delta": 0.0
+    },
+    {
+     "anim": "sleepSnore2",
+     "min_dur": 1.0,
+     "max_dur": 4.0,
+     "delta": 5.0
+    },
+    {
+     "anim": "sleepShake2",
+     "min_dur": 1.0,
+     "max_dur": 1.0,
+     "delta": 5.0
+    }
+   ],
+   "rest": 0
+  },
+  {
+   "cls": "CPN_CogPinataControl",
+   "on": "tt_a_ara_ttc_cogPinata",
+   "enabled": 1,
+   "raw": ""
+  },
+  {
+   "cls": "GS_RandomAnim",
+   "on": "tt_a_ara_ttc_gagShop",
+   "enabled": 1,
+   "activationDist": 100,
+   "idle": [
+    {
+     "anim": "idle0",
+     "min_dur": 0.0,
+     "max_dur": 0.0,
+     "delta": 0.0
+    },
+    {
+     "anim": "idleTake1",
+     "min_dur": 1.0,
+     "max_dur": 1.0,
+     "delta": 10.0
+    },
+    {
+     "anim": "idleLookAround",
+     "min_dur": 1.0,
+     "max_dur": 1.0,
+     "delta": 5.0
+    }
+   ],
+   "sleep": [
+    {
+     "anim": "sleep0",
+     "min_dur": 2.0,
+     "max_dur": 5.0,
+     "delta": 0.0
+    },
+    {
+     "anim": "sleepShake2",
+     "min_dur": 1.0,
+     "max_dur": 1.0,
+     "delta": 10.0
+    },
+    {
+     "anim": "sleepSnore2",
+     "min_dur": 2.0,
+     "max_dur": 4.0,
+     "delta": 4.0
+    }
+   ],
+   "rest": 0
+  }
+ ],
+ "clips": {
+  "treeA": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  },
+  "treeC": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  },
+  "treeB": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  },
+  "windowGlowsPrefab": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  },
+  "t2_m_ara_ttp_lightningBolt1": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  },
+  "t2_m_ara_ttp_lightningBolt2": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  },
+  "streetLamps": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  },
+  "bld3_blocking": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  },
+  "t2_r_ara_ttp_iceCreamShop": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  },
+  "t2_r_ara_ttp_toonyToons": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  },
+  "tt_m_ara_est_houseSubmarine": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  },
+  "tt_m_ara_est_rocketHouse": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  },
+  "ring": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  },
+  "musicNote": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  },
+  "bld5_blocking": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  },
+  "bld9_blocking": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  },
+  "bld8_blocking": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  },
+  "shortHotel2_blocking": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  },
+  "shortHotel1_blocking": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  },
+  "splashmesh": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  },
+  "bld4_blocking": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  },
+  "bld13_blocking": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  },
+  "crateStack_03": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  },
+  "crateStack": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  },
+  "billboard_blocking": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  },
+  "oodles_of_doodles_rough": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  },
+  "bld6_blocking": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  },
+  "roundBldg_blocking": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  },
+  "landmark_bld2_blocking": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  },
+  "bld7_blocking": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  },
+  "bld16_blocking": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  },
+  "bld15_blocking": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  },
+  "waterTank_blocking": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  },
+  "bld6": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  },
+  "toonTropolis": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  },
+  "tallCogSkyscrapper03_blocking": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  },
+  "tallCogSkyscrapper02_blocking": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  },
+  "tallCogSkyscrapper_blocking": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  },
+  "kaboomary": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  },
+  "POTFH": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  },
+  "tt_r_ara_ttc_gagShopPropClutterA": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  },
+  "bkg_bldgs": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  },
+  "shortFat_bld": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  },
+  "shortHotel3_blocking": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  },
+  "shortHotel3": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  },
+  "t2_m_prp_ttp_targetFlat": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  },
+  "t2_m_prp_ttp_gagShopHorn": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  },
+  "alleyEntrance": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  },
+  "t2_m_ara_ttp_powerBulding_switch": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  },
+  "fountain": {
+   "wrap": 0,
+   "auto": true,
+   "default": "Take 001",
+   "clips": {
+    "Take 001": {
+     "wrap": 2,
+     "rate": 24.0
+    }
+   }
+  },
+  "crateStack_02": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  },
+  "toonTropolisGround": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  },
+  "powerBuildingCollision": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  },
+  "HypnoOwl": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {
+    "hypnoEyes": {
+     "wrap": 2,
+     "rate": 60.0
+    },
+    "idle": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "idleLook": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "ijump": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "sneeze": {
+     "wrap": 1,
+     "rate": 24.0
+    }
+   }
+  },
+  "t2_m_ara_ttp_lampGlow": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  },
+  "t2_r_ara_ttp_powerBuilding": {
+   "wrap": 0,
+   "auto": false,
+   "default": "idle0",
+   "clips": {
+    "idleIntoSleep": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "powerSurge": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "idle0": {
+     "wrap": 2,
+     "rate": 24.0
+    },
+    "sleepIntoIdle": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "sleepSnore": {
+     "wrap": 2,
+     "rate": 24.0
+    },
+    "sleep0": {
+     "wrap": 2,
+     "rate": 24.0
+    },
+    "sleepShake2": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "idleLookAround": {
+     "wrap": 1,
+     "rate": 24.0
+    }
+   }
+  },
+  "streetLampGlow": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  },
+  "player": {
+   "wrap": 0,
+   "auto": true,
+   "default": "Take 001",
+   "clips": {
+    "Take 001": {
+     "wrap": 0,
+     "rate": 24.0
+    },
+    "Conked": {
+     "wrap": 0,
+     "rate": 24.0
+    },
+    "Duck": {
+     "wrap": 0,
+     "rate": 24.0
+    },
+    "Idle": {
+     "wrap": 2,
+     "rate": 24.0
+    },
+    "IdleTap": {
+     "wrap": 2,
+     "rate": 24.0
+    },
+    "Jump": {
+     "wrap": 2,
+     "rate": 24.0
+    },
+    "Run": {
+     "wrap": 2,
+     "rate": 24.0
+    },
+    "Shooting2Hands": {
+     "wrap": 2,
+     "rate": 24.0
+    },
+    "Spell": {
+     "wrap": 2,
+     "rate": 24.0
+    },
+    "Walk": {
+     "wrap": 2,
+     "rate": 24.0
+    },
+    "strafeLeft": {
+     "wrap": 2,
+     "rate": 24.0
+    },
+    "strafeRight": {
+     "wrap": 2,
+     "rate": 24.0
+    }
+   }
+  },
+  "tt_a_ara_ttc_petshop": {
+   "wrap": 0,
+   "auto": true,
+   "default": "Take 001",
+   "clips": {
+    "Take 001": {
+     "wrap": 2,
+     "rate": 24.0
+    },
+    "idle": {
+     "wrap": 2,
+     "rate": 24.0
+    },
+    "idle0": {
+     "wrap": 2,
+     "rate": 24.0
+    },
+    "idleIntoSleep": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "idleLookAround": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "idleTake1": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "sleep0": {
+     "wrap": 2,
+     "rate": 24.0
+    },
+    "sleepIntoIdle": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "sleepShake2": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "sleepSnore2": {
+     "wrap": 2,
+     "rate": 24.0
+    }
+   }
+  },
+  "tt_a_ara_ttc_clothesShop": {
+   "wrap": 0,
+   "auto": true,
+   "default": "sleepSnore",
+   "clips": {
+    "Take 001": {
+     "wrap": 0,
+     "rate": 24.0
+    },
+    "idle": {
+     "wrap": 2,
+     "rate": 24.0
+    },
+    "idle0": {
+     "wrap": 2,
+     "rate": 24.0
+    },
+    "idleIntoSleep": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "idleLookAround": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "idleTake1": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "sleep0": {
+     "wrap": 2,
+     "rate": 24.0
+    },
+    "sleepIntoIdle": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "sleepShake2": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "sleepSnore": {
+     "wrap": 2,
+     "rate": 24.0
+    }
+   }
+  },
+  "Trashcan": {
+   "wrap": 0,
+   "auto": true,
+   "default": "Take 001",
+   "clips": {
+    "Take 001": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "idleAwesome3": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "idleHiccup0": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "idleLook1": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "idleTake2": {
+     "wrap": 1,
+     "rate": 24.0
+    }
+   }
+  },
+  "TT_pets": {
+   "wrap": 0,
+   "auto": false,
+   "default": null,
+   "clips": {
+    "Take 001": {
+     "wrap": 2,
+     "rate": 24.0
+    },
+    "backflip": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "dig": {
+     "wrap": 2,
+     "rate": 24.0
+    },
+    "idle": {
+     "wrap": 2,
+     "rate": 24.0
+    },
+    "jump": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "laugh": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "run": {
+     "wrap": 2,
+     "rate": 24.0
+    },
+    "sadwalk": {
+     "wrap": 2,
+     "rate": 24.0
+    },
+    "speak": {
+     "wrap": 2,
+     "rate": 24.0
+    },
+    "walk": {
+     "wrap": 2,
+     "rate": 24.0
+    },
+    "walkHappy": {
+     "wrap": 2,
+     "rate": 24.0
+    }
+   }
+  },
+  "Bank": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {
+    "bankidle": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "afraid": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "drop": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "idleSlow": {
+     "wrap": 0,
+     "rate": 24.0
+    }
+   }
+  },
+  "Trashcan_NoAnim": {
+   "wrap": 0,
+   "auto": true,
+   "default": "Take 001",
+   "clips": {
+    "Take 001": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "idleAwesome3": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "idleHiccup0": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "idleLook1": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "idleTake2": {
+     "wrap": 1,
+     "rate": 24.0
+    }
+   }
+  },
+  "spout": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  },
+  "Hydrant": {
+   "wrap": 0,
+   "auto": true,
+   "default": "Take 001",
+   "clips": {
+    "Take 001": {
+     "wrap": 2,
+     "rate": 24.0
+    },
+    "idle0": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "idle1": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "idle2": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "idleAwesome3": {
+     "wrap": 1,
+     "rate": 24.0
+    }
+   }
+  },
+  "Mailbox": {
+   "wrap": 0,
+   "auto": true,
+   "default": "Take 001",
+   "clips": {
+    "Take 001": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "idle0": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "idle0settle": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "idleAwesome3": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "idleLook1": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "idleTake2": {
+     "wrap": 1,
+     "rate": 24.0
+    }
+   }
+  },
+  "Library": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {
+    "drop": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "idle": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "afraid": {
+     "wrap": 2,
+     "rate": 24.0
+    },
+    "idleSlow": {
+     "wrap": 0,
+     "rate": 24.0
+    }
+   }
+  },
+  "FlunkyA": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {
+    "walk": {
+     "wrap": 2,
+     "rate": 24.0
+    },
+    "idle": {
+     "wrap": 2,
+     "rate": 24.0
+    }
+   }
+  },
+  "ToonHall": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {
+    "idle": {
+     "wrap": 0,
+     "rate": 24.0
+    },
+    "drop": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "idleSlow": {
+     "wrap": 0,
+     "rate": 24.0
+    }
+   }
+  },
+  "FlunkyB": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {
+    "walk": {
+     "wrap": 2,
+     "rate": 24.0
+    },
+    "idle": {
+     "wrap": 2,
+     "rate": 24.0
+    }
+   }
+  },
+  "FlunkyC": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {
+    "walk": {
+     "wrap": 2,
+     "rate": 24.0
+    },
+    "idle": {
+     "wrap": 2,
+     "rate": 24.0
+    }
+   }
+  },
+  "FlunkyD": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {
+    "walk": {
+     "wrap": 2,
+     "rate": 24.0
+    },
+    "idle": {
+     "wrap": 2,
+     "rate": 24.0
+    }
+   }
+  },
+  "bigCheese": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {
+    "walk": {
+     "wrap": 2,
+     "rate": 24.0
+    },
+    "idle": {
+     "wrap": 2,
+     "rate": 24.0
+    }
+   }
+  },
+  "tt_a_ara_ttc_musicShop": {
+   "wrap": 0,
+   "auto": false,
+   "default": "idleCymbal1Play",
+   "clips": {
+    "Take 001": {
+     "wrap": 0,
+     "rate": 24.0
+    },
+    "idle0": {
+     "wrap": 2,
+     "rate": 24.0
+    },
+    "idleIntoSleep": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "idleLookAround": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "idleTake1": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "sleep0": {
+     "wrap": 2,
+     "rate": 24.0
+    },
+    "sleepIntoIdle": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "sleepShake2": {
+     "wrap": 0,
+     "rate": 24.0
+    },
+    "sleepSnore2": {
+     "wrap": 2,
+     "rate": 24.0
+    },
+    "idleCymbal1Play": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "idleCymbal2Play": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "idleCymbal3Play": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "idleCymbal4Play": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "idleCymbal5Play": {
+     "wrap": 1,
+     "rate": 24.0
+    }
+   }
+  },
+  "Cymbal1Trigger": {
+   "wrap": 0,
+   "auto": false,
+   "default": null,
+   "clips": {}
+  },
+  "Cymbal2Trigger": {
+   "wrap": 0,
+   "auto": false,
+   "default": null,
+   "clips": {}
+  },
+  "Cymbal3Trigger": {
+   "wrap": 0,
+   "auto": false,
+   "default": null,
+   "clips": {}
+  },
+  "Cymbal4Trigger": {
+   "wrap": 0,
+   "auto": false,
+   "default": null,
+   "clips": {}
+  },
+  "Cymbal5Trigger": {
+   "wrap": 0,
+   "auto": false,
+   "default": null,
+   "clips": {}
+  },
+  "AnvilDropTrigger": {
+   "wrap": 0,
+   "auto": false,
+   "default": null,
+   "clips": {}
+  },
+  "tt_a_ara_ttc_cogPinata": {
+   "wrap": 0,
+   "auto": false,
+   "default": null,
+   "clips": {
+    "Take 001": {
+     "wrap": 0,
+     "rate": 30.0
+    },
+    "anvilDrop": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "anvilDrop0": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "anvilDrop1": {
+     "wrap": 0,
+     "rate": 30.0
+    },
+    "anvilDrop2": {
+     "wrap": 1,
+     "rate": 30.0
+    },
+    "anvilDrop3": {
+     "wrap": 1,
+     "rate": 30.0
+    },
+    "idle": {
+     "wrap": 2,
+     "rate": 30.0
+    },
+    "idle0": {
+     "wrap": 2,
+     "rate": 30.0
+    },
+    "idle1": {
+     "wrap": 2,
+     "rate": 30.0
+    },
+    "honkHorn": {
+     "wrap": 1,
+     "rate": 30.0
+    },
+    "layFlat": {
+     "wrap": 0,
+     "rate": 30.0
+    }
+   }
+  },
+  "tt_a_ara_ttc_gagShop": {
+   "wrap": 0,
+   "auto": false,
+   "default": null,
+   "clips": {
+    "honkHorn": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "idle0": {
+     "wrap": 2,
+     "rate": 24.0
+    },
+    "sleep0": {
+     "wrap": 2,
+     "rate": 24.0
+    },
+    "sleepSnoreArm4": {
+     "wrap": 2,
+     "rate": 24.0
+    },
+    "anvilBang": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "honkHornArm": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "sleepSnore2": {
+     "wrap": 2,
+     "rate": 24.0
+    },
+    "anvilDrop": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "idleIntoSleep": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "sleepIntoIdle": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "sleepShake2": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "idleTake1": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "idleLookAround": {
+     "wrap": 1,
+     "rate": 24.0
+    },
+    "idleNoAnim": {
+     "wrap": 2,
+     "rate": 24.0
+    },
+    "honkHorn1": {
+     "wrap": 1,
+     "rate": 24.0
+    }
+   }
+  },
+  "Moon": {
+   "wrap": 0,
+   "auto": true,
+   "default": null,
+   "clips": {}
+  }
+ },
+ "scripts": [
+  {
+   "cls": "OwlBehaviorScript",
+   "on": "HypnoOwl",
+   "go": 13153,
+   "enabled": 1,
+   "active": 1,
+   "animA": {
+    "type": "AnimationClip",
+    "name": "idle",
+    "pid": 553
+   },
+   "animB": {
+    "type": "AnimationClip",
+    "name": "idleLook",
+    "pid": 584
+   },
+   "animC": {
+    "type": "AnimationClip",
+    "name": "ijump",
+    "pid": 541
+   },
+   "animD": {
+    "type": "AnimationClip",
+    "name": "sneeze",
+    "pid": 581
+   },
+   "alwaysIdle": true,
+   "dead_time": 0.0,
+   "left": 0
+  },
+  {
+   "cls": "LookAt",
+   "on": "t2_m_ara_ttp_lampGlow",
+   "go": 13157,
+   "enabled": 1,
+   "active": 1,
+   "target": {
+    "type": "Transform",
+    "name": "Camera",
+    "pid": 143
+   },
+   "left": 0
+  },
+  {
+   "cls": "LookAt",
+   "on": "t2_m_ara_ttp_lampGlow",
+   "go": 13171,
+   "enabled": 1,
+   "active": 1,
+   "target": {
+    "type": "Transform",
+    "name": "Camera",
+    "pid": 143
+   },
+   "left": 0
+  },
+  {
+   "cls": "LookAt",
+   "on": "t2_m_ara_ttp_lampGlow",
+   "go": 13179,
+   "enabled": 1,
+   "active": 1,
+   "target": {
+    "type": "Transform",
+    "name": "Camera",
+    "pid": 143
+   },
+   "left": 0
+  },
+  {
+   "cls": "LookAt",
+   "on": "streetLampGlow",
+   "go": 13200,
+   "enabled": 1,
+   "active": 1,
+   "target": {
+    "type": "Transform",
+    "name": "player",
+    "pid": 342
+   },
+   "left": 0
+  },
+  {
+   "cls": "LookAt",
+   "on": "streetLampGlow",
+   "go": 13205,
+   "enabled": 1,
+   "active": 1,
+   "target": {
+    "type": "Transform",
+    "name": "player",
+    "pid": 342
+   },
+   "left": 0
+  },
+  {
+   "cls": "LookAt",
+   "on": "streetLampGlow",
+   "go": 13210,
+   "enabled": 1,
+   "active": 1,
+   "target": {
+    "type": "Transform",
+    "name": "player",
+    "pid": 342
+   },
+   "left": 0
+  },
+  {
+   "cls": "LookAt",
+   "on": "streetLampGlow",
+   "go": 13215,
+   "enabled": 1,
+   "active": 1,
+   "target": {
+    "type": "Transform",
+    "name": "player",
+    "pid": 342
+   },
+   "left": 0
+  },
+  {
+   "cls": "LookAt",
+   "on": "streetLampGlow",
+   "go": 13220,
+   "enabled": 1,
+   "active": 1,
+   "target": {
+    "type": "Transform",
+    "name": "player",
+    "pid": 342
+   },
+   "left": 0
+  },
+  {
+   "cls": "LookAt",
+   "on": "streetLampGlow",
+   "go": 13225,
+   "enabled": 1,
+   "active": 1,
+   "target": {
+    "type": "Transform",
+    "name": "player",
+    "pid": 342
+   },
+   "left": 0
+  },
+  {
+   "cls": "LookAt",
+   "on": "streetLampGlow",
+   "go": 13230,
+   "enabled": 1,
+   "active": 1,
+   "target": {
+    "type": "Transform",
+    "name": "player",
+    "pid": 342
+   },
+   "left": 0
+  },
+  {
+   "cls": "LookAt",
+   "on": "streetLampGlow",
+   "go": 13235,
+   "enabled": 1,
+   "active": 1,
+   "target": {
+    "type": "Transform",
+    "name": "player",
+    "pid": 342
+   },
+   "left": 0
+  },
+  {
+   "cls": "LookAt",
+   "on": "streetLampGlow",
+   "go": 13240,
+   "enabled": 1,
+   "active": 1,
+   "target": {
+    "type": "Transform",
+    "name": "player",
+    "pid": 342
+   },
+   "left": 0
+  },
+  {
+   "cls": "LookAt",
+   "on": "streetLampGlow",
+   "go": 13245,
+   "enabled": 1,
+   "active": 1,
+   "target": {
+    "type": "Transform",
+    "name": "player",
+    "pid": 342
+   },
+   "left": 0
+  },
+  {
+   "cls": "LookAt",
+   "on": "streetLampGlow",
+   "go": 13250,
+   "enabled": 1,
+   "active": 1,
+   "target": {
+    "type": "Transform",
+    "name": "Camera",
+    "pid": 793
+   },
+   "left": 0
+  },
+  {
+   "cls": "RandomAnim",
+   "on": "Trashcan",
+   "go": 13284,
+   "enabled": 1,
+   "active": 1,
+   "canAnimate": true,
+   "choice": 0,
+   "timer": 0,
+   "animA": {
+    "type": "AnimationClip",
+    "name": "idleHiccup0",
+    "pid": 514
+   },
+   "animB": {
+    "type": "AnimationClip",
+    "name": "idleAwesome3",
+    "pid": 526
+   },
+   "animC": {
+    "type": "AnimationClip",
+    "name": "idleLook1",
+    "pid": 483
+   },
+   "animD": {
+    "type": "AnimationClip",
+    "name": "idleTake2",
+    "pid": 489
+   },
+   "left": 0
+  },
+  {
+   "cls": "RandomAnim",
+   "on": "Trashcan",
+   "go": 13287,
+   "enabled": 1,
+   "active": 1,
+   "canAnimate": true,
+   "choice": 0,
+   "timer": 0,
+   "animA": {
+    "type": "AnimationClip",
+    "name": "idleHiccup0",
+    "pid": 514
+   },
+   "animB": {
+    "type": "AnimationClip",
+    "name": "idleAwesome3",
+    "pid": 526
+   },
+   "animC": {
+    "type": "AnimationClip",
+    "name": "idleLook1",
+    "pid": 483
+   },
+   "animD": {
+    "type": "AnimationClip",
+    "name": "idleTake2",
+    "pid": 489
+   },
+   "left": 0
+  },
+  {
+   "cls": "RandomAnim",
+   "on": "Trashcan",
+   "go": 13290,
+   "enabled": 1,
+   "active": 1,
+   "canAnimate": true,
+   "choice": 0,
+   "timer": 0,
+   "animA": {
+    "type": "AnimationClip",
+    "name": "idleHiccup0",
+    "pid": 514
+   },
+   "animB": {
+    "type": "AnimationClip",
+    "name": "idleAwesome3",
+    "pid": 526
+   },
+   "animC": {
+    "type": "AnimationClip",
+    "name": "idleLook1",
+    "pid": 483
+   },
+   "animD": {
+    "type": "AnimationClip",
+    "name": "idleTake2",
+    "pid": 489
+   },
+   "left": 0
+  },
+  {
+   "cls": "Fear",
+   "on": "Bank",
+   "go": 13451,
+   "enabled": 1,
+   "active": 1,
+   "idle": {
+    "type": "AnimationClip",
+    "name": "idleSlow",
+    "pid": 589
+   },
+   "afraid": {
+    "type": "AnimationClip",
+    "name": "afraid",
+    "pid": 476
+   },
+   "drop": {
+    "type": "AnimationClip",
+    "name": "drop",
+    "pid": 497
+   },
+   "left": 0
+  },
+  {
+   "cls": "RandomAnim",
+   "on": "Trashcan_NoAnim",
+   "go": 13454,
+   "enabled": 0,
+   "active": 1,
+   "canAnimate": false,
+   "choice": 0,
+   "timer": 0,
+   "animA": {
+    "type": "AnimationClip",
+    "name": "idleHiccup0",
+    "pid": 514
+   },
+   "animB": {
+    "type": "AnimationClip",
+    "name": "idleAwesome3",
+    "pid": 526
+   },
+   "animC": {
+    "type": "AnimationClip",
+    "name": "idleLook1",
+    "pid": 483
+   },
+   "animD": {
+    "type": "AnimationClip",
+    "name": "idleTake2",
+    "pid": 489
+   },
+   "left": 0
+  },
+  {
+   "cls": "coloranim",
+   "on": "water 1",
+   "go": 13457,
+   "enabled": 1,
+   "active": 1,
+   "colorStart": [
+    0.40392157435417175,
+    0.5333333611488342,
+    0.8235294222831726,
+    0.7411764860153198
+   ],
+   "colorEnd": [
+    0.6431372761726379,
+    0.3921568691730499,
+    0.7843137383460999,
+    0.8352941274642944
+   ],
+   "duration": 0.009999999776482582,
+   "left": 0
+  },
+  {
+   "cls": "coloranim",
+   "on": "Sphere",
+   "go": 13460,
+   "enabled": 1,
+   "active": 1,
+   "colorStart": [
+    1.0,
+    0.0,
+    0.0,
+    1.0
+   ],
+   "colorEnd": [
+    0.0,
+    1.0,
+    0.0,
+    1.0
+   ],
+   "duration": 0.009999999776482582,
+   "left": 0
+  },
+  {
+   "cls": "bouncing",
+   "on": "spout",
+   "go": 13465,
+   "enabled": 1,
+   "active": 1,
+   "height": 3.0,
+   "R1": 1.0,
+   "R2": 3.0,
+   "joint1": {
+    "type": "GameObject",
+    "name": "def_spout4",
+    "pid": 6743
+   },
+   "joint2": {
+    "type": "GameObject",
+    "name": "def_spout3",
+    "pid": 6742
+   },
+   "joint3": {
+    "type": "GameObject",
+    "name": "def_spout2",
+    "pid": 6741
+   },
+   "joint4": {
+    "type": "GameObject",
+    "name": "def_spout1",
+    "pid": 6740
+   },
+   "angle_range": 30.0,
+   "left": 0
+  },
+  {
+   "cls": "bouncing",
+   "on": "spout",
+   "go": 13468,
+   "enabled": 1,
+   "active": 1,
+   "height": 5.0,
+   "R1": 1.0,
+   "R2": 3.0,
+   "joint1": {
+    "type": "GameObject",
+    "name": "def_spout4",
+    "pid": 6747
+   },
+   "joint2": {
+    "type": "GameObject",
+    "name": "def_spout3",
+    "pid": 6746
+   },
+   "joint3": {
+    "type": "GameObject",
+    "name": "def_spout2",
+    "pid": 6745
+   },
+   "joint4": {
+    "type": "GameObject",
+    "name": "def_spout1",
+    "pid": 6744
+   },
+   "angle_range": 20.0,
+   "left": 0
+  },
+  {
+   "cls": "UVScroller",
+   "on": "burst_1",
+   "go": 13471,
+   "enabled": 1,
+   "active": 1,
+   "scrollSpeed": 0.10000000149011612,
+   "left": 0
+  },
+  {
+   "cls": "coloranim",
+   "on": "burst_1",
+   "go": 13471,
+   "enabled": 1,
+   "active": 1,
+   "colorStart": [
+    1.0,
+    0.0,
+    0.0,
+    0.6392157077789307
+   ],
+   "colorEnd": [
+    1.0,
+    0.9725490212440491,
+    0.0,
+    0.7176470756530762
+   ],
+   "duration": 0.009999999776482582,
+   "left": 0
+  },
+  {
+   "cls": "UVScroller",
+   "on": "burst_2",
+   "go": 13475,
+   "enabled": 1,
+   "active": 1,
+   "scrollSpeed": 0.10000000149011612,
+   "left": 0
+  },
+  {
+   "cls": "coloranim",
+   "on": "burst_2",
+   "go": 13475,
+   "enabled": 1,
+   "active": 1,
+   "colorStart": [
+    0.9843137264251709,
+    1.0,
+    0.0,
+    0.5568627715110779
+   ],
+   "colorEnd": [
+    0.6392157077789307,
+    0.0,
+    1.0,
+    0.658823549747467
+   ],
+   "duration": 0.009999999776482582,
+   "left": 0
+  },
+  {
+   "cls": "RandomAnim",
+   "on": "Hydrant",
+   "go": 13479,
+   "enabled": 1,
+   "active": 1,
+   "canAnimate": true,
+   "choice": 0,
+   "timer": 0,
+   "animA": {
+    "type": "AnimationClip",
+    "name": "idle0",
+    "pid": 588
+   },
+   "animB": {
+    "type": "AnimationClip",
+    "name": "idle1",
+    "pid": 527
+   },
+   "animC": {
+    "type": "AnimationClip",
+    "name": "idle2",
+    "pid": 480
+   },
+   "animD": {
+    "type": "AnimationClip",
+    "name": "idleAwesome3",
+    "pid": 536
+   },
+   "left": 0
+  },
+  {
+   "cls": "RandomAnim",
+   "on": "Mailbox",
+   "go": 13482,
+   "enabled": 1,
+   "active": 1,
+   "canAnimate": true,
+   "choice": 0,
+   "timer": 0,
+   "animA": {
+    "type": "AnimationClip",
+    "name": "idle0",
+    "pid": 513
+   },
+   "animB": {
+    "type": "AnimationClip",
+    "name": "idleAwesome3",
+    "pid": 576
+   },
+   "animC": {
+    "type": "AnimationClip",
+    "name": "idleLook1",
+    "pid": 474
+   },
+   "animD": {
+    "type": "AnimationClip",
+    "name": "idleTake2",
+    "pid": 537
+   },
+   "left": 0
+  },
+  {
+   "cls": "RandomAnim",
+   "on": "Trashcan",
+   "go": 13485,
+   "enabled": 1,
+   "active": 1,
+   "canAnimate": true,
+   "choice": 0,
+   "timer": 0,
+   "animA": {
+    "type": "AnimationClip",
+    "name": "idleHiccup0",
+    "pid": 514
+   },
+   "animB": {
+    "type": "AnimationClip",
+    "name": "idleAwesome3",
+    "pid": 526
+   },
+   "animC": {
+    "type": "AnimationClip",
+    "name": "idleLook1",
+    "pid": 483
+   },
+   "animD": {
+    "type": "AnimationClip",
+    "name": "idleTake2",
+    "pid": 489
+   },
+   "left": 0
+  },
+  {
+   "cls": "RandomAnim",
+   "on": "Mailbox",
+   "go": 13492,
+   "enabled": 1,
+   "active": 1,
+   "canAnimate": true,
+   "choice": 0,
+   "timer": 0,
+   "animA": {
+    "type": "AnimationClip",
+    "name": "idle0",
+    "pid": 513
+   },
+   "animB": {
+    "type": "AnimationClip",
+    "name": "idleAwesome3",
+    "pid": 576
+   },
+   "animC": {
+    "type": "AnimationClip",
+    "name": "idleLook1",
+    "pid": 474
+   },
+   "animD": {
+    "type": "AnimationClip",
+    "name": "idleTake2",
+    "pid": 537
+   },
+   "left": 0
+  },
+  {
+   "cls": "RandomAnim",
+   "on": "Trashcan",
+   "go": 13496,
+   "enabled": 1,
+   "active": 1,
+   "canAnimate": true,
+   "choice": 0,
+   "timer": 0,
+   "animA": {
+    "type": "AnimationClip",
+    "name": "idleHiccup0",
+    "pid": 514
+   },
+   "animB": {
+    "type": "AnimationClip",
+    "name": "idleAwesome3",
+    "pid": 526
+   },
+   "animC": {
+    "type": "AnimationClip",
+    "name": "idleLook1",
+    "pid": 483
+   },
+   "animD": {
+    "type": "AnimationClip",
+    "name": "idleTake2",
+    "pid": 489
+   },
+   "left": 0
+  },
+  {
+   "cls": "RandomAnim",
+   "on": "Trashcan",
+   "go": 13499,
+   "enabled": 1,
+   "active": 1,
+   "canAnimate": true,
+   "choice": 0,
+   "timer": 0,
+   "animA": {
+    "type": "AnimationClip",
+    "name": "idleHiccup0",
+    "pid": 514
+   },
+   "animB": {
+    "type": "AnimationClip",
+    "name": "idleAwesome3",
+    "pid": 526
+   },
+   "animC": {
+    "type": "AnimationClip",
+    "name": "idleLook1",
+    "pid": 483
+   },
+   "animD": {
+    "type": "AnimationClip",
+    "name": "idleTake2",
+    "pid": 489
+   },
+   "left": 0
+  },
+  {
+   "cls": "RandomAnim",
+   "on": "Trashcan",
+   "go": 13502,
+   "enabled": 1,
+   "active": 1,
+   "canAnimate": true,
+   "choice": 0,
+   "timer": 0,
+   "animA": {
+    "type": "AnimationClip",
+    "name": "idleHiccup0",
+    "pid": 514
+   },
+   "animB": {
+    "type": "AnimationClip",
+    "name": "idleAwesome3",
+    "pid": 526
+   },
+   "animC": {
+    "type": "AnimationClip",
+    "name": "idleLook1",
+    "pid": 483
+   },
+   "animD": {
+    "type": "AnimationClip",
+    "name": "idleTake2",
+    "pid": 489
+   },
+   "left": 0
+  },
+  {
+   "cls": "RandomAnim",
+   "on": "Trashcan",
+   "go": 13505,
+   "enabled": 1,
+   "active": 1,
+   "canAnimate": true,
+   "choice": 0,
+   "timer": 0,
+   "animA": {
+    "type": "AnimationClip",
+    "name": "idleHiccup0",
+    "pid": 514
+   },
+   "animB": {
+    "type": "AnimationClip",
+    "name": "idleAwesome3",
+    "pid": 526
+   },
+   "animC": {
+    "type": "AnimationClip",
+    "name": "idleLook1",
+    "pid": 483
+   },
+   "animD": {
+    "type": "AnimationClip",
+    "name": "idleTake2",
+    "pid": 489
+   },
+   "left": 0
+  },
+  {
+   "cls": "RandomAnim",
+   "on": "Mailbox",
+   "go": 13508,
+   "enabled": 1,
+   "active": 1,
+   "canAnimate": true,
+   "choice": 0,
+   "timer": 0,
+   "animA": {
+    "type": "AnimationClip",
+    "name": "idle0",
+    "pid": 513
+   },
+   "animB": {
+    "type": "AnimationClip",
+    "name": "idleAwesome3",
+    "pid": 576
+   },
+   "animC": {
+    "type": "AnimationClip",
+    "name": "idleLook1",
+    "pid": 474
+   },
+   "animD": {
+    "type": "AnimationClip",
+    "name": "idleTake2",
+    "pid": 537
+   },
+   "left": 0
+  },
+  {
+   "cls": "RandomAnim",
+   "on": "Hydrant",
+   "go": 13512,
+   "enabled": 1,
+   "active": 1,
+   "canAnimate": true,
+   "choice": 0,
+   "timer": 0,
+   "animA": {
+    "type": "AnimationClip",
+    "name": "idle0",
+    "pid": 588
+   },
+   "animB": {
+    "type": "AnimationClip",
+    "name": "idle1",
+    "pid": 527
+   },
+   "animC": {
+    "type": "AnimationClip",
+    "name": "idle2",
+    "pid": 480
+   },
+   "animD": {
+    "type": "AnimationClip",
+    "name": "idleAwesome3",
+    "pid": 536
+   },
+   "left": 0
+  },
+  {
+   "cls": "RandomAnim",
+   "on": "Hydrant",
+   "go": 13516,
+   "enabled": 1,
+   "active": 1,
+   "canAnimate": true,
+   "choice": 0,
+   "timer": 0,
+   "animA": {
+    "type": "AnimationClip",
+    "name": "idle0",
+    "pid": 588
+   },
+   "animB": {
+    "type": "AnimationClip",
+    "name": "idle1",
+    "pid": 527
+   },
+   "animC": {
+    "type": "AnimationClip",
+    "name": "idle2",
+    "pid": 480
+   },
+   "animD": {
+    "type": "AnimationClip",
+    "name": "idleAwesome3",
+    "pid": 536
+   },
+   "left": 0
+  },
+  {
+   "cls": "RandomAnim",
+   "on": "Mailbox",
+   "go": 13520,
+   "enabled": 1,
+   "active": 1,
+   "canAnimate": true,
+   "choice": 0,
+   "timer": 0,
+   "animA": {
+    "type": "AnimationClip",
+    "name": "idle0",
+    "pid": 513
+   },
+   "animB": {
+    "type": "AnimationClip",
+    "name": "idleAwesome3",
+    "pid": 576
+   },
+   "animC": {
+    "type": "AnimationClip",
+    "name": "idleLook1",
+    "pid": 474
+   },
+   "animD": {
+    "type": "AnimationClip",
+    "name": "idleTake2",
+    "pid": 537
+   },
+   "left": 0
+  },
+  {
+   "cls": "RandomAnim",
+   "on": "Trashcan",
+   "go": 13524,
+   "enabled": 1,
+   "active": 1,
+   "canAnimate": true,
+   "choice": 0,
+   "timer": 0,
+   "animA": {
+    "type": "AnimationClip",
+    "name": "idleHiccup0",
+    "pid": 514
+   },
+   "animB": {
+    "type": "AnimationClip",
+    "name": "idleAwesome3",
+    "pid": 526
+   },
+   "animC": {
+    "type": "AnimationClip",
+    "name": "idleLook1",
+    "pid": 483
+   },
+   "animD": {
+    "type": "AnimationClip",
+    "name": "idleTake2",
+    "pid": 489
+   },
+   "left": 0
+  },
+  {
+   "cls": "RandomAnim",
+   "on": "Trashcan",
+   "go": 13527,
+   "enabled": 1,
+   "active": 1,
+   "canAnimate": true,
+   "choice": 0,
+   "timer": 0,
+   "animA": {
+    "type": "AnimationClip",
+    "name": "idleHiccup0",
+    "pid": 514
+   },
+   "animB": {
+    "type": "AnimationClip",
+    "name": "idleAwesome3",
+    "pid": 526
+   },
+   "animC": {
+    "type": "AnimationClip",
+    "name": "idleLook1",
+    "pid": 483
+   },
+   "animD": {
+    "type": "AnimationClip",
+    "name": "idleTake2",
+    "pid": 489
+   },
+   "left": 0
+  },
+  {
+   "cls": "RandomAnim",
+   "on": "Trashcan",
+   "go": 13530,
+   "enabled": 1,
+   "active": 1,
+   "canAnimate": true,
+   "choice": 0,
+   "timer": 0,
+   "animA": {
+    "type": "AnimationClip",
+    "name": "idleHiccup0",
+    "pid": 514
+   },
+   "animB": {
+    "type": "AnimationClip",
+    "name": "idleAwesome3",
+    "pid": 526
+   },
+   "animC": {
+    "type": "AnimationClip",
+    "name": "idleLook1",
+    "pid": 483
+   },
+   "animD": {
+    "type": "AnimationClip",
+    "name": "idleTake2",
+    "pid": 489
+   },
+   "left": 0
+  },
+  {
+   "cls": "RandomAnim",
+   "on": "Hydrant",
+   "go": 13533,
+   "enabled": 1,
+   "active": 1,
+   "canAnimate": true,
+   "choice": 0,
+   "timer": 0,
+   "animA": {
+    "type": "AnimationClip",
+    "name": "idle0",
+    "pid": 588
+   },
+   "animB": {
+    "type": "AnimationClip",
+    "name": "idle1",
+    "pid": 527
+   },
+   "animC": {
+    "type": "AnimationClip",
+    "name": "idle2",
+    "pid": 480
+   },
+   "animD": {
+    "type": "AnimationClip",
+    "name": "idleAwesome3",
+    "pid": 536
+   },
+   "left": 0
+  },
+  {
+   "cls": "RandomAnim",
+   "on": "Trashcan",
+   "go": 13537,
+   "enabled": 1,
+   "active": 1,
+   "canAnimate": true,
+   "choice": 0,
+   "timer": 0,
+   "animA": {
+    "type": "AnimationClip",
+    "name": "idleHiccup0",
+    "pid": 514
+   },
+   "animB": {
+    "type": "AnimationClip",
+    "name": "idleAwesome3",
+    "pid": 526
+   },
+   "animC": {
+    "type": "AnimationClip",
+    "name": "idleLook1",
+    "pid": 483
+   },
+   "animD": {
+    "type": "AnimationClip",
+    "name": "idleTake2",
+    "pid": 489
+   },
+   "left": 0
+  },
+  {
+   "cls": "RandomAnim",
+   "on": "Trashcan",
+   "go": 13566,
+   "enabled": 1,
+   "active": 1,
+   "canAnimate": true,
+   "choice": 0,
+   "timer": 0,
+   "animA": {
+    "type": "AnimationClip",
+    "name": "idleHiccup0",
+    "pid": 514
+   },
+   "animB": {
+    "type": "AnimationClip",
+    "name": "idleAwesome3",
+    "pid": 526
+   },
+   "animC": {
+    "type": "AnimationClip",
+    "name": "idleLook1",
+    "pid": 483
+   },
+   "animD": {
+    "type": "AnimationClip",
+    "name": "idleTake2",
+    "pid": 489
+   },
+   "left": 0
+  },
+  {
+   "cls": "RandomAnim",
+   "on": "Trashcan",
+   "go": 13569,
+   "enabled": 1,
+   "active": 1,
+   "canAnimate": true,
+   "choice": 0,
+   "timer": 0,
+   "animA": {
+    "type": "AnimationClip",
+    "name": "idleHiccup0",
+    "pid": 514
+   },
+   "animB": {
+    "type": "AnimationClip",
+    "name": "idleAwesome3",
+    "pid": 526
+   },
+   "animC": {
+    "type": "AnimationClip",
+    "name": "idleLook1",
+    "pid": 483
+   },
+   "animD": {
+    "type": "AnimationClip",
+    "name": "idleTake2",
+    "pid": 489
+   },
+   "left": 0
+  },
+  {
+   "cls": "RandomAnim",
+   "on": "Hydrant",
+   "go": 13572,
+   "enabled": 1,
+   "active": 1,
+   "canAnimate": true,
+   "choice": 0,
+   "timer": 0,
+   "animA": {
+    "type": "AnimationClip",
+    "name": "idle0",
+    "pid": 588
+   },
+   "animB": {
+    "type": "AnimationClip",
+    "name": "idle1",
+    "pid": 527
+   },
+   "animC": {
+    "type": "AnimationClip",
+    "name": "idle2",
+    "pid": 480
+   },
+   "animD": {
+    "type": "AnimationClip",
+    "name": "idleAwesome3",
+    "pid": 536
+   },
+   "left": 0
+  },
+  {
+   "cls": "Fear",
+   "on": "Library",
+   "go": 13575,
+   "enabled": 1,
+   "active": 1,
+   "idle": {
+    "type": "AnimationClip",
+    "name": "idleSlow",
+    "pid": 551
+   },
+   "afraid": {
+    "type": "AnimationClip",
+    "name": "afraid",
+    "pid": 517
+   },
+   "drop": {
+    "type": "AnimationClip",
+    "name": "drop",
+    "pid": 556
+   },
+   "left": 0
+  },
+  {
+   "cls": "triggerCogBuilding",
+   "on": "ToonHall",
+   "go": 13581,
+   "enabled": 1,
+   "active": 1,
+   "playerChar": null,
+   "launchPos": {
+    "type": "Transform",
+    "name": "CogBuildingLoc",
+    "pid": 3556
+   },
+   "cogBuilding": {
+    "type": "GameObject",
+    "name": "CogBuildingAnim",
+    "pid": 934
+   },
+   "buildingIdle": {
+    "type": "AnimationClip",
+    "name": "idleSlow",
+    "pid": 552
+   },
+   "animBuildingDamage": {
+    "type": "AnimationClip",
+    "name": "drop",
+    "pid": 502
+   },
+   "cogA": {
+    "type": "GameObject",
+    "name": "FlunkyA",
+    "pid": 7790
+   },
+   "cogB": {
+    "type": "GameObject",
+    "name": "FlunkyB",
+    "pid": 8293
+   },
+   "cogC": {
+    "type": "GameObject",
+    "name": "FlunkyC",
+    "pid": 8656
+   },
+   "cogD": {
+    "type": "GameObject",
+    "name": "FlunkyD",
+    "pid": 9019
+   },
+   "cogE": {
+    "type": "GameObject",
+    "name": "bigCheese",
+    "pid": 9381
+   },
+   "bombA": {
+    "type": "GameObject",
+    "name": "BombA",
+    "pid": 8155
+   },
+   "bombB": {
+    "type": "GameObject",
+    "name": "BombB",
+    "pid": 8158
+   },
+   "haze": {
+    "type": "GameObject",
+    "name": "Haze",
+    "pid": 8163
+   },
+   "bombSound": {
+    "type": "AudioClip",
+    "name": "FarExplosionA",
+    "pid": 619
+   },
+   "villianMusic": {
+    "type": "AudioClip",
+    "name": "Villian",
+    "pid": 627
+   },
+   "cogTakerover": false,
+   "left": 0
+  },
+  {
+   "cls": "LookAt",
+   "on": "Moon",
+   "go": 13679,
+   "enabled": 1,
+   "active": 1,
+   "target": {
+    "type": "Transform",
+    "name": "Camera",
+    "pid": 143
+   },
+   "left": 0
+  }
+ ]
+}
