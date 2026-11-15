@@ -44,6 +44,8 @@ MinigameNameDict = {ToontownGlobals.RaceGameId: TTLocalizer.RaceGameTitle,
  ToontownGlobals.TravelGameId: TTLocalizer.TravelGameTitle,
  ToontownGlobals.IceGameId: TTLocalizer.IceGameTitle,
  ToontownGlobals.PhotoGameId: TTLocalizer.PhotoGameTitle,
+ ToontownGlobals.AsteroidChickenGameId: TTLocalizer.AsteroidChickenGameTitle,
+ ToontownGlobals.DoodleRescueGameId: TTLocalizer.DoodleRescueGameTitle,
  ToontownGlobals.TwoDGameId: TTLocalizer.TwoDGameTitle,
  ToontownGlobals.CogThiefGameId: TTLocalizer.CogThiefGameTitle}
 

@@ -826,6 +826,8 @@ from toontown.cogdominium import DistCogdoCraneMoneyBag/AI
 from toontown.cogdominium import DistCogdoCraneCog/AI
 from toontown.parties.GlobalPartyManager/AI/UD import GlobalPartyManager/AI/UD
 from toontown.uberdog.ARGManager/AI/UD import ARGManager/AI/UD
+from toontown.minigame import DistributedAsteroidChickenGame/AI
+from toontown.minigame import DistributedDoodleRescueGame/AI
 
 struct GiftItem {
   blob Item;
@@ -4063,4 +4065,12 @@ dclass DistributedSillyMeterMgr : DistributedPhaseEventMgr {
 };
 
 dclass ARGManager : DistributedObjectGlobal {
+};
+
+dclass DistributedAsteroidChickenGame : DistributedMinigame {
+  setScore(uint16 score, uint8 won) airecv clsend;
+};
+
+dclass DistributedDoodleRescueGame : DistributedMinigame {
+  setSaved(uint8 saved, uint8 won) airecv clsend;
 };

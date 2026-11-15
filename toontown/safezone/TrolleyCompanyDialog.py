@@ -32,7 +32,10 @@ GAMES = ((ToontownGlobals.CannonGameId, 'CannonGameTitle'),
          (ToontownGlobals.PairingGameId, 'PairingGameTitle'),
          (ToontownGlobals.DivingGameId, 'DivingGameTitle'),
          (ToontownGlobals.TargetGameId, 'TargetGameTitle'),
-         (ToontownGlobals.TugOfWarGameId, 'TugOfWarGameTitle'))
+         (ToontownGlobals.TugOfWarGameId, 'TugOfWarGameTitle'),
+         # From Disney's Toontown 2.0 prototype.
+         (ToontownGlobals.AsteroidChickenGameId, 'AsteroidChickenGameTitle'),
+         (ToontownGlobals.DoodleRescueGameId, 'DoodleRescueGameTitle'))
 
 
 def wantAsk():
@@ -109,15 +112,16 @@ class TrolleyCompanyDialog(DirectFrame):
     def showGames(self):
         # A button for each trolley game, four to a row.
         self.clearPage()
-        self['image_scale'] = (1.75, 1, 1.25)
-        self.label(PICK_TITLE, (0, 0, 0.43), 0.08, ToontownGlobals.getSignFont(), (0.1, 0.3, 0.7, 1))
+        self['image_scale'] = (1.75, 1, 1.3)
+        self.label(PICK_TITLE, (0, 0, 0.45), 0.08, ToontownGlobals.getSignFont(), (0.1, 0.3, 0.7, 1))
         for i, (gameId, title) in enumerate(GAMES):
             row, column = divmod(i, 4)
             text = getattr(TTLocalizer, title)
             # Long names (Toon Memory Game) shrink to stay on their button.
-            self.button(text, (-0.6 + column * 0.4, 0, 0.27 - row * 0.15), self.board, [gameId],
+            self.button(text, (-0.6 + column * 0.4, 0, 0.29 - row * 0.14), self.board, [gameId],
                         scale=(0.82, 1, 1.25), textScale=min(0.042, 0.042 * 14.0 / max(len(text), 1)))
-        self.button(TTLocalizer.lCancel, (0, 0, -0.4), self.cancel)
+        # (Five rows of games now: Cancel sits clear below the last.)
+        self.button(TTLocalizer.lCancel, (0, 0, -0.43), self.cancel)
 
     def board(self, gameId):
         company = self.company

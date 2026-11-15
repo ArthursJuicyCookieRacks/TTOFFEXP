@@ -1,0 +1,432 @@
+{
+ "prefabs": {
+  "Asteroid": {
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "lo": [
+    -0.414,
+    -0.733,
+    -0.6646
+   ],
+   "hi": [
+    0.414,
+    0.6435,
+    0.9616
+   ],
+   "parts": [
+    "Asteroid"
+   ]
+  },
+  "Asterpinata": {
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "lo": [
+    -1.5148,
+    -1.5662,
+    -1.5739
+   ],
+   "hi": [
+    1.5581,
+    1.3917,
+    1.2218
+   ],
+   "parts": [
+    "Asterpinata"
+   ]
+  },
+  "StarPinata": {
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "lo": [
+    -0.7984,
+    -0.4056,
+    -1.2588
+   ],
+   "hi": [
+    0.7126,
+    0.1158,
+    0.707
+   ],
+   "parts": [
+    "tassel2",
+    "tassel1",
+    "star"
+   ]
+  },
+  "YellowHardCandy": {
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "lo": [
+    -0.1233,
+    -0.0364,
+    -0.0662
+   ],
+   "hi": [
+    0.1233,
+    0.0364,
+    0.0662
+   ],
+   "parts": [
+    "PCANDY:candy2",
+    "PCANDY:wrapper"
+   ]
+  },
+  "PinkHardCandyWrapperOpen": {
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "lo": [
+    -0.1266,
+    -0.0205,
+    -0.0721
+   ],
+   "hi": [
+    0.1304,
+    0.0476,
+    0.0662
+   ],
+   "parts": [
+    "PinkHardCandyWrapperOpen"
+   ]
+  },
+  "Lolly": {
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "lo": [
+    -0.0991,
+    -0.01,
+    -0.3523
+   ],
+   "hi": [
+    0.103,
+    0.0104,
+    0.1
+   ],
+   "parts": [
+    "lollipop2",
+    "lollipop_stick",
+    "lollipop1",
+    "lollipop3"
+   ]
+  },
+  "BlueWhistle": {
+   "scale": [
+    5.0,
+    5.0,
+    5.0
+   ],
+   "lo": [
+    -0.05,
+    -0.05,
+    -0.0424
+   ],
+   "hi": [
+    0.147,
+    0.05,
+    0.0424
+   ],
+   "parts": [
+    "t2_m_ara_ext_whistle"
+   ]
+  },
+  "Jellybean": {
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "lo": [
+    -0.9764,
+    -0.6443,
+    -0.8651
+   ],
+   "hi": [
+    1.0114,
+    0.6635,
+    0.7385
+   ],
+   "parts": [
+    "heartCandyBase"
+   ]
+  },
+  "EggBeam": {
+   "scale": [
+    1.15,
+    1.15,
+    1.15
+   ],
+   "lo": [
+    -0.694,
+    -1.1189,
+    -0.7035
+   ],
+   "hi": [
+    0.694,
+    0.9381,
+    0.5001
+   ],
+   "parts": [
+    "EggBeam"
+   ]
+  },
+  "Star": {
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "lo": [
+    -1.1928,
+    0.0,
+    -1.1928
+   ],
+   "hi": [
+    1.1928,
+    0.0,
+    1.1928
+   ],
+   "parts": [
+    "Star"
+   ]
+  },
+  "RubberChickenB": {
+   "scale": [
+    6.5,
+    6.5,
+    6.5
+   ]
+  }
+ },
+ "hud": {
+  "Score": {
+   "lo": [
+    -199.55,
+    42.35,
+    129.63
+   ],
+   "hi": [
+    -147.83,
+    42.35,
+    181.35
+   ]
+  },
+  "EnemysLeft": {
+   "lo": [
+    66.7,
+    24.86,
+    132.06
+   ],
+   "hi": [
+    112.47,
+    26.23,
+    177.85
+   ]
+  },
+  "GameOver": {
+   "lo": [
+    -68.02,
+    42.35,
+    118.41
+   ],
+   "hi": [
+    26.17,
+    42.35,
+    181.87
+   ]
+  },
+  "texts": {
+   "ScoreText": {
+    "pos": [
+     -138.73,
+     188.512
+    ],
+    "ax": [
+     7.7568,
+     0.0
+    ],
+    "ay": [
+     0.0,
+     7.7567
+    ],
+    "depth": 42.35
+   },
+   "EnemiesLeftText": {
+    "pos": [
+     113.325,
+     184.467
+    ],
+    "ax": [
+     7.3451,
+     0.0
+    ],
+    "ay": [
+     -0.0,
+     7.3483
+    ],
+    "depth": 26.26
+   },
+   "ReadyToPlay": {
+    "pos": [
+     -84.402,
+     170.744
+    ],
+    "ax": [
+     4.1718,
+     0.0
+    ],
+    "ay": [
+     0.0,
+     5.1464
+    ],
+    "depth": 42.35
+   },
+   "ReadyToPlayText": {
+    "pos": [
+     27.607,
+     170.744
+    ],
+    "ax": [
+     3.2567,
+     0.0
+    ],
+    "ay": [
+     0.0,
+     5.1464
+    ],
+    "depth": 42.35
+   }
+  }
+ },
+ "fx": {
+  "Fireball": "phase_4/maps/asteroidchicken/Fireball.png",
+  "Smoke": "phase_4/maps/asteroidchicken/Smoke.png",
+  "GlowDot": "phase_4/maps/asteroidchicken/GlowDot.png",
+  "Shockwave": "phase_4/maps/asteroidchicken/Shockwave.png",
+  "Glow": "phase_4/maps/asteroidchicken/Glow.png",
+  "Star02": "phase_4/maps/asteroidchicken/Star02.png",
+  "ColorFlare": "phase_4/maps/asteroidchicken/ColorFlare.png",
+  "confetti_pink": "phase_4/maps/asteroidchicken/confetti_pink.png",
+  "confetti_orange": "phase_4/maps/asteroidchicken/confetti_orange.png",
+  "t2_t_ara_spc_confettiBlue1": "phase_4/maps/asteroidchicken/t2_t_ara_spc_confettiBlue1.png",
+  "t2_t_ara_spc_confettiGreen": "phase_4/maps/asteroidchicken/t2_t_ara_spc_confettiGreen.png",
+  "t2_t_ara_spc_confettiStarPurple1": "phase_4/maps/asteroidchicken/t2_t_ara_spc_confettiStarPurple1.png",
+  "t2_t_ara_spc_confettiStarYellow1": "phase_4/maps/asteroidchicken/t2_t_ara_spc_confettiStarYellow1.png",
+  "t2_t_ara_spc_starBlueSmall1": "phase_4/maps/asteroidchicken/t2_t_ara_spc_starBlueSmall1.png"
+ },
+ "astronaut": {
+  "clips": {
+   "idle": 17,
+   "Take_001": 24,
+   "cheerR": 59,
+   "duck": 131,
+   "gameOver": 193,
+   "lookL": 63,
+   "lookR": 65,
+   "pullLever": 63,
+   "tapConsole": 47,
+   "twistKnobsHi": 143,
+   "twistKnobsLo": 75,
+   "victoryDance": 411
+  },
+  "rate": {
+   "idle": 24.0,
+   "Take_001": 24.0,
+   "cheerR": 48.0,
+   "duck": 48.0,
+   "gameOver": 48.0,
+   "lookL": 48.0,
+   "lookR": 48.0,
+   "pullLever": 48.0,
+   "tapConsole": 48.0,
+   "twistKnobsHi": 48.0,
+   "twistKnobsLo": 48.0,
+   "victoryDance": 48.0
+  },
+  "wrap": {
+   "idle": 1,
+   "Take_001": 0,
+   "cheerR": 0,
+   "duck": 1,
+   "gameOver": 0,
+   "lookL": 0,
+   "lookR": 1,
+   "pullLever": 1,
+   "tapConsole": 1,
+   "twistKnobsHi": 1,
+   "twistKnobsLo": 1,
+   "victoryDance": 0
+  }
+ },
+ "camera": {
+  "pos": [
+   1.2288970947265625,
+   7.492733193652525,
+   -0.8654185739723097
+  ],
+  "fwd": [
+   0.0,
+   0.9990482004786098,
+   0.04361987070649655
+  ],
+  "up": [
+   0.0,
+   -0.04361987070649655,
+   0.9990482004786099
+  ],
+  "fov": 35.0,
+  "near": 0.009999999776482582,
+  "far": 1000.0
+ },
+ "aim": {
+  "pos": [
+   1.225296974182129,
+   18.94797355266974,
+   -2.6162917065292466
+  ],
+  "fwd": [
+   0.0,
+   1.0,
+   7.556406596232174e-19
+  ],
+  "up": [
+   0.0,
+   7.556406596232174e-19,
+   1.0
+  ],
+  "fov": 60.0
+ },
+ "light": {
+  "dir": [
+   0.0,
+   0.7394825287399641,
+   -0.6731757494802885
+  ],
+  "color": [
+   0.3499999940395355,
+   0.3499999940395355,
+   0.3499999940395355
+  ]
+ },
+ "ambient": [
+  0.0,
+  0.0,
+  0.0
+ ]
+}

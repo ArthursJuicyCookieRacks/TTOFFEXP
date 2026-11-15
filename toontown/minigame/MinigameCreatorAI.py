@@ -20,6 +20,8 @@ from . import DistributedIceGameAI
 from . import DistributedCogThiefGameAI
 from . import DistributedTwoDGameAI
 from . import DistributedTravelGameAI
+from . import DistributedAsteroidChickenGameAI
+from . import DistributedDoodleRescueGameAI
 from . import TravelGameGlobals
 from otp.ai.MagicWordGlobal import *
 ALLOW_TEMP_MINIGAMES = config.ConfigVariableBool('allow-temp-minigames', False).getValue()
@@ -95,7 +97,9 @@ def createMinigame(air, playerArray, trolleyZone, minigameZone = None, previousG
      ToontownGlobals.CogThiefGameId: DistributedCogThiefGameAI.DistributedCogThiefGameAI,
      ToontownGlobals.TwoDGameId: DistributedTwoDGameAI.DistributedTwoDGameAI,
      ToontownGlobals.TravelGameId: DistributedTravelGameAI.DistributedTravelGameAI,
-     ToontownGlobals.PhotoGameId: DistributedPhotoGameAI.DistributedPhotoGameAI}
+     ToontownGlobals.PhotoGameId: DistributedPhotoGameAI.DistributedPhotoGameAI,
+     ToontownGlobals.AsteroidChickenGameId: DistributedAsteroidChickenGameAI.DistributedAsteroidChickenGameAI,
+     ToontownGlobals.DoodleRescueGameId: DistributedDoodleRescueGameAI.DistributedDoodleRescueGameAI}
     if ALLOW_TEMP_MINIGAMES:
         from .TempMinigameAI import TempMgCtors
         for key, value in list(TempMgCtors.items()):
