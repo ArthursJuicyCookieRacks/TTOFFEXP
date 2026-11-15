@@ -74,7 +74,8 @@ def _underOtherLOD(np, top):
     while not node.isEmpty() and node != top:
         if isinstance(node.node(), LODNode):
             lod = node.node()
-            shown = lod.getForceSwitch() if lod.getForceSwitch() >= 0 else 0
+            forced = _forced(lod)
+            shown = forced if forced >= 0 else 0
             if node.node().findChild(child.node()) != shown:
                 return True
         child = node
@@ -82,13 +83,19 @@ def _underOtherLOD(np, top):
     return False
 
 
+def _forced(lod):
+    """The level a level-of-detail switch is held on, or -1 (Panda 1.10
+    can't say: then it is left as a switch)."""
+    get = getattr(lod, 'getForceSwitch', None)
+    return get() if get is not None else -1
+
+
 def _collapseLODs(np):
     """A level-of-detail switch held on one level (forceSwitch) is that level."""
     for lodNp in np.findAllMatches('**/+LODNode'):
-        lod = lodNp.node()
-        if lod.getForceSwitch() < 0:
+        keep = _forced(lodNp.node())
+        if keep < 0:
             continue
-        keep = lod.getForceSwitch()
         children = lodNp.getChildren()
         holder = lodNp.getParent().attachNewNode(lodNp.getName())
         holder.setTransform(lodNp.getTransform())
@@ -122,6 +129,8 @@ def flattenStatic(root, skip=(), statues=()):
         for s in skip:
             if s == np or s.isAncestorOf(np):
                 return True
+        if _litWithoutNormals(np) or _seeThrough(np):
+            return True
         node = np.getParent()
         while not node.isEmpty() and node != root:
             if type(node.node()).__name__ == 'Character':
@@ -165,6 +174,60 @@ def flattenStatic(root, skip=(), statues=()):
     stage.clearModelNodes()
     stage.flattenStrong()
     return before, _countGeoms(root)
+
+
+def heldNodes(obj, exclude=(), still=()):
+    """Every node a map object keeps hold of (its attributes, and lists,
+    tuples and dicts of them): the ones it may move, spin or change later,
+    left out of the merge."""
+    from panda3d.core import NodePath
+    found = []
+
+    def take(value, depth):
+        if isinstance(value, NodePath):
+            if not value.isEmpty() and not any(value == e for e in exclude):
+                found.append(value)
+        elif depth < 3 and isinstance(value, (list, tuple, set)):
+            for v in value:
+                take(v, depth + 1)
+        elif depth < 3 and isinstance(value, dict):
+            for v in value.values():
+                take(v, depth + 1)
+    for name, value in vars(obj).items():
+        # still: attributes known not to move (a map's whole DNA scenery).
+        if name not in still:
+            take(value, 0)
+    return found
+
+
+def _litWithoutNormals(np):
+    """A lit piece with no normals of its own (the night maps' crates and
+    sacks): how light falls on it depends on what was drawn just before
+    it, so merged it came out darker. Left as it is."""
+    from panda3d.core import LightAttrib
+    lights = np.getNetState().getAttrib(LightAttrib)
+    if lights is None or not lights.getNumOnLights():
+        return False
+    node = np.node()
+    for i in range(node.getNumGeoms()):
+        if not node.getGeom(i).getVertexData().getFormat().hasColumn('normal'):
+            return True
+    return False
+
+
+def _seeThrough(np):
+    """A piece blended with what is behind it (tree leaves, fences, water):
+    those are drawn far to near, one piece at a time, and merged into one
+    big piece they were drawn in the wrong order (Bossbot HQ's birches went
+    behind the forest card). Left as it is. Cut-out (binary) ones are fine."""
+    from panda3d.core import TransparencyAttrib
+    net = np.getNetState()
+    node = np.node()
+    for i in range(node.getNumGeoms()):
+        attrib = net.compose(node.getGeomState(i)).getAttrib(TransparencyAttrib)
+        if attrib is not None and attrib.getMode() not in (TransparencyAttrib.MNone, TransparencyAttrib.MBinary):
+            return True
+    return False
 
 
 def _geomNodes(np):

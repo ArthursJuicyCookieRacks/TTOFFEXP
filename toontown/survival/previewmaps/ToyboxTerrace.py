@@ -147,6 +147,8 @@ class _AnimProp:
 
 
 class ToyboxTerrace(PreviewMap):
+    # Held on to but never moved: merged with the rest of the still scenery.
+    STILL_NODES = ('dnaGeom', 'letters', 'signs')
     KEY = 'toybox_terrace'
     TITLE = 'Toybox Terrace'
     DESCRIPTION = 'A playground built from giant wooden toys. Even the clock tower pops out of a box.'

@@ -303,6 +303,39 @@ class SurvivalArena:
             kit.statues = []
         self.notify.info('%s scenery: %d pieces -> %d' % (self.map.get('title', self.mapName), before, after))
 
+    # Moving parts of the playgrounds and Cog HQs that are found by name, not
+    # held by an animated prop: Bossbot HQ's fountain gears and geysers.
+    MOVING_PARTS = ('**/animated_prop_*', '**/interactive_prop_*', '**/Fountain_Geom*', '**/geyser*', '**/*trolley_station*')
+
+    def __flattenScenery(self):
+        """As __flattenParody, for the playgrounds and Cog HQs: their
+        scenery as a few big pieces. Anything an animated prop holds or that
+        moves (the dancing hydrants, Bossbot HQ's gears and geysers) and the
+        trolley are left as they are."""
+        if not ConfigVariableBool('survival-flatten-maps', True).getValue():
+            return
+        from toontown.survival.maps import MapFlatten
+        skip = []
+        for prop in self.animProps:
+            skip += MapFlatten.heldNodes(prop, exclude=(self.geom, self.root))
+        for pattern in self.MOVING_PARTS:
+            skip += list(self.geom.findAllMatches(pattern))
+        before, after = MapFlatten.flattenStatic(self.geom, skip=skip)
+        self.notify.info('%s scenery: %d pieces -> %d' % (self.map.get('title', self.mapName), before, after))
+
+    def __flattenPreview(self):
+        """As __flattenParody, for the night maps built in code. Anything the
+        map keeps hold of (the Ferris wheel, the carousel, Jack, the ducks,
+        the tops, the flickering lamps) is left as it is."""
+        if not ConfigVariableBool('survival-flatten-maps', True).getValue():
+            return
+        from toontown.survival.maps import MapFlatten
+        skip = MapFlatten.heldNodes(self.parody, exclude=(self.root,), still=getattr(self.parody, 'STILL_NODES', ()))
+        # The trolley is looked up for the way out (its size, its solids).
+        skip.append(self.root.find('**/*trolley_station*'))
+        before, after = MapFlatten.flattenStatic(self.root, skip=skip)
+        self.notify.info('%s scenery: %d pieces -> %d' % (self.map.get('title', self.mapName), before, after))
+
     def __buildPreview(self, key):
         """One of the night maps built in code: its own sky, fog, light and
         colour, with the stations where it puts them (some up on terraces)."""
@@ -328,6 +361,7 @@ class SurvivalArena:
             self.mapFog.setExpDensity(density)
             self.root.setFog(self.mapFog)
         self.root.setColorScale(cls.NIGHT_SCALE)
+        self.__flattenPreview()
         gsg = base.win.getGsg()
         if gsg:
             self.geom.prepareScene(gsg)
@@ -400,6 +434,7 @@ class SurvivalArena:
         # Every playground's tunnels are walled off (Arthur: Donald's Dock,
         # the Brrrgh, Melodyland and Toontown Central all let toons in).
         self.blockTunnels()
+        self.__flattenScenery()
         gsg = base.win.getGsg()
         if gsg:
             self.geom.prepareScene(gsg)
@@ -430,6 +465,7 @@ class SurvivalArena:
             model.setPosHprScale(pos, hpr, scale)
         HoodMaps.addTrolley(self)
         getattr(HoodMaps, self.map['setup'])(self)
+        self.__flattenScenery()
         gsg = base.win.getGsg()
         if gsg:
             self.geom.prepareScene(gsg)
