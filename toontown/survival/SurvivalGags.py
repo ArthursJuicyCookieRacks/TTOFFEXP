@@ -13,7 +13,7 @@ import random
 from direct.directnotify import DirectNotifyGlobal
 from direct.interval.IntervalGlobal import (ActorInterval, Func, LerpFunctionInterval, LerpPosHprInterval, LerpPosInterval,
                                             LerpScaleInterval, Parallel, Sequence, SoundInterval, Wait)
-from panda3d.core import CullFaceAttrib, PartBundle, LMatrix4, NodePath, Point2, Point3, Quat, Vec3, Vec4
+from panda3d.core import CullFaceAttrib, PartBundle, LMatrix4, NodePath, Point2, Point3, Quat, TransformState, Vec3, Vec4
 
 from toontown.battle import BattleProps
 from toontown.battle.BattleSounds import globalBattleSoundCache
@@ -801,7 +801,9 @@ class ToonArms:
         for joint, lod, node in held:
             if not node.isEmpty():
                 node.removeNode()
+        self.stopWristFollow()
         self.wristHeld = []
+        self.wristRest = None
         if held and self.anim:
             # Let go, the wrist keeps the turned value until its animation
             # changes frame: posed one frame over and back, it takes the
@@ -1107,6 +1109,7 @@ class ToonArms:
             self.recoil(self.kick or 'squirt', duration)
             return
         self.throwEnd = end
+        self.startWristFollow()
         if end > self.start:
             # The throw (or squirt, or button press), then the arm eases
             # back into the hold: the battle pose at the throw's end blended
@@ -1124,10 +1127,113 @@ class ToonArms:
                                   Func(self.endSettle))
         else:
             self.track = Sequence(ActorInterval(self.toon, self.anim, startFrame=self.start, endFrame=self.end, duration=duration),
-                                  Func(self.toon.pose, self.anim, self.hold))
+                                  Func(self.toon.pose, self.anim, self.hold), Func(self.stopWristFollow))
         if self.kick:
             self.recoil(self.kick, duration)
         self.track.start()
+
+    # --- The straightened wrist through the motion ---
+    # straightenWrist holds the wrist and the glove's cuff with controlled
+    # joints. Controlled, they kept the hold's place while the throw moved
+    # the rest of the arm, so the glove came off the forearm and hung in
+    # the air (Arthur: "the hand/glove detaching"). Through the motion each
+    # one follows its animation, with the hold's straightening turn on top.
+
+    def wristChannel(self, joint, lod):
+        cache = self.__dict__.setdefault('wristChannels', {})
+        key = (self.anim, joint, lod)
+        if key not in cache:
+            channel = None
+            try:
+                control = self.toon.getAnimControl(self.anim, 'torso', lod)
+                bundle = control.getAnim() if control is not None else None
+                channel = bundle.findChild(joint) if bundle is not None else None
+                if channel is not None and not hasattr(channel, 'getValue'):
+                    channel = None
+            except Exception:
+                channel = None
+            cache[key] = channel
+        return cache[key]
+
+    def animLocal(self, joint, lod, frame):
+        channel = self.wristChannel(joint, lod)
+        if channel is None:
+            return None
+        frames = max(1, channel.getNumFrames() if hasattr(channel, 'getNumFrames') else self.toon.getNumFrames(self.anim) or 1)
+        mat = LMatrix4()
+        channel.getValue(int(max(0, min(frames - 1, frame))), mat)
+        return mat
+
+    def startWristFollow(self):
+        held = getattr(self, 'wristHeld', None) or []
+        self.stopWristFollow()
+        if not held:
+            return
+        self.wristTurns()
+        if not self.wristRest:
+            return
+        self.settleT = None
+        taskMgr.add(self.__followWrist, 'survivalWristFollow-%d' % id(self), sort=48)
+
+    def wristTurns(self):
+        held = getattr(self, 'wristHeld', None) or []
+        if not held:
+            self.wristRest = None
+            return None
+        if getattr(self, 'wristRest', None) is None:
+            rest = []
+            for joint, lod, node in held:
+                anim = self.animLocal(joint, lod, self.hold)
+                if anim is None or node.isEmpty():
+                    rest = []
+                    break
+                inv = LMatrix4(anim)
+                if not inv.invertInPlace():
+                    rest = []
+                    break
+                mat = LMatrix4(node.getMat())
+                # The hold's turn on top of the animation: mat = turn * anim.
+                rest.append((node, mat, mat * inv, joint, lod))
+            self.wristRest = rest
+        return self.wristRest
+
+    def __followWrist(self, task):
+        if self.toon.isEmpty() or not getattr(self, 'wristRest', None):
+            return task.done
+        settleT = getattr(self, 'settleT', None)
+        if getattr(self, 'settling', None) is not None and settleT is not None:
+            frame = None
+        else:
+            frame = self.toon.getCurrentFrame(self.anim, partName='torso')
+            if frame is None:
+                frame = self.hold
+        for node, held, turn, joint, lod in self.wristRest:
+            if node.isEmpty():
+                continue
+            if frame is None:
+                a = TransformState.makeMat(self.animLocal(joint, lod, getattr(self, 'throwEnd', self.end)))
+                b = TransformState.makeMat(self.animLocal(joint, lod, self.hold))
+                t = settleT
+                quat = Quat(a.getQuat())
+                other = Quat(b.getQuat())
+                if quat.dot(other) < 0:
+                    other = -other
+                quat = quat * (1.0 - t) + other * t
+                quat.normalize()
+                pos = a.getPos() * (1.0 - t) + b.getPos() * t
+                scale = a.getScale() * (1.0 - t) + b.getScale() * t
+                anim = TransformState.makePosQuatScale(pos, quat, scale).getMat()
+            else:
+                anim = self.animLocal(joint, lod, frame)
+            node.setMat(turn * anim)
+        return task.cont
+
+    def stopWristFollow(self):
+        taskMgr.remove('survivalWristFollow-%d' % id(self))
+        self.settleT = None
+        for node, held, turn, joint, lod in getattr(self, 'wristRest', None) or []:
+            if not node.isEmpty():
+                node.setMat(held)
 
     def recoil(self, kick, duration):
         """The shout pushes the megaphone forward and it settles back, as
@@ -1158,9 +1264,12 @@ class ToonArms:
         lens = base.camLens
         glove = self.hand(self.side)
         last = self.start
+        turns = self.wristTurns() or []
         try:
             for frame in range(self.start, self.end + 1):
                 self.toon.pose(self.anim, frame)
+                for node, held, turn, joint, lod in turns:
+                    node.setMat(turn * self.animLocal(joint, lod, frame))
                 self.toon.update(force=True)
                 p = glove.getPos(base.cam)
                 film = Point2()
@@ -1170,6 +1279,8 @@ class ToonArms:
                 last = frame
         finally:
             self.toon.pose(self.anim, self.hold)
+            for node, held, turn, joint, lod in turns:
+                node.setMat(held)
             self.toon.update(force=True)
             self.rig.setMat(rigMat)
             self.swing.setMat(swingMat)
@@ -1204,6 +1315,7 @@ class ToonArms:
             self.toon.setControlEffect(rest, 0.0, partName=part)
 
     def settleTo(self, t):
+        self.settleT = t
         rest = getattr(self, 'settling', None)
         if rest is None:
             return
@@ -1221,6 +1333,7 @@ class ToonArms:
                 self.toon.setBlend(animBlend=False, partName=part)
                 self.toon.stop(rest, partName=part)
         self.toon.pose(self.anim, self.hold)
+        self.stopWristFollow()
 
     def whack(self, hit=None):
         """The melee: the gag drawn back to the right and swung across the
