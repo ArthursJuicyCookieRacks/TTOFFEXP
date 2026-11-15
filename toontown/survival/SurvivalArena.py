@@ -271,6 +271,7 @@ class SurvivalArena:
         self.parody.build(survival=True)
         self.parody.root.reparentTo(self.root)
         self.geom = self.parody.root
+        self.__flattenParody()
         x0, y0, x1, y1 = cls.SITE
         # Cogs land anywhere on the map out of sight, never on a station.
         self.spawnMiddle = Point3((x0 + x1) * 0.5, (y0 + y1) * 0.5, 0)
@@ -282,6 +283,25 @@ class SurvivalArena:
         gsg = base.win.getGsg()
         if gsg:
             self.geom.prepareScene(gsg)
+
+    def __flattenParody(self):
+        """The map's still scenery as a few big pieces instead of thousands
+        of little ones (Downsizer Drive lagged: about 2,100 draws). Looks and
+        collisions stay the same."""
+        if not ConfigVariableBool('survival-flatten-maps', True).getValue():
+            return
+        from toontown.survival.maps import MapFlatten
+        parody = self.parody
+        kit = getattr(parody, 'kit', None)
+        statues = list(getattr(kit, 'statues', ()))
+        # The sky draws behind everything in its own order, the trolley is
+        # looked up for the way out, and a fountain's water is see-through
+        # and must draw after the basin under it.
+        skip = [getattr(parody, 'sky', None), getattr(parody, 'fountain', None), self.geom.find('**/*trolley_station*')]
+        before, after = MapFlatten.flattenStatic(self.geom, skip=skip, statues=statues)
+        if kit is not None:
+            kit.statues = []
+        self.notify.info('%s scenery: %d pieces -> %d' % (self.map.get('title', self.mapName), before, after))
 
     def __buildPreview(self, key):
         """One of the night maps built in code: its own sky, fog, light and
@@ -938,6 +958,7 @@ class SurvivalArena:
             z0 = start[2]
         origin = (int(round(start[0] / step)), int(round(start[1] / step)))
         self.flows = {}
+        self.neighbours = {}
         # The walking map comes out the same every time for the same
         # playground, so it is saved after it is first worked out: on a
         # phone working it out was most of Toybox Terrace's minute-long
@@ -1265,17 +1286,15 @@ class SurvivalArena:
             return [Point3(b)]
         came = {start: None}
         frontier = [start]
+        neighbours = self.neighbours
         while frontier and goal not in came:
             nxt = []
             for cell in frontier:
-                for di, dj in ((1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1)):
-                    c = (cell[0] + di, cell[1] + dj)
-                    if c in came or c not in reach:
-                        continue
-                    if not (di and dj) and not self.linked(cell, c):
-                        continue
-                    if di and dj and ((cell[0] + di, cell[1]) not in reach or (cell[0], cell[1] + dj) not in reach
-                                      or not self.diagonalOpen(cell, c)):
+                ways = neighbours.get(cell)
+                if ways is None:
+                    ways = self.cellNeighbours(cell)
+                for c in ways:
+                    if c in came:
                         continue
                     came[c] = cell
                     nxt.append(c)
@@ -1330,17 +1349,20 @@ class SurvivalArena:
             return cached, cell
         came = {cell: None}
         frontier = [cell]
+        # Each cell's way on is worked out once (the same rules, in the same
+        # order, so the same routes): on Downsizer Drive's 5,500 small cells
+        # going over every neighbour's rules again for each new map took 12
+        # ms on a PC, a hitch every few frames on a phone.
+        neighbours = self.neighbours
+        cellNeighbours = self.cellNeighbours
         while frontier:
             nxt = []
             for here in frontier:
-                for di, dj in ((1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1)):
-                    c = (here[0] + di, here[1] + dj)
-                    if c in came or c not in reach:
-                        continue
-                    if not (di and dj) and not self.linked(here, c):
-                        continue
-                    if di and dj and ((here[0] + di, here[1]) not in reach or (here[0], here[1] + dj) not in reach
-                                      or not self.diagonalOpen(here, c)):
+                ways = neighbours.get(here)
+                if ways is None:
+                    ways = cellNeighbours(here)
+                for c in ways:
+                    if c in came:
                         continue
                     came[c] = here
                     nxt.append(c)
@@ -1349,6 +1371,25 @@ class SurvivalArena:
             del self.flows[next(iter(self.flows))]
         self.flows[cell] = came
         return came, cell
+
+    def cellNeighbours(self, here):
+        """The cells a cog walks to from here (eight ways, no cutting
+        corners), worked out once per cell."""
+        reach = self.reach
+        ways = []
+        for di, dj in ((1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1)):
+            c = (here[0] + di, here[1] + dj)
+            if c not in reach:
+                continue
+            if not (di and dj) and not self.linked(here, c):
+                continue
+            if di and dj and ((here[0] + di, here[1]) not in reach or (here[0], here[1] + dj) not in reach
+                              or not self.diagonalOpen(here, c)):
+                continue
+            ways.append(c)
+        ways = tuple(ways)
+        self.neighbours[here] = ways
+        return ways
 
     def cellPoint(self, cell):
         return self.reach.get(cell)
